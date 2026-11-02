@@ -1,7 +1,7 @@
 import type { Database } from "@/lib/db/database.types";
 import type { Extraction, Relevance } from "@/lib/extract/schema";
 import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
-import { todayJst } from "@/lib/format";
+import { addDays, todayJst } from "@/lib/format";
 
 /** Calendar date (JST) of an ISO instant, for the `date` columns. */
 function jstDate(iso: string | null): string | null {
@@ -45,6 +45,11 @@ export function relevanceToStatus(r: Relevance): string | null {
   }
 }
 
+/** A payment notice that already names a tracking number means the parcel has left the shop. */
+function statusOf(x: Extraction): string | null {
+  return x.relevance === "payment" && confident(x.tracking_number) ? "shipped" : relevanceToStatus(x.relevance);
+}
+
 export function isParcelRelevant(r: Relevance): boolean {
   return r !== "unrelated";
 }
@@ -56,13 +61,18 @@ export function normalizeOrderNumber(raw: string): string {
 
 const MIN_CONFIDENCE = 0.6;
 
+/** Mails close enough to the purchase for their date to stand in for the order date. */
+const DATES_THE_PURCHASE: Relevance[] = ["order", "payment", "shipped"];
+
 /** A value of the wrong shape is treated as unread, so one odd value cannot fail the whole mail. */
 function asDate(v: string | null): string | null {
-  return v && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v) ? v : null;
+  if (!v || !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v)) return null;
+  // Rejects 2026-02-31, which the pattern allows and the date column does not.
+  return new Date(`${v}T00:00:00Z`).toISOString().startsWith(v) ? v : null;
 }
 /** A clock time as HH:MM. Some models write a full JST timestamp; any other offset is rejected rather than guessed. */
 export function asTime(v: string | null): string | null {
-  const m = v?.match(/^(?:\d{4}-\d{2}-\d{2}T)?(([01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d)?(?:\+09:00)?$/);
+  const m = v?.match(/^(?:\d{4}-\d{2}-\d{2}[T ])?(([01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d)?(?:\+09:00)?$/);
   return m ? m[1] : null;
 }
 
@@ -76,12 +86,21 @@ export function parcelTitle(items: Extraction["items"], fallback: string | null)
   return items.length > 1 ? `${first} 他${items.length - 1}点` : first;
 }
 
+/** A carrier notice alone is no order of ours: the shipment needs an order number or a price to count. */
+function orderDate(x: Extraction, emailSentAt: string | null): string | null {
+  const stated = asDate(confident(x.ordered_at));
+  if (stated) return stated;
+  if (!DATES_THE_PURCHASE.includes(x.relevance)) return null;
+  if (x.relevance === "shipped" && confident(x.order_number) === null && confident(x.total_amount) === null) return null;
+  return jstDate(emailSentAt);
+}
+
 /** Fields to write for a brand-new parcel from one extraction. */
 export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: string | null): ParcelInsert {
   const tracking = confident(x.tracking_number);
   const carrierHint = x.carrier.value;
   const carrier = tracking || carrierHint ? identifyCarrier(tracking, carrierHint) : null;
-  const status = relevanceToStatus(x.relevance) ?? "unknown";
+  const status = statusOf(x) ?? "unknown";
   return {
     user_id: userId,
     shop: x.shop_name ?? (carrier?.name ?? "不明な店"),
@@ -89,7 +108,8 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
     order_number: confident(x.order_number),
     title: parcelTitle(x.items, null),
     status,
-    ordered_at: x.relevance === "order" ? (asDate(confident(x.ordered_at)) ?? jstDate(emailSentAt)) : asDate(confident(x.ordered_at)),
+    // A shop that sends no order mail still spent money: fall back to the first mail we saw.
+    ordered_at: orderDate(x, emailSentAt),
     expected_date: asDate(confident(x.expected_date)),
     expected_window_start: asTime(confident(x.expected_window_start)),
     expected_window_end: asTime(confident(x.expected_window_end)),
@@ -111,7 +131,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
  */
 export function buildParcelUpdate(existing: ParcelRow, x: Extraction, emailSentAt: string | null): ParcelUpdate {
   const update: ParcelUpdate = {};
-  const incomingStatus = relevanceToStatus(x.relevance);
+  const incomingStatus = statusOf(x);
   const isNewer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
 
   if (incomingStatus) {
@@ -147,10 +167,7 @@ export function buildParcelUpdate(existing: ParcelRow, x: Extraction, emailSentA
     update.presence_evidence = x.requires_presence.evidence;
   }
 
-  const total = confident(x.total_amount);
-  if (total !== null && (existing.total_amount === null || x.relevance === "order")) update.total_amount = total;
-
-  const orderedAt = asDate(confident(x.ordered_at));
+  const orderedAt = orderDate(x, emailSentAt);
   if (orderedAt && !existing.ordered_at) update.ordered_at = orderedAt;
 
   if (!existing.title && x.items.length > 0) update.title = parcelTitle(x.items, null);
@@ -163,4 +180,124 @@ export function buildParcelUpdate(existing: ParcelRow, x: Extraction, emailSentA
   if (x.overall_confidence < MIN_CONFIDENCE) update.needs_review = true;
 
   return update;
+}
+
+export type ParcelCandidate = ParcelRow & { itemNames: string[] };
+
+const MIN_ITEM_MATCH = 8;
+const UNIQUE_ORDER_LENGTH = 8;
+
+/** "other" covers every small shop, so there the names have to agree as well. */
+function sameShop(p: ParcelRow, x: Extraction): boolean {
+  const key = x.shop_key ?? "other";
+  if (p.shop_key !== key) return false;
+  return key !== "other" || p.shop === (x.shop_name ?? p.shop);
+}
+
+/**
+ * Which existing parcel a mail belongs to, or null for a new one. Tries the order number,
+ * then the tracking number, then two softer signals.
+ */
+export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: Date = new Date()): ParcelCandidate | null {
+  const newestFirst = [...candidates].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const statedOrder = confident(x.order_number);
+  const orderNumber = statedOrder ? normalizeOrderNumber(statedOrder) : null;
+  if (orderNumber) {
+    // Small shops number orders from 1001, so the same number at another shop is another order.
+    // A long number is unique on its own, and marketplaces sign one order under two shop names.
+    const hit = newestFirst.find(
+      (p) => p.order_number && normalizeOrderNumber(p.order_number) === orderNumber && (orderNumber.length >= UNIQUE_ORDER_LENGTH || sameShop(p, x)),
+    );
+    if (hit) return hit;
+  }
+  const statedTracking = confident(x.tracking_number);
+  const tracking = statedTracking ? normalizeTracking(statedTracking) : null;
+  if (tracking) {
+    const hit = newestFirst.find((p) => p.tracking_number === tracking);
+    if (hit) return hit;
+  }
+
+  const shopKey = x.shop_key ?? "other";
+
+  // A shop mail with only an order number and a carrier mail with only a tracking number
+  // describe one parcel when they name the same known shop and the same day.
+  const expected = asDate(confident(x.expected_date));
+  if (expected && shopKey !== "other" && (orderNumber || tracking) && !(orderNumber && tracking)) {
+    const hit = newestFirst.find(
+      (p) =>
+        p.shop_key === shopKey &&
+        p.expected_date === expected &&
+        p.status !== "cancelled" &&
+        (tracking ? p.order_number !== null && p.tracking_number === null : p.tracking_number !== null && p.order_number === null),
+    );
+    if (hit) return hit;
+  }
+
+  // Same item from the same shop recently. Subscription notices are left out: their item
+  // repeats every delivery, so the match would land on an older, unrelated parcel.
+  if (x.items.length > 0 && x.relevance !== "order" && x.relevance !== "other_purchase") {
+    const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+    const first = x.items[0].name.replace(/\.{3}|…/g, "").trim();
+    const recent = newestFirst.filter(
+      (p) =>
+        sameShop(p, x) &&
+        p.created_at >= since &&
+        p.status !== "delivered" &&
+        // A different order or tracking number is a different parcel, however alike the item.
+        !(orderNumber && p.order_number && normalizeOrderNumber(p.order_number) !== orderNumber) &&
+        !(tracking && p.tracking_number && p.tracking_number !== tracking),
+    );
+    const hit = recent.slice(0, 20).find((p) =>
+      p.itemNames.some((raw) => {
+        const name = raw.replace(/\.{3}|…/g, "").trim();
+        // Short names like 「Tシャツ」 say too little to call two mails one parcel.
+        return Math.min(name.length, first.length) >= MIN_ITEM_MATCH && (name.startsWith(first) || first.startsWith(name));
+      }),
+    );
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Subscription and account notices describe no parcel unless they carry a tracking number. */
+export function startsParcel(x: Extraction): boolean {
+  return x.relevance !== "other_purchase" || confident(x.tracking_number) !== null;
+}
+
+const SHIPMENT_MAILS: Relevance[] = ["shipped", "out_for_delivery", "attempted", "delivered"];
+const ORDER_MAILS: Relevance[] = ["order", "payment"];
+/** The schema asks for 0.9 or more when the mail states a value outright. */
+const STATED_OUTRIGHT = 0.9;
+
+/**
+ * What a parcel cost, from every mail read for it. Shipment mails state the amount of their
+ * own order number, so they win. Order mails are weaker: Amazon lists several order numbers
+ * in one mail, and its total or item list can cover more or less than this parcel.
+ */
+export function parcelTotal(mails: Extraction[]): number | null {
+  const orderMails = mails.filter((m) => ORDER_MAILS.includes(m.relevance));
+  const stated = orderMails.map((m) => m.total_amount).filter((f) => f.value && f.confidence >= MIN_CONFIDENCE);
+  const firm = stated.filter((f) => f.confidence >= STATED_OUTRIGHT).at(-1)?.value ?? null;
+  const weak = stated.at(-1)?.value ?? 0;
+
+  const listed = orderMails.find((m) => m.items.length > 0)?.items ?? [];
+  const itemSum = listed.length > 0 && listed.every((i) => i.unit_price !== null) ? listed.reduce((sum, i) => sum + (i.unit_price ?? 0) * (i.quantity ?? 1), 0) : 0;
+
+  // A set: the same mail may be delivered twice, while parts of one order state different amounts.
+  const shipments = new Set<number>();
+  for (const m of mails) {
+    const total = m.total_amount;
+    if (SHIPMENT_MAILS.includes(m.relevance) && total.value && total.confidence >= MIN_CONFIDENCE) shipments.add(total.value);
+  }
+  const shipped = [...shipments].reduce((a, b) => a + b, 0);
+
+  const total = shipped > 0 ? Math.max(shipped, firm ?? 0) : (firm ?? Math.max(weak, itemSum));
+  return total > 0 ? total : null;
+}
+
+/** Still open, but long past when it should have arrived: most shops send no delivery mail. */
+export function isOverdue(p: Pick<ParcelRow, "status" | "expected_date" | "last_email_at">, today: string): boolean {
+  if (p.status === "delivered" || p.status === "cancelled") return false;
+  if (p.expected_date) return p.expected_date < addDays(today, -3);
+  return p.last_email_at !== null && p.last_email_at.slice(0, 10) < addDays(today, -21);
 }

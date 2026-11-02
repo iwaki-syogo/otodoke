@@ -24,7 +24,7 @@ export function decodeEntities(input: string): string {
   return input.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, body: string) => {
     if (body[0] === "#") {
       const code = body[1].toLowerCase() === "x" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : match;
     }
     const named = ENTITIES[body.toLowerCase()];
     return named ?? match;
@@ -40,9 +40,23 @@ export function stripInvisible(text: string): string {
   return text.replace(INVISIBLE, "");
 }
 
+/** A loop rather than a regex: on many unclosed comments the regex takes quadratic time. */
+function stripComments(html: string): string {
+  let out = "";
+  let at = 0;
+  for (;;) {
+    const open = html.indexOf("<!--", at);
+    if (open < 0) return out + html.slice(at);
+    out += html.slice(at, open);
+    const close = html.indexOf("-->", open + 4);
+    if (close < 0) return out;
+    at = close + 3;
+  }
+}
+
 export function htmlToText(html: string): string {
   let s = stripInvisible(html);
-  s = s.replace(/<!--[\s\S]*?-->/g, "");
+  s = stripComments(s);
   s = s.replace(/<(script|style|head|title)[\s\S]*?<\/\1>/gi, "");
   // Links: keep the visible text and the target when the target is informative.
   s = s.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) => {

@@ -27,6 +27,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - Supabase（Postgres + Auth マジックリンク）、Resend（受信 webhook `email.received` と送信）、Claude API、Vercel
 - dev: `npm run dev`（port 3015）、lint: `npm run lint`、typecheck: `npm run typecheck`、test: `npm test`、build: `npm run build`
 - Server Action のファイル（`"use server"`）からは async 関数と型だけを export する
+- ログインリンクを開くと確認ボタンの画面（`/auth/continue`）が出て、押すと POST で検証する。メールのセキュリティ検査が GET でリンクを踏んでも使い切られないため
 - Supabase Auth の設定とメール文面は `supabase/config.toml` と `supabase/templates/`。**`supabase config push` は確認なしで本番に適用される**（プレビューにならない）。実行前に本人の YES を取る
 
 ## ディレクトリ
@@ -38,6 +39,12 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - `fixtures/anonymized/` 匿名化した全件、`fixtures/raw/` 実メール（どちらも git-ignored）
 - `scripts/eval.ts` 読み取り精度の測定（課金 API を呼ぶ。`--max-usd` で上限）
 - `docs/` 期間中の作業記録（Claude をどう使ったか、評価セットの一致率の推移）
+
+## 荷物のまとめ方と金額（`src/lib/match/`）
+
+- 同じ荷物かどうかは `chooseParcel`、金額は `parcelTotal` が決める。Amazon は 1 通の注文メールに複数の注文番号を載せるので、金額は発送メールを優先する
+- 定期便の案内など `other_purchase` は荷物を作らない。予定日を過ぎても届いた連絡がない荷物は「届いたか分からない荷物」に畳む
+- 変更したら `npx tsx scripts/replay.ts`。保存済みの読み取り結果を実際のルールで通す（API は呼ばない。結果は git-ignored の `fixtures/raw/eval/`）
 
 ## メールのふるいと費用（`src/lib/screen.ts`）
 
@@ -68,5 +75,5 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 
 - Supabase: project_ref=`zvqaqdmlxghekasjqneq`, region=`ap-northeast-1`, org=iwaki-syogo's Org (Pro)。キーの取得は `npm run env:supabase`（値は画面に出さずローカル env に書く）
 - Vercel: project=`otodoke-app`, team=`syodgo-9062s-projects`, production_url=https://otodoke.app（独自ドメイン。Vercel で取得、更新 $15/年）／ https://otodoke-app.vercel.app（GitHub 連携済み: main への push で本番デプロイ）
-- Resend: 受信ドメイン=`in.otodoke.app`, 送信ドメイン=`otodoke.app`（どちらも検証済み、リージョン ap-northeast-1。DNS は Vercel）。無料プランは送受信の合計で 1 日 100 通
+- Resend: 受信ドメイン=`in.otodoke.app`, 送信ドメイン=`otodoke.app`（どちらも検証済み、リージョン ap-northeast-1。DNS は Vercel）。無料プランは送受信の合計で 1 日 100 通で、他のプロジェクトと共有している（別チームは月 $20 が必須。当面は共有のまま、2026-11-03 本人の決定）
 - Anthropic: Claude API（個人組織。キーは `.env.local` のみ）

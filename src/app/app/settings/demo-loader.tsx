@@ -9,11 +9,7 @@ export function DemoLoader({ result, error, cleared }: { result?: string; error?
       <form action={loadDemo}>
         <LoadButton />
       </form>
-      {result ? (
-        <p className="text-sm text-emerald-800">
-          {result} 通のメールを読み込みました。「荷物」タブで確認できます。
-        </p>
-      ) : null}
+      {result && error ? <p className="text-sm text-neutral-700">{result} 通は読み込めました。</p> : null}
       {cleared ? <p className="text-sm text-neutral-700">荷物とメールを消しました。</p> : null}
       {error ? <p className="break-words text-sm text-red-800">{error}</p> : null}
 

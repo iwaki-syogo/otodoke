@@ -6,6 +6,7 @@ import { loadDemoEntries } from "@/lib/demo";
 import { processInboundEmail } from "@/lib/pipeline";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
+import { UNREAD_FILTER } from "@/lib/unread";
 
 /**
  * Feed the anonymized demo mails through the real pipeline for the signed-in user.
@@ -42,7 +43,7 @@ export async function loadDemo(): Promise<void> {
           },
         },
       );
-      if (outcome.kind === "processed" || outcome.kind === "duplicate") processed++;
+      if (outcome.kind === "processed" || outcome.kind === "noted" || outcome.kind === "duplicate") processed++;
     }
   } catch (err) {
     failure = err instanceof Error ? err.message : String(err);
@@ -50,7 +51,7 @@ export async function loadDemo(): Promise<void> {
 
   revalidatePath("/app", "layout");
   if (failure) redirect(`/app/settings?demo=${processed}&error=${encodeURIComponent(failure)}`);
-  redirect(`/app/settings?demo=${processed}`);
+  redirect("/app");
 }
 
 /** Read mail that arrived after the daily limit. Stops when today's allowance runs out again. */
@@ -63,14 +64,14 @@ export async function readWaitingMail(): Promise<void> {
     .from("emails")
     .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
     .eq("user_id", user.id)
-    .eq("processing_status", "over_limit")
+    .or(UNREAD_FILTER())
     .order("sent_at", { ascending: true })
     .limit(20);
   if (error) redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
 
   let failure: string | null = null;
-  try {
-    for (const m of data) {
+  for (const m of data) {
+    try {
       // Without a Message-ID the pipeline cannot find this row again, so it would be duplicated.
       if (!m.message_id) await db.from("emails").delete().eq("id", m.id);
       const outcome = await processInboundEmail(db, {
@@ -85,9 +86,10 @@ export async function readWaitingMail(): Promise<void> {
         html: m.html_body,
       });
       if (outcome.kind === "over_limit") break;
+    } catch (err) {
+      // One unreadable mail must not hold back the ones after it.
+      failure = err instanceof Error ? err.message : String(err);
     }
-  } catch (err) {
-    failure = err instanceof Error ? err.message : String(err);
   }
 
   revalidatePath("/app", "layout");

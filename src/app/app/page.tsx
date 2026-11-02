@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addDays, todayJst } from "@/lib/format";
-import type { ParcelRow } from "@/lib/match";
+import { addDays, formatWindow, relativeDateJa, todayJst } from "@/lib/format";
+import { isOverdue, type ParcelRow } from "@/lib/match";
+import { UNREAD_FILTER } from "@/lib/unread";
 import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
@@ -18,10 +19,12 @@ export default async function ParcelsPage() {
   const { count: waiting } = await supabase
     .from("emails")
     .select("id", { count: "exact", head: true })
-    .eq("processing_status", "over_limit");
+    .or(UNREAD_FILTER());
 
-  const incoming = parcels.filter((p) => ["shipped", "out_for_delivery", "attempted"].includes(p.status));
-  const ordered = parcels.filter((p) => ["ordered", "unknown"].includes(p.status));
+  const overdue = parcels.filter((p) => isOverdue(p, today));
+  const current = parcels.filter((p) => !isOverdue(p, today));
+  const incoming = current.filter((p) => ["shipped", "out_for_delivery", "attempted"].includes(p.status)).sort(byNextArrival(today));
+  const ordered = current.filter((p) => ["ordered", "unknown"].includes(p.status));
   const delivered = parcels
     .filter((p) => p.status === "delivered" && (p.last_email_at ?? "") >= addDays(today, -30))
     .sort((a, b) => (b.last_email_at ?? "").localeCompare(a.last_email_at ?? ""));
@@ -53,8 +56,7 @@ export default async function ParcelsPage() {
             {presenceSoon.map((p) => (
               <li key={p.id}>
                 <Link href={`/app/parcels/${p.id}`} className="underline underline-offset-4">
-                  {p.expected_date ? `${p.expected_date.slice(5).replace("-", "/")} ` : ""}
-                  {p.title ?? p.shop}
+                  {relativeDateJa(p.expected_date)} {formatWindow(p.expected_window_start, p.expected_window_end)} {p.title ?? p.shop}
                 </Link>
               </li>
             ))}
@@ -65,17 +67,29 @@ export default async function ParcelsPage() {
       <Section title="もうすぐ届く" count={incoming.length} items={incoming} />
       <Section title="注文中" count={ordered.length} items={ordered} empty="注文中の荷物はありません" />
       <Section title="届いた（30 日）" count={delivered.length} items={delivered} empty="最近届いた荷物はありません" />
-      {cancelled.length > 0 ? (
-        <details className="group">
-          <summary className="cursor-pointer text-sm text-neutral-500">キャンセル {cancelled.length} 件</summary>
-          <div className="mt-3 flex flex-col gap-3">
-            {cancelled.map((p) => (
-              <ParcelCard key={p.id} parcel={p} />
-            ))}
-          </div>
-        </details>
-      ) : null}
+      <Folded summary={`届いたか分からない荷物 ${overdue.length} 件`} items={overdue} />
+      <Folded summary={`キャンセル ${cancelled.length} 件`} items={cancelled} />
     </div>
+  );
+}
+
+/** What arrives next comes first, then what is running late, then what has no date yet. */
+function byNextArrival(today: string) {
+  const rank = (p: ParcelRow) => (!p.expected_date ? 2 : p.expected_date >= today ? 0 : 1);
+  return (a: ParcelRow, b: ParcelRow) => rank(a) - rank(b) || (a.expected_date ?? "").localeCompare(b.expected_date ?? "");
+}
+
+function Folded({ summary, items }: { summary: string; items: ParcelRow[] }) {
+  if (items.length === 0) return null;
+  return (
+    <details className="group">
+      <summary className="cursor-pointer text-sm text-neutral-500">{summary}</summary>
+      <div className="mt-3 flex flex-col gap-3">
+        {items.map((p) => (
+          <ParcelCard key={p.id} parcel={p} />
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -110,8 +124,11 @@ function EmptyState() {
         <br />
         まずは設定から転送先を確認してください。
       </p>
-      <Link href="/app/settings" className="mt-6 rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
+      <Link href="/app/settings" className="mt-6 w-full rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
         転送先を見る
+      </Link>
+      <Link href="/app/settings#demo" className="mt-3 w-full rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">
+        サンプルで試す
       </Link>
     </div>
   );

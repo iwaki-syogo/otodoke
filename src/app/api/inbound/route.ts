@@ -13,6 +13,9 @@ import { processInboundEmail } from "@/lib/pipeline";
 // One mail means one Claude call; leave room for a slow response.
 export const maxDuration = 120;
 
+/** Far beyond any real order mail. Anyone can send to an inbox address, so storage needs a ceiling. */
+const MAX_BODY_CHARS = 512 * 1024;
+
 export async function POST(request: Request) {
   const payload = await request.text();
   const resend = new Resend(requireEnv("RESEND_API_KEY"));
@@ -57,7 +60,12 @@ export async function POST(request: Request) {
   }
 
   const db = createAdminClient();
-  const { data: inbox } = await db.from("inbox_addresses").select("user_id").eq("local_part", localPart).maybeSingle();
+  const { data: inbox, error: inboxError } = await db.from("inbox_addresses").select("user_id").eq("local_part", localPart).maybeSingle();
+  if (inboxError) {
+    // Not the same as "no such address": answering 200 here would lose the mail.
+    console.error("inbound: inbox lookup failed", inboxError.message);
+    return NextResponse.json({ error: "lookup failed" }, { status: 500 });
+  }
   if (!inbox) {
     console.warn("inbound: unknown inbox", localPart);
     return NextResponse.json({ ignored: "unknown inbox" });
@@ -76,8 +84,8 @@ export async function POST(request: Request) {
       fromName,
       subject: mail.subject ?? "",
       sentAt,
-      text: mail.text,
-      html: mail.html,
+      text: mail.text?.slice(0, MAX_BODY_CHARS) ?? null,
+      html: mail.html?.slice(0, MAX_BODY_CHARS) ?? null,
     });
     return NextResponse.json({ ok: true, outcome: outcome.kind });
   } catch (err) {
@@ -96,7 +104,9 @@ function parseDisplayName(fromHeader: string | undefined): string | null {
 function parseDate(value: string | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  if (Number.isNaN(d.getTime())) return null;
+  // The Date header is written by the sender: a future date must not sort above everything else.
+  return new Date(Math.min(d.getTime(), Date.now())).toISOString();
 }
 
 export const dynamic = "force-dynamic";

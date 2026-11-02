@@ -30,7 +30,11 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
   const total = priced.reduce((s, p) => s + (p.total_amount ?? 0), 0);
 
   const byShop = new Map<string, number>();
-  for (const p of priced) byShop.set(p.shop, (byShop.get(p.shop) ?? 0) + (p.total_amount ?? 0));
+  for (const p of priced) {
+    // Amazon signs its mails under several names; one shop should read as one line.
+    const name = p.shop_key === "amazon" ? "Amazon" : p.shop;
+    byShop.set(name, (byShop.get(name) ?? 0) + (p.total_amount ?? 0));
+  }
   const shops = [...byShop.entries()].sort((a, b) => b[1] - a[1]);
   const max = shops[0]?.[1] ?? 1;
 

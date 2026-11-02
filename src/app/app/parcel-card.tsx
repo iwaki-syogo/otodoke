@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ParcelRow } from "@/lib/match";
-import { STATUS_LABEL, formatWindow, relativeDateJa, yen } from "@/lib/format";
+import { STATUS_LABEL, formatWindow, relativeDateJa, todayJst, yen } from "@/lib/format";
 
 const STATUS_STYLE: Record<string, string> = {
   ordered: "bg-neutral-100 text-neutral-700",
@@ -35,7 +35,9 @@ export function PresenceBadge({ value, compact = false }: { value: boolean | nul
 }
 
 export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; showAmount?: boolean }) {
-  const when = parcel.expected_date ? relativeDateJa(parcel.expected_date) : null;
+  const today = todayJst();
+  const late = parcel.expected_date !== null && parcel.expected_date < today && parcel.status !== "delivered" && parcel.status !== "cancelled";
+  const when = parcel.expected_date ? `${relativeDateJa(parcel.expected_date, today)}${late ? "の予定" : ""}` : null;
   const window = formatWindow(parcel.expected_window_start, parcel.expected_window_end);
   return (
     <Link

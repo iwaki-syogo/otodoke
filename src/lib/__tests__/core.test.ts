@@ -5,7 +5,9 @@ import { buildUserMessage } from "@/lib/extract/prompt";
 import type { Extraction } from "@/lib/extract/schema";
 import { screenMail } from "@/lib/screen";
 import { addDays, formatWindow, todayJst, weekdayOf } from "@/lib/format";
-import { buildParcelInsert, buildParcelUpdate, type ParcelRow } from "@/lib/match";
+import { forwardingConfirmUrl, isForwardingConfirmation } from "@/lib/forwarding";
+import { buildParcelInsert, buildParcelUpdate, chooseParcel, isOverdue, parcelTotal, startsParcel, type ParcelCandidate, type ParcelRow } from "@/lib/match";
+import { safeNextPath } from "@/lib/safe-next";
 import { emailBodyText, htmlToText } from "@/lib/text/html-to-text";
 
 const none = { value: null, evidence: null, confidence: 0 };
@@ -114,6 +116,7 @@ describe("parcel merge", () => {
     ["19:00:00", "19:00"],
     ["2026-04-10T19:00:00+09:00", "19:00"],
     ["2026-04-10T19:00", "19:00"],
+    ["2026-07-01 19:00", "19:00"],
     ["2026-04-10T10:00:00Z", null],
     ["2026-04-10T19:00:00-05:00", null],
     ["午前中", null],
@@ -124,6 +127,10 @@ describe("parcel merge", () => {
   it("uses the JST date of an order mail when the mail states no order date", () => {
     const row = buildParcelInsert("u", extraction({ relevance: "order" }), "2026-11-01T17:21:30Z");
     expect(row.ordered_at).toBe("2026-11-02");
+  });
+  it("treats a payment notice with a tracking number as shipped", () => {
+    expect(buildParcelInsert("u", extraction({ relevance: "payment", tracking_number: sure("123456789012") }), null).status).toBe("shipped");
+    expect(buildParcelInsert("u", extraction({ relevance: "payment" }), null).status).toBe("ordered");
   });
   it("does not move a delivered parcel backwards when a late mail arrives", () => {
     const update = buildParcelUpdate(parcel({ status: "delivered" }), extraction({ relevance: "shipped" }), "2026-11-02T00:00:00Z");
@@ -209,4 +216,171 @@ describe("demo mails", () => {
       }
     },
   );
+});
+
+const money = (value: number, confidence = 0.95) => ({ value, evidence: "合計", confidence });
+const item = (name: string, unit_price: number | null) => ({ name, quantity: 1, unit_price, evidence: null });
+
+describe("parcelTotal", () => {
+  it("adds the shipments of one order that ships in parts", () => {
+    const total = parcelTotal([
+      extraction({ relevance: "shipped", total_amount: money(1980), items: [item("B", 1980)] }),
+      extraction({ relevance: "shipped", total_amount: money(2750), items: [item("A", 2750)] }),
+    ]);
+    expect(total).toBe(4730);
+  });
+  it("uses the item list until a shipment mail states the amount", () => {
+    const order = extraction({ relevance: "order", items: [item("A", 2750), item("B", 1980)] });
+    expect(parcelTotal([order])).toBe(4730);
+  });
+  it("counts only its own shipment when an order mail lists two order numbers", () => {
+    const order = extraction({ relevance: "order", items: [item("A", 2750), item("B", 1980)] });
+    expect(parcelTotal([order, extraction({ relevance: "shipped", total_amount: money(2750), items: [item("A", 2750)] })])).toBe(2750);
+  });
+  it("prefers the shipment over an unsure order total", () => {
+    expect(parcelTotal([extraction({ relevance: "order", total_amount: money(118, 0.7) }), extraction({ relevance: "shipped", total_amount: money(559) })])).toBe(559);
+  });
+  it("keeps a discount the item list does not show", () => {
+    const total = parcelTotal([
+      extraction({ relevance: "order", total_amount: money(10750, 0.7), items: [item("A", 6000), item("B", 5309)] }),
+      extraction({ relevance: "shipped", total_amount: money(10750), items: [item("A", 6000), item("B", 5309)] }),
+    ]);
+    expect(total).toBe(10750);
+  });
+  it("does not count one mail delivered twice", () => {
+    const shipped = extraction({ relevance: "shipped", total_amount: money(818), items: [item("A", 818)] });
+    expect(parcelTotal([shipped, shipped])).toBe(818);
+  });
+  it("ignores a price in a subscription notice", () => {
+    expect(parcelTotal([extraction({ relevance: "shipped", total_amount: money(500) }), extraction({ relevance: "other_purchase", total_amount: money(1162) })])).toBe(500);
+  });
+  it("trusts an order total the mail states outright", () => {
+    expect(parcelTotal([extraction({ relevance: "order", total_amount: money(3000), items: [item("A", 3500)] })])).toBe(3000);
+  });
+  it("is unknown when nothing states a price", () => {
+    expect(parcelTotal([extraction({ relevance: "order", total_amount: money(0, 0.5), items: [item("A", null)] })])).toBeNull();
+  });
+});
+
+const candidate = (over: Partial<ParcelCandidate>) =>
+  ({ shop: "テスト店", shop_key: "other", status: "shipped", order_number: null, tracking_number: null, expected_date: null, created_at: "2026-11-01T00:00:00Z", itemNames: [], ...over }) as ParcelCandidate;
+const NOW = new Date("2026-11-02T00:00:00Z");
+
+describe("chooseParcel", () => {
+  it("joins by order number within a shop", () => {
+    const p = candidate({ order_number: "A-1001" });
+    expect(chooseParcel([p], extraction({ order_number: sure("A1001") }), NOW)).toBe(p);
+  });
+  it("keeps the same order number at another shop apart", () => {
+    const p = candidate({ order_number: "1001", shop: "別の店" });
+    expect(chooseParcel([p], extraction({ order_number: sure("1001") }), NOW)).toBeNull();
+  });
+  it("joins a long order number across two shop names", () => {
+    const p = candidate({ order_number: "123456789012", shop: "SwitchBot Japan" });
+    expect(chooseParcel([p], extraction({ shop_name: "TikTok Shop", order_number: sure("123456789012") }), NOW)).toBe(p);
+  });
+  it("does not join on a number it is unsure of", () => {
+    const p = candidate({ order_number: "1001" });
+    expect(chooseParcel([p], extraction({ order_number: { value: "1001", evidence: null, confidence: 0.3 } }), NOW)).toBeNull();
+  });
+  it("joins a carrier notice to an order on the same day at a known shop", () => {
+    const p = candidate({ shop_key: "amazon", order_number: "1", expected_date: "2026-11-03" });
+    expect(chooseParcel([p], extraction({ shop_key: "amazon", tracking_number: sure("123456789012"), expected_date: sure("2026-11-03") }), NOW)).toBe(p);
+  });
+  it("does not join on the same day at an unknown shop", () => {
+    const p = candidate({ order_number: "1", expected_date: "2026-11-03" });
+    expect(chooseParcel([p], extraction({ tracking_number: sure("123456789012"), expected_date: sure("2026-11-03") }), NOW)).toBeNull();
+  });
+  it("does not join a subscription notice by its item", () => {
+    const p = candidate({ itemNames: ["とても長い商品の名前です"] });
+    expect(chooseParcel([p], extraction({ relevance: "other_purchase", items: [item("とても長い商品の名前です", null)] }), NOW)).toBeNull();
+  });
+  it.each(["…", "Tシャツ"])("does not join on the item name %s", (name) => {
+    const p = candidate({ itemNames: ["Tシャツ黒"] });
+    expect(chooseParcel([p], extraction({ items: [item(name, null)] }), NOW)).toBeNull();
+  });
+  it("joins a long item name cut short by the mail", () => {
+    const p = candidate({ itemNames: ["とても長い商品の名前です 黒 Lサイズ"] });
+    expect(chooseParcel([p], extraction({ items: [item("とても長い商品の名前です...", null)] }), NOW)).toBe(p);
+  });
+  it("does not join an alike item with another order number", () => {
+    const p = candidate({ order_number: "1", itemNames: ["とても長い商品の名前です"] });
+    expect(chooseParcel([p], extraction({ order_number: sure("2"), items: [item("とても長い商品の名前です", null)] }), NOW)).toBeNull();
+  });
+});
+
+describe("startsParcel", () => {
+  it("opens no parcel for a subscription notice", () => {
+    expect(startsParcel(extraction({ relevance: "other_purchase" }))).toBe(false);
+  });
+  it("opens one when the notice carries a tracking number", () => {
+    expect(startsParcel(extraction({ relevance: "other_purchase", tracking_number: sure("123456789012") }))).toBe(true);
+  });
+});
+
+describe("isOverdue", () => {
+  const row = (status: string, expected_date: string | null, last_email_at: string | null) => ({ status, expected_date, last_email_at });
+  it.each([
+    ["3 days past the date is still current", row("shipped", "2026-10-30", null), false],
+    ["4 days past the date is overdue", row("shipped", "2026-10-29", null), true],
+    ["no date, 21 days quiet is still current", row("ordered", null, "2026-10-12T00:00:00Z"), false],
+    ["no date, 22 days quiet is overdue", row("ordered", null, "2026-10-11T00:00:00Z"), true],
+    ["a delivered parcel never is", row("delivered", "2020-01-01", null), false],
+    ["a cancelled parcel never is", row("cancelled", "2020-01-01", null), false],
+  ])("%s", (_name, p, want) => {
+    expect(isOverdue(p, "2026-11-02")).toBe(want);
+  });
+});
+
+describe("dates from the model", () => {
+  it("drops a date that does not exist instead of failing the insert", () => {
+    expect(buildParcelInsert("u", extraction({ expected_date: sure("2026-02-31") }), null).expected_date).toBeNull();
+  });
+  it("uses the first mail as the order date of a shop that sends no order mail", () => {
+    expect(buildParcelInsert("u", extraction({ relevance: "shipped", order_number: sure("1") }), "2026-11-01T17:21:30Z").ordered_at).toBe("2026-11-02");
+  });
+  it("does not list a carrier notice as an order", () => {
+    expect(buildParcelInsert("u", extraction({ relevance: "shipped" }), "2026-11-01T17:21:30Z").ordered_at).toBeNull();
+  });
+});
+
+describe("hostile mail", () => {
+  it("does not throw on an impossible character reference", () => {
+    expect(htmlToText("<p>&#9999999;x</p>")).toContain("x");
+  });
+  it("handles many unclosed comments quickly", () => {
+    const started = Date.now();
+    htmlToText("<!--".repeat(200_000));
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+  it("strips comments", () => {
+    expect(htmlToText("a<!-- hidden -->b")).toBe("ab");
+  });
+  it.each([
+    "https://evil-google.com/mail/x",
+    "https://notgoogle.com/mail/x",
+    "https://www.google.com/url?q=https://evil.example",
+    "https://mail-settings.google.com.evil.example/mail/x",
+    "http://mail-settings.google.com/mail/x",
+  ])("offers no button for %s", (url) => {
+    expect(forwardingConfirmUrl(`click ${url}`)).toBeNull();
+  });
+  it("finds the link in a real confirmation", () => {
+    const url = "https://mail-settings.google.com/mail/vf-abc";
+    expect(forwardingConfirmUrl(`first https://support.google.com/x then ${url} end`)).toBe(url);
+  });
+  it("recognizes only the Gmail sender", () => {
+    expect(isForwardingConfirmation("forwarding-noreply@google.com")).toBe(true);
+    expect(isForwardingConfirmation("forwarding-noreply@google.com.evil.example")).toBe(false);
+    expect(isForwardingConfirmation("someone@example.com")).toBe(false);
+  });
+});
+
+describe("safeNextPath", () => {
+  it.each(["/\\evil.example", "/\t/evil.example", "//evil.example", "https://evil.example", "", null])("sends %s home", (value) => {
+    expect(safeNextPath(value)).toBe("/app");
+  });
+  it("keeps a path on this site", () => {
+    expect(safeNextPath("/app/settings?x=1#y")).toBe("/app/settings?x=1#y");
+  });
 });

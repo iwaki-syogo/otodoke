@@ -2,6 +2,8 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "./copy-button";
 import { markWronglyDropped, readWaitingMail } from "./actions";
+import { forwardingConfirmUrl } from "@/lib/forwarding";
+import { UNREAD_FILTER } from "@/lib/unread";
 import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
 
@@ -31,7 +33,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   const { count: waiting } = await supabase
     .from("emails")
     .select("id", { count: "exact", head: true })
-    .eq("processing_status", "over_limit");
+    .or(UNREAD_FILTER());
   const { data: dropped } = await supabase
     .from("screen_events")
     .select("id, subject, from_domain, created_at, flagged_at")
@@ -57,7 +59,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       {waiting ? (
         <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">未読のメールが {waiting} 通あります</h2>
-          <p className="mt-1 text-sm leading-6">1 日に読める上限を超えたメールです。保存してあるので、翌日以降に読み取れます。</p>
+          <p className="mt-1 text-sm leading-6">1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。</p>
           <form action={readWaitingMail} className="mt-3">
             <button type="submit" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
               読み取る
@@ -138,7 +140,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
         )}
       </section>
 
-      <section className="rounded-2xl border border-dashed border-neutral-300 p-4">
+      <section id="demo" className="scroll-mt-4 rounded-2xl border border-dashed border-neutral-300 p-4">
         <h2 className="text-base font-bold">サンプルで試す</h2>
         <p className="mt-1 text-sm leading-6 text-neutral-600">匿名化した実際の注文・発送メールを読み込みます。日付は今日に合わせてずらしてあります。</p>
         <DemoLoader result={demo} error={error} cleared={cleared} />
@@ -154,10 +156,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       </section>
     </div>
   );
-}
-
-function forwardingConfirmUrl(body: string): string | null {
-  return body.match(/https:\/\/[\w.-]*google\.com\/[^\s<>"')]+/)?.[0] ?? null;
 }
 
 function Guide({ title, children }: { title: string; children: React.ReactNode }) {

@@ -1,9 +1,10 @@
 import type { AdminClient } from "@/lib/supabase/admin";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
-import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, normalizeOrderNumber } from "@/lib/match";
-import { normalizeTracking } from "@/lib/carriers";
+import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, chooseParcel, parcelTotal, startsParcel } from "@/lib/match";
 import { env } from "@/lib/env";
+import { isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
+import { PENDING_GRACE_MS } from "@/lib/unread";
 import { screenMail, type ScreenResult } from "@/lib/screen";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import type { Extraction } from "@/lib/extract/schema";
@@ -28,10 +29,8 @@ export type PipelineOutcome =
   | { kind: "screened_out"; reason: string }
   | { kind: "over_limit"; emailId: string; limit: string }
   | { kind: "discarded"; reason: string }
+  | { kind: "noted"; emailId: string }
   | { kind: "processed"; emailId: string; parcelId: string; created: boolean; extraction: Extraction };
-
-const FORWARDING_CONFIRMATION =
-  /forwarding-noreply@google\.com|転送の確認|Forwarding Confirmation|Gmail の転送|メール転送の確認/i;
 
 export interface PipelineOptions {
   /** A Claude result computed earlier (the demo loader). Skips the API call. */
@@ -46,7 +45,7 @@ export interface PipelineOptions {
  * webhook answers 500 and Resend retries; the failed row stays visible until then.
  */
 export async function processInboundEmail(db: AdminClient, mail: InboundEmail, options: PipelineOptions = {}): Promise<PipelineOutcome> {
-  const isForwardingConfirmation = FORWARDING_CONFIRMATION.test(`${mail.from} ${mail.subject}`);
+  const isForwardingConfirmation = isGmailConfirmation(mail.from);
 
   // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
   if (!isForwardingConfirmation && !options.precomputed) {
@@ -54,7 +53,14 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     if (!screen.pass) {
       const keep = await secondLook(db, mail, screen);
       await logScreenEvent(db, mail, keep ? "rescued" : "dropped", screen.reason);
-      if (!keep) return { kind: "screened_out", reason: screen.reason };
+      if (!keep) {
+        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread forever.
+        if (mail.messageId) {
+          const { error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("message_id", mail.messageId);
+          if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+        }
+        return { kind: "screened_out", reason: screen.reason };
+      }
     }
   }
 
@@ -62,12 +68,17 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   if (mail.messageId) {
     const { data: existing, error } = await db
       .from("emails")
-      .select("id, processing_status")
+      .select("id, processing_status, created_at")
       .eq("user_id", mail.userId)
       .eq("message_id", mail.messageId)
       .maybeSingle();
     if (error) throw new Error(`emails lookup failed: ${error.message}`);
     if (existing?.processing_status === "processed") return { kind: "duplicate", emailId: existing.id };
+    // Another delivery of this mail is being read right now. Removing its row would break that run
+    // and pay for a second read, so fail and let the webhook retry later.
+    if (existing?.processing_status === "pending" && Date.now() - new Date(existing.created_at).getTime() < PENDING_GRACE_MS) {
+      throw new Error("this mail is still being read");
+    }
     if (existing) {
       const { error: deleteError } = await db.from("emails").delete().eq("id", existing.id);
       if (deleteError) throw new Error(`emails cleanup failed: ${deleteError.message}`);
@@ -182,6 +193,13 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     }));
   const x = extraction.data;
 
+  // A refusal says nothing about the mail, so it is kept as unread rather than dropped as unrelated.
+  if (extraction.refused) {
+    const { error } = await db.from("emails").update({ processing_status: "failed", error: "model refused" }).eq("id", emailId);
+    if (error) throw new Error(`emails update failed: ${error.message}`);
+    return { kind: "discarded", reason: "model refused" };
+  }
+
   // 3. Unrelated mail is not kept at all.
   if (!isParcelRelevant(x.relevance)) {
     await db.from("emails").delete().eq("id", emailId);
@@ -190,6 +208,21 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
 
   // 4. Find the parcel this mail belongs to.
   const parcel = await findParcel(db, mail.userId, x);
+  if (!parcel && !startsParcel(x)) {
+    const { error } = await db.from("extractions").insert({
+      user_id: mail.userId,
+      email_id: emailId,
+      parcel_id: null,
+      model: extraction.model,
+      result: { ...x, _usage: extraction.usage, _truncated: extraction.truncated } as unknown as Json,
+      confidence: Math.max(0, Math.min(1, x.overall_confidence)),
+    });
+    if (error) throw new Error(`extractions insert failed: ${error.message}`);
+    const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
+    if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
+    return { kind: "noted", emailId };
+  }
+
   let parcelId: string;
   let created = false;
   if (parcel) {
@@ -239,6 +272,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     confidence: Math.max(0, Math.min(1, x.overall_confidence)),
   });
   if (extractionError) throw new Error(`extractions insert failed: ${extractionError.message}`);
+  await refreshTotal(db, parcelId);
 
   const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
   if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
@@ -246,53 +280,19 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
   return { kind: "processed", emailId, parcelId, created, extraction: x };
 }
 
-/** Match by order number first, then tracking number, then a recent parcel with the same first item. */
+/** Every parcel of this user, with item names, so the rules in chooseParcel see the same data everywhere. */
 async function findParcel(db: AdminClient, userId: string, x: Extraction) {
-  const shopKey = x.shop_key ?? "other";
-  const orderNumber = x.order_number.value ? normalizeOrderNumber(x.order_number.value) : null;
-  if (orderNumber) {
-    const { data, error } = await db.from("parcels").select("*").eq("user_id", userId).not("order_number", "is", null);
-    if (error) throw new Error(`parcels lookup failed: ${error.message}`);
-    const hit = data.find((p) => p.order_number && normalizeOrderNumber(p.order_number) === orderNumber);
-    if (hit) return hit;
-  }
-  const tracking = x.tracking_number.value ? normalizeTracking(x.tracking_number.value) : null;
-  if (tracking) {
-    const { data, error } = await db
-      .from("parcels")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("tracking_number", tracking)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (error) throw new Error(`parcels lookup failed: ${error.message}`);
-    if (data[0]) return data[0];
-  }
-  if (x.items.length > 0 && x.relevance !== "order") {
-    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    const { data, error } = await db
-      .from("parcels")
-      .select("*, parcel_items(name)")
-      .eq("user_id", userId)
-      .eq("shop_key", shopKey)
-      .gte("created_at", since)
-      .neq("status", "delivered")
-      .order("created_at", { ascending: false })
-      .limit(20);
-    if (error) throw new Error(`parcels lookup failed: ${error.message}`);
-    const first = x.items[0].name.replace(/\.{3}|…/g, "").trim();
-    const hit = data.find((p) =>
-      p.parcel_items?.some((it: { name: string }) => {
-        const name = it.name.replace(/\.{3}|…/g, "").trim();
-        return name.startsWith(first) || first.startsWith(name);
-      }),
-    );
-    if (hit) {
-      // Drop the embedded relation before returning a plain ParcelRow.
-      const { parcel_items: _items, ...row } = hit;
-      void _items;
-      return row;
-    }
-  }
-  return null;
+  const { data, error } = await db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId);
+  if (error) throw new Error(`parcels lookup failed: ${error.message}`);
+  const candidates = data.map(({ parcel_items, ...row }) => ({ ...row, itemNames: parcel_items.map((it: { name: string }) => it.name) }));
+  return chooseParcel(candidates, x);
+}
+
+/** The total depends on every mail read for the parcel, including the one just stored. */
+async function refreshTotal(db: AdminClient, parcelId: string) {
+  const { data, error } = await db.from("extractions").select("result").eq("parcel_id", parcelId);
+  if (error) throw new Error(`extractions lookup failed: ${error.message}`);
+  const total = parcelTotal(data.map((row) => row.result as unknown as Extraction));
+  const { error: updateError } = await db.from("parcels").update({ total_amount: total }).eq("id", parcelId);
+  if (updateError) throw new Error(`parcels total update failed: ${updateError.message}`);
 }

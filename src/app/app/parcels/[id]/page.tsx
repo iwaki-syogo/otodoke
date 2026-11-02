@@ -36,7 +36,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
 
       <header>
         <p className="text-sm text-neutral-500">{parcel.shop}</p>
-        <h1 className="mt-1 text-xl font-bold leading-snug">{parcel.title ?? "品名の記載なし"}</h1>
+        <h1 className="mt-1 line-clamp-3 text-xl font-bold leading-snug">{parcel.title ?? "品名の記載なし"}</h1>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={parcel.status} />
           <PresenceBadge value={parcel.requires_presence} />
@@ -64,7 +64,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           </dd>
           <dt className="text-neutral-500">配送</dt>
           <dd>
-            {parcel.carrier ?? <span className="text-neutral-500">未定</span>}
+            {parcel.carrier ?? <span className="text-neutral-500">メールに記載なし</span>}
             {parcel.tracking_number ? (
               <span className="block text-xs text-neutral-600">
                 伝票 {parcel.tracking_number}
