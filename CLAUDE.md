@@ -46,6 +46,12 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 人が手で用意して貼る値（API キーなど）は `.env.local` にだけ置く。`.env.example` にキー名を列挙し、値は書かない。
 新しい human-input の環境変数を足すときは `.env.example` にも足す。
 
+## ブランチ運用（本人の決定 2026-11-02）
+
+- 日々の作業は `dev` ブランチにコミットして push する（Vercel の Preview デプロイだけが動く）
+- `main` への反映＝本番デプロイ。毎回、本人の YES を取ってからマージ・push する
+- force push は禁止（hook で止める）
+
 ## 外部サービス依存
 
 - Supabase: project_ref=`zvqaqdmlxghekasjqneq`, region=`ap-northeast-1`, org=iwaki-syogo's Org (Pro)。キーの取得は `npm run env:supabase`（値は画面に出さずローカル env に書く）
