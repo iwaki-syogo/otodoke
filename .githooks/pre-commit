@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Git pre-commit for Otodoke (works for any client: Claude Code, Codex, humans).
+# 1) real emails (fixtures/raw/) must never be committed
+# 2) staged changes must pass gitleaks
+set -u
+if git diff --cached --name-only | grep -q '^fixtures/raw/'; then
+  echo "pre-commit: fixtures/raw/ holds real emails and must never be committed" >&2
+  exit 1
+fi
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --redact --no-banner; then
+    echo "pre-commit: gitleaks found a possible secret in staged changes" >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: gitleaks not installed; skipping secret scan (brew install gitleaks)" >&2
+fi
