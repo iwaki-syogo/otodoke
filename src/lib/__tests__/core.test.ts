@@ -145,7 +145,6 @@ describe("screenMail", () => {
     ["定期購入はキャンセルされました。おすすめ商品をご紹介します。", "お手続きありがとうございました。"],
     ["お知らせ", "下記の商品を発送いたしました。配信停止はこちら"],
     ["Your order has shipped", "Tracking number: 1Z999"],
-    ["ご注文ありがとうございました！", "最新のセール情報はこちら。配信停止はこちら"],
     ["", ""],
   ])("keeps %s", (s, t) => {
     expect(screenMail(mail(s, t)).pass).toBe(true);
@@ -153,6 +152,8 @@ describe("screenMail", () => {
   it.each([
     ["【80%OFFクーポン】今だけ", "ご注文はお早めに。配信停止はこちら"],
     ["今週のおすすめ記事", "メルマガの配信停止はこちら"],
+    // A real ad: thanks you for an "order" that never happened, with no order number or item.
+    ["ご注文ありがとうございました！", "感謝の気持ちとして特別なギフトをプレゼントします。配信停止はこちら"],
     ["ログインがありました", "新しい端末からサインインがありました。"],
   ])("drops %s", (s, t) => {
     expect(screenMail(mail(s, t)).pass).toBe(false);

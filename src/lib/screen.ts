@@ -33,7 +33,7 @@ const EVENT_BODY =
   /ご注文(ありがとう|を受け付け|を承り|いただき)|発送(いたしました|しました|完了)|出荷(いたしました|しました|完了)|お届け予定|配達予定|到着予定|配達完了|持ち帰りました|処方箋確認|決済完了|thank you for your order|has shipped|has been delivered/i;
 
 /** A completed event in the subject. Amazon adds "おすすめ" to a real cancellation notice. */
-const DONE_SUBJECT = /(キャンセル|発送|出荷|配達|返金)(され|いた|し)?(まし|済み)|ご?注文(ありがと|を?受け?付|完了|確定|内容の確認|のご確認)/;
+const DONE_SUBJECT = /(キャンセル|発送|出荷|配達|返金)(され|いた|し)?(まし|済み)/;
 
 /** Mass mail says how to stop receiving it. */
 const BULK_MARKER = /配信停止|配信解除|配信の停止|メルマガ|メールマガジン|購読解除|購読の解除|配信を停止|配信をご希望|unsubscribe/i;

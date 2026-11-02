@@ -14,7 +14,9 @@ const Verdict = z.object({
 
 const SYSTEM = `メール 1 通が、受信者自身の買い物の連絡かどうかだけを判定します。
 注文の受付、発送、配達、不在、キャンセル、返金の連絡なら true。店名や差出人を知らなくても文面で判断してください。
-「最短当日出荷」「送料無料」のような宣伝、クーポン、新商品の案内、規約変更は false です。迷ったら true にしてください。`;
+「最短当日出荷」「送料無料」のような宣伝、クーポン、新商品の案内、規約変更は false です。
+「ご注文ありがとうございました」と書いてあっても、注文番号も商品名も金額もなく、ギフトや特典を勧めているだけなら広告なので false です。
+それ以外で迷ったら true にしてください。`;
 
 /** True when the mail should go on to full reading. Any API failure counts as true: losing a parcel is worse. */
 export async function isPurchaseMail(mail: { subject: string; text: string | null; html: string | null }): Promise<boolean> {
