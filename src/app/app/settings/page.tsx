@@ -1,7 +1,8 @@
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "./copy-button";
-import { readWaitingMail } from "./actions";
+import { markWronglyDropped, readWaitingMail } from "./actions";
+import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
 
 export const metadata = { title: "設定" };
@@ -9,13 +10,13 @@ export const metadata = { title: "設定" };
 /** One filter for every shop: it names what the mail is about, never who sent it. */
 const GMAIL_FILTER = "{注文 発送 出荷 配達 お届け 配送 到着 荷物}";
 
-type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string }>;
+type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string; flagged?: string }>;
 
 // The demo loader runs several Claude calls in sequence.
 export const maxDuration = 300;
 
 export default async function SettingsPage({ searchParams }: { searchParams: SearchParams }) {
-  const { demo, error, cleared } = await searchParams;
+  const { demo, error, cleared, flagged } = await searchParams;
   const user = (await getUser())!;
   const supabase = await createClient();
   const localPart = await ensureInboxAddress(supabase, user.id);
@@ -31,6 +32,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
     .from("emails")
     .select("id", { count: "exact", head: true })
     .eq("processing_status", "over_limit");
+  const { data: dropped } = await supabase
+    .from("screen_events")
+    .select("id, subject, from_domain, created_at, flagged_at")
+    .eq("decision", "dropped")
+    .order("created_at", { ascending: false })
+    .limit(30);
   const confirmUrl = confirmation ? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "") : null;
 
   return (
@@ -91,9 +98,44 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           </Guide>
           <Guide title="iCloud / Outlook / その他">
             <p>メールの設定にある自動転送で、すべてのメールを上のアドレスへ転送してください。</p>
-            <p className="mt-2">Outlook は 設定 › メール › 転送 にあります。買い物に関係しないメールは Otodoke が読まずに捨て、保存もしません。</p>
+            <p className="mt-2">Outlook は 設定 › メール › 転送 にあります。広告など買い物に関係しないメールは、本文を保存せずに捨てます。判断に迷うメールだけ Claude が確認します。</p>
           </Guide>
         </div>
+      </section>
+
+      <section>
+        <h2 className="text-base font-bold">読まなかったメール</h2>
+        <p className="mt-1 text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名だけ 14 日間残します。</p>
+        {flagged ? <p className="mt-2 text-sm text-emerald-800">覚えました。この差出人のメールは次から読みます。今回のメールは、もう一度転送してください。</p> : null}
+        {dropped && dropped.length > 0 ? (
+          <details className="mt-2 rounded-2xl border border-neutral-200 bg-white">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">荷物のメールが混ざっていないか見る（{dropped.length} 通）</summary>
+            <ul className="divide-y divide-neutral-100 border-t border-neutral-100">
+              {dropped.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">{d.subject || "（件名なし）"}</p>
+                    <p className="truncate text-xs text-neutral-500">
+                      {d.from_domain} ・ {formatDateTimeJa(d.created_at)}
+                    </p>
+                  </div>
+                  {d.flagged_at ? (
+                    <span className="shrink-0 text-xs text-emerald-800">荷物として記録済み</span>
+                  ) : (
+                    <form action={markWronglyDropped}>
+                      <input type="hidden" name="id" value={d.id} />
+                      <button type="submit" className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium">
+                        これは荷物
+                      </button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : (
+          <p className="mt-2 text-sm text-neutral-500">まだありません</p>
+        )}
       </section>
 
       <section className="rounded-2xl border border-dashed border-neutral-300 p-4">

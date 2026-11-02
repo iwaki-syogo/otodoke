@@ -145,6 +145,7 @@ describe("screenMail", () => {
     ["定期購入はキャンセルされました。おすすめ商品をご紹介します。", "お手続きありがとうございました。"],
     ["お知らせ", "下記の商品を発送いたしました。配信停止はこちら"],
     ["Your order has shipped", "Tracking number: 1Z999"],
+    ["ご注文ありがとうございました！", "最新のセール情報はこちら。配信停止はこちら"],
     ["", ""],
   ])("keeps %s", (s, t) => {
     expect(screenMail(mail(s, t)).pass).toBe(true);
@@ -155,6 +156,10 @@ describe("screenMail", () => {
     ["ログインがありました", "新しい端末からサインインがありました。"],
   ])("drops %s", (s, t) => {
     expect(screenMail(mail(s, t)).pass).toBe(false);
+  });
+  it("asks for a second look when a dropped mail resembles a notice", () => {
+    expect(screenMail(mail("お荷物について", "詳しくはこちら。配信停止はこちら")).borderline).toBe(true);
+    expect(screenMail(mail("今週のおすすめ記事", "メルマガの配信停止はこちら")).borderline).toBe(false);
   });
   it("does not depend on the sender", () => {
     const m = mail("発送のお知らせ", "お問い合わせ番号 123");

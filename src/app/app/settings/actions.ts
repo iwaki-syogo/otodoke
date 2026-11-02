@@ -95,6 +95,21 @@ export async function readWaitingMail(): Promise<void> {
   redirect("/app/settings");
 }
 
+/** The user says a dropped mail was a parcel notice. Later mail from the same sender is read. */
+export async function markWronglyDropped(formData: FormData): Promise<void> {
+  const user = await getUser();
+  if (!user) redirect("/login");
+  const id = String(formData.get("id") ?? "");
+  const { error } = await createAdminClient()
+    .from("screen_events")
+    .update({ flagged_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", user.id);
+  revalidatePath("/app/settings");
+  if (error) redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
+  redirect("/app/settings?flagged=1");
+}
+
 /** Remove everything this user has (used to reset a demo account). */
 export async function clearAllParcels(formData: FormData): Promise<void> {
   const user = await getUser();

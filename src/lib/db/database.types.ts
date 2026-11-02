@@ -39,6 +39,12 @@ export type Database = {
   }
   public: {
     Tables: {
+      screen_events: {
+        Row: { created_at: string; decision: string; flagged_at: string | null; from_domain: string | null; id: string; reason: string | null; subject: string | null; user_id: string }
+        Insert: { created_at?: string; decision: string; flagged_at?: string | null; from_domain?: string | null; id?: string; reason?: string | null; subject?: string | null; user_id: string }
+        Update: { created_at?: string; decision?: string; flagged_at?: string | null; from_domain?: string | null; id?: string; reason?: string | null; subject?: string | null; user_id?: string }
+        Relationships: []
+      }
       emails: {
         Row: {
           classification: string | null

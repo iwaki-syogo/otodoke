@@ -15,3 +15,8 @@ if command -v gitleaks >/dev/null 2>&1; then
 else
   echo "pre-commit: gitleaks not installed; skipping secret scan (brew install gitleaks)" >&2
 fi
+
+# Changing the pre-check must not lose a parcel mail.
+if git diff --cached --name-only | grep -q '^src/lib/screen.ts$'; then
+  npm run -s check:screen || { echo "pre-commit: the pre-check would drop a parcel mail" >&2; exit 1; }
+fi

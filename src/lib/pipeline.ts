@@ -1,9 +1,10 @@
 import type { AdminClient } from "@/lib/supabase/admin";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
+import { isPurchaseMail } from "@/lib/extract/triage";
 import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, normalizeOrderNumber } from "@/lib/match";
 import { normalizeTracking } from "@/lib/carriers";
 import { env } from "@/lib/env";
-import { screenMail } from "@/lib/screen";
+import { screenMail, type ScreenResult } from "@/lib/screen";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import type { Extraction } from "@/lib/extract/schema";
 import type { Json } from "@/lib/db/database.types";
@@ -50,7 +51,11 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
   if (!isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
-    if (!screen.pass) return { kind: "screened_out", reason: screen.reason };
+    if (!screen.pass) {
+      const keep = await secondLook(db, mail, screen);
+      await logScreenEvent(db, mail, keep ? "rescued" : "dropped", screen.reason);
+      if (!keep) return { kind: "screened_out", reason: screen.reason };
+    }
   }
 
   // 1. Store the raw mail (dedupe by Message-ID).
@@ -116,6 +121,53 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     await db.from("emails").update({ processing_status: "failed", error: message }).eq("id", emailRow.id);
     throw err;
   }
+}
+
+function domainOf(address: string): string | null {
+  return address.split("@")[1]?.trim().toLowerCase() || null;
+}
+
+/**
+ * A dropped mail still goes on when the user has marked this sender as wrongly dropped,
+ * or when a cheap Claude check says it is a purchase notice.
+ */
+async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<boolean> {
+  const domain = domainOf(mail.from);
+  if (domain) {
+    const { count } = await db
+      .from("screen_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", mail.userId)
+      .eq("from_domain", domain)
+      .not("flagged_at", "is", null);
+    if (count) return true;
+  }
+  if (!screen.borderline) return false;
+
+  const { OTODOKE_USER_DAILY_LIMIT, OTODOKE_GLOBAL_DAILY_LIMIT } = env();
+  const { data: claim, error } = await db.rpc("claim_claude_call", {
+    p_user_id: mail.userId,
+    p_user_limit: OTODOKE_USER_DAILY_LIMIT,
+    p_global_limit: OTODOKE_GLOBAL_DAILY_LIMIT,
+  });
+  // Over the limit or unable to tell: keep it. The next step stores it as unread instead of losing it.
+  if (error || claim !== "ok") return true;
+  return isPurchaseMail(mail);
+}
+
+/** Bookkeeping must never cost a mail, so a failure here is only logged. */
+async function logScreenEvent(db: AdminClient, mail: InboundEmail, decision: "dropped" | "rescued", reason: string) {
+  const { error } = await db.from("screen_events").insert({
+    user_id: mail.userId,
+    from_domain: domainOf(mail.from),
+    subject: mail.subject.slice(0, 200),
+    decision,
+    reason,
+  });
+  if (error) console.error("screen_events insert failed:", error.message);
+  const cutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const { error: cleanupError } = await db.from("screen_events").delete().eq("user_id", mail.userId).lt("created_at", cutoff).is("flagged_at", null);
+  if (cleanupError) console.error("screen_events cleanup failed:", cleanupError.message);
 }
 
 async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: string, options: PipelineOptions): Promise<PipelineOutcome> {

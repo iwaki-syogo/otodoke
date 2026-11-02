@@ -12,7 +12,9 @@
     "env:supabase": "bash scripts/supabase-env.sh",
     "test": "vitest run",
     "eval": "tsx scripts/eval.ts",
-    "env:add": "bash scripts/env-add.sh"
+    "env:add": "bash scripts/env-add.sh",
+    "check:screen": "tsx scripts/measure-screen.ts",
+    "report:screen": "tsx scripts/report-screen.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
