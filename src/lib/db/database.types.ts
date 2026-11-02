@@ -39,10 +39,22 @@ export type Database = {
   }
   public: {
     Tables: {
-      screen_events: {
-        Row: { created_at: string; decision: string; flagged_at: string | null; from_domain: string | null; id: string; reason: string | null; subject: string | null; user_id: string }
-        Insert: { created_at?: string; decision: string; flagged_at?: string | null; from_domain?: string | null; id?: string; reason?: string | null; subject?: string | null; user_id: string }
-        Update: { created_at?: string; decision?: string; flagged_at?: string | null; from_domain?: string | null; id?: string; reason?: string | null; subject?: string | null; user_id?: string }
+      claude_usage_daily: {
+        Row: {
+          calls: number
+          day: string
+          user_id: string
+        }
+        Insert: {
+          calls?: number
+          day: string
+          user_id: string
+        }
+        Update: {
+          calls?: number
+          day?: string
+          user_id?: string
+        }
         Relationships: []
       }
       emails: {
@@ -284,13 +296,50 @@ export type Database = {
         }
         Relationships: []
       }
+      screen_events: {
+        Row: {
+          created_at: string
+          decision: string
+          flagged_at: string | null
+          from_domain: string | null
+          id: string
+          reason: string | null
+          subject: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          decision: string
+          flagged_at?: string | null
+          from_domain?: string | null
+          id?: string
+          reason?: string | null
+          subject?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          decision?: string
+          flagged_at?: string | null
+          from_domain?: string | null
+          id?: string
+          reason?: string | null
+          subject?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       claim_claude_call: {
-        Args: { p_global_limit: number; p_user_id: string; p_user_limit: number }
+        Args: {
+          p_global_limit: number
+          p_user_id: string
+          p_user_limit: number
+        }
         Returns: string
       }
     }
