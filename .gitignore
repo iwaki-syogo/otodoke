@@ -51,3 +51,8 @@ secrets/
 # real (non-anonymized) emails live here only on the author's machine
 /fixtures/raw/
 AuthKey_*
+
+# Full anonymized set stays local; only the curated fixtures/demo is public
+/fixtures/anonymized/
+__pycache__/
+.vitest/

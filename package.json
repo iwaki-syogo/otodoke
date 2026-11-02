@@ -9,21 +9,31 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "prepare": "git config core.hooksPath .githooks || true",
-    "env:supabase": "bash scripts/supabase-env.sh"
+    "env:supabase": "bash scripts/supabase-env.sh",
+    "test": "vitest run",
+    "eval": "tsx scripts/eval.ts",
+    "env:add": "bash scripts/env-add.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "next": "16.4.3",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "resend": "^6.37.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22.20.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.0.5"
   }
 }

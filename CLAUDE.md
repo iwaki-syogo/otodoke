@@ -7,7 +7,8 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 
 - コードはすべて期間中の新規制作。既存プロジェクトのコードを持ち込まない（参照して書き直すのも避ける）
 - このリポジトリは **公開**。個人情報・鍵・実メールを入れない
-  - 実メールは `fixtures/raw/`（git-ignored）にだけ置く。コミットするのは `fixtures/anonymized/` の匿名化版のみ
+  - 実メールは `fixtures/raw/`（git-ignored）にだけ置く。匿名化した全件 `fixtures/anonymized/` も手元だけ（買い物の履歴なので公開しない）
+  - コミットするのは選び抜いたデモ用の `fixtures/demo/` のみ
   - 匿名化 = 氏名・住所・電話・メールアドレス・注文番号・追跡番号を差し替える。品名・店名・金額の桁は残してよい
 - 仕様書・計画メモはリポジトリの外に置く（規定）。ここに書くのは「作ったものの説明」と「開発ルール」だけ
 - 持ち込んだデータ（匿名化した実メール）は README の「持ち込んだデータ」節に明記する
@@ -24,7 +25,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 
 - Next.js 16（App Router、`src/`）/ React 19 / TypeScript / Tailwind CSS v4 / npm
 - Supabase（Postgres + Auth マジックリンク）、Resend（受信 webhook `email.received` と送信）、Claude API、Vercel
-- dev: `npm run dev`（port 3015）、lint: `npm run lint`、typecheck: `npm run typecheck`、build: `npm run build`
+- dev: `npm run dev`（port 3015）、lint: `npm run lint`、typecheck: `npm run typecheck`、test: `npm test`、build: `npm run build`
 - Server Action のファイル（`"use server"`）からは async 関数と型だけを export する
 
 ## ディレクトリ
@@ -32,7 +33,9 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - `src/app/` 画面と Route Handler（受信 webhook は `src/app/api/inbound/`）
 - `src/lib/extract/` Claude によるメール判定・構造化（スキーマは zod）
 - `src/lib/match/` 荷物への名寄せ、`src/lib/carriers/` 追跡番号→運送会社のルール
-- `fixtures/anonymized/` 評価セット（匿名化メール + 期待値）、`fixtures/raw/` 実メール（git-ignored）
+- `fixtures/demo/` 公開するデモ用メール・手で付けた正解（`expected.json`）・Claude の結果の保存（`extractions.json`）
+- `fixtures/anonymized/` 匿名化した全件、`fixtures/raw/` 実メール（どちらも git-ignored）
+- `scripts/eval.ts` 読み取り精度の測定（課金 API を呼ぶ。`--max-usd` で上限）
 - `docs/` 期間中の作業記録（Claude をどう使ったか、評価セットの一致率の推移）
 
 ## Claude Code の使い方（このリポジトリの hooks）

@@ -1,0 +1,50 @@
+{
+  "groups": [
+    {
+      "name": "Webカメラ: 注文から配達完了まで（昨日届いた）",
+      "anchor": "2026-11-02",
+      "target": -1,
+      "files": [
+        "amazon/2026-11-02_ordered_cb191b1b",
+        "amazon/2026-11-02_shipped_2813387e",
+        "amazon/2026-11-02_out_for_delivery_58344f33",
+        "amazon/2026-11-02_delivered_c47e3527"
+      ]
+    },
+    {
+      "name": "カッター: 発送済み（今日届く）",
+      "anchor": "2026-11-02",
+      "target": 0,
+      "files": ["amazon/2026-11-02_ordered_fe85ef8c", "amazon/2026-11-02_shipped_79399a4e"]
+    },
+    {
+      "name": "マットレス: 店のメールと佐川のメールを伝票番号でつなぐ（明日 19-21 時）",
+      "anchor": "2026-04-09",
+      "target": 0,
+      "files": [
+        "irisplaza/2026-04-06_ordered_07e7e4d2",
+        "irisplaza/2026-04-06_shipped_90cf9800",
+        "irisplaza/2026-04-09_shipped_182d2601",
+        "other/2026-04-09_shipped_d8dc5cf7"
+      ]
+    },
+    {
+      "name": "ヤマト: 不在から対面の再配達（在宅が必要な日）",
+      "anchor": "2026-06-30",
+      "target": 1,
+      "files": ["other/2026-06-29_shipped_b24d5050", "other/2026-06-30_other_d1a6631e", "other/2026-06-30_other_a0843ded"]
+    },
+    {
+      "name": "UPS: 発送済みで配達日は未定",
+      "anchor": "2026-10-30",
+      "target": -1,
+      "files": ["ocn/2026-10-30_ordered_b195e33a", "ocn/2026-10-30_shipped_a80dd410"]
+    },
+    {
+      "name": "ユニクロ: 品名がメールに無い注文（書かれていないことは書かない）",
+      "anchor": "2026-10-16",
+      "target": 2,
+      "files": ["other/2026-10-16_ordered_6142df19", "other/2026-10-16_shipped_782b250c"]
+    }
+  ]
+}

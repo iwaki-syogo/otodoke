@@ -1,0 +1,87 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { env, requireEnv } from "@/lib/env";
+import { EXTRACT_SYSTEM_PROMPT, buildUserMessage, type EmailForPrompt } from "./prompt";
+import { ExtractionSchema, type Extraction } from "./schema";
+
+export interface ExtractionResult {
+  data: Extraction;
+  model: string;
+  truncated: boolean;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  };
+  /** Set when the model declined; `data` is then a safe "unrelated" placeholder. */
+  refused?: boolean;
+}
+
+let client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (!client) client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+  return client;
+}
+
+const EMPTY_FIELD = { value: null, evidence: null, confidence: 0 } as const;
+
+function unrelatedPlaceholder(notes: string): Extraction {
+  return {
+    relevance: "unrelated",
+    relevance_evidence: null,
+    shop_name: null,
+    shop_key: null,
+    order_number: { ...EMPTY_FIELD },
+    items: [],
+    total_amount: { ...EMPTY_FIELD },
+    ordered_at: { ...EMPTY_FIELD },
+    carrier: { ...EMPTY_FIELD },
+    tracking_number: { ...EMPTY_FIELD },
+    expected_date: { ...EMPTY_FIELD },
+    expected_window_start: { ...EMPTY_FIELD },
+    expected_window_end: { ...EMPTY_FIELD },
+    expected_text: null,
+    requires_presence: { ...EMPTY_FIELD },
+    overall_confidence: 0,
+    notes,
+  };
+}
+
+/**
+ * Ask Claude to classify and structure one email. Uses structured outputs so the
+ * result always validates against `ExtractionSchema`.
+ */
+export async function extractEmail(email: EmailForPrompt): Promise<ExtractionResult> {
+  const { OTODOKE_MODEL: model, OTODOKE_EXTRACT_EFFORT: effort } = env();
+  const { text, truncated } = buildUserMessage(email);
+
+  const response = await getClient().messages.parse({
+    model,
+    max_tokens: 8000,
+    system: [{ type: "text", text: EXTRACT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: text }],
+    output_config: { format: zodOutputFormat(ExtractionSchema), effort },
+  });
+
+  const usage = {
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens ?? 0,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? 0,
+  };
+
+  if (response.stop_reason === "refusal") {
+    return {
+      data: unrelatedPlaceholder("モデルがこのメールの処理を辞退しました"),
+      model,
+      truncated,
+      usage,
+      refused: true,
+    };
+  }
+  if (!response.parsed_output) {
+    throw new Error(`Extraction returned no parsable output (stop_reason=${response.stop_reason})`);
+  }
+  return { data: response.parsed_output, model, truncated, usage };
+}

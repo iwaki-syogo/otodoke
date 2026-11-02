@@ -1,16 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
+  // The demo loader (a Server Action under /app/settings) reads anonymized fixtures at runtime.
+  outputFileTracingIncludes: {
+    "/app/settings": ["./fixtures/demo/**/*.json"],
   },
 };
 
