@@ -28,8 +28,9 @@ if (args.includes("--model")) process.env.OTODOKE_MODEL = opt("model", "");
 
 /** USD per million tokens: input, output, cache read, cache write. */
 const PRICES: Record<string, [number, number, number, number]> = {
-  "claude-opus-5-5": [4, 20, 0.4, 5],
-  "claude-sonnet-5-5": [2, 10, 0.2, 2.5],
+  "claude-opus-5-5": [4, 20, 0.2, 5],
+  "claude-sonnet-5-5": [2, 10, 0.1, 2.5],
+  "claude-haiku-5-5": [0.1, 0.5, 0.01, 0.125],
 };
 
 interface Mail {
