@@ -1,0 +1,1000 @@
+{
+  "amazon/2026-11-02_delivered_c47e3527.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "荷物は配達済みです!",
+    "shop_name": "Amazon.co.jp",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "503-6666033-1766280",
+      "evidence": "503-6666033-1766280",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "EMEET Webカメラ C960 HD1080P 200万画素 90°広角 | ストリーミング 内蔵マイクパソコン用カメラ オンライン会議用 自動光補正 EMEETLINK利用可能 1/4インチ三脚穴 Windows10/11 MacOS 10.14及び以上対応",
+        "quantity": 1,
+        "unit_price": null,
+        "evidence": "* EMEET Webカメラ C960 HD1080P 200万画素 90°広角"
+      }
+    ],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "本日お届け済み",
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "本日お届け済み",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.8
+    },
+    "overall_confidence": 0.92,
+    "notes": null
+  },
+  "amazon/2026-11-02_out_for_delivery_58344f33.eml": {
+    "relevance": "out_for_delivery",
+    "relevance_evidence": "荷物は配達中です。",
+    "shop_name": "Amazon.co.jp",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "503-6666033-1766280",
+      "evidence": "503-6666033-1766280",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "EMEET Webカメラ C960 HD1080P 200万画素 90°広角 | ストリーミング 内蔵マイクパソコン用カメラ オンライン会議用 自動光補正 EMEETLINK利用可能 1/4インチ三脚穴 Windows10/11 MacOS 10.14及び以上対応",
+        "quantity": 1,
+        "unit_price": null,
+        "evidence": "* EMEET Webカメラ C960 HD1080P 200万画素 90°広角 ...  数量: 1"
+      }
+    ],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.8
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "本日到着予定",
+      "confidence": 0.95
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "本日到着予定",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.8
+    },
+    "overall_confidence": 0.92,
+    "notes": "受取方法の指定はなく、置き配設定の案内文のみのため在宅要否は null としました。"
+  },
+  "amazon/2026-11-02_ordered_cb191b1b.eml": {
+    "relevance": "order",
+    "relevance_evidence": "ご注文ありがとうございます。",
+    "shop_name": "Amazon.co.jp",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "503-6666033-1766280",
+      "evidence": "503-6666033-1766280",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "EMEET Webカメラ C960 HD1080P 200万画素 90°広角 | ストリーミング 内蔵マイクパソコン用カメラ オンライン会議用 自動光補正 EMEETLINK利用可能 1/4インチ三脚穴 Windows10/11 MacOS 10.14及び以上対応",
+        "quantity": 1,
+        "unit_price": 2599,
+        "evidence": "2599 JPY"
+      }
+    ],
+    "total_amount": {
+      "value": 2339,
+      "evidence": "2339 JPY",
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "本日到着予定",
+      "confidence": 0.85
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_text": "本日到着予定",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "overall_confidence": 0.85,
+    "notes": "単価2,599円に対し合計が2,339円と少なく、割引が適用されたと思われるが内訳は記載なし。"
+  },
+  "amazon/2026-11-02_shipped_2813387e.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "荷物が発送されました。",
+    "shop_name": "Amazon.co.jp",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "503-6666033-1766280",
+      "evidence": "503-6666033-1766280",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "EMEET Webカメラ C960 HD1080P 200万画素 90°広角 | ストリーミング 内蔵マイクパソコン用カメラ オンライン会議用 自動光補正 EMEETLINK利用可能 1/4インチ三脚穴 Windows10/11 MacOS 10.14及び以上対応",
+        "quantity": 1,
+        "unit_price": 2599,
+        "evidence": "2599 JPY"
+      }
+    ],
+    "total_amount": {
+      "value": 2339,
+      "evidence": "2339 JPY",
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "本日到着予定",
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0
+    },
+    "expected_text": "本日到着予定",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0
+    },
+    "overall_confidence": 0.9,
+    "notes": "単価2599円に対し合計2339円で、割引が適用されたと思われるが内訳は記載なし。"
+  },
+  "irisplaza/2026-04-06_ordered_07e7e4d2.eml": {
+    "relevance": "order",
+    "relevance_evidence": "ご注文内容を下記にてご案内致します。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "17119689",
+      "evidence": "■ご注文番号：17119689",
+      "confidence": 0.98
+    },
+    "items": [
+      {
+        "name": "マットレス シングル ポケットコイル 厚さ20cm PMTS20NR-S Sheep",
+        "quantity": 1,
+        "unit_price": 12800,
+        "evidence": "商品名：マットレス シングル ポケットコイル 厚さ20cm PMTS20NR-S Sheep"
+      }
+    ],
+    "total_amount": {
+      "value": 12800,
+      "evidence": "■お支払い金額：12,800円",
+      "confidence": 0.97
+    },
+    "ordered_at": {
+      "value": "2026-04-06",
+      "evidence": "■ご注文日：4月6日",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_text": null,
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "overall_confidence": 0.93,
+    "notes": null
+  },
+  "amazon/2026-11-02_shipped_79399a4e.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "荷物が発送されました。",
+    "shop_name": "Amazon.co.jp",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "250-5881504-0650753",
+      "evidence": "250-5881504-0650753",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "オルファ(OLFA) 大型 カッター スピードハイパーAL型 227B オートロック フッ素",
+        "quantity": 1,
+        "unit_price": 525,
+        "evidence": "* オルファ(OLFA) 大型 カッター スピードハイパーAL型 227B オートロック フッ素"
+      }
+    ],
+    "total_amount": {
+      "value": 525,
+      "evidence": "525 JPY",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "本日到着予定",
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_text": "本日到着予定",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "overall_confidence": 0.9,
+    "notes": "HTML版の「もう一度買う」以下の商品はおすすめ商品のため items に含めていません。"
+  },
+  "amazon/2026-11-02_ordered_fe85ef8c.eml": {
+    "relevance": "order",
+    "relevance_evidence": "ご注文ありがとうございます。",
+    "shop_name": "Amazon.co.jp",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "250-5881504-0650753",
+      "evidence": "250-5881504-0650753",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "オルファ(OLFA) 大型 カッター スピードハイパーAL型 227B オートロック フッ素",
+        "quantity": 1,
+        "unit_price": 525,
+        "evidence": "* オルファ(OLFA) 大型 カッター スピードハイパーAL型 227B オートロック フッ素"
+      }
+    ],
+    "total_amount": {
+      "value": 525,
+      "evidence": "525 JPY",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "本日到着予定",
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_text": "本日到着予定",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "overall_confidence": 0.9,
+    "notes": "注文日時は本文に明記がないため null。「本日到着予定」は基準日 2026-11-02 として解決した。"
+  },
+  "irisplaza/2026-04-06_shipped_90cf9800.eml": {
+    "relevance": "payment",
+    "relevance_evidence": "最短の配送予定にて出荷手配を進めております。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "17119689",
+      "evidence": "ご注文の商品（ご注文番号=17119689）は、",
+      "confidence": 0.95
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": null,
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "overall_confidence": 0.9,
+    "notes": "発送前の出荷手配中の案内で、商品名・金額・伝票番号は記載がありません。"
+  },
+  "irisplaza/2026-04-09_shipped_182d2601.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "発送情報についてご案内をさせていただきます。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "17119689",
+      "evidence": "現在、ご注文商品（ご注文番号=17119689）はお届け先ご住所へ配送の手配を進めて",
+      "confidence": 0.95
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "・佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "313016540476",
+      "evidence": "伝票番号【1】313016540476",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": null,
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.5
+    },
+    "overall_confidence": 0.9,
+    "notes": "代金引換の記載は一般的な案内文のため在宅要否の根拠にしていません。商品名・金額は本文に記載がありません。"
+  },
+  "other/2026-04-09_shipped_d8dc5cf7.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "【お知らせ】お荷物お届け予定日",
+    "shop_name": "アイリスプラザインターネット店",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "佐川急便株式会社",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "313016540476",
+      "evidence": "■お問い合せ送り状No. ：313016540476",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": "2026-04-10",
+      "evidence": "2026/04/10（金）　19:00〜21:00",
+      "confidence": 0.95
+    },
+    "expected_window_start": {
+      "value": "19:00",
+      "evidence": "2026/04/10（金）　19:00〜21:00",
+      "confidence": 0.95
+    },
+    "expected_window_end": {
+      "value": "21:00",
+      "evidence": "2026/04/10（金）　19:00〜21:00",
+      "confidence": 0.95
+    },
+    "expected_text": "2026/04/10（金）　19:00〜21:00",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.5
+    },
+    "overall_confidence": 0.9,
+    "notes": "置き配・非対面に関する記述は定型文のため在宅要否は null としました。"
+  },
+  "other/2026-06-29_shipped_b24d5050.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "お荷物を　【6月30日(火) 時間帯希望なし】　にお届け予定です。",
+    "shop_name": "ヤマト運輸",
+    "shop_key": "other",
+    "order_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "ヤマト運輸株式会社",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "5111-7266-6093",
+      "evidence": "■送り状番号：5111-7266-6093",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": "2026-06-30",
+      "evidence": "お届け予定：6月30日(火) 時間帯希望なし",
+      "confidence": 0.95
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": "お届け予定：6月30日(火) 時間帯希望なし",
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": "お届け予定：6月30日(火) 時間帯希望なし",
+      "confidence": 0.9
+    },
+    "expected_text": "6月30日(火) 時間帯希望なし",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.5
+    },
+    "overall_confidence": 0.9,
+    "notes": "依頼主の記載がないため店名は運送会社名にしました。置き配に関する記述は定型の注意文のため在宅要否は判定していません。"
+  },
+  "other/2026-06-30_other_d1a6631e.eml": {
+    "relevance": "attempted",
+    "relevance_evidence": "6月30日(火) 16時28分にお届けに参りましたが、お届けできず、持ち帰りました。",
+    "shop_name": "ヤマト運輸",
+    "shop_key": "other",
+    "order_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "ヤマト運輸株式会社",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "5111-7266-6093",
+      "evidence": "■送り状番号：5111-7266-6093",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": null,
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.5
+    },
+    "overall_confidence": 0.9,
+    "notes": "依頼主の記載がないため店名は運送会社名にした。「置き配指定可能」は定型の案内のため在宅要否の根拠にしていない。"
+  },
+  "other/2026-06-30_other_a0843ded.eml": {
+    "relevance": "attempted",
+    "relevance_evidence": "お荷物の再配達のご依頼を下記のとおり受け付けました。",
+    "shop_name": "ヤマト運輸",
+    "shop_key": "other",
+    "order_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "ヤマト運輸株式会社",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "5111-7266-6093",
+      "evidence": "■送り状番号：5111-7266-6093",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": "2026-07-01",
+      "evidence": "■受取ご希望日時：7月1日(水) 19時～21時",
+      "confidence": 0.95
+    },
+    "expected_window_start": {
+      "value": "19:00",
+      "evidence": "■受取ご希望日時：7月1日(水) 19時～21時",
+      "confidence": 0.95
+    },
+    "expected_window_end": {
+      "value": "21:00",
+      "evidence": "■受取ご希望日時：7月1日(水) 19時～21時",
+      "confidence": 0.95
+    },
+    "expected_text": "7月1日(水) 19時～21時",
+    "requires_presence": {
+      "value": true,
+      "evidence": "■受取ご希望場所：対面での配達を希望",
+      "confidence": 0.95
+    },
+    "overall_confidence": 0.93,
+    "notes": "依頼主の記載がないため店名は運送会社名にしました。"
+  },
+  "other/2026-10-16_ordered_6142df19.eml": {
+    "relevance": "order",
+    "relevance_evidence": "以下のご注文番号にて、お客様からのご注文を受付けました。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "0979279182570435064-8469141",
+      "evidence": "ご注文番号：0979279182570435064-8469141",
+      "confidence": 0.95
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_date": {
+      "value": "2026-10-17",
+      "evidence": "配送予定日：2026/10/17 - 2026/10/18",
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_text": "2026/10/17 - 2026/10/18",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "overall_confidence": 0.85,
+    "notes": "本文に商品名・金額の記載がないため items と total_amount は空/null にしました。置き配に関する記述は UNIQLO FLOWER の一般案内のため在宅判定には使っていません。"
+  },
+  "ocn/2026-10-30_shipped_a80dd410.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "ご注文頂いております商品を発送させていただきましたのでご報告申し上げます。",
+    "shop_name": "OCNオンラインショップ",
+    "shop_key": "ocn",
+    "order_number": {
+      "value": "X296693-5042632-9",
+      "evidence": "注文番号X296693-5042632-9",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "APC RS 550VA 無停電電源装置 UPS (550VA/330W/ライン",
+        "quantity": 1,
+        "unit_price": null,
+        "evidence": "商品名　　　APC RS 550VA 無停電電源装置 UPS (550VA/330W/ライン"
+      }
+    ],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "運送便　　　佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "316575412565",
+      "evidence": "送り状No　　316575412565",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": null,
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.8
+    },
+    "overall_confidence": 0.92,
+    "notes": "商品名は原文で途中で切れているためそのまま記載。配達予定日の記載なし。"
+  },
+  "ocn/2026-10-30_ordered_b195e33a.eml": {
+    "relevance": "order",
+    "relevance_evidence": "本メールの受領をもって正常に注文を受付けました。",
+    "shop_name": "OCN オンラインショップ",
+    "shop_key": "ocn",
+    "order_number": {
+      "value": "X296693-5042632-9",
+      "evidence": "【オーダーID】X296693-5042632-9",
+      "confidence": 0.98
+    },
+    "items": [
+      {
+        "name": "APC RS 550VA 無停電電源装置 UPS (550VA/330W/ラインインタラクティブ給電/正弦波/出力コンセント数x6/100V/2年保証)",
+        "quantity": 1,
+        "unit_price": 18980,
+        "evidence": "価格：￥18,980 x 数量：1 = 合計：￥18,980"
+      }
+    ],
+    "total_amount": {
+      "value": 18980,
+      "evidence": "注文金額合計：￥18,980",
+      "confidence": 0.98
+    },
+    "ordered_at": {
+      "value": "2026-10-30",
+      "evidence": "【ご注文日】2026年10月30日",
+      "confidence": 0.97
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.3
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": "【配送予定】準備が整い次第、出荷となります。",
+      "confidence": 0.4
+    },
+    "expected_window_start": {
+      "value": "18:00",
+      "evidence": "【配送希望時間帯】18～21時",
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": "21:00",
+      "evidence": "【配送希望時間帯】18～21時",
+      "confidence": 0.9
+    },
+    "expected_text": "準備が整い次第、出荷となります。 配送時間指定：18～21時",
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.4
+    },
+    "overall_confidence": 0.9,
+    "notes": "配達日は未定で、時間帯指定（18～21時）のみ記載。受取方法の指定は無いため在宅要否は null。"
+  },
+  "other/2026-10-16_shipped_782b250c.eml": {
+    "relevance": "shipped",
+    "relevance_evidence": "ご注文商品の出荷準備が整いました。ご指定のお届け先に順次配送させていただきます。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "0979279182570435064-8469141",
+      "evidence": "ご注文番号：0979279182570435064-8469141",
+      "confidence": 0.95
+    },
+    "items": [],
+    "total_amount": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "ordered_at": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送会社：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": "253721595853",
+      "evidence": "配送伝票番号：253721595853",
+      "confidence": 0.95
+    },
+    "expected_date": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": null,
+    "requires_presence": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.8
+    },
+    "overall_confidence": 0.9,
+    "notes": "商品名・金額・配達予定日は本文に記載がなく、購入履歴ページ参照となっている。置き配の記述はUNIQLO FLOWER向けの定型文のため在宅要否の根拠にしていない。"
+  }
+}

@@ -30,7 +30,9 @@ let cached: Env | null = null;
 
 export function env(): Env {
   if (cached) return cached;
-  const parsed = schema.safeParse(process.env);
+  // A key left blank in the env file means "not configured", not "invalid".
+  const configured = Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== ""));
+  const parsed = schema.safeParse(configured);
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Invalid environment: ${missing}`);
