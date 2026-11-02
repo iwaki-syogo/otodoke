@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Pull this project's Supabase URL and API keys into the local env file.
 # Key values are written to the file only; nothing secret is printed.
-# Usage: npm run env:supabase   (requires `supabase login` and a linked project)
+# Usage: bash scripts/supabase-env.sh [--vercel]   (requires `supabase login` and a linked project)
+#   --vercel also sends the checked server key to Vercel production and preview.
 #
 # Test hooks (never needed in normal use):
 #   SUPABASE_ENV_FAKE_JSON=<file>  read the CLI JSON from a file instead of calling the CLI
@@ -20,7 +21,7 @@ else
   [ -x "$SUPABASE_BIN" ] || SUPABASE_BIN=/opt/homebrew/bin/supabase
   [ -x "$SUPABASE_BIN" ] || { echo "supabase CLI not found (brew install supabase/tap/supabase)" >&2; exit 1; }
   errlog="$(mktemp)"
-  if ! json="$("$SUPABASE_BIN" projects api-keys --project-ref "$ref" -o json 2>"$errlog")"; then
+  if ! json="$("$SUPABASE_BIN" projects api-keys --project-ref "$ref" --reveal -o json 2>"$errlog")"; then
     echo "supabase api-keys failed:" >&2
     grep -v 'new version\|recommend' "$errlog" >&2 || true
     rm -f "$errlog"
@@ -67,6 +68,9 @@ def pick(preferred_type, legacy_name, pattern):
 
 anon = pick("publishable", "anon", r"sb_publishable_[A-Za-z0-9_\-]+")
 service = pick("secret", "service_role", r"sb_secret_[A-Za-z0-9_\-]+")
+if len(service) < 30:
+    print(f"server key is too short to be real (length {len(service)}): the CLI returned a shortened key. Nothing was written.", file=sys.stderr)
+    sys.exit(1)
 
 out, ref = sys.argv[1], sys.argv[2]
 existing = {}
@@ -87,8 +91,23 @@ with open(out, "w") as fh:
 os.chmod(out, 0o600)
 
 print("wrote", os.path.basename(out), "| anon:", "set" if anon else "EMPTY", "| service_role:", "set" if service else "EMPTY")
+# A key that has the right shape can still be rejected, so ask Supabase. Only the status is printed.
+if not os.environ.get("SUPABASE_ENV_FAKE_JSON") and service:
+    import urllib.error, urllib.request
+    req = urllib.request.Request(f"https://{ref}.supabase.co/rest/v1/parcels?select=id&limit=1", headers={"apikey": service, "Authorization": f"Bearer {service}"})
+    try:
+        status = urllib.request.urlopen(req, timeout=20).status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    print("server key check: HTTP", status)
+    if status != 200:
+        sys.exit(1)
 if not anon or not service:
     fields = sorted({f for k in keys for f in k.keys()})
     print("key objects have fields:", fields, "| (name, type):", [(k.get("name"), k.get("type")) for k in keys], file=sys.stderr)
     sys.exit(1)
 PY
+
+if [ "${1:-}" = "--vercel" ]; then
+  bash "$root/scripts/env-add.sh" --local SUPABASE_SERVICE_ROLE_KEY
+fi
