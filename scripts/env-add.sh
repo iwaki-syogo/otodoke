@@ -54,9 +54,11 @@ check_shape() {
 send_to_vercel() {
   local name="$1" value="$2" target flags=()
   [[ "$name" == NEXT_PUBLIC_* ]] && flags=(--no-sensitive)
-  for target in production preview; do
-    vercel env rm "$name" "$target" --yes >/dev/null 2>&1 || true
-    if vercel env add "$name" "$target" --value "$value" --yes ${flags[@]+"${flags[@]}"} >/dev/null 2>&1; then
+  # The CLI needs a branch for a non-interactive preview value; `dev` is the only preview branch here.
+  for target in "production" "preview dev"; do
+    # --force overwrites an existing value; closed stdin stops the CLI waiting on a prompt.
+    # shellcheck disable=SC2086
+    if vercel env add "$name" $target --value "$value" --yes --force ${flags[@]+"${flags[@]}"} </dev/null >/dev/null 2>&1; then
       echo "$name: vercel $target ok"
     else
       echo "$name: vercel $target FAILED" >&2
