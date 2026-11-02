@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "env:supabase": "bash scripts/supabase-env.sh"
   },
   "dependencies": {
     "next": "16.4.3",
