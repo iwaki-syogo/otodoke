@@ -60,8 +60,10 @@ const MIN_CONFIDENCE = 0.6;
 function asDate(v: string | null): string | null {
   return v && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v) ? v : null;
 }
-function asTime(v: string | null): string | null {
-  return v && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : null;
+/** A clock time as HH:MM. Some models write a full JST timestamp; any other offset is rejected rather than guessed. */
+export function asTime(v: string | null): string | null {
+  const m = v?.match(/^(?:\d{4}-\d{2}-\d{2}T)?(([01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d)?(?:\+09:00)?$/);
+  return m ? m[1] : null;
 }
 
 function confident<T>(f: { value: T | null; confidence: number }): T | null {

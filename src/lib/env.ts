@@ -15,7 +15,7 @@ const schema = z.object({
   INBOUND_DOMAIN: z.string().min(1).optional(),
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3015"),
   /** Claude model used for email understanding. */
-  OTODOKE_MODEL: z.string().default("claude-opus-5-5"),
+  OTODOKE_MODEL: z.string().default("claude-haiku-5-5"),
   /** Effort for extraction calls: low | medium | high. */
   OTODOKE_EXTRACT_EFFORT: z.enum(["low", "medium", "high"]).default("medium"),
   /** Paid Claude calls per user per JST day. */

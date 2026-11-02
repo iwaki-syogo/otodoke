@@ -109,6 +109,18 @@ describe("parcel merge", () => {
     expect(row.expected_window_start).toBeNull();
     expect(row.ordered_at).toBeNull();
   });
+  it.each([
+    ["19:00", "19:00"],
+    ["19:00:00", "19:00"],
+    ["2026-04-10T19:00:00+09:00", "19:00"],
+    ["2026-04-10T19:00", "19:00"],
+    ["2026-04-10T10:00:00Z", null],
+    ["2026-04-10T19:00:00-05:00", null],
+    ["午前中", null],
+  ])("reads the delivery time %s as %s", (written, want) => {
+    const row = buildParcelInsert("u", extraction({ expected_window_start: sure(written) }), null);
+    expect(row.expected_window_start).toBe(want);
+  });
   it("uses the JST date of an order mail when the mail states no order date", () => {
     const row = buildParcelInsert("u", extraction({ relevance: "order" }), "2026-11-01T17:21:30Z");
     expect(row.ordered_at).toBe("2026-11-02");

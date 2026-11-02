@@ -74,7 +74,7 @@ async function main() {
   const { extractEmail } = await import("../src/lib/extract/extract");
   const { emailBodyText } = await import("../src/lib/text/html-to-text");
   const { normalizeTracking } = await import("../src/lib/carriers");
-  const { normalizeOrderNumber } = await import("../src/lib/match");
+  const { asTime, normalizeOrderNumber } = await import("../src/lib/match");
   const { readDemoMails } = await import("../src/lib/demo");
   const { env } = await import("../src/lib/env");
 
@@ -140,6 +140,7 @@ async function main() {
     if (v === null || v === undefined) return null;
     if (k === "tracking_number") return normalizeTracking(String(v));
     if (k === "order_number") return normalizeOrderNumber(String(v));
+    if (k === "expected_window_start" || k === "expected_window_end") return v === null ? null : asTime(String(v));
     return v;
   };
   for (const { mail, data } of results) {
