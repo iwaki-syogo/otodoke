@@ -83,7 +83,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <Guide title="Gmail">
             <ol className="list-decimal space-y-1 pl-5">
               <li>パソコンのブラウザで Gmail を開き、設定 › すべての設定を表示 › 「メール転送と POP/IMAP」を開く</li>
-              <li>「転送先アドレスを追加」で上のアドレスを入れる</li>
+              <li>「転送先アドレスを追加」で上のアドレスを入れる。本人確認を求められたら済ませて、もう一度入れる。「次へ」の後に開く小窓で「続行」を押す</li>
               <li>少し待つと、このページの上に承認ページへのボタンが出るので開いて承認する</li>
               <li>
                 検索ボックスの検索オプションを開き、「含む」に次の文字列を貼って「フィルタを作成」を押す
