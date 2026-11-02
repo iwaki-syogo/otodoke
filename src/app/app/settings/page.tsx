@@ -5,6 +5,9 @@ import { DemoLoader } from "./demo-loader";
 
 export const metadata = { title: "設定" };
 
+/** One filter for every shop: it names what the mail is about, never who sent it. */
+const GMAIL_FILTER = "{注文 発送 出荷 配達 お届け 配送 到着 荷物}";
+
 type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string }>;
 
 // The demo loader runs several Claude calls in sequence.
@@ -50,30 +53,28 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       ) : null}
 
       <section>
-        <h2 className="text-base font-bold">自動転送の設定方法</h2>
+        <h2 className="text-base font-bold">自動転送の設定（最初の 1 回だけ）</h2>
+        <p className="mt-1 text-sm leading-6 text-neutral-600">店ごとの設定はいりません。新しい店で買っても、そのまま読み取ります。</p>
         <div className="mt-2 flex flex-col gap-2">
           <Guide title="Gmail">
             <ol className="list-decimal space-y-1 pl-5">
-              <li>パソコンの Gmail で 設定 › すべての設定を表示 › 「メール転送と POP/IMAP」を開く</li>
+              <li>パソコンのブラウザで Gmail を開き、設定 › すべての設定を表示 › 「メール転送と POP/IMAP」を開く</li>
               <li>「転送先アドレスを追加」で上のアドレスを入れる</li>
-              <li>少し待つと、このページの上に確認リンクが出るので開いて承認する</li>
-              <li>フィルタを作る: 差出人に <code>amazon.co.jp OR rakuten.co.jp</code> などを入れ、「転送する」に上のアドレスを選ぶ</li>
+              <li>少し待つと、このページの上に承認ページへのボタンが出るので開いて承認する</li>
+              <li>
+                検索ボックスの検索オプションを開き、「含む」に次の文字列を貼って「フィルタを作成」を押す
+                <div className="my-2 flex items-center gap-2 rounded-xl bg-neutral-50 p-2">
+                  <code className="min-w-0 flex-1 break-all text-xs">{GMAIL_FILTER}</code>
+                  <CopyButton text={GMAIL_FILTER} />
+                </div>
+              </li>
+              <li>「転送する」に上のアドレスを選んで作成する</li>
             </ol>
+            <p className="mt-2 text-xs text-neutral-500">買い物に関係しそうなメールだけが届くので、私信は Otodoke に送られません。</p>
           </Guide>
-          <Guide title="iCloud メール">
-            <ol className="list-decimal space-y-1 pl-5">
-              <li>icloud.com のメールで 設定 › ルール › 「ルールを追加」</li>
-              <li>「差出人が次を含む」に店のドメイン、「操作」で「転送」を選び上のアドレスを入れる</li>
-            </ol>
-          </Guide>
-          <Guide title="Outlook / Hotmail">
-            <ol className="list-decimal space-y-1 pl-5">
-              <li>設定 › メール › ルール › 「新しいルールを追加」</li>
-              <li>条件に差出人、アクションに「転送先」で上のアドレスを選ぶ</li>
-            </ol>
-          </Guide>
-          <Guide title="その他（携帯メールなど）">
-            <p>自動転送が無いメールでも、届いたメールを上のアドレスに手で転送すれば読み取ります。</p>
+          <Guide title="iCloud / Outlook / その他">
+            <p>メールの設定にある自動転送で、すべてのメールを上のアドレスへ転送してください。</p>
+            <p className="mt-2">Outlook は 設定 › メール › 転送 にあります。買い物に関係しないメールは Otodoke が読まずに捨て、保存もしません。</p>
           </Guide>
         </div>
       </section>
