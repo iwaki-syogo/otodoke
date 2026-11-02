@@ -3,6 +3,7 @@ import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carrie
 import { shiftDatesDeep, shiftDatesInText } from "@/lib/demo";
 import { buildUserMessage } from "@/lib/extract/prompt";
 import type { Extraction } from "@/lib/extract/schema";
+import { screenMail } from "@/lib/screen";
 import { addDays, formatWindow, todayJst, weekdayOf } from "@/lib/format";
 import { buildParcelInsert, buildParcelUpdate, type ParcelRow } from "@/lib/match";
 import { emailBodyText, htmlToText } from "@/lib/text/html-to-text";
@@ -133,5 +134,40 @@ describe("parcel merge", () => {
     const row = buildParcelInsert("u", extraction({ expected_date: { value: "2026-07-01", evidence: null, confidence: 0.3 }, overall_confidence: 0.4 }), null);
     expect(row.expected_date).toBeNull();
     expect(row.needs_review).toBe(true);
+  });
+});
+
+describe("screenMail", () => {
+  const mail = (subject: string, text: string) => ({ subject, text, html: null });
+  it.each([
+    ["ご注文ありがとうございます", "ご注文番号：123 を承りました。"],
+    ["[Qoo10] 商品が発送されました", "配送番号: 123"],
+    ["定期購入はキャンセルされました。おすすめ商品をご紹介します。", "お手続きありがとうございました。"],
+    ["お知らせ", "下記の商品を発送いたしました。配信停止はこちら"],
+    ["Your order has shipped", "Tracking number: 1Z999"],
+    ["", ""],
+  ])("keeps %s", (s, t) => {
+    expect(screenMail(mail(s, t)).pass).toBe(true);
+  });
+  it.each([
+    ["【80%OFFクーポン】今だけ", "ご注文はお早めに。配信停止はこちら"],
+    ["今週のおすすめ記事", "メルマガの配信停止はこちら"],
+    ["ログインがありました", "新しい端末からサインインがありました。"],
+  ])("drops %s", (s, t) => {
+    expect(screenMail(mail(s, t)).pass).toBe(false);
+  });
+  it("does not depend on the sender", () => {
+    const m = mail("発送のお知らせ", "お問い合わせ番号 123");
+    expect(Object.keys(m)).not.toContain("from");
+    expect(screenMail(m).pass).toBe(true);
+  });
+});
+
+describe("demo mails", () => {
+  it("all pass the pre-check, so the demo shows what real forwarding would show", async () => {
+    const { readDemoMails } = await import("@/lib/demo");
+    const mails = await readDemoMails();
+    expect(mails).toHaveLength(17);
+    for (const m of mails) expect(screenMail(m).pass, m.file).toBe(true);
   });
 });

@@ -15,6 +15,10 @@ export default async function ParcelsPage() {
     .order("last_email_at", { ascending: false, nullsFirst: false });
   const parcels: ParcelRow[] = data ?? [];
   const today = todayJst();
+  const { count: waiting } = await supabase
+    .from("emails")
+    .select("id", { count: "exact", head: true })
+    .eq("processing_status", "over_limit");
 
   const incoming = parcels.filter((p) => ["shipped", "out_for_delivery", "attempted"].includes(p.status));
   const ordered = parcels.filter((p) => ["ordered", "unknown"].includes(p.status));
@@ -24,10 +28,24 @@ export default async function ParcelsPage() {
   const cancelled = parcels.filter((p) => p.status === "cancelled");
   const presenceSoon = incoming.filter((p) => p.requires_presence && p.expected_date && p.expected_date >= today);
 
-  if (parcels.length === 0) return <EmptyState />;
+  const waitingNotice = waiting ? (
+    <Link href="/app/settings" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
+      まだ読んでいないメールが {waiting} 通あります。この一覧は最新ではないかもしれません。
+    </Link>
+  ) : null;
+
+  if (parcels.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        {waitingNotice}
+        <EmptyState />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">
+      {waitingNotice}
       {presenceSoon.length > 0 ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
           <h2 className="text-sm font-bold text-red-900">家にいる必要がある日</h2>

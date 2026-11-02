@@ -2,6 +2,8 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, normalizeOrderNumber } from "@/lib/match";
 import { normalizeTracking } from "@/lib/carriers";
+import { env } from "@/lib/env";
+import { screenMail } from "@/lib/screen";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import type { Extraction } from "@/lib/extract/schema";
 import type { Json } from "@/lib/db/database.types";
@@ -22,6 +24,8 @@ export interface InboundEmail {
 export type PipelineOutcome =
   | { kind: "duplicate"; emailId: string }
   | { kind: "forwarding_confirmation"; emailId: string }
+  | { kind: "screened_out"; reason: string }
+  | { kind: "over_limit"; emailId: string; limit: string }
   | { kind: "discarded"; reason: string }
   | { kind: "processed"; emailId: string; parcelId: string; created: boolean; extraction: Extraction };
 
@@ -41,6 +45,14 @@ export interface PipelineOptions {
  * webhook answers 500 and Resend retries; the failed row stays visible until then.
  */
 export async function processInboundEmail(db: AdminClient, mail: InboundEmail, options: PipelineOptions = {}): Promise<PipelineOutcome> {
+  const isForwardingConfirmation = FORWARDING_CONFIRMATION.test(`${mail.from} ${mail.subject}`);
+
+  // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
+  if (!isForwardingConfirmation && !options.precomputed) {
+    const screen = screenMail(mail);
+    if (!screen.pass) return { kind: "screened_out", reason: screen.reason };
+  }
+
   // 1. Store the raw mail (dedupe by Message-ID).
   if (mail.messageId) {
     const { data: existing, error } = await db
@@ -56,8 +68,6 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       if (deleteError) throw new Error(`emails cleanup failed: ${deleteError.message}`);
     }
   }
-
-  const isForwardingConfirmation = FORWARDING_CONFIRMATION.test(`${mail.from} ${mail.subject}`);
 
   const { data: emailRow, error: insertError } = await db
     .from("emails")
@@ -79,6 +89,25 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   if (insertError || !emailRow) throw new Error(`emails insert failed: ${insertError?.message}`);
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
+
+  // 1.5. Take one paid call from today's allowance. Over the limit, the mail is kept to read later.
+  if (!options.precomputed) {
+    const { OTODOKE_USER_DAILY_LIMIT, OTODOKE_GLOBAL_DAILY_LIMIT } = env();
+    const { data: claim, error: claimError } = await db.rpc("claim_claude_call", {
+      p_user_id: mail.userId,
+      p_user_limit: OTODOKE_USER_DAILY_LIMIT,
+      p_global_limit: OTODOKE_GLOBAL_DAILY_LIMIT,
+    });
+    if (claimError) {
+      await db.from("emails").update({ processing_status: "failed", error: claimError.message }).eq("id", emailRow.id);
+      throw new Error(`claim_claude_call failed: ${claimError.message}`);
+    }
+    if (claim !== "ok") {
+      const { error } = await db.from("emails").update({ processing_status: "over_limit", error: claim }).eq("id", emailRow.id);
+      if (error) throw new Error(`emails update failed: ${error.message}`);
+      return { kind: "over_limit", emailId: emailRow.id, limit: claim };
+    }
+  }
 
   try {
     return await understandAndFile(db, mail, emailRow.id, options);

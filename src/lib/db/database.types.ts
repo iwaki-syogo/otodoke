@@ -283,7 +283,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_claude_call: {
+        Args: { p_global_limit: number; p_user_id: string; p_user_limit: number }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

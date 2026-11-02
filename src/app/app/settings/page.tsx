@@ -1,6 +1,7 @@
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "./copy-button";
+import { readWaitingMail } from "./actions";
 import { DemoLoader } from "./demo-loader";
 
 export const metadata = { title: "設定" };
@@ -26,6 +27,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
     .order("sent_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  const { count: waiting } = await supabase
+    .from("emails")
+    .select("id", { count: "exact", head: true })
+    .eq("processing_status", "over_limit");
   const confirmUrl = confirmation ? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "") : null;
 
   return (
@@ -41,6 +46,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
         </div>
         <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
       </section>
+
+      {waiting ? (
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <h2 className="text-base font-bold">未読のメールが {waiting} 通あります</h2>
+          <p className="mt-1 text-sm leading-6">1 日に読める上限を超えたメールです。保存してあるので、翌日以降に読み取れます。</p>
+          <form action={readWaitingMail} className="mt-3">
+            <button type="submit" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
+              読み取る
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       {confirmUrl ? (
         <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">

@@ -53,6 +53,48 @@ export async function loadDemo(): Promise<void> {
   redirect(`/app/settings?demo=${processed}`);
 }
 
+/** Read mail that arrived after the daily limit. Stops when today's allowance runs out again. */
+export async function readWaitingMail(): Promise<void> {
+  const user = await getUser();
+  if (!user) redirect("/login");
+
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("emails")
+    .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
+    .eq("user_id", user.id)
+    .eq("processing_status", "over_limit")
+    .order("sent_at", { ascending: true })
+    .limit(20);
+  if (error) redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
+
+  let failure: string | null = null;
+  try {
+    for (const m of data) {
+      // Without a Message-ID the pipeline cannot find this row again, so it would be duplicated.
+      if (!m.message_id) await db.from("emails").delete().eq("id", m.id);
+      const outcome = await processInboundEmail(db, {
+        userId: user.id,
+        providerEmailId: m.provider_email_id,
+        messageId: m.message_id,
+        from: m.from_address ?? "",
+        fromName: m.from_name,
+        subject: m.subject ?? "",
+        sentAt: m.sent_at,
+        text: m.text_body,
+        html: m.html_body,
+      });
+      if (outcome.kind === "over_limit") break;
+    }
+  } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
+  }
+
+  revalidatePath("/app", "layout");
+  if (failure) redirect(`/app/settings?error=${encodeURIComponent(failure)}`);
+  redirect("/app/settings");
+}
+
 /** Remove everything this user has (used to reset a demo account). */
 export async function clearAllParcels(formData: FormData): Promise<void> {
   const user = await getUser();

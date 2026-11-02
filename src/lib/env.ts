@@ -18,6 +18,10 @@ const schema = z.object({
   OTODOKE_MODEL: z.string().default("claude-opus-5-5"),
   /** Effort for extraction calls: low | medium | high. */
   OTODOKE_EXTRACT_EFFORT: z.enum(["low", "medium", "high"]).default("medium"),
+  /** Paid Claude calls per user per JST day. */
+  OTODOKE_USER_DAILY_LIMIT: z.coerce.number().int().positive().default(30),
+  /** Paid Claude calls across all users per JST day: the app-side stop before the Console spend limit. */
+  OTODOKE_GLOBAL_DAILY_LIMIT: z.coerce.number().int().positive().default(300),
 });
 
 export type Env = z.infer<typeof schema>;
