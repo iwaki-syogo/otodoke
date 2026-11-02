@@ -12,13 +12,27 @@ import json, os, sys
 raw = sys.stdin.read()
 start = raw.find("[")
 keys = json.loads(raw[start:]) if start >= 0 else []
-def pick(*names):
-    for k in keys:
-        if k.get("name") in names or k.get("type") in names:
-            return k.get("api_key", "")
+import re
+def key_value(obj, pattern):
+    # Field names differ between CLI versions, so scan every string value for a key-shaped string.
+    for v in obj.values():
+        if isinstance(v, str) and re.fullmatch(pattern, v):
+            return v
     return ""
-anon = pick("anon", "publishable")
-service = pick("service_role", "secret")
+def pick(preferred_type, legacy_name, pattern):
+    for k in keys:
+        if k.get("type") == preferred_type:
+            v = key_value(k, pattern)
+            if v:
+                return v
+    for k in keys:
+        if k.get("name") == legacy_name:
+            v = key_value(k, r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
+            if v:
+                return v
+    return ""
+anon = pick("publishable", "anon", r"sb_publishable_[A-Za-z0-9_\-]+")
+service = pick("secret", "service_role", r"sb_secret_[A-Za-z0-9_\-]+")
 out, ref = sys.argv[1], sys.argv[2]
 existing = {}
 if os.path.exists(out):
