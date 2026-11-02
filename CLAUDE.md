@@ -55,6 +55,6 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 ## 外部サービス依存
 
 - Supabase: project_ref=`zvqaqdmlxghekasjqneq`, region=`ap-northeast-1`, org=iwaki-syogo's Org (Pro)。キーの取得は `npm run env:supabase`（値は画面に出さずローカル env に書く）
-- Vercel: project=`otodoke-app`, team=`syodgo-9062s-projects`, production_url=https://otodoke-app.vercel.app（GitHub 連携済み: main への push で本番デプロイ）
-- Resend: 受信ドメイン=（記入）, 送信ドメイン=（記入）
+- Vercel: project=`otodoke-app`, team=`syodgo-9062s-projects`, production_url=https://otodoke.app（独自ドメイン。Vercel で取得、更新 $15/年）／ https://otodoke-app.vercel.app（GitHub 連携済み: main への push で本番デプロイ）
+- Resend: 受信ドメイン=`in.otodoke.app`（予定。MX は Vercel DNS に置く）, 送信ドメイン=`otodoke.app`（予定）
 - Anthropic: Claude API（個人組織。キーは `.env.local` のみ）
