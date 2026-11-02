@@ -36,7 +36,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
 
       <header>
         <p className="text-sm text-neutral-500">{parcel.shop}</p>
-        <h1 className="mt-1 text-xl font-bold leading-snug">{parcel.title ?? "品名を読み取れませんでした"}</h1>
+        <h1 className="mt-1 text-xl font-bold leading-snug">{parcel.title ?? "品名の記載なし"}</h1>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={parcel.status} />
           <PresenceBadge value={parcel.requires_presence} />

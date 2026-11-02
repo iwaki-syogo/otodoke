@@ -86,7 +86,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
                   <div className="w-14 shrink-0 text-xs text-neutral-500">{p.ordered_at ? formatDateJa(p.ordered_at).replace(/\(.\)/, "") : ""}</div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs text-neutral-500">{p.shop}</p>
-                    <p className="truncate text-sm font-medium">{p.title ?? "品名不明"}</p>
+                    <p className="truncate text-sm font-medium">{p.title ?? "品名の記載なし"}</p>
                   </div>
                   <div className="shrink-0 text-sm font-medium">{p.total_amount === null ? <span className="text-neutral-400">—</span> : yen(p.total_amount)}</div>
                 </Link>

@@ -176,4 +176,25 @@ describe("demo mails", () => {
     expect(mails).toHaveLength(17);
     for (const m of mails) expect(screenMail(m).pass, m.file).toBe(true);
   });
+
+  it.each(["2026-11-02T01:00:00Z", "2026-11-02T12:00:00Z", "2027-03-01T23:30:00Z"])(
+    "never shows a mail or an order from the future when opened at %s",
+    async (nowIso) => {
+      const { loadDemoEntries } = await import("@/lib/demo");
+      const { todayJst } = await import("@/lib/format");
+      const now = new Date(nowIso);
+      const today = todayJst(now);
+      const entries = await loadDemoEntries(today, now);
+      expect(entries).toHaveLength(17);
+      const sent = entries.map((e) => new Date(e.mail.date!).getTime());
+      for (const [i, time] of sent.entries()) {
+        expect(time, entries[i].mail.file).toBeLessThanOrEqual(now.getTime());
+        if (i > 0) expect(time).toBeGreaterThan(sent[i - 1]);
+      }
+      for (const { mail, extraction } of entries) {
+        const ordered = extraction.ordered_at.value;
+        if (ordered) expect(ordered <= today, mail.file).toBe(true);
+      }
+    },
+  );
 });

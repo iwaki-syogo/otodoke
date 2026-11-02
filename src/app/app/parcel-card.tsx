@@ -14,7 +14,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 export function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status] ?? STATUS_STYLE.unknown}`}>
+    <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status] ?? STATUS_STYLE.unknown}`}>
       {STATUS_LABEL[status] ?? status}
     </span>
   );
@@ -45,7 +45,7 @@ export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-xs text-neutral-500">{parcel.shop}</p>
-          <p className="mt-0.5 line-clamp-2 text-[15px] font-medium leading-snug">{parcel.title ?? "品名を読み取れませんでした"}</p>
+          <p className="mt-0.5 line-clamp-2 text-[15px] font-medium leading-snug">{parcel.title ?? "品名の記載なし"}</p>
         </div>
         <StatusBadge status={parcel.status} />
       </div>

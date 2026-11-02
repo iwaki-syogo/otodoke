@@ -121,7 +121,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs text-neutral-500">{p.shop}</p>
-                          <p className="line-clamp-2 text-sm font-medium leading-snug">{p.title ?? "品名不明"}</p>
+                          <p className="line-clamp-2 text-sm font-medium leading-snug">{p.title ?? "品名の記載なし"}</p>
                           <div className="mt-1.5 flex flex-wrap gap-1.5">
                             <StatusBadge status={p.status} />
                             <PresenceBadge value={p.requires_presence} compact />

@@ -93,6 +93,21 @@ function daysBetween(from: string, to: string): number {
   return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000);
 }
 
+/** A mail sent later today has not arrived yet in the morning: pull it back, keeping the order of the story. */
+function keepMailsInThePast(entries: DemoEntry[], now: Date): DemoEntry[] {
+  let latest = now.getTime();
+  return entries
+    .slice()
+    .reverse()
+    .map((entry) => {
+      if (!entry.mail.date) return entry;
+      const sent = Math.min(new Date(entry.mail.date).getTime(), latest);
+      latest = sent - 60_000;
+      return { ...entry, mail: { ...entry.mail, date: new Date(sent).toISOString() } };
+    })
+    .reverse();
+}
+
 export async function readDemoMails(): Promise<DemoMail[]> {
   const set = DemoSet.parse(JSON.parse(await readFile(path.join(DEMO_DIR, "set.json"), "utf8")));
   const mails: DemoMail[] = [];
@@ -108,7 +123,7 @@ export interface DemoEntry {
 }
 
 /** The demo mails with dates moved around `today`, oldest first, each with its precomputed Claude result. */
-export async function loadDemoEntries(today = todayJst()): Promise<DemoEntry[]> {
+export async function loadDemoEntries(today = todayJst(), now = new Date()): Promise<DemoEntry[]> {
   const set = DemoSet.parse(JSON.parse(await readFile(path.join(DEMO_DIR, "set.json"), "utf8")));
   const cache = z
     .record(z.string(), ExtractionSchema)
@@ -135,5 +150,5 @@ export async function loadDemoEntries(today = todayJst()): Promise<DemoEntry[]> 
     }
   }
   entries.sort((a, b) => (a.mail.date ?? "").localeCompare(b.mail.date ?? ""));
-  return entries;
+  return keepMailsInThePast(entries, now);
 }

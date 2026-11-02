@@ -15,7 +15,10 @@
       "name": "カッター: 発送済み（今日届く）",
       "anchor": "2026-11-02",
       "target": 0,
-      "files": ["amazon/2026-11-02_ordered_fe85ef8c", "amazon/2026-11-02_shipped_79399a4e"]
+      "files": [
+        "amazon/2026-11-02_ordered_fe85ef8c",
+        "amazon/2026-11-02_shipped_79399a4e"
+      ]
     },
     {
       "name": "マットレス: 店のメールと佐川のメールを伝票番号でつなぐ（明日 19-21 時）",
@@ -31,20 +34,30 @@
     {
       "name": "ヤマト: 不在から対面の再配達（在宅が必要な日）",
       "anchor": "2026-06-30",
-      "target": 1,
-      "files": ["other/2026-06-29_shipped_b24d5050", "other/2026-06-30_other_d1a6631e", "other/2026-06-30_other_a0843ded"]
+      "target": 0,
+      "files": [
+        "other/2026-06-29_shipped_b24d5050",
+        "other/2026-06-30_other_d1a6631e",
+        "other/2026-06-30_other_a0843ded"
+      ]
     },
     {
       "name": "UPS: 発送済みで配達日は未定",
       "anchor": "2026-10-30",
       "target": -1,
-      "files": ["ocn/2026-10-30_ordered_b195e33a", "ocn/2026-10-30_shipped_a80dd410"]
+      "files": [
+        "ocn/2026-10-30_ordered_b195e33a",
+        "ocn/2026-10-30_shipped_a80dd410"
+      ]
     },
     {
       "name": "ユニクロ: 品名がメールに無い注文（書かれていないことは書かない）",
       "anchor": "2026-10-16",
-      "target": 2,
-      "files": ["other/2026-10-16_ordered_6142df19", "other/2026-10-16_shipped_782b250c"]
+      "target": -1,
+      "files": [
+        "other/2026-10-16_ordered_6142df19",
+        "other/2026-10-16_shipped_782b250c"
+      ]
     }
   ]
 }
