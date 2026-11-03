@@ -9,13 +9,14 @@ export type CarrierKey = "yamato" | "sagawa" | "japanpost" | "amazon" | "seino" 
  * - open: a plain link whose URL carries the number.
  * - post: the carrier's form only takes the number by POST, so the app submits that form.
  * - copy: the carrier takes no number from outside; copy it, then open the input page.
+ *   pageName is that page's own title, shown while the app moves there.
  * Checked against each site on 2026-11-03. Sagawa's new page (after its October 2026
  * outage) runs on Server Actions, which refuse a cross-site POST, hence "copy".
  */
 export type TrackingLink =
   | { kind: "open"; url: string }
   | { kind: "post"; url: string; fields: Record<string, string> }
-  | { kind: "copy"; url: string };
+  | { kind: "copy"; url: string; pageName: string };
 
 export interface CarrierInfo {
   key: CarrierKey;
@@ -33,7 +34,7 @@ export const CARRIERS: Record<CarrierKey, CarrierInfo> = {
   sagawa: {
     key: "sagawa",
     name: "佐川急便",
-    link: () => ({ kind: "copy", url: "https://e-customer.sagawa-exp.co.jp/k2k" }),
+    link: () => ({ kind: "copy", url: "https://e-customer.sagawa-exp.co.jp/k2k", pageName: "佐川のお荷物お問い合わせサービス" }),
   },
   japanpost: {
     key: "japanpost",

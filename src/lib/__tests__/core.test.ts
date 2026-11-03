@@ -77,7 +77,11 @@ describe("carriers", () => {
       fields: { category: "1", number01: "511172666093" },
     });
     // Sagawa takes no number from outside: copy it and open the input page.
-    expect(trackingLinkFor("3130-1654-0476", "佐川急便")).toEqual({ kind: "copy", url: "https://e-customer.sagawa-exp.co.jp/k2k" });
+    expect(trackingLinkFor("3130-1654-0476", "佐川急便")).toEqual({
+      kind: "copy",
+      url: "https://e-customer.sagawa-exp.co.jp/k2k",
+      pageName: "佐川のお荷物お問い合わせサービス",
+    });
     const post = trackingLinkFor("123456789012", "ゆうパック");
     expect(post?.kind).toBe("open");
     expect(post?.url).toContain("reqCodeNo1=123456789012");

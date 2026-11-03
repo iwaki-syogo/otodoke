@@ -29,8 +29,8 @@ function copyNow(text: string): boolean {
   return ok;
 }
 
-/** How long the "copied" note stays up before the carrier's page opens. */
-const OPEN_AFTER_MS = 1000;
+/** How long the "copied" popup stays up before the carrier's page opens: long enough to read both lines. */
+const OPEN_AFTER_MS = 1500;
 
 /**
  * Opens a page in a new tab. A tab opened after a delay can be blocked as a popup (iOS Safari
@@ -45,10 +45,11 @@ function openLater(url: string) {
 
 /**
  * For carriers that take no number from outside (Sagawa): copies the number during the tap,
- * says so on screen, then opens the carrier's page so the number can be pasted there.
+ * says so in a popup, then opens the carrier's page so the number can be pasted there.
  */
-function CopyThenOpen({ url, number }: { url: string; number: string }) {
-  const [note, setNote] = useState<string | null>(null);
+function CopyThenOpen({ url, number, pageName }: { url: string; number: string; pageName: string }) {
+  // null: idle. Otherwise whether the copy worked; the popup stays up until the page opens.
+  const [copied, setCopied] = useState<boolean | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
@@ -56,26 +57,48 @@ function CopyThenOpen({ url, number }: { url: string; number: string }) {
   }, []);
 
   function onTap() {
-    if (note) return; // already on its way
+    if (copied !== null) return; // already on its way
     // Synchronous, inside the tap: the async Clipboard API fails once another tab has focus.
-    const ok = copyNow(number);
-    setNote(ok ? "追跡番号をコピーしました" : "追跡番号をコピーできませんでした");
+    setCopied(copyNow(number));
     timer.current = setTimeout(() => {
       timer.current = null;
       openLater(url);
-      setNote(null);
+      setCopied(null);
     }, OPEN_AFTER_MS);
   }
 
   return (
     <>
       {" "}
-      <button type="button" onClick={onTap} disabled={note !== null} className={LINK}>
+      <button type="button" onClick={onTap} disabled={copied !== null} className={LINK}>
         追跡ページを開く
       </button>
-      {note ? (
-        <div role="status" className="fixed inset-x-4 bottom-24 z-20 mx-auto max-w-md rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
-          {note}
+      {copied !== null ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+          <div role="status" aria-live="polite" className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            {copied ? (
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="mx-auto size-12 rounded-full bg-emerald-100 p-2.5 text-emerald-600">
+                <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : null}
+            <p className={`text-lg font-bold text-neutral-900 ${copied ? "mt-3" : ""}`}>
+              {copied ? "追跡番号をコピーしました" : "追跡番号をコピーできませんでした"}
+            </p>
+            {copied ? null : (
+              <p className="mt-3 select-all break-all font-mono text-2xl font-bold tracking-wider text-neutral-900">{number}</p>
+            )}
+            <p className="mt-3 text-sm text-neutral-600">
+              {`${pageName}ページに`}
+              {/* Kept on one line with the spinner, so a wrap on a phone never splits 移動中. */}
+              <span className="whitespace-nowrap">
+                移動中です
+                <span
+                  aria-hidden="true"
+                  className="ml-1.5 inline-block size-3.5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 align-[-2px]"
+                />
+              </span>
+            </p>
+          </div>
         </div>
       ) : null}
     </>
@@ -96,7 +119,7 @@ export function TrackingButton({ link, number }: { link: TrackingLink; number: s
       </form>
     );
   }
-  if (link.kind === "copy") return <CopyThenOpen url={link.url} number={number} />;
+  if (link.kind === "copy") return <CopyThenOpen url={link.url} number={number} pageName={link.pageName} />;
   return (
     <>
       {" "}
