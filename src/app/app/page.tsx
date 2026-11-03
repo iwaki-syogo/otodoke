@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, formatWindow, relativeDateJa, todayJst } from "@/lib/format";
-import { isOverdue, type ParcelRow } from "@/lib/match";
+import { isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
 import { UNREAD_FILTER } from "@/lib/unread";
+import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
 import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
@@ -21,15 +22,21 @@ export default async function ParcelsPage() {
     .select("id", { count: "exact", head: true })
     .or(UNREAD_FILTER());
 
-  const overdue = parcels.filter((p) => isOverdue(p, today));
-  const current = parcels.filter((p) => !isOverdue(p, today));
-  const incoming = current.filter((p) => ["shipped", "out_for_delivery", "attempted"].includes(p.status)).sort(byNextArrival(today));
-  const ordered = current.filter((p) => ["ordered", "unknown"].includes(p.status));
+  const open = parcels.filter((p) => p.status !== "delivered" && p.status !== "cancelled");
+  // Two weeks past the date with no word: ask the user instead of guessing.
+  const toCheck = open.filter((p) => needsCheck(p, today));
+  const active = open.filter((p) => !needsCheck(p, today));
+  const delivering = active.filter((p) => p.status === "out_for_delivery" && !isLate(p, today));
+  const ordered = active.filter((p) => ["ordered", "unknown"].includes(p.status) && !isLate(p, today));
+  // Everything else on its way, including a parcel past its date that may still come.
+  const soon = active.filter((p) => !delivering.includes(p) && !ordered.includes(p)).sort(byNextArrival(today));
+  // A parcel marked by hand counts from when it was marked, not from its last mail.
+  const touched = (p: ParcelRow) => [p.last_email_at ?? "", p.updated_at].sort().at(-1) ?? "";
   const delivered = parcels
-    .filter((p) => p.status === "delivered" && (p.last_email_at ?? "") >= addDays(today, -30))
-    .sort((a, b) => (b.last_email_at ?? "").localeCompare(a.last_email_at ?? ""));
+    .filter((p) => p.status === "delivered" && touched(p) >= addDays(today, -30))
+    .sort((a, b) => touched(b).localeCompare(touched(a)));
   const cancelled = parcels.filter((p) => p.status === "cancelled");
-  const presenceSoon = incoming.filter((p) => p.requires_presence && lastDay(p) && (lastDay(p) as string) >= today);
+  const faceToFace = active.filter((p) => p.requires_presence && (lastExpectedDay(p) ?? "") >= today).sort(byNextArrival(today));
 
   const waitingNotice = waiting ? (
     <Link href="/app/settings" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
@@ -47,13 +54,14 @@ export default async function ParcelsPage() {
   }
 
   return (
+    <DeliveredToastProvider>
     <div className="flex flex-col gap-8">
       {waitingNotice}
-      {presenceSoon.length > 0 ? (
+      {faceToFace.length > 0 ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
-          <h2 className="text-sm font-bold text-red-900">家にいる必要がある日</h2>
+          <h2 className="text-sm font-bold text-red-900">対面受け取りが必要な商品</h2>
           <ul className="mt-2 flex flex-col gap-1 text-sm text-red-900">
-            {presenceSoon.map((p) => (
+            {faceToFace.map((p) => (
               <li key={p.id}>
                 <Link href={`/app/parcels/${p.id}`} className="underline underline-offset-4">
                   {relativeDateJa(p.expected_date)} {formatWindow(p.expected_window_start, p.expected_window_end)} {p.title ?? p.shop}
@@ -64,23 +72,59 @@ export default async function ParcelsPage() {
         </section>
       ) : null}
 
-      <Section title="もうすぐ届く" count={incoming.length} items={incoming} />
-      <Section title="注文中" count={ordered.length} items={ordered} empty="注文中の荷物はありません" />
+      <CheckSection items={toCheck} />
+      <Section title="配達中" count={delivering.length} items={delivering} swipe />
+      <Section title="もうすぐ届く" count={soon.length} items={soon} swipe />
+      <Section title="注文中" count={ordered.length} items={ordered} empty="注文中の荷物はありません" swipe />
       <Section title="届いた（30 日）" count={delivered.length} items={delivered} empty="最近届いた荷物はありません" />
-      <Folded summary={`届いたか分からない荷物 ${overdue.length} 件`} items={overdue} />
       <Folded summary={`キャンセル ${cancelled.length} 件`} items={cancelled} />
+      {open.length > 0 ? <p className="text-center text-xs text-neutral-500">届いた荷物は、左にスワイプして「届いた」にできます</p> : null}
     </div>
+    </DeliveredToastProvider>
   );
 }
 
-/** The last day a parcel may still arrive on time: the end of a window, or the one date. */
-function lastDay(p: ParcelRow): string | null {
-  return p.expected_date_end ?? p.expected_date;
+/** Parcels two weeks past their date with no delivery mail, to be confirmed by the user. */
+function CheckSection({ items }: { items: ParcelRow[] }) {
+  if (items.length === 0) return null;
+  const shown = items.slice(0, 5);
+  const rest = items.slice(5);
+  return (
+    <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+      <h2 className="flex items-baseline gap-2 text-base font-bold text-amber-950">
+        要確認
+        <span className="text-sm font-normal text-amber-900">{items.length}</span>
+      </h2>
+      <p className="mt-1 text-sm text-amber-950">お届け予定から 2 週間以上たっても、届いた連絡がない荷物です。届いていますか？</p>
+      <div className="mt-3">
+        <DeliverAll items={items.map((p) => ({ id: p.id, status: p.status }))} />
+      </div>
+      <div className="mt-3 flex flex-col gap-3">
+        {shown.map((p) => (
+          <SwipeToDeliver key={p.id} id={p.id} status={p.status}>
+            <ParcelCard parcel={p} />
+          </SwipeToDeliver>
+        ))}
+      </div>
+      {rest.length > 0 ? (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-sm text-amber-900">ほか {rest.length} 件を見る</summary>
+          <div className="mt-3 flex flex-col gap-3">
+            {rest.map((p) => (
+              <SwipeToDeliver key={p.id} id={p.id} status={p.status}>
+                <ParcelCard parcel={p} />
+              </SwipeToDeliver>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </section>
+  );
 }
 
 /** What arrives next comes first, then what is running late, then what has no date yet. */
 function byNextArrival(today: string) {
-  const rank = (p: ParcelRow) => (!p.expected_date ? 2 : (lastDay(p) as string) >= today ? 0 : 1);
+  const rank = (p: ParcelRow) => (!p.expected_date ? 2 : (lastExpectedDay(p) as string) >= today ? 0 : 1);
   return (a: ParcelRow, b: ParcelRow) => rank(a) - rank(b) || (a.expected_date ?? "").localeCompare(b.expected_date ?? "");
 }
 
@@ -98,7 +142,7 @@ function Folded({ summary, items }: { summary: string; items: ParcelRow[] }) {
   );
 }
 
-function Section({ title, count, items, empty }: { title: string; count: number; items: ParcelRow[]; empty?: string }) {
+function Section({ title, count, items, empty, swipe = false }: { title: string; count: number; items: ParcelRow[]; empty?: string; swipe?: boolean }) {
   if (items.length === 0 && !empty) return null;
   return (
     <section>
@@ -110,9 +154,15 @@ function Section({ title, count, items, empty }: { title: string; count: number;
         <p className="mt-2 text-sm text-neutral-500">{empty}</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
-          {items.map((p) => (
-            <ParcelCard key={p.id} parcel={p} />
-          ))}
+          {items.map((p) =>
+            swipe ? (
+              <SwipeToDeliver key={p.id} id={p.id} status={p.status}>
+                <ParcelCard parcel={p} />
+              </SwipeToDeliver>
+            ) : (
+              <ParcelCard key={p.id} parcel={p} />
+            ),
+          )}
         </div>
       )}
     </section>

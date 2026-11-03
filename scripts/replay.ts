@@ -6,7 +6,7 @@
  */
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { buildParcelInsert, buildParcelUpdate, chooseParcel, isOverdue, isParcelRelevant, parcelTotal, splitOrders, startsParcel, type ParcelCandidate } from "../src/lib/match";
+import { buildParcelInsert, buildParcelUpdate, chooseParcel, needsCheck, isParcelRelevant, parcelTotal, splitOrders, startsParcel, type ParcelCandidate } from "../src/lib/match";
 import { normalizeTracking } from "../src/lib/carriers";
 import { withDefaults, type Extraction } from "../src/lib/extract/schema";
 
@@ -115,7 +115,7 @@ async function main() {
     noAmount: sims.filter((p) => p.row.total_amount === null).length,
     needsReview: sims.filter((p) => p.row.needs_review).length,
     presence: sims.filter((p) => p.row.requires_presence === true).length,
-    overdue: sims.filter((p) => isOverdue(p.row, newest.slice(0, 10))).length,
+    needsCheck: sims.filter((p) => needsCheck(p.row, newest.slice(0, 10))).length,
     spendable: sims.filter((p) => p.row.total_amount !== null && p.row.ordered_at && p.row.status !== "cancelled").reduce((sum, p) => sum + (p.row.total_amount ?? 0), 0),
     pricedNoDate: sims.filter((p) => p.row.total_amount !== null && !p.row.ordered_at).length,
     mixedShops: sims.filter((p) => new Set(p.mails.map((m) => m.shopKey)).size > 1).length,

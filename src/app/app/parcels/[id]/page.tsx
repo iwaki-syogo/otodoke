@@ -60,7 +60,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           </dd>
           <dt className="text-neutral-500">受け取り</dt>
           <dd>
-            {parcel.requires_presence === true ? "在宅が必要" : parcel.requires_presence === false ? "置き配・投函でOK" : <span className="text-neutral-500">メールに記載なし</span>}
+            {parcel.requires_presence === true ? "対面受け取りが必要" : parcel.requires_presence === false ? "置き配・投函でOK" : <span className="text-neutral-500">メールに記載なし</span>}
             {parcel.presence_evidence ? <span className="block text-xs text-neutral-500">根拠: 「{parcel.presence_evidence}」</span> : null}
           </dd>
           <dt className="text-neutral-500">配送</dt>

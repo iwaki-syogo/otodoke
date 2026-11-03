@@ -91,7 +91,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                       presence ? "bg-red-600 font-bold text-white" : "bg-sky-100 text-sky-900"
                     }`}
                   >
-                    {presence ? "🏠" : ""}
+                    {presence ? "🤝" : ""}
                     {list.length}件
                   </span>
                 ) : null}
@@ -113,7 +113,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                 <h2 className={`flex items-center gap-2 text-sm font-bold ${day === today ? "text-neutral-900" : "text-neutral-700"}`}>
                   {formatDateJa(day)}
                   {day === today ? <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] text-white">今日</span> : null}
-                  {presence ? <span className="text-[11px] font-bold text-red-700">在宅が必要</span> : null}
+                  {presence ? <span className="text-[11px] font-bold text-red-700">対面受け取り</span> : null}
                 </h2>
                 <ul className="mt-2 flex flex-col gap-2">
                   {list.map((p) => (

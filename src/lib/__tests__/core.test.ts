@@ -10,7 +10,8 @@ import {
   buildParcelInsert,
   buildParcelUpdate,
   chooseParcel,
-  isOverdue,
+  isLate,
+  needsCheck,
   parcelTotal,
   rebuildParcel,
   splitOrders,
@@ -334,19 +335,25 @@ describe("startsParcel", () => {
   });
 });
 
-describe("isOverdue", () => {
+describe("needsCheck", () => {
   const row = (status: string, expected_date: string | null, last_email_at: string | null, expected_date_end: string | null = null) => ({ status, expected_date, expected_date_end, last_email_at });
   it.each([
-    ["3 days past the date is still current", row("shipped", "2026-10-30", null), false],
-    ["4 days past the date is overdue", row("shipped", "2026-10-29", null), true],
-    ["no date, 21 days quiet is still current", row("ordered", null, "2026-10-12T00:00:00Z"), false],
-    ["no date, 22 days quiet is overdue", row("ordered", null, "2026-10-11T00:00:00Z"), true],
+    ["13 days past the date is not asked yet", row("shipped", "2026-10-20", null), false],
+    ["14 days past the date is asked", row("shipped", "2026-10-19", null), true],
+    ["no date, 13 days since the last mail is not asked", row("ordered", null, "2026-10-20T03:00:00Z"), false],
+    ["no date, 14 days since the last mail (JST) is asked", row("ordered", null, "2026-10-18T16:00:00Z"), true],
     ["a delivered parcel never is", row("delivered", "2020-01-01", null), false],
     ["a cancelled parcel never is", row("cancelled", "2020-01-01", null), false],
-    ["a window counts from its last day", row("shipped", "2026-10-23", null, "2026-10-31"), false],
-    ["a window long past its last day is overdue", row("shipped", "2026-10-20", null, "2026-10-29"), true],
+    ["a window counts from its last day", row("shipped", "2026-10-01", null, "2026-10-25"), false],
+    ["a window two weeks past its last day is asked", row("shipped", "2026-10-01", null, "2026-10-19"), true],
   ])("%s", (_name, p, want) => {
-    expect(isOverdue(p, "2026-11-02")).toBe(want);
+    expect(needsCheck(p, "2026-11-02")).toBe(want);
+  });
+
+  it("calls a parcel late from the day after its last day", () => {
+    expect(isLate(row("shipped", "2026-11-01", null), "2026-11-02")).toBe(true);
+    expect(isLate(row("shipped", "2026-11-02", null), "2026-11-02")).toBe(false);
+    expect(isLate(row("shipped", "2026-10-30", null, "2026-11-03"), "2026-11-02")).toBe(false);
   });
 });
 

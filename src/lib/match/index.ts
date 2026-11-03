@@ -340,12 +340,33 @@ export function parcelTotal(mails: Extraction[]): number | null {
   return total > 0 ? total : null;
 }
 
-/** Still open, but long past when it should have arrived: most shops send no delivery mail. */
-export function isOverdue(p: Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at">, today: string): boolean {
+/** How long past its date a parcel waits before the user is asked whether it came. */
+export const CHECK_AFTER_DAYS = 14;
+
+type DatedParcel = Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at">;
+
+/** The last day a parcel may still arrive on time: the end of a window, or the one date. */
+export function lastExpectedDay(p: Pick<ParcelRow, "expected_date" | "expected_date_end">): string | null {
+  return p.expected_date_end ?? p.expected_date;
+}
+
+/**
+ * Still open two weeks after it should have arrived (or, with no date, two weeks after its
+ * last mail). Most shops send no delivery mail, so these are asked about rather than guessed.
+ */
+export function needsCheck(p: DatedParcel, today: string): boolean {
   if (p.status === "delivered" || p.status === "cancelled") return false;
-  const lastDay = p.expected_date_end ?? p.expected_date;
-  if (lastDay) return lastDay < addDays(today, -3);
-  return p.last_email_at !== null && p.last_email_at.slice(0, 10) < addDays(today, -21);
+  const cutoff = addDays(today, -CHECK_AFTER_DAYS);
+  const lastDay = lastExpectedDay(p);
+  if (lastDay) return lastDay <= cutoff;
+  return p.last_email_at !== null && todayJst(new Date(p.last_email_at)) <= cutoff;
+}
+
+/** Past its date with no delivery mail yet, but not long enough to ask. */
+export function isLate(p: DatedParcel, today: string): boolean {
+  if (p.status === "delivered" || p.status === "cancelled") return false;
+  const lastDay = lastExpectedDay(p);
+  return lastDay !== null && lastDay < today;
 }
 
 const NO_VALUE = { value: null, evidence: null, confidence: 0 };
