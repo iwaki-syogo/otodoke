@@ -61,13 +61,24 @@ export function MonthPicker({
   // Whether the move on the way is the one this picker sent (its spinner and the picked name).
   const mine = scope ? scope.pending && scope.target === key : ownPending;
 
-  // Another move on the way drops a held month: the name goes back to the month shown, and
-  // nothing is sent for it later.
+  // Another move on the way, or a change of the month shown, drops a held month: the name goes
+  // back to the month shown, and nothing is sent for it later. The input is uncontrolled, so its
+  // own value is put back too: the wheels open at the month shown again (and "done" there is not
+  // a silent no-op). `key={value}` alone misses a move that keeps the month (only `?c=` changes).
   const otherMove = pending && !mine;
-  if (otherMove && heldMonth !== null) setHeldMonth(null);
+  const [heldFor, setHeldFor] = useState(value);
+  const valueMoved = heldFor !== value;
+  if (valueMoved) setHeldFor(value);
+  if ((otherMove || valueMoved) && heldMonth !== null) setHeldMonth(null);
   useEffect(() => {
-    if (otherMove) held.current = null;
-  }, [otherMove]);
+    if (!otherMove) return;
+    held.current = null;
+    if (inputRef.current) inputRef.current.value = value;
+  }, [otherMove, value]);
+  useEffect(() => {
+    held.current = null;
+    if (inputRef.current) inputRef.current.value = value;
+  }, [value]);
 
   // The one place a picked month is sent.
   const send = (month: string) => {
@@ -104,7 +115,7 @@ export function MonthPicker({
     };
   });
 
-  const shown = mine && picked ? picked : heldMonth !== null && !otherMove ? heldMonth : value;
+  const shown = mine && picked ? picked : heldMonth !== null && !otherMove && !valueMoved ? heldMonth : value;
 
   return (
     <span className="relative inline-flex items-center gap-1 rounded-lg px-2 py-1 active:bg-neutral-100">
@@ -130,6 +141,8 @@ export function MonthPicker({
             if (!holdsUntilClosed()) return send(e.target.value);
             held.current = e.target.value || null;
             setHeldMonth(held.current);
+            // Reset to empty: nothing is held, and the wheels go back to the month shown.
+            if (!held.current) e.target.value = value;
           }}
           onBlur={flush}
           onClick={(e) => {
