@@ -252,7 +252,7 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
   if (parcel) {
     const update = buildParcelUpdate(parcel, x, mail.sentAt);
     if (Object.keys(update).length > 0) {
-      const { error } = await db.from("parcels").update(update).eq("id", parcel.id);
+      const { error } = await db.from("parcels").update(update).eq("id", parcel.id).eq("user_id", mail.userId);
       if (error) throw new Error(`parcels update failed: ${error.message}`);
     }
     parcelId = parcel.id;
@@ -265,7 +265,11 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
 
   // Items: only when the parcel has none yet (order mails carry the full list).
   if (x.items.length > 0) {
-    const { count, error: countError } = await db.from("parcel_items").select("id", { count: "exact", head: true }).eq("parcel_id", parcelId);
+    const { count, error: countError } = await db
+      .from("parcel_items")
+      .select("id", { count: "exact", head: true })
+      .eq("parcel_id", parcelId)
+      .eq("user_id", mail.userId);
     if (countError) throw new Error(`parcel_items count failed: ${countError.message}`);
     if (!count) {
       const { error } = await db.from("parcel_items").insert(
@@ -292,7 +296,7 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
     confidence: Math.max(0, Math.min(1, x.overall_confidence)),
   });
   if (extractionError) throw new Error(`extractions insert failed: ${extractionError.message}`);
-  await refreshTotal(db, parcelId);
+  await refreshTotal(db, mail.userId, parcelId);
   return { parcelId, created };
 }
 
@@ -309,20 +313,28 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
   const absorbIds = twins.absorb.map((p) => p.id);
 
   // The survivor keeps its own item list, and borrows one only when it has none.
-  const { count, error: countError } = await db.from("parcel_items").select("id", { count: "exact", head: true }).eq("parcel_id", keepId);
+  const { count, error: countError } = await db
+    .from("parcel_items")
+    .select("id", { count: "exact", head: true })
+    .eq("parcel_id", keepId)
+    .eq("user_id", userId);
   if (countError) throw new Error(`parcel_items count failed: ${countError.message}`);
   if (!count) {
-    const { data: donor, error: donorError } = await db.from("parcel_items").select("parcel_id").in("parcel_id", absorbIds).limit(1);
+    const { data: donor, error: donorError } = await db.from("parcel_items").select("parcel_id").in("parcel_id", absorbIds).eq("user_id", userId).limit(1);
     if (donorError) throw new Error(`parcel_items lookup failed: ${donorError.message}`);
     if (donor?.[0]) {
-      const { error: moveItemsError } = await db.from("parcel_items").update({ parcel_id: keepId }).eq("parcel_id", donor[0].parcel_id);
+      const { error: moveItemsError } = await db
+        .from("parcel_items")
+        .update({ parcel_id: keepId })
+        .eq("parcel_id", donor[0].parcel_id)
+        .eq("user_id", userId);
       if (moveItemsError) throw new Error(`parcel_items move failed: ${moveItemsError.message}`);
     }
   }
-  const { error: moveError } = await db.from("extractions").update({ parcel_id: keepId }).in("parcel_id", absorbIds);
+  const { error: moveError } = await db.from("extractions").update({ parcel_id: keepId }).in("parcel_id", absorbIds).eq("user_id", userId);
   if (moveError) throw new Error(`extractions move failed: ${moveError.message}`);
 
-  const { data: mails, error: mailsError } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", keepId);
+  const { data: mails, error: mailsError } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", keepId).eq("user_id", userId);
   if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
   const rebuilt = rebuildParcel(
     userId,
@@ -330,7 +342,7 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
   );
   const { user_id: _owner, ...fields } = rebuilt;
   void _owner;
-  const { error: updateError } = await db.from("parcels").update(fields).eq("id", keepId);
+  const { error: updateError } = await db.from("parcels").update(fields).eq("id", keepId).eq("user_id", userId);
   if (updateError) throw new Error(`parcels rebuild failed: ${updateError.message}`);
   // Last, so a failure above leaves the twin in place and the next delivery of this mail merges again.
   const { error: deleteError } = await db.from("parcels").delete().in("id", absorbIds).eq("user_id", userId);
@@ -340,17 +352,18 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
 
 /** Every parcel of this user, with item names, so the rules in chooseParcel see the same data everywhere. */
 async function findParcel(db: AdminClient, userId: string, x: Extraction) {
-  const { data, error } = await db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId);
+  // The embedded items are filtered too: the service role sees every account's rows.
+  const { data, error } = await db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId).eq("parcel_items.user_id", userId);
   if (error) throw new Error(`parcels lookup failed: ${error.message}`);
   const candidates = data.map(({ parcel_items, ...row }) => ({ ...row, itemNames: parcel_items.map((it: { name: string }) => it.name) }));
   return chooseParcel(candidates, x);
 }
 
 /** The total depends on every mail read for the parcel, including the one just stored. */
-async function refreshTotal(db: AdminClient, parcelId: string) {
-  const { data, error } = await db.from("extractions").select("result").eq("parcel_id", parcelId);
+async function refreshTotal(db: AdminClient, userId: string, parcelId: string) {
+  const { data, error } = await db.from("extractions").select("result").eq("parcel_id", parcelId).eq("user_id", userId);
   if (error) throw new Error(`extractions lookup failed: ${error.message}`);
   const total = parcelTotal(data.map((row) => row.result as unknown as Extraction));
-  const { error: updateError } = await db.from("parcels").update({ total_amount: total }).eq("id", parcelId);
+  const { error: updateError } = await db.from("parcels").update({ total_amount: total }).eq("id", parcelId).eq("user_id", userId);
   if (updateError) throw new Error(`parcels total update failed: ${updateError.message}`);
 }
