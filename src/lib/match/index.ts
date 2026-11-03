@@ -2,6 +2,7 @@ import type { Database } from "@/lib/db/database.types";
 import type { Extraction, OtherOrder, Relevance } from "@/lib/extract/schema";
 import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
 import { addDays, todayJst } from "@/lib/format";
+import { categoryForInsert, categoryForUpdate } from "./category";
 
 /** Calendar date (JST) of an ISO instant, for the `date` columns. */
 function jstDate(iso: string | null): string | null {
@@ -161,6 +162,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
     total_amount: confident(x.total_amount),
     needs_review: x.overall_confidence < MIN_CONFIDENCE,
     last_email_at: emailSentAt,
+    ...categoryForInsert(x.category ?? null),
   };
 }
 
@@ -214,6 +216,7 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   const hasItems = existing.itemNames ? existing.itemNames.length > 0 : existing.title !== null;
   if (x.items.length > 0 && !hasItems) update.title = parcelTitle(x.items, null);
   else if (!existing.title && slipCategoryOf(x)) update.title = slipCategoryOf(x);
+  Object.assign(update, categoryForUpdate(existing, x.category ?? null, x.items.length > 0 && !hasItems));
   // The first mail with an order number names the seller; a carrier slip may have named a warehouse.
   const shop = shopNameOf(x);
   if (shop && (isPlaceholderShop(existing.shop) || (!existing.order_number && orderNumber !== null))) {
@@ -224,6 +227,65 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   if (emailSentAt && (!existing.last_email_at || emailSentAt > existing.last_email_at)) update.last_email_at = emailSentAt;
   if (x.overall_confidence < MIN_CONFIDENCE) update.needs_review = true;
 
+  return update;
+}
+
+/** A parcel the person typed in. A row with no source (fixtures, replay) is a mail parcel. */
+function isManual(p: { source?: string | null }): boolean {
+  return p.source === "manual";
+}
+
+/**
+ * A mail joins a parcel the person typed in. What they typed is never replaced: the mail only
+ * fills empty fields, moves the status forward, and gives a category when there is none.
+ */
+export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, x: Extraction, emailSentAt: string | null): ParcelUpdate {
+  const update: ParcelUpdate = {};
+
+  const incomingStatus = statusOf(x);
+  if (incomingStatus && existing.status !== "delivered" && (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0)) update.status = incomingStatus;
+
+  const orderNumber = confident(x.order_number);
+  if (orderNumber && !existing.order_number) update.order_number = orderNumber;
+
+  const tracking = confident(x.tracking_number);
+  if (tracking && !existing.tracking_number) {
+    update.tracking_number = normalizeTracking(tracking);
+    if (!existing.tracking_url) update.tracking_url = trackingUrlFor(tracking, existing.carrier ?? x.carrier.value);
+  }
+  if (!existing.carrier) {
+    const number = existing.tracking_number ?? tracking;
+    const info = number || x.carrier.value ? identifyCarrier(number, x.carrier.value) : null;
+    const name = info && info.key !== "unknown" ? info.name : x.carrier.value;
+    if (name) update.carrier = name;
+  }
+
+  // The date and its window belong together: a date the person gave keeps its own window.
+  const expectedDate = asDate(confident(x.expected_date));
+  if (expectedDate && !existing.expected_date) {
+    update.expected_date = expectedDate;
+    update.expected_date_end = windowEnd(x, expectedDate);
+    update.expected_window_start = asTime(confident(x.expected_window_start));
+    update.expected_window_end = asTime(confident(x.expected_window_end));
+    update.expected_text = x.expected_text;
+  }
+
+  const presence = confident(x.requires_presence);
+  if (presence !== null && existing.requires_presence === null) {
+    update.requires_presence = presence;
+    update.presence_evidence = x.requires_presence.evidence;
+  }
+
+  const orderedAt = orderDate(x, emailSentAt);
+  if (orderedAt && !existing.ordered_at) update.ordered_at = orderedAt;
+  if (!existing.title) {
+    const title = parcelTitle(x.items, slipCategoryOf(x));
+    if (title) update.title = title;
+  }
+
+  if (emailSentAt && (!existing.last_email_at || emailSentAt > existing.last_email_at)) update.last_email_at = emailSentAt;
+  // The typed-in title names the parcel, so a mail's items never count as the first ones here.
+  Object.assign(update, categoryForUpdate(existing, x.category ?? null, false));
   return update;
 }
 
@@ -263,12 +325,14 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
   }
 
   const shopKey = x.shop_key ?? "other";
+  // A parcel the person typed in is matched by its numbers only, never by the softer signals.
+  const fromMails = newestFirst.filter((p) => !isManual(p));
 
   // A shop mail with only an order number and a carrier mail with only a tracking number
   // describe one parcel when they name the same known shop and the same day.
   const expected = asDate(confident(x.expected_date));
   if (expected && shopKey !== "other" && (orderNumber || tracking) && !(orderNumber && tracking)) {
-    const hit = newestFirst.find(
+    const hit = fromMails.find(
       (p) =>
         p.shop_key === shopKey &&
         p.expected_date === expected &&
@@ -283,7 +347,7 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
   if (x.items.length > 0 && x.relevance !== "order" && x.relevance !== "other_purchase") {
     const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
     const first = x.items[0].name.replace(/\.{3}|…/g, "").trim();
-    const recent = newestFirst.filter(
+    const recent = fromMails.filter(
       (p) =>
         sameShop(p, x) &&
         p.created_at >= since &&
@@ -436,7 +500,10 @@ export function rebuildParcel(userId: string, mails: { x: Extraction; sentAt: st
 /** Carriers reuse tracking numbers after some months; twins are opened within days of each other. */
 const TWIN_WINDOW_MS = 30 * 86_400_000;
 
-export function twinsByTracking<T extends Pick<ParcelRow, "id" | "tracking_number" | "order_number" | "created_at">>(parcels: T[], keepId: string): { keep: T; absorb: T[] } | null {
+export function twinsByTracking<T extends Pick<ParcelRow, "id" | "tracking_number" | "order_number" | "created_at"> & { source?: string | null }>(
+  parcels: T[],
+  keepId: string,
+): { keep: T; absorb: T[] } | null {
   const target = parcels.find((p) => p.id === keepId);
   if (!target?.tracking_number) return null;
   const near = (p: T) => Math.abs(Date.parse(p.created_at) - Date.parse(target.created_at)) <= TWIN_WINDOW_MS;
@@ -445,6 +512,10 @@ export function twinsByTracking<T extends Pick<ParcelRow, "id" | "tracking_numbe
   const withOrder = same.filter((p) => p.order_number);
   // Two different orders under one number would be a shop reusing slips: leave them apart.
   if (new Set(withOrder.map((p) => normalizeOrderNumber(p.order_number!))).size > 1) return null;
-  const keep = withOrder[0] ?? [...same].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
-  return { keep, absorb: same.filter((p) => p.id !== keep.id) };
+  const oldestFirst = [...same].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  // A parcel the person typed in always stays, and two of them are never folded into each other.
+  const typed = isManual(target) ? target : oldestFirst.find(isManual);
+  const keep = typed ?? withOrder[0] ?? oldestFirst[0];
+  const absorb = same.filter((p) => p.id !== keep.id && !isManual(p));
+  return absorb.length > 0 ? { keep, absorb } : null;
 }
