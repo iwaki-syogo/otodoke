@@ -242,8 +242,15 @@ function isManual(p: { source?: string | null }): boolean {
 export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, x: Extraction, emailSentAt: string | null): ParcelUpdate {
   const update: ParcelUpdate = {};
 
+  // Forward along the delivery only: a cancel notice is not taken over (the person's form has no such status).
   const incomingStatus = statusOf(x);
-  if (incomingStatus && existing.status !== "delivered" && (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0)) update.status = incomingStatus;
+  if (
+    incomingStatus &&
+    incomingStatus !== "cancelled" &&
+    existing.status !== "delivered" &&
+    (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0)
+  )
+    update.status = incomingStatus;
 
   const orderNumber = confident(x.order_number);
   if (orderNumber && !existing.order_number) update.order_number = orderNumber;
