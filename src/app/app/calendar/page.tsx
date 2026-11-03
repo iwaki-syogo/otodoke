@@ -19,7 +19,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const last = `${ym}-${String(daysInMonth(y, mo)).padStart(2, "0")}`;
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("parcels")
     .select("*")
     // A window that started last month and runs into this one belongs here too.
@@ -28,6 +28,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
     .neq("status", "cancelled")
     .order("expected_date", { ascending: true })
     .order("expected_window_start", { ascending: true, nullsFirst: false });
+  // A failed read is told apart from a month with nothing ahead.
+  if (error) console.error("calendar page:", error.message);
+  const failed = Boolean(error);
   const parcels: ParcelRow[] = data ?? [];
 
   // Only what is still ahead: past days, delivered and cancelled parcels are not shown.
@@ -97,7 +100,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
         </div>
       </div>
 
-      {days.length === 0 ? (
+      {failed ? (
+        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+      ) : days.length === 0 ? (
         <p className="py-6 text-center text-sm text-neutral-500">この月の予定はありません</p>
       ) : (
         <ol className="flex flex-col gap-5">

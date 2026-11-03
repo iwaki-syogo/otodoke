@@ -12,14 +12,17 @@ import { setCategory } from "./category-actions";
 export function CategorySheet({ parcelId, category }: { parcelId: string; category: string | null }) {
   const current: Category | null = isCategory(category) ? category : null;
   const [open, setOpen] = useState(false);
-  const [picked, setPicked] = useState<Category | null>(null);
+  // The choice and the category it replaced: shown from the tap until new props arrive, so the
+  // chip never falls back to the old value between the save and the refresh.
+  const [picked, setPicked] = useState<{ value: Category; from: Category | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const firstRef = useRef<HTMLButtonElement>(null);
 
-  // What the chip shows while saving: the choice, not the old value.
-  const shown = pending && picked ? picked : current;
+  // Once the props move on, the choice has done its job; a later change elsewhere shows as is.
+  if (picked && picked.from !== current) setPicked(null);
+  const shown = picked && picked.from === current ? picked.value : current;
 
   useEffect(() => {
     if (!open) return;
@@ -32,18 +35,20 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
   }, [open]);
 
   function choose(c: Category) {
-    setPicked(c);
+    setPicked({ value: c, from: current });
     setError(null);
     startTransition(async () => {
       try {
         const r = await setCategory(parcelId, c);
         if (!r.ok) {
+          setPicked(null);
           setError(r.error);
           return;
         }
         setOpen(false);
         router.refresh();
       } catch {
+        setPicked(null);
         setError("保存できませんでした");
       }
     });
@@ -93,7 +98,7 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
                   >
                     <span aria-hidden className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: categoryColor(c) }} />
                     <span className="flex-1">{categoryLabel(c)}</span>
-                    {pending && picked === c ? <Spinner /> : c === current ? <span className="text-neutral-900">✓</span> : null}
+                    {pending && picked?.value === c ? <Spinner /> : c === current ? <span className="text-neutral-900">✓</span> : null}
                   </button>
                 </li>
               ))}
