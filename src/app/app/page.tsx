@@ -29,7 +29,7 @@ export default async function ParcelsPage() {
     .filter((p) => p.status === "delivered" && (p.last_email_at ?? "") >= addDays(today, -30))
     .sort((a, b) => (b.last_email_at ?? "").localeCompare(a.last_email_at ?? ""));
   const cancelled = parcels.filter((p) => p.status === "cancelled");
-  const presenceSoon = incoming.filter((p) => p.requires_presence && p.expected_date && p.expected_date >= today);
+  const presenceSoon = incoming.filter((p) => p.requires_presence && lastDay(p) && (lastDay(p) as string) >= today);
 
   const waitingNotice = waiting ? (
     <Link href="/app/settings" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
@@ -73,9 +73,14 @@ export default async function ParcelsPage() {
   );
 }
 
+/** The last day a parcel may still arrive on time: the end of a window, or the one date. */
+function lastDay(p: ParcelRow): string | null {
+  return p.expected_date_end ?? p.expected_date;
+}
+
 /** What arrives next comes first, then what is running late, then what has no date yet. */
 function byNextArrival(today: string) {
-  const rank = (p: ParcelRow) => (!p.expected_date ? 2 : p.expected_date >= today ? 0 : 1);
+  const rank = (p: ParcelRow) => (!p.expected_date ? 2 : (lastDay(p) as string) >= today ? 0 : 1);
   return (a: ParcelRow, b: ParcelRow) => rank(a) - rank(b) || (a.expected_date ?? "").localeCompare(b.expected_date ?? "");
 }
 

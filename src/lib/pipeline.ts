@@ -321,8 +321,6 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
   }
   const { error: moveError } = await db.from("extractions").update({ parcel_id: keepId }).in("parcel_id", absorbIds);
   if (moveError) throw new Error(`extractions move failed: ${moveError.message}`);
-  const { error: deleteError } = await db.from("parcels").delete().in("id", absorbIds).eq("user_id", userId);
-  if (deleteError) throw new Error(`parcels delete failed: ${deleteError.message}`);
 
   const { data: mails, error: mailsError } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", keepId);
   if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
@@ -334,6 +332,9 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
   void _owner;
   const { error: updateError } = await db.from("parcels").update(fields).eq("id", keepId);
   if (updateError) throw new Error(`parcels rebuild failed: ${updateError.message}`);
+  // Last, so a failure above leaves the twin in place and the next delivery of this mail merges again.
+  const { error: deleteError } = await db.from("parcels").delete().in("id", absorbIds).eq("user_id", userId);
+  if (deleteError) throw new Error(`parcels delete failed: ${deleteError.message}`);
   return keepId;
 }
 

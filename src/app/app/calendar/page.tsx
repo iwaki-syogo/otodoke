@@ -20,8 +20,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const { data } = await supabase
     .from("parcels")
     .select("*")
-    .gte("expected_date", first)
+    // A window that started last month and runs into this one belongs here too.
     .lte("expected_date", last)
+    .or(`expected_date.gte.${first},expected_date_end.gte.${first}`)
     .neq("status", "cancelled")
     .order("expected_date", { ascending: true })
     .order("expected_window_start", { ascending: true, nullsFirst: false });
@@ -30,9 +31,11 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const byDay = new Map<string, ParcelRow[]>();
   for (const p of parcels) {
     if (!p.expected_date) continue;
-    const list = byDay.get(p.expected_date) ?? [];
+    // A window sits on its first day in this month.
+    const day = p.expected_date < first ? first : p.expected_date;
+    const list = byDay.get(day) ?? [];
     list.push(p);
-    byDay.set(p.expected_date, list);
+    byDay.set(day, list);
   }
 
   const leading = weekdayOf(first);
@@ -117,7 +120,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                     <li key={p.id}>
                       <Link href={`/app/parcels/${p.id}`} className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3 active:bg-neutral-50">
                         <div className="w-20 shrink-0 text-sm font-bold">
-                          {formatWindow(p.expected_window_start, p.expected_window_end) || <span className="font-normal text-neutral-500">時間未定</span>}
+                          {p.expected_date_end ? `${formatDateJa(p.expected_date)}〜${formatDateJa(p.expected_date_end)}のどこか` : formatWindow(p.expected_window_start, p.expected_window_end) || <span className="font-normal text-neutral-500">時間未定</span>}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs text-neutral-500">{p.shop}</p>

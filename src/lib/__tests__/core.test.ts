@@ -485,6 +485,17 @@ describe("one parcel opened twice", () => {
     expect(twins?.absorb.map((p) => p.id)).toEqual(["carrier"]);
   });
 
+  it("leaves a parcel from months ago alone when the number comes back", () => {
+    const parcels = [row("old", "111", null, "2026-05-01T00:00:00Z"), row("new", "111", "1001", "2026-10-16T00:00:00Z")];
+    expect(twinsByTracking(parcels, "new")).toBeNull();
+  });
+
+  it("names the shop from the order mail when the carrier mail came first", () => {
+    const fromSlip = buildParcelInsert("u", extraction({ shop_name: "株式会社テスト物流センター", shop_key: "other", tracking_number: sure("111") }), null);
+    const update = buildParcelUpdate(fromSlip as ParcelRow, extraction({ shop_name: "テスト店", shop_key: "other", order_number: sure("1001") }), null);
+    expect(update.shop).toBe("テスト店");
+  });
+
   it("leaves two different orders apart even under one number", () => {
     const parcels = [row("a", "111", "1001", "2026-10-15T00:00:00Z"), row("b", "111", "1002", "2026-10-16T00:00:00Z")];
     expect(twinsByTracking(parcels, "a")).toBeNull();

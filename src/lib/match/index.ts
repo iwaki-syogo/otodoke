@@ -202,8 +202,9 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   const hasItems = existing.itemNames ? existing.itemNames.length > 0 : existing.title !== null;
   if (x.items.length > 0 && !hasItems) update.title = parcelTitle(x.items, null);
   else if (!existing.title && confident(x.package_description)) update.title = confident(x.package_description);
+  // The first mail with an order number names the seller; a carrier slip may have named a warehouse.
   const shop = shopNameOf(x);
-  if (shop && isPlaceholderShop(existing.shop)) {
+  if (shop && (isPlaceholderShop(existing.shop) || (!existing.order_number && orderNumber !== null))) {
     update.shop = shop;
     if (x.shop_key) update.shop_key = x.shop_key;
   }
@@ -388,10 +389,14 @@ export function rebuildParcel(userId: string, mails: { x: Extraction; sentAt: st
  * mails before the shop does: the carrier mail opens a parcel of its own, then the shop
  * mail joins its order and brings the same number. The parcel with the order number stays.
  */
+/** Carriers reuse tracking numbers after some months; twins are opened within days of each other. */
+const TWIN_WINDOW_MS = 30 * 86_400_000;
+
 export function twinsByTracking<T extends Pick<ParcelRow, "id" | "tracking_number" | "order_number" | "created_at">>(parcels: T[], keepId: string): { keep: T; absorb: T[] } | null {
   const target = parcels.find((p) => p.id === keepId);
   if (!target?.tracking_number) return null;
-  const same = parcels.filter((p) => p.tracking_number === target.tracking_number);
+  const near = (p: T) => Math.abs(Date.parse(p.created_at) - Date.parse(target.created_at)) <= TWIN_WINDOW_MS;
+  const same = parcels.filter((p) => p.tracking_number === target.tracking_number && near(p));
   if (same.length < 2) return null;
   const withOrder = same.filter((p) => p.order_number);
   // Two different orders under one number would be a shop reusing slips: leave them apart.
