@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { SEARCH_MAX, deliveredFilterOptions, filterDelivered, groupByOrderMonth, itemNamesByParcel } from "@/lib/delivered";
+import { deliveredFilterOptions, filterDelivered, groupByOrderMonth, itemNamesByParcel, searchWord } from "@/lib/delivered";
 import type { ParcelRow } from "@/lib/match";
 import { firstParam } from "@/lib/shop";
 import { readAll } from "@/lib/supabase/read-all";
@@ -15,7 +15,8 @@ type SearchParams = Promise<{ q?: Param; s?: Param; c?: Param; m?: Param }>;
 
 export default async function DeliveredPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const q = (firstParam(params.q) ?? "").slice(0, SEARCH_MAX);
+  // As given: filterDelivered trims it and cuts it to length.
+  const q = firstParam(params.q) ?? "";
   const s = firstParam(params.s) ?? "";
   const c = firstParam(params.c) ?? "";
   const m = firstParam(params.m) ?? "";
@@ -61,7 +62,7 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
       ) : parcels.length === 0 ? (
         <p className="text-sm text-neutral-500">届いた荷物はありません</p>
       ) : (
-        <DeliveredFilter q={q} s={s} c={c} m={m} options={deliveredFilterOptions(parcels)}>
+        <DeliveredFilter q={searchWord(q)} s={s} c={c} m={m} options={deliveredFilterOptions(parcels)}>
           {shown.length === 0 ? (
             <p className="text-sm text-neutral-500">見つかりません</p>
           ) : (

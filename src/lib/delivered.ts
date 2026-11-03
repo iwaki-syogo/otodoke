@@ -51,6 +51,11 @@ export function itemNamesByParcel(items: Array<{ parcel_id: string; name: string
   return out;
 }
 
+/** The search word as it counts: trimmed, then cut to SEARCH_MAX. The one place this is done. */
+export function searchWord(q: string | undefined): string {
+  return (q ?? "").trim().slice(0, SEARCH_MAX);
+}
+
 /** Full-width / half-width and upper / lower case read alike. */
 const fold = (s: string) => s.normalize("NFKC").toLowerCase();
 
@@ -62,7 +67,7 @@ const isMonth = (m: string | undefined): m is string => /^\d{4}-(0[1-9]|1[0-2])$
  * compared in full; only the search word is cut to SEARCH_MAX.
  */
 export function filterDelivered<P extends FilterParcel>(parcels: P[], itemNames: Map<string, string[]>, values: DeliveredFilterValues): P[] {
-  const word = fold((values.q ?? "").trim().slice(0, SEARCH_MAX)).trim();
+  const word = fold(searchWord(values.q)).trim();
   const shop = values.s && parcels.some((p) => normalizeShop(p) === values.s) ? values.s : undefined;
   const category = categoryParam(values.c);
   const month = isMonth(values.m) ? values.m : undefined;
@@ -91,6 +96,15 @@ export function deliveredFilterOptions(parcels: FilterParcel[]): { shops: string
   const months = [...new Set(parcels.map((p) => (p.ordered_at ?? "").slice(0, 7)))].filter(isMonth).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
   const categories = [...CATEGORIES.map((c) => ({ value: c as string, label: categoryLabel(c) })), { value: NONE, label: categoryLabel(null) }];
   return { shops, months, categories };
+}
+
+/**
+ * The months the month select offers: the data's, plus a well-formed `m` the data does not have
+ * (so the select shows what the results are narrowed by). Newest first.
+ */
+export function monthChoices(months: string[], m: string | undefined): string[] {
+  if (!isMonth(m) || months.includes(m)) return months;
+  return [...months, m].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
 }
 
 /** The delivered page's URL with only the values given. */

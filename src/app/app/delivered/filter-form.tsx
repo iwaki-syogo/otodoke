@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type ReactNode } from "react";
-import { SEARCH_MAX, deliveredHref, type deliveredFilterOptions } from "@/lib/delivered";
+import { SEARCH_MAX, deliveredHref, monthChoices, type deliveredFilterOptions } from "@/lib/delivered";
 
 type Values = { q: string; s: string; c: string; m: string };
 type Options = ReturnType<typeof deliveredFilterOptions>;
@@ -77,10 +77,15 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
           enterKeyHint="search"
           maxLength={SEARCH_MAX}
           value={values.q}
-          onChange={(e) => setValues({ ...values, q: e.target.value })}
+          // Read-only while a move is on the way: what is typed then would be lost when it arrives.
+          readOnly={pending}
+          aria-disabled={pending || undefined}
+          onChange={(e) => {
+            if (!pending) setValues({ ...values, q: e.target.value });
+          }}
           placeholder="品名・店名"
           aria-label="検索"
-          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
+          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base read-only:opacity-60"
         />
         {pending ? <Spinner /> : null}
         {narrowed ? (
@@ -102,7 +107,7 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
       <div className="grid grid-cols-3 gap-2">
         {select("s", "すべての店", options.shops.map((v) => ({ value: v, label: v })))}
         {select("c", "すべての分類", options.categories)}
-        {select("m", "すべての月", options.months.map((v) => ({ value: v, label: monthName(v) })))}
+        {select("m", "すべての月", monthChoices(options.months, initial.m).map((v) => ({ value: v, label: monthName(v) })))}
       </div>
     </form>
   );
