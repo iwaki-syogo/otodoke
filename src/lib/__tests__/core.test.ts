@@ -428,6 +428,16 @@ describe("carrier-only mails", () => {
     expect(update.shop).toBe("ユニクロ オンラインストア");
   });
 
+  it.each([
+    ["000201-0000-9106", null],
+    ["No. 12345678", null],
+    ["衣料品", "衣料品"],
+    ["PC,DESKTOP,WITHOUT DISPLAY", "PC,DESKTOP,WITHOUT DISPLAY"],
+    ["Slim-RⅡ 浄水カートリッジ 2個", "Slim-RⅡ 浄水カートリッジ 2個"],
+  ])("takes %s from the slip as %s", (slip, want) => {
+    expect(buildParcelInsert("u", carrierMail({ shop_name: null, package_description: sure(slip) }), null).title).toBe(want);
+  });
+
   it("keeps the item title of a parcel that already has items", () => {
     const update = buildParcelUpdate({ ...parcel({ title: "エアリズムT" }), itemNames: ["エアリズムT"] }, extraction({ items: [{ name: "別の品", quantity: 1, unit_price: null, evidence: null }] }), null);
     expect(update.title).toBeUndefined();

@@ -99,6 +99,18 @@ export function shopNameOf(x: Pick<Extraction, "shop_name">): string | null {
   return name;
 }
 
+/**
+ * The slip category (衣料品), or null. Some shops print an order code in the slip's item field,
+ * and a string of digits tells the user nothing about the parcel.
+ */
+export function slipCategoryOf(x: Pick<Extraction, "package_description">): string | null {
+  const v = confident(x.package_description)?.trim();
+  if (!v) return null;
+  const digits = (v.match(/\d/g) ?? []).length;
+  const words = v.replace(/[\d\s\-‐–—ー_/.,#:：()（）]/g, "").replace(/^No/i, "").length;
+  return words > 0 && digits <= words ? v : null;
+}
+
 /** The last day of a promised window, when the mail gives one that makes sense. */
 function windowEnd(x: Pick<Extraction, "expected_date_end">, start: string | null): string | null {
   const end = asDate(confident(x.expected_date_end));
@@ -132,7 +144,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
     shop_key: x.shop_key ?? "other",
     order_number: confident(x.order_number),
     // A carrier slip names only a category (衣料品): better than nothing until the shop mail arrives.
-    title: parcelTitle(x.items, confident(x.package_description)),
+    title: parcelTitle(x.items, slipCategoryOf(x)),
     status,
     // A shop that sends no order mail still spent money: fall back to the first mail we saw.
     ordered_at: orderDate(x, emailSentAt),
@@ -201,7 +213,7 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   // Real item names replace a slip category; a parcel that already has item rows keeps its title.
   const hasItems = existing.itemNames ? existing.itemNames.length > 0 : existing.title !== null;
   if (x.items.length > 0 && !hasItems) update.title = parcelTitle(x.items, null);
-  else if (!existing.title && confident(x.package_description)) update.title = confident(x.package_description);
+  else if (!existing.title && slipCategoryOf(x)) update.title = slipCategoryOf(x);
   // The first mail with an order number names the seller; a carrier slip may have named a warehouse.
   const shop = shopNameOf(x);
   if (shop && (isPlaceholderShop(existing.shop) || (!existing.order_number && orderNumber !== null))) {
