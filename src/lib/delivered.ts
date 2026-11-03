@@ -6,7 +6,7 @@ export const NO_ORDER_DATE_LABEL = "注文日不明";
  * Newest month first, labelled 「2026年5月に注文」; within a month the newest order date
  * first. Parcels with no order date go last, under 「注文日不明」.
  */
-export function groupByOrderMonth<P extends { ordered_at: string | null }>(parcels: P[]): Array<{ label: string; parcels: P[] }> {
+export function groupByOrderMonth<P extends { id: string; ordered_at: string | null }>(parcels: P[]): Array<{ label: string; parcels: P[] }> {
   const dated = parcels.filter((p) => /^\d{4}-\d{2}/.test(p.ordered_at ?? ""));
   const undated = parcels.filter((p) => !dated.includes(p));
   // Plain code-unit comparison: ISO dates sort correctly, and no locale can change it.
