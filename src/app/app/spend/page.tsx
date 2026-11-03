@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { categoryColor, categoryLabel, isCategory, type Category } from "@/lib/category";
+import { categoryColor, categoryLabel, type Category } from "@/lib/category";
 import { daysInMonth, formatDateJa, monthLabel, shiftMonth, todayJst, yen } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { categoryOf, sharePercent, spendByCategory, spendByMonth, spendMonthParam, spendTotal, withEmptyMonths } from "@/lib/spend";
+import { NONE, categoryParam, normalizeShop } from "@/lib/shop";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { CategorySheet } from "../category-sheet";
@@ -14,8 +15,6 @@ type SearchParams = Promise<{ m?: string; c?: string }>;
 
 /** The whole period, as `?m=all`. */
 const ALL = "all";
-/** 未分類 in `?c=`. */
-const NONE = "none";
 
 const cParam = (c: Category | null) => (c === null ? NONE : c);
 
@@ -28,7 +27,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
   const first = `${ym}-01`;
   const last = `${ym}-${String(daysInMonth(y, mo)).padStart(2, "0")}`;
   // undefined: no filter; null: 未分類 only.
-  const only: Category | null | undefined = c === NONE ? null : isCategory(c) ? c : undefined;
+  const only: Category | null | undefined = categoryParam(c);
 
   const supabase = await createClient();
   let parcels: ParcelRow[] | null = null;
@@ -106,7 +105,7 @@ function Spend({
   const byShop = new Map<string, number>();
   for (const p of priced) {
     // Amazon signs its mails under several names; one shop should read as one line.
-    const name = p.shop_key === "amazon" ? "Amazon" : p.shop;
+    const name = normalizeShop(p);
     byShop.set(name, (byShop.get(name) ?? 0) + (p.total_amount ?? 0));
   }
   const shops = [...byShop.entries()].sort((a, b) => b[1] - a[1]);
