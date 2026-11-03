@@ -224,6 +224,8 @@ export type Database = {
       parcels: {
         Row: {
           carrier: string | null
+          category: string | null
+          category_source: string | null
           created_at: string
           expected_date: string | null
           expected_date_end: string | null
@@ -239,6 +241,7 @@ export type Database = {
           requires_presence: boolean | null
           shop: string
           shop_key: string | null
+          source: string
           status: string
           title: string | null
           total_amount: number | null
@@ -249,6 +252,8 @@ export type Database = {
         }
         Insert: {
           carrier?: string | null
+          category?: string | null
+          category_source?: string | null
           created_at?: string
           expected_date?: string | null
           expected_date_end?: string | null
@@ -264,6 +269,7 @@ export type Database = {
           requires_presence?: boolean | null
           shop: string
           shop_key?: string | null
+          source?: string
           status?: string
           title?: string | null
           total_amount?: number | null
@@ -274,6 +280,8 @@ export type Database = {
         }
         Update: {
           carrier?: string | null
+          category?: string | null
+          category_source?: string | null
           created_at?: string
           expected_date?: string | null
           expected_date_end?: string | null
@@ -289,6 +297,7 @@ export type Database = {
           requires_presence?: boolean | null
           shop?: string
           shop_key?: string | null
+          source?: string
           status?: string
           title?: string | null
           total_amount?: number | null
