@@ -261,7 +261,7 @@ describe("saving an edit keeps what a mail added to unchanged fields", () => {
     return typedIn(over);
   };
   /** The edit form as it starts for this row, with the person's changes. */
-  const formOf = (row: ParcelRow, over: Record<string, string> = {}) => ({ id: MANUAL_ID, ...manualFormDefaults(row, "2026-11-03"), ...over });
+  const formOf = (row: ParcelRow, over: Record<string, string> = {}): Record<string, string> => ({ id: MANUAL_ID, ...manualFormDefaults(row, "2026-11-03"), ...over });
   const stored = () => db.find("parcels", MANUAL_ID)!;
   beforeEach(() => {
     mocks.state.user = { id: USER };

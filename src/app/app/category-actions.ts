@@ -10,7 +10,7 @@ const Input = z.object({ id: z.uuid(), category: z.enum(CATEGORIES) });
 /**
  * The person picks a parcel's category. Recorded as theirs (category_source = "user") so no
  * reading replaces it later. Runs with the user's own session, so row-level security limits it
- * to their parcels; works for parcels from mails and typed-in ones alike.
+ * to their parcels (and so does the user_id condition); works for parcels from mails and typed-in ones alike.
  */
 export async function setCategory(id: string, category: Category): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = Input.safeParse({ id, category });
@@ -26,6 +26,7 @@ export async function setCategory(id: string, category: Category): Promise<{ ok:
     .from("parcels")
     .update({ category: parsed.data.category, category_source: "user" })
     .eq("id", parsed.data.id)
+    .eq("user_id", user.id)
     .select("id");
   if (error) {
     console.error("setCategory:", error.message);
