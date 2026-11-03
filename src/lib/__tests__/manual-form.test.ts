@@ -139,36 +139,39 @@ describe("[Feedback 1] date fields on a phone", () => {
     register: renderToStaticMarkup(createElement(ManualForm, { parcel: null, today: TODAY })),
     edit: renderToStaticMarkup(createElement(ManualForm, { parcel: typedIn(), today: TODAY })),
   };
-  const inputs = (html: string) => findAll(parseHtml(html), (n) => n.tag === "input");
-  const named = (html: string, name: string) => {
-    const hit = inputs(html).filter((n) => n.attrs.name === name);
+  // The helpers read one parsed tree, so nodes taken by separate calls can be compared with toBe.
+  const inputs = (root: HtmlNode) => findAll(root, (n) => n.tag === "input");
+  const named = (root: HtmlNode, name: string) => {
+    const hit = inputs(root).filter((n) => n.attrs.name === name);
     expect(hit, name).toHaveLength(1);
     return hit[0];
   };
-  const dates = (html: string) => inputs(html).filter((n) => n.attrs.type === "date");
+  const dates = (root: HtmlNode) => inputs(root).filter((n) => n.attrs.type === "date");
   /** The element the field's <label> sits in. */
   const rowOf = (input: HtmlNode) => ancestorsOf(input)[1];
 
   for (const [screen, html] of Object.entries(forms)) {
+    const root = parseHtml(html);
+
     it(`${screen}: has the two date fields, 注文日 and お届け予定日`, () => {
-      expect(dates(html).map((n) => n.attrs.name).sort()).toEqual(["expected_date", "ordered_at"]);
+      expect(dates(root).map((n) => n.attrs.name).sort()).toEqual(["expected_date", "ordered_at"]);
     });
 
     it(`${screen}: puts each date field on a row of its own, like 品名 and 金額`, () => {
-      const column = rowOf(named(html, "title"));
-      for (const d of dates(html)) {
+      const column = rowOf(named(root, "title"));
+      for (const d of dates(root)) {
         const [label] = ancestorsOf(d);
         expect(label.tag, d.attrs.name).toBe("label");
         expect(classesOf(label), d.attrs.name).toEqual(expect.arrayContaining(["text-sm", "font-medium"]));
         // Same column as the other fields, not a grid of its own.
         expect(rowOf(d), d.attrs.name).toBe(column);
-        expect(rowOf(named(html, "total_amount"))).toBe(column);
+        expect(rowOf(named(root, "total_amount"))).toBe(column);
         for (const a of ancestorsOf(d)) expect(classesOf(a).filter((c) => /^grid-cols-/.test(c)), d.attrs.name).toEqual([]);
       }
     });
 
     it(`${screen}: lets each date field shrink to the row and keeps its height when empty`, () => {
-      for (const d of dates(html)) {
+      for (const d of dates(root)) {
         const cls = classesOf(d);
         expect(cls, d.attrs.name).toEqual(expect.arrayContaining(["block", "w-full", "min-w-0", "max-w-full", "appearance-none"]));
         expect(cls.some((c) => /^min-h-/.test(c)), `${d.attrs.name}: min-h-*`).toBe(true);
@@ -176,9 +179,9 @@ describe("[Feedback 1] date fields on a phone", () => {
     });
 
     it(`${screen}: keeps the look of the other fields on the date fields`, () => {
-      const field = classesOf(named(html, "title"));
+      const field = classesOf(named(root, "title"));
       expect(field).toEqual(expect.arrayContaining(["rounded-xl", "border", "border-neutral-300", "bg-white", "px-3", "py-2.5", "text-base"]));
-      for (const d of dates(html)) expect(classesOf(d), d.attrs.name).toEqual(expect.arrayContaining(["rounded-xl", "border", "border-neutral-300", "bg-white", "px-3", "py-2.5", "text-base"]));
+      for (const d of dates(root)) expect(classesOf(d), d.attrs.name).toEqual(expect.arrayContaining(["rounded-xl", "border", "border-neutral-300", "bg-white", "px-3", "py-2.5", "text-base"]));
     });
   }
 
