@@ -349,7 +349,7 @@ async function readParcel(db: AdminClient, userId: string, parcelId: string): Pr
 /**
  * A mail fills the gaps of a parcel the person typed in. The write holds only while the row is
  * as it was read (updated_at), so a value they save in between is kept: the row is read again
- * and merged once more, and a second miss is only logged.
+ * and merged once more, and a second miss fails the mail so it can be read again.
  */
 async function fillManual(db: AdminClient, userId: string, read: ParcelRow, x: Extraction, sentAt: string | null) {
   let row: ParcelRow | null = read;
@@ -366,7 +366,9 @@ async function fillManual(db: AdminClient, userId: string, read: ParcelRow, x: E
     if (category) await writeAutoCategory(db, userId, row.id, category);
     return;
   }
-  console.error(`parcel ${read.id}: changed by the user while a mail was merged; left as they saved it`);
+  // Not merged: the mail must not be marked processed, or a redelivery would skip it. Failing
+  // leaves it as failed for the webhook's retry, which merges again into what the person saved.
+  throw new Error(`parcel ${read.id}: changed by the user while a mail was merged; not merged yet`);
 }
 
 /**
@@ -379,6 +381,7 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
     const kept = await tryAbsorbTwins(db, userId, parcelId);
     if (kept !== null) return kept;
   }
+  // No throw here: the webhook's retry would read the mail with Claude again and pay twice.
   console.error(`parcel ${parcelId}: its twins changed while being merged; left apart`);
   return parcelId;
 }
@@ -400,7 +403,8 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string)
     .from("extractions")
     .select("result, emails(sent_at)")
     .in("parcel_id", [keep.id, ...absorbIds])
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .eq("emails.user_id", userId);
   if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
   const readings = mails.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null }));
 
