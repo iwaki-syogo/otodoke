@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { createClient } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { PresenceBadge, StatusBadge } from "../../parcel-card";
+import { TrackingButton } from "./tracking-button";
 
 type Params = Promise<{ id: string }>;
 
@@ -27,6 +29,8 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
     .sort((a, b) => (a.email!.sent_at ?? "").localeCompare(b.email!.sent_at ?? ""));
 
   const windowText = formatWindow(parcel.expected_window_start, parcel.expected_window_end);
+  // Worked out when shown, so parcels saved with an old carrier URL get the current way in.
+  const tracking = trackingLinkFor(parcel.tracking_number, parcel.carrier) ?? (parcel.tracking_url ? { kind: "open" as const, url: parcel.tracking_url } : null);
 
   return (
     <article className="flex flex-col gap-6">
@@ -67,17 +71,10 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           <dd>
             {parcel.carrier ?? <span className="text-neutral-500">メールに記載なし</span>}
             {parcel.tracking_number ? (
-              <span className="block text-xs text-neutral-600">
+              <div className="text-xs text-neutral-600">
                 伝票 {parcel.tracking_number}
-                {parcel.tracking_url ? (
-                  <>
-                    {" "}
-                    <a href={parcel.tracking_url} target="_blank" rel="noopener noreferrer" className="font-medium text-sky-700 underline underline-offset-4">
-                      追跡ページを開く
-                    </a>
-                  </>
-                ) : null}
-              </span>
+                {tracking ? <TrackingButton link={tracking} number={normalizeTracking(parcel.tracking_number)} /> : null}
+              </div>
             ) : null}
           </dd>
           <dt className="text-neutral-500">注文</dt>

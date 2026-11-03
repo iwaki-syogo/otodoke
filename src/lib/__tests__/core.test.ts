@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
+import { identifyCarrier, normalizeTracking, trackingLinkFor, trackingUrlFor } from "@/lib/carriers";
 import { shiftDatesDeep, shiftDatesInText } from "@/lib/demo";
 import { buildUserMessage } from "@/lib/extract/prompt";
 import type { Extraction } from "@/lib/extract/schema";
@@ -67,6 +67,21 @@ describe("carriers", () => {
   it("uses the carrier named in the mail for a 12-digit number", () => {
     expect(identifyCarrier("313016540476", "佐川急便").key).toBe("sagawa");
     expect(identifyCarrier("5111-7266-6093", "ヤマト運輸").key).toBe("yamato");
+  });
+  it("hands each carrier the number in the way its site accepts it", () => {
+    // Yamato ignores a number in the URL; its form posts number01.
+    expect(trackingLinkFor("5111-7266-6093", "ヤマト運輸")).toEqual({
+      kind: "post",
+      url: "https://toi.kuronekoyamato.co.jp/cgi-bin/tneko",
+      fields: { category: "1", number01: "511172666093" },
+    });
+    // Sagawa takes no number from outside: copy it and open the input page.
+    expect(trackingLinkFor("3130-1654-0476", "佐川急便")).toEqual({ kind: "copy", url: "https://e-customer.sagawa-exp.co.jp/k2k" });
+    const post = trackingLinkFor("123456789012", "ゆうパック");
+    expect(post?.kind).toBe("open");
+    expect(post?.url).toContain("reqCodeNo1=123456789012");
+    expect(trackingLinkFor("TBA123456789012", null)).toBeNull();
+    expect(trackingLinkFor("---", "ヤマト運輸")).toBeNull();
   });
 });
 

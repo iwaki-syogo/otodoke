@@ -4,45 +4,61 @@
  */
 export type CarrierKey = "yamato" | "sagawa" | "japanpost" | "amazon" | "seino" | "fukutsu" | "unknown";
 
+/**
+ * How to show a parcel on the carrier's own site with its number already in.
+ * - open: a plain link whose URL carries the number.
+ * - post: the carrier's form only takes the number by POST, so the app submits that form.
+ * - copy: the carrier takes no number from outside; copy it, then open the input page.
+ * Checked against each site on 2026-11-03. Sagawa's new page (after its October 2026
+ * outage) runs on Server Actions, which refuse a cross-site POST, hence "copy".
+ */
+export type TrackingLink =
+  | { kind: "open"; url: string }
+  | { kind: "post"; url: string; fields: Record<string, string> }
+  | { kind: "copy"; url: string };
+
 export interface CarrierInfo {
   key: CarrierKey;
   name: string;
-  trackingUrl: (n: string) => string | null;
+  link: (n: string) => TrackingLink | null;
 }
 
 export const CARRIERS: Record<CarrierKey, CarrierInfo> = {
   yamato: {
     key: "yamato",
     name: "ヤマト運輸",
-    trackingUrl: (n) => `https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=${n}`,
+    // A GET with the number shows an empty form; the form itself posts these two fields.
+    link: (n) => ({ kind: "post", url: "https://toi.kuronekoyamato.co.jp/cgi-bin/tneko", fields: { category: "1", number01: n } }),
   },
   sagawa: {
     key: "sagawa",
     name: "佐川急便",
-    trackingUrl: (n) => `https://k2k.sagawa-exp.co.jp/p/web/okurijosearch.do?okurijoNo=${n}`,
+    link: () => ({ kind: "copy", url: "https://e-customer.sagawa-exp.co.jp/k2k" }),
   },
   japanpost: {
     key: "japanpost",
     name: "日本郵便",
-    trackingUrl: (n) =>
-      `https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=${n}&searchKind=S002&locale=ja`,
+    link: (n) => ({
+      kind: "open",
+      url: `https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=${n}&searchKind=S002&locale=ja`,
+    }),
   },
   amazon: {
     key: "amazon",
     name: "Amazon配送",
-    trackingUrl: () => null, // tracked from the order page, no public lookup by number
+    link: () => null, // tracked from the order page, no public lookup by number
   },
   seino: {
     key: "seino",
     name: "西濃運輸",
-    trackingUrl: (n) => `https://track.seino.co.jp/cgi-bin/gnpquery.pgm?GNPNO1=${n}`,
+    link: (n) => ({ kind: "post", url: "https://track.seino.co.jp/kamotsu/gempyoNoShokaiSpn.do", fields: { action: "InquirySpn", GNPNO1: n } }),
   },
   fukutsu: {
     key: "fukutsu",
     name: "福山通運",
-    trackingUrl: (n) => `https://corp.fukutsu.co.jp/situation/tracking_no_hunt/${n}`,
+    link: (n) => ({ kind: "open", url: `https://corp.fukutsu.co.jp/situation/tracking_no_hunt/${n}` }),
   },
-  unknown: { key: "unknown", name: "不明", trackingUrl: () => null },
+  unknown: { key: "unknown", name: "不明", link: () => null },
 };
 
 const HINTS: Array<[RegExp, CarrierKey]> = [
@@ -82,9 +98,15 @@ export function identifyCarrier(trackingRaw: string | null | undefined, hint?: s
   return CARRIERS.unknown;
 }
 
-/** Tracking URL for a number, or null when the carrier has no public lookup. */
-export function trackingUrlFor(trackingRaw: string | null | undefined, hint?: string | null): string | null {
+/** How to look a number up on the carrier's site, or null when the carrier has no public lookup. */
+export function trackingLinkFor(trackingRaw: string | null | undefined, hint?: string | null): TrackingLink | null {
   if (!trackingRaw) return null;
-  const info = identifyCarrier(trackingRaw, hint);
-  return info.trackingUrl(normalizeTracking(trackingRaw));
+  const n = normalizeTracking(trackingRaw);
+  if (!n) return null;
+  return identifyCarrier(trackingRaw, hint).link(n);
+}
+
+/** The carrier page for a number, or null when the carrier has no public lookup. */
+export function trackingUrlFor(trackingRaw: string | null | undefined, hint?: string | null): string | null {
+  return trackingLinkFor(trackingRaw, hint)?.url ?? null;
 }
