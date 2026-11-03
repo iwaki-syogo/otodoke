@@ -26,10 +26,13 @@ describe("[QA-6] spendTotal", () => {
     expect(spendTotal([])).toEqual({ total: 0, priced: 0, unpriced: 0 });
   });
 
-  it("is given only the picked category over the whole period", () => {
+  it("is given the parcels both ?c= and ?s= narrow (spendSlices' picked), for a month and for the whole period", () => {
     const page = readFileSync(path.resolve(__dirname, "../../app/app/spend/page.tsx"), "utf8");
-    expect(page).toMatch(/spendTotal\(\s*narrowed\s*\?\s*picked\s*:\s*counted\s*\)/);
-    expect(page).toMatch(/const narrowed = all && only !== undefined/);
+    expect(page).toContain("spendSlices(");
+    expect(page).toMatch(/spendTotal\(\s*(?:\w+\.)?picked\s*\)/);
+    // The old rule narrowed the total over the whole period only.
+    expect(page).not.toMatch(/narrowed\s*\?\s*picked\s*:\s*counted/);
+    expect(page).not.toMatch(/const narrowed = all && only !== undefined/);
   });
 });
 
@@ -60,8 +63,8 @@ describe("[N5] withEmptyMonths", () => {
     expect(months.map((m) => m.month)).toEqual(["1990-01", "2026-11"]);
   });
 
-  it("is what the whole-period bars draw", () => {
+  it("is what the whole-period bars draw, from the parcels both ?c= and ?s= narrow", () => {
     const page = readFileSync(path.resolve(__dirname, "../../app/app/spend/page.tsx"), "utf8");
-    expect(page).toContain("withEmptyMonths(spendByMonth(picked))");
+    expect(page).toMatch(/withEmptyMonths\(spendByMonth\(\s*(?:\w+\.)?picked\s*\)\)/);
   });
 });
