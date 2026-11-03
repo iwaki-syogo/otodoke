@@ -34,6 +34,7 @@ function unrelatedPlaceholder(notes: string): Extraction {
     shop_key: null,
     order_number: { ...EMPTY_FIELD },
     items: [],
+    category: null,
     package_description: { ...EMPTY_FIELD },
     total_amount: { ...EMPTY_FIELD },
     ordered_at: { ...EMPTY_FIELD },

@@ -4,7 +4,9 @@ import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLin
 import { createClient } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
 import { faceToFace } from "@/lib/match";
+import { isHttpsUrl } from "@/lib/safe-url";
 import { htmlToText } from "@/lib/text/html-to-text";
+import { CategorySheet } from "../../category-sheet";
 import { PresenceBadge, StatusBadge } from "../../parcel-card";
 import { TrackingButton } from "./tracking-button";
 
@@ -31,16 +33,25 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
 
   const windowText = formatWindow(parcel.expected_window_start, parcel.expected_window_end);
   // Worked out when shown, so parcels saved with an old carrier URL get the current way in.
-  const tracking = trackingLinkFor(parcel.tracking_number, parcel.carrier) ?? (parcel.tracking_url ? { kind: "open" as const, url: parcel.tracking_url } : null);
+  // A stored URL is linked only when it is https: (never javascript: or data:).
+  const tracking = trackingLinkFor(parcel.tracking_number, parcel.carrier) ?? (isHttpsUrl(parcel.tracking_url) ? { kind: "open" as const, url: parcel.tracking_url } : null);
   // Most Amazon parcels name no carrier or number; Amazon's own page tracks them by order.
   const amazonUrl = parcel.shop_key === "amazon" ? amazonOrderTrackingUrl(parcel.order_number) : null;
   const presence = faceToFace(parcel);
 
   return (
     <article className="flex flex-col gap-6">
-      <Link href="/app" className="text-sm text-neutral-500">
-        ‹ 荷物
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link href="/app" className="text-sm text-neutral-500">
+          ‹ 荷物
+        </Link>
+        {/* Only a parcel typed in by hand is edited; a mail parcel changes its category alone. */}
+        {parcel.source === "manual" ? (
+          <Link href={`/app/parcels/${parcel.id}/edit`} className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm active:bg-neutral-100">
+            編集
+          </Link>
+        ) : null}
+      </div>
 
       <header>
         <p className="text-sm text-neutral-500">{parcel.shop}</p>
@@ -100,6 +111,10 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           </dd>
           <dt className="text-neutral-500">金額</dt>
           <dd className="font-medium">{yen(parcel.total_amount)}</dd>
+          <dt className="text-neutral-500">分類</dt>
+          <dd>
+            <CategorySheet parcelId={parcel.id} category={parcel.category} />
+          </dd>
         </dl>
       </section>
 

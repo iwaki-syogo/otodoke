@@ -1,0 +1,126 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { upcomingByDay } from "@/lib/calendar";
+import type { ParcelRow } from "@/lib/match";
+import { DeliveredLink } from "@/app/app/delivered-link";
+
+/**
+ * upcomingByDay(parcels, today, first, last): the calendar's parcels from today on, grouped by
+ * the day they are listed under. Returns a Map "YYYY-MM-DD" -> parcels (input order kept).
+ * A parcel is listed while its last expected day is today or later, and not when delivered or
+ * cancelled. A window that runs across today is listed on max(first day of the window, today,
+ * first day of the month). Days outside the month are not listed.
+ */
+
+const TODAY = "2026-11-03";
+const NOV = { first: "2026-11-01", last: "2026-11-30" };
+const DEC = { first: "2026-12-01", last: "2026-12-31" };
+const OCT = { first: "2026-10-01", last: "2026-10-31" };
+
+let n = 0;
+function p(over: Partial<ParcelRow>): ParcelRow {
+  return { id: `p${++n}`, status: "shipped", expected_date: null, expected_date_end: null, ...over } as ParcelRow;
+}
+
+const days = (m: Map<string, ParcelRow[]>) => [...m.keys()].sort();
+const idsOn = (m: Map<string, ParcelRow[]>, day: string) => (m.get(day) ?? []).map((x) => x.id);
+
+describe("upcomingByDay", () => {
+  it("lists a window that runs across today under today", () => {
+    const w = p({ expected_date: "2026-11-01", expected_date_end: "2026-11-05" });
+    const m = upcomingByDay([w], TODAY, NOV.first, NOV.last);
+    expect(days(m)).toEqual([TODAY]);
+    expect(idsOn(m, TODAY)).toEqual([w.id]);
+  });
+
+  it("drops a parcel whose last day was yesterday", () => {
+    const one = p({ expected_date: "2026-11-02" });
+    const window = p({ expected_date: "2026-10-30", expected_date_end: "2026-11-02" });
+    expect(days(upcomingByDay([one, window], TODAY, NOV.first, NOV.last))).toEqual([]);
+  });
+
+  it("keeps a parcel whose last day is today", () => {
+    const one = p({ expected_date: TODAY });
+    const window = p({ expected_date: "2026-10-28", expected_date_end: TODAY });
+    const m = upcomingByDay([one, window], TODAY, NOV.first, NOV.last);
+    expect(days(m)).toEqual([TODAY]);
+    expect(idsOn(m, TODAY)).toEqual([one.id, window.id]);
+  });
+
+  it("leaves out delivered and cancelled parcels, even with a date ahead", () => {
+    const delivered = p({ status: "delivered", expected_date: "2026-11-10" });
+    const cancelled = p({ status: "cancelled", expected_date: "2026-11-10" });
+    const open = p({ status: "ordered", expected_date: "2026-11-10" });
+    const m = upcomingByDay([delivered, cancelled, open], TODAY, NOV.first, NOV.last);
+    expect(days(m)).toEqual(["2026-11-10"]);
+    expect(idsOn(m, "2026-11-10")).toEqual([open.id]);
+  });
+
+  it("lists a window that began before the month on the month's first day", () => {
+    const w = p({ expected_date: "2026-11-28", expected_date_end: "2026-12-03" });
+    const m = upcomingByDay([w], TODAY, DEC.first, DEC.last);
+    expect(days(m)).toEqual([DEC.first]);
+  });
+
+  it("lists a future single date on its own day", () => {
+    const a = p({ expected_date: "2026-11-20" });
+    const b = p({ expected_date: "2026-11-20" });
+    const c = p({ expected_date: "2026-11-04" });
+    const m = upcomingByDay([a, b, c], TODAY, NOV.first, NOV.last);
+    expect(days(m)).toEqual(["2026-11-04", "2026-11-20"]);
+    expect(idsOn(m, "2026-11-20")).toEqual([a.id, b.id]);
+  });
+
+  it("lists nothing for a month that is already over", () => {
+    const old = p({ expected_date: "2026-10-15" });
+    expect(days(upcomingByDay([old], TODAY, OCT.first, OCT.last))).toEqual([]);
+  });
+
+  it("never lists a day before today, so past cells get no link", () => {
+    const parcels = [
+      p({ expected_date: "2026-11-01" }),
+      p({ expected_date: "2026-11-01", expected_date_end: "2026-11-09" }),
+      p({ expected_date: "2026-10-20", expected_date_end: "2026-11-03" }),
+      p({ expected_date: "2026-11-15" }),
+    ];
+    for (const day of days(upcomingByDay(parcels, TODAY, NOV.first, NOV.last))) expect(day >= TODAY, day).toBe(true);
+  });
+
+  it("does not list days outside the month", () => {
+    const next = p({ expected_date: "2026-12-02" });
+    expect(days(upcomingByDay([next], TODAY, NOV.first, NOV.last))).toEqual([]);
+  });
+
+  it("does not list a parcel with no expected date", () => {
+    expect(days(upcomingByDay([p({ expected_date: null })], TODAY, NOV.first, NOV.last))).toEqual([]);
+  });
+});
+
+describe("DeliveredLink", () => {
+  it("links to /app/delivered as 「届いた荷物 ›」", () => {
+    const html = renderToStaticMarkup(createElement(DeliveredLink, {}));
+    expect(html).toMatch(/<a\b[^>]*href="\/app\/delivered"/);
+    expect(html.replace(/<[^>]+>/g, "")).toContain("届いた荷物 ›");
+  });
+
+  it("shows the count when given one", () => {
+    const html = renderToStaticMarkup(createElement(DeliveredLink, { count: 1234 }));
+    expect(html.replace(/<[^>]+>/g, "")).toMatch(/1,?234/);
+  });
+});
+
+describe("calendar page", () => {
+  const source = readFileSync(path.resolve(__dirname, "../../app/app/calendar/page.tsx"), "utf8");
+
+  it("draws from upcomingByDay and offers 「届いた荷物 ›」", () => {
+    expect(source).toContain("upcomingByDay");
+    expect(source).toContain("DeliveredLink");
+  });
+
+  it("says 「この月の予定はありません」 for a month with nothing ahead", () => {
+    expect(source).toContain("この月の予定はありません");
+  });
+});

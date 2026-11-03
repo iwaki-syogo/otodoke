@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { daysInMonth, formatDateJa, formatWindow, monthLabel, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
+import { daysInMonth, formatDateJa, formatWindow, monthLabel, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
+import { upcomingByDay } from "@/lib/calendar";
+import { DeliveredLink } from "../delivered-link";
 import { PresenceBadge, StatusBadge } from "../parcel-card";
 
 export const metadata = { title: "カレンダー" };
@@ -11,13 +13,13 @@ type SearchParams = Promise<{ m?: string }>;
 export default async function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
   const { m } = await searchParams;
   const today = todayJst();
-  const ym = /^\d{4}-\d{2}$/.test(m ?? "") ? (m as string) : today.slice(0, 7);
+  const ym = monthParam(m, today);
   const [y, mo] = ym.split("-").map(Number);
   const first = `${ym}-01`;
   const last = `${ym}-${String(daysInMonth(y, mo)).padStart(2, "0")}`;
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("parcels")
     .select("*")
     // A window that started last month and runs into this one belongs here too.
@@ -26,17 +28,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
     .neq("status", "cancelled")
     .order("expected_date", { ascending: true })
     .order("expected_window_start", { ascending: true, nullsFirst: false });
+  // A failed read is told apart from a month with nothing ahead.
+  if (error) console.error("calendar page:", error.message);
+  const failed = Boolean(error);
   const parcels: ParcelRow[] = data ?? [];
 
-  const byDay = new Map<string, ParcelRow[]>();
-  for (const p of parcels) {
-    if (!p.expected_date) continue;
-    // A window sits on its first day in this month.
-    const day = p.expected_date < first ? first : p.expected_date;
-    const list = byDay.get(day) ?? [];
-    list.push(p);
-    byDay.set(day, list);
-  }
+  // Only what is still ahead: past days, delivered and cancelled parcels are not shown.
+  const byDay = upcomingByDay(parcels, today, first, last);
 
   const leading = weekdayOf(first);
   const cells: Array<string | null> = [...Array<null>(leading).fill(null)];
@@ -72,8 +70,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
             const presence = list.some((p) => faceToFace(p) === true);
             const isToday = day === today;
             const dnum = Number(day.slice(8));
+            const Cell = list.length ? "a" : "div";
             return (
-              <a
+              <Cell
                 key={day}
                 href={list.length ? `#d-${day}` : undefined}
                 className={`flex min-h-16 flex-col items-center rounded-lg px-0.5 py-1 ${list.length ? "active:bg-neutral-100" : ""}`}
@@ -95,14 +94,16 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                     {list.length}件
                   </span>
                 ) : null}
-              </a>
+              </Cell>
             );
           })}
         </div>
       </div>
 
-      {days.length === 0 ? (
-        <p className="py-6 text-center text-sm text-neutral-500">この月にお届け予定の荷物はありません</p>
+      {failed ? (
+        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+      ) : days.length === 0 ? (
+        <p className="py-6 text-center text-sm text-neutral-500">この月の予定はありません</p>
       ) : (
         <ol className="flex flex-col gap-5">
           {days.map((day) => {
@@ -139,6 +140,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           })}
         </ol>
       )}
+      <DeliveredLink />
     </div>
   );
 }

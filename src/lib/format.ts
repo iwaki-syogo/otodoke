@@ -127,6 +127,11 @@ export function monthLabel(ym: string): string {
   return y === thisYear ? `${m}月` : `${y}年${m}月`;
 }
 
+/** The month a `?m=` names: "YYYY-MM" with a month of 01 to 12, else this month. */
+export function monthParam(m: string | undefined, today: string): string {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(m ?? "") ? (m as string) : today.slice(0, 7);
+}
+
 export function shiftMonth(ym: string, delta: number): string {
   const [y, m] = ym.split("-").map(Number);
   const t = new Date(Date.UTC(y, m - 1 + delta, 1));
