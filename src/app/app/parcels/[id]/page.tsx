@@ -50,7 +50,8 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           <dd className="font-medium">
             {parcel.expected_date ? (
               <>
-                {formatDateJa(parcel.expected_date)} {windowText}
+                {formatDateJa(parcel.expected_date)}
+                {parcel.expected_date_end ? `〜${formatDateJa(parcel.expected_date_end)}` : ""} {windowText}
                 {parcel.expected_text ? <span className="block text-xs font-normal text-neutral-500">原文: {parcel.expected_text}</span> : null}
               </>
             ) : (

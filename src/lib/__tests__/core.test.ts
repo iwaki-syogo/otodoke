@@ -6,7 +6,20 @@ import type { Extraction } from "@/lib/extract/schema";
 import { screenMail } from "@/lib/screen";
 import { addDays, formatWindow, todayJst, weekdayOf } from "@/lib/format";
 import { forwardingConfirmUrl, isForwardingConfirmation } from "@/lib/forwarding";
-import { buildParcelInsert, buildParcelUpdate, chooseParcel, isOverdue, parcelTotal, startsParcel, type ParcelCandidate, type ParcelRow } from "@/lib/match";
+import {
+  buildParcelInsert,
+  buildParcelUpdate,
+  chooseParcel,
+  isOverdue,
+  parcelTotal,
+  rebuildParcel,
+  splitOrders,
+  startsParcel,
+  twinsByTracking,
+  UNKNOWN_SENDER,
+  type ParcelCandidate,
+  type ParcelRow,
+} from "@/lib/match";
 import { safeNextPath } from "@/lib/safe-next";
 import { emailBodyText, htmlToText } from "@/lib/text/html-to-text";
 
@@ -20,15 +33,18 @@ function extraction(over: Partial<Extraction>): Extraction {
     shop_key: "other",
     order_number: none,
     items: [],
+    package_description: none,
     total_amount: none,
     ordered_at: none,
     carrier: none,
     tracking_number: none,
     expected_date: none,
+    expected_date_end: none,
     expected_window_start: none,
     expected_window_end: none,
     expected_text: null,
     requires_presence: none,
+    other_orders: [],
     overall_confidence: 0.9,
     notes: null,
     ...over,
@@ -319,7 +335,7 @@ describe("startsParcel", () => {
 });
 
 describe("isOverdue", () => {
-  const row = (status: string, expected_date: string | null, last_email_at: string | null) => ({ status, expected_date, last_email_at });
+  const row = (status: string, expected_date: string | null, last_email_at: string | null, expected_date_end: string | null = null) => ({ status, expected_date, expected_date_end, last_email_at });
   it.each([
     ["3 days past the date is still current", row("shipped", "2026-10-30", null), false],
     ["4 days past the date is overdue", row("shipped", "2026-10-29", null), true],
@@ -327,6 +343,8 @@ describe("isOverdue", () => {
     ["no date, 22 days quiet is overdue", row("ordered", null, "2026-10-11T00:00:00Z"), true],
     ["a delivered parcel never is", row("delivered", "2020-01-01", null), false],
     ["a cancelled parcel never is", row("cancelled", "2020-01-01", null), false],
+    ["a window counts from its last day", row("shipped", "2026-10-23", null, "2026-10-31"), false],
+    ["a window long past its last day is overdue", row("shipped", "2026-10-20", null, "2026-10-29"), true],
   ])("%s", (_name, p, want) => {
     expect(isOverdue(p, "2026-11-02")).toBe(want);
   });
@@ -382,5 +400,114 @@ describe("safeNextPath", () => {
   });
   it("keeps a path on this site", () => {
     expect(safeNextPath("/app/settings?x=1#y")).toBe("/app/settings?x=1#y");
+  });
+});
+
+describe("carrier-only mails", () => {
+  const carrierMail = (over: Partial<Extraction>) => extraction({ shop_key: "other", carrier: sure("ヤマト運輸"), tracking_number: sure("123456786511"), ...over });
+
+  it.each([
+    ["the carrier itself", "ヤマト運輸株式会社"],
+    ["another carrier", "佐川急便株式会社"],
+    ["the addressee", "山田 太郎 様"],
+    ["nothing", null],
+  ])("does not show %s as the shop", (_name, shop) => {
+    expect(buildParcelInsert("u", carrierMail({ shop_name: shop }), null).shop).toBe(UNKNOWN_SENDER);
+  });
+
+  it("keeps a sender the mail names", () => {
+    expect(buildParcelInsert("u", carrierMail({ shop_name: "ユニクロ オンラインストア" }), null).shop).toBe("ユニクロ オンラインストア");
+  });
+
+  it("titles the parcel with the slip category until the shop names the items", () => {
+    const row = buildParcelInsert("u", carrierMail({ shop_name: null, package_description: sure("衣料品") }), null);
+    expect(row.title).toBe("衣料品");
+    const later = extraction({ shop_name: "ユニクロ オンラインストア", items: [{ name: "エアリズムT", quantity: 1, unit_price: 1990, evidence: null }] });
+    const update = buildParcelUpdate({ ...(row as ParcelRow), itemNames: [] }, later, null);
+    expect(update.title).toBe("エアリズムT");
+    expect(update.shop).toBe("ユニクロ オンラインストア");
+  });
+
+  it("keeps the item title of a parcel that already has items", () => {
+    const update = buildParcelUpdate({ ...parcel({ title: "エアリズムT" }), itemNames: ["エアリズムT"] }, extraction({ items: [{ name: "別の品", quantity: 1, unit_price: null, evidence: null }] }), null);
+    expect(update.title).toBeUndefined();
+  });
+});
+
+describe("delivery windows", () => {
+  it("stores the last day of a window", () => {
+    const row = buildParcelInsert("u", extraction({ expected_date: sure("2026-10-23"), expected_date_end: sure("2026-10-31") }), null);
+    expect([row.expected_date, row.expected_date_end]).toEqual(["2026-10-23", "2026-10-31"]);
+  });
+  it("ignores an end that is not after the start", () => {
+    expect(buildParcelInsert("u", extraction({ expected_date: sure("2026-10-23"), expected_date_end: sure("2026-10-23") }), null).expected_date_end).toBeNull();
+  });
+  it("clears an old window when a later mail gives one day", () => {
+    const update = buildParcelUpdate(parcel({ expected_date: "2026-10-23", expected_date_end: "2026-10-31" }), extraction({ expected_date: sure("2026-10-25") }), "2026-11-02T00:00:00Z");
+    expect([update.expected_date, update.expected_date_end]).toEqual(["2026-10-25", null]);
+  });
+});
+
+describe("mails that list several orders", () => {
+  const item = (name: string, unit_price: number) => ({ name, quantity: 1, unit_price, evidence: null });
+  const mail = extraction({
+    relevance: "order",
+    shop_key: "amazon",
+    order_number: sure("250-0000000-0003813"),
+    items: [item("断熱クッション", 495)],
+    total_amount: sure(495),
+    other_orders: [
+      { order_number: sure("250-0000000-0007844"), items: [item("サウナハット", 2480)], total_amount: sure(2480), expected_date: sure("2026-10-20"), expected_date_end: none, expected_text: null },
+      { order_number: none, items: [item("番号のない注文", 1)], total_amount: none, expected_date: none, expected_date_end: none, expected_text: null },
+    ],
+  });
+
+  it("reads each order with only its own items and total", () => {
+    const [first, second, ...rest] = splitOrders(mail);
+    expect(rest).toHaveLength(0);
+    expect([first.order_number.value, first.items.map((i) => i.name), first.total_amount.value]).toEqual(["250-0000000-0003813", ["断熱クッション"], 495]);
+    expect([second.order_number.value, second.items.map((i) => i.name), second.total_amount.value, second.expected_date.value]).toEqual(["250-0000000-0007844", ["サウナハット"], 2480, "2026-10-20"]);
+    expect(first.other_orders).toEqual([]);
+  });
+
+  it("leaves a single-order mail as it is", () => {
+    expect(splitOrders(extraction({}))).toHaveLength(1);
+  });
+});
+
+describe("one parcel opened twice", () => {
+  const row = (id: string, tracking: string | null, order: string | null, created_at: string) => ({ id, tracking_number: tracking, order_number: order, created_at });
+
+  it("keeps the parcel with the order number and absorbs the carrier one", () => {
+    const parcels = [row("shop", "123456786511", "6083", "2026-10-15T00:00:00Z"), row("carrier", "123456786511", null, "2026-10-16T00:00:00Z"), row("other", "999", null, "2026-10-16T00:00:00Z")];
+    const twins = twinsByTracking(parcels, "carrier");
+    expect(twins?.keep.id).toBe("shop");
+    expect(twins?.absorb.map((p) => p.id)).toEqual(["carrier"]);
+  });
+
+  it("leaves two different orders apart even under one number", () => {
+    const parcels = [row("a", "111", "1001", "2026-10-15T00:00:00Z"), row("b", "111", "1002", "2026-10-16T00:00:00Z")];
+    expect(twinsByTracking(parcels, "a")).toBeNull();
+  });
+
+  it("rebuilds the merged parcel as if the mails had arrived in one", () => {
+    const order = extraction({ relevance: "order", shop_name: "ユニクロ オンラインストア", shop_key: "uniqlo", order_number: sure("6083"), items: [{ name: "エアリズムT", quantity: 1, unit_price: 1990, evidence: null }], total_amount: sure(1990) });
+    const carrierShipped = extraction({ relevance: "shipped", shop_name: "ヤマト運輸", carrier: sure("ヤマト運輸"), tracking_number: sure("123456786511"), package_description: sure("衣料品") });
+    const shopShipped = extraction({ relevance: "shipped", shop_name: "ユニクロ オンラインストア", shop_key: "uniqlo", order_number: sure("6083"), tracking_number: sure("123456786511") });
+    const delivered = extraction({ relevance: "delivered", shop_name: null, carrier: sure("ヤマト運輸"), tracking_number: sure("123456786511"), expected_date: sure("2026-10-17") });
+    const merged = rebuildParcel("u", [
+      { x: delivered, sentAt: "2026-10-17T07:36:00Z" },
+      { x: order, sentAt: "2026-10-15T16:11:00Z" },
+      { x: carrierShipped, sentAt: "2026-10-16T06:04:00Z" },
+      { x: shopShipped, sentAt: "2026-10-16T06:09:00Z" },
+    ]);
+    expect([merged.shop, merged.title, merged.status, merged.order_number, merged.total_amount, merged.expected_date]).toEqual([
+      "ユニクロ オンラインストア",
+      "エアリズムT",
+      "delivered",
+      "6083",
+      1990,
+      "2026-10-17",
+    ]);
   });
 });

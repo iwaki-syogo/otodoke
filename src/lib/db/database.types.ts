@@ -226,6 +226,7 @@ export type Database = {
           carrier: string | null
           created_at: string
           expected_date: string | null
+          expected_date_end: string | null
           expected_text: string | null
           expected_window_end: string | null
           expected_window_start: string | null
@@ -250,6 +251,7 @@ export type Database = {
           carrier?: string | null
           created_at?: string
           expected_date?: string | null
+          expected_date_end?: string | null
           expected_text?: string | null
           expected_window_end?: string | null
           expected_window_start?: string | null
@@ -274,6 +276,7 @@ export type Database = {
           carrier?: string | null
           created_at?: string
           expected_date?: string | null
+          expected_date_end?: string | null
           expected_text?: string | null
           expected_window_end?: string | null
           expected_window_start?: string | null

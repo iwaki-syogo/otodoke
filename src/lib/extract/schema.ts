@@ -53,26 +53,59 @@ export const ItemSchema = z.object({
   evidence,
 });
 
+/** Another order printed in the same mail (Amazon lists several orders in one confirmation). */
+export const OtherOrderSchema = z.object({
+  order_number: StrField.describe("この注文の注文番号"),
+  items: z.array(ItemSchema).describe("この注文の商品だけ"),
+  total_amount: IntField.describe("この注文の合計（円）"),
+  expected_date: StrField.describe("この注文の配達予定日 YYYY-MM-DD"),
+  expected_date_end: StrField.describe("この注文の配達予定が範囲なら最後の日 YYYY-MM-DD。範囲でなければ null"),
+  expected_text: z.string().nullable().describe("この注文の配達予定の原文表記"),
+});
+export type OtherOrder = z.infer<typeof OtherOrderSchema>;
+
 export const ExtractionSchema = z.object({
   relevance: Relevance,
   relevance_evidence: z.string().nullable().describe("そう判定した根拠の行"),
-  shop_name: z.string().nullable().describe("店の表示名。運送会社の通知なら依頼主（分かれば）、無ければ運送会社名"),
+  shop_name: z
+    .string()
+    .nullable()
+    .describe("商品を売った店・送り主の表示名。運送会社の通知ならご依頼主。受取人（お届け先・〇〇様）や運送会社の名前は入れない。分からなければ null"),
   shop_key: ShopKey.nullable(),
   order_number: StrField.describe("注文番号・受付番号・ご注文 ID。ハイフン等は原文のまま"),
-  items: z.array(ItemSchema),
+  items: z.array(ItemSchema).describe("最初の注文の商品だけ。別の注文の商品は other_orders に入れる"),
+  package_description: StrField.describe("運送会社の伝票の品名（例: 衣料品、電子機器）。店の商品名ではない"),
   total_amount: IntField.describe("注文合計（円、送料込み）。この通知で金額が分からなければ null"),
   ordered_at: StrField.describe("注文日 YYYY-MM-DD"),
   carrier: StrField.describe("運送会社名（原文の表記）"),
   tracking_number: StrField.describe("伝票番号・お問い合わせ番号・追跡番号（数字のみに正規化しない、原文のまま）"),
-  expected_date: StrField.describe("配達予定日 YYYY-MM-DD。基準日から年を補う"),
+  expected_date: StrField.describe("配達予定日 YYYY-MM-DD。範囲なら最初の日。配達完了の通知なら配達した日。基準日から年を補う"),
+  expected_date_end: StrField.describe("配達予定が範囲で書かれているときの最後の日 YYYY-MM-DD。範囲でなければ null"),
   expected_window_start: StrField.describe("配達予定時間帯の開始 HH:MM（24 時間）。「午前中」は 08:00"),
   expected_window_end: StrField.describe("配達予定時間帯の終了 HH:MM。「午前中」は 12:00"),
   expected_text: z.string().nullable().describe("配達予定の原文表記（例: 11月3日(月) 14:00-16:00）"),
   requires_presence: BoolField.describe(
     "在宅が必要か。対面・手渡し・受領印・置き配対象外・本人限定・代金引換・クール便なら true。置き配・宅配ボックス・ポスト投函・ネコポス・ゆうパケット・クリックポスト・メール便なら false。明記がなければ null",
   ),
+  other_orders: z.array(OtherOrderSchema).describe("同じメールに載っている 2 つ目以降の注文。1 注文だけなら空配列"),
   overall_confidence: z.number().describe("この抽出全体の確信度 0〜1"),
   notes: z.string().nullable().describe("抽出で迷った点や読み取れなかった点（日本語、1〜2 文）"),
 });
 
 export type Extraction = z.infer<typeof ExtractionSchema>;
+
+const NO_VALUE = { value: null, evidence: null, confidence: 0 };
+
+/**
+ * Results saved before a field existed (the demo cache, older rows) lack it.
+ * Fill the gaps so every reader sees the current shape.
+ */
+export function withDefaults(x: Extraction): Extraction {
+  const partial = x as Partial<Extraction>;
+  return {
+    ...x,
+    package_description: partial.package_description ?? { ...NO_VALUE },
+    expected_date_end: partial.expected_date_end ?? { ...NO_VALUE },
+    other_orders: partial.other_orders ?? [],
+  };
+}

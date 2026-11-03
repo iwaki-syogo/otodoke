@@ -1,5 +1,5 @@
 import type { Database } from "@/lib/db/database.types";
-import type { Extraction, Relevance } from "@/lib/extract/schema";
+import type { Extraction, OtherOrder, Relevance } from "@/lib/extract/schema";
 import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
 import { addDays, todayJst } from "@/lib/format";
 
@@ -80,6 +80,31 @@ function confident<T>(f: { value: T | null; confidence: number }): T | null {
   return f.value !== null && f.confidence >= MIN_CONFIDENCE ? f.value : null;
 }
 
+/** Shown when no mail names who sent the parcel. */
+export const UNKNOWN_SENDER = "送り主不明";
+const CARRIER_NAME = /運輸|急便|郵便|ゆうパック|ゆうパケット|ヤマト|佐川|西濃|福山通運|配送センター/;
+
+/** Older parcels may carry one of these until a mail names the real shop. */
+function isPlaceholderShop(shop: string): boolean {
+  return shop === UNKNOWN_SENDER || shop === "不明な店" || CARRIER_NAME.test(shop);
+}
+
+/**
+ * The seller, or null. A carrier name or the addressee ("〇〇様") is not a seller,
+ * and the model sometimes offers one when the mail names no sender.
+ */
+export function shopNameOf(x: Pick<Extraction, "shop_name">): string | null {
+  const name = x.shop_name?.trim();
+  if (!name || CARRIER_NAME.test(name) || /様$/.test(name)) return null;
+  return name;
+}
+
+/** The last day of a promised window, when the mail gives one that makes sense. */
+function windowEnd(x: Pick<Extraction, "expected_date_end">, start: string | null): string | null {
+  const end = asDate(confident(x.expected_date_end));
+  return start && end && end > start ? end : null;
+}
+
 export function parcelTitle(items: Extraction["items"], fallback: string | null): string | null {
   if (items.length === 0) return fallback;
   const first = items[0].name;
@@ -103,14 +128,16 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
   const status = statusOf(x) ?? "unknown";
   return {
     user_id: userId,
-    shop: x.shop_name ?? (carrier?.name ?? "不明な店"),
+    shop: shopNameOf(x) ?? UNKNOWN_SENDER,
     shop_key: x.shop_key ?? "other",
     order_number: confident(x.order_number),
-    title: parcelTitle(x.items, null),
+    // A carrier slip names only a category (衣料品): better than nothing until the shop mail arrives.
+    title: parcelTitle(x.items, confident(x.package_description)),
     status,
     // A shop that sends no order mail still spent money: fall back to the first mail we saw.
     ordered_at: orderDate(x, emailSentAt),
     expected_date: asDate(confident(x.expected_date)),
+    expected_date_end: windowEnd(x, asDate(confident(x.expected_date))),
     expected_window_start: asTime(confident(x.expected_window_start)),
     expected_window_end: asTime(confident(x.expected_window_end)),
     expected_text: x.expected_text,
@@ -129,7 +156,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
  * Merge a new extraction into an existing parcel. Later mails win for delivery
  * details; status never goes backwards except to `cancelled`.
  */
-export function buildParcelUpdate(existing: ParcelRow, x: Extraction, emailSentAt: string | null): ParcelUpdate {
+export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }, x: Extraction, emailSentAt: string | null): ParcelUpdate {
   const update: ParcelUpdate = {};
   const incomingStatus = statusOf(x);
   const isNewer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
@@ -156,6 +183,7 @@ export function buildParcelUpdate(existing: ParcelRow, x: Extraction, emailSentA
   const expectedDate = asDate(confident(x.expected_date));
   if (expectedDate && isNewer) {
     update.expected_date = expectedDate;
+    update.expected_date_end = windowEnd(x, expectedDate);
     update.expected_window_start = asTime(confident(x.expected_window_start));
     update.expected_window_end = asTime(confident(x.expected_window_end));
     update.expected_text = x.expected_text;
@@ -170,9 +198,13 @@ export function buildParcelUpdate(existing: ParcelRow, x: Extraction, emailSentA
   const orderedAt = orderDate(x, emailSentAt);
   if (orderedAt && !existing.ordered_at) update.ordered_at = orderedAt;
 
-  if (!existing.title && x.items.length > 0) update.title = parcelTitle(x.items, null);
-  if (x.shop_name && (existing.shop === "不明な店" || /運輸|急便|郵便/.test(existing.shop)) && !/運輸|急便|郵便/.test(x.shop_name)) {
-    update.shop = x.shop_name;
+  // Real item names replace a slip category; a parcel that already has item rows keeps its title.
+  const hasItems = existing.itemNames ? existing.itemNames.length > 0 : existing.title !== null;
+  if (x.items.length > 0 && !hasItems) update.title = parcelTitle(x.items, null);
+  else if (!existing.title && confident(x.package_description)) update.title = confident(x.package_description);
+  const shop = shopNameOf(x);
+  if (shop && isPlaceholderShop(existing.shop)) {
+    update.shop = shop;
     if (x.shop_key) update.shop_key = x.shop_key;
   }
 
@@ -191,7 +223,7 @@ const UNIQUE_ORDER_LENGTH = 8;
 function sameShop(p: ParcelRow, x: Extraction): boolean {
   const key = x.shop_key ?? "other";
   if (p.shop_key !== key) return false;
-  return key !== "other" || p.shop === (x.shop_name ?? p.shop);
+  return key !== "other" || p.shop === (shopNameOf(x) ?? p.shop);
 }
 
 /**
@@ -296,8 +328,74 @@ export function parcelTotal(mails: Extraction[]): number | null {
 }
 
 /** Still open, but long past when it should have arrived: most shops send no delivery mail. */
-export function isOverdue(p: Pick<ParcelRow, "status" | "expected_date" | "last_email_at">, today: string): boolean {
+export function isOverdue(p: Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at">, today: string): boolean {
   if (p.status === "delivered" || p.status === "cancelled") return false;
-  if (p.expected_date) return p.expected_date < addDays(today, -3);
+  const lastDay = p.expected_date_end ?? p.expected_date;
+  if (lastDay) return lastDay < addDays(today, -3);
   return p.last_email_at !== null && p.last_email_at.slice(0, 10) < addDays(today, -21);
+}
+
+const NO_VALUE = { value: null, evidence: null, confidence: 0 };
+
+/**
+ * One reading per order. A mail that lists several orders becomes several readings, each
+ * with only its own items, total and delivery estimate, so no parcel mixes two orders.
+ * The extra orders carry no tracking: shipment mails name one order each and add it later.
+ */
+export function splitOrders(x: Extraction): Extraction[] {
+  const others = (x.other_orders ?? []).filter((o: OtherOrder) => confident(o.order_number) !== null);
+  const first: Extraction = { ...x, other_orders: [] };
+  return [
+    first,
+    ...others.map(
+      (o: OtherOrder): Extraction => ({
+        ...first,
+        order_number: o.order_number,
+        items: o.items,
+        total_amount: o.total_amount,
+        expected_date: o.expected_date,
+        expected_date_end: o.expected_date_end,
+        expected_text: o.expected_text,
+        expected_window_start: { ...NO_VALUE },
+        expected_window_end: { ...NO_VALUE },
+        tracking_number: { ...NO_VALUE },
+        package_description: { ...NO_VALUE },
+      }),
+    ),
+  ];
+}
+
+/**
+ * A parcel built again from all of its mails, oldest first, with the same rules as when
+ * the mails arrived one by one. Used when two parcels turn out to be one.
+ */
+export function rebuildParcel(userId: string, mails: { x: Extraction; sentAt: string | null }[]): ParcelInsert {
+  const ordered = [...mails].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""));
+  const [head, ...rest] = ordered;
+  const row = { ...buildParcelInsert(userId, head.x, head.sentAt), itemNames: head.x.items.map((i) => i.name) } as unknown as ParcelRow & { itemNames: string[] };
+  for (const m of rest) {
+    Object.assign(row, buildParcelUpdate(row, m.x, m.sentAt));
+    if (row.itemNames.length === 0) row.itemNames = m.x.items.map((i) => i.name);
+  }
+  const { itemNames: _names, ...fields } = row;
+  void _names;
+  fields.total_amount = parcelTotal(ordered.map((m) => m.x));
+  return fields as ParcelInsert;
+}
+
+/**
+ * Parcels that hold the same tracking number are one parcel. It happens when the carrier
+ * mails before the shop does: the carrier mail opens a parcel of its own, then the shop
+ * mail joins its order and brings the same number. The parcel with the order number stays.
+ */
+export function twinsByTracking<T extends Pick<ParcelRow, "id" | "tracking_number" | "order_number" | "created_at">>(parcels: T[], keepId: string): { keep: T; absorb: T[] } | null {
+  const target = parcels.find((p) => p.id === keepId);
+  if (!target?.tracking_number) return null;
+  const same = parcels.filter((p) => p.tracking_number === target.tracking_number);
+  if (same.length < 2) return null;
+  const withOrder = same.filter((p) => p.order_number);
+  // Two different orders under one number would be a shop reusing slips: leave them apart.
+  if (new Set(withOrder.map((p) => normalizeOrderNumber(p.order_number!))).size > 1) return null;
+  const keep = withOrder[0] ?? [...same].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+  return { keep, absorb: same.filter((p) => p.id !== keep.id) };
 }

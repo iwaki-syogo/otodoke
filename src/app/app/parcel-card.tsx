@@ -36,8 +36,11 @@ export function PresenceBadge({ value, compact = false }: { value: boolean | nul
 
 export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; showAmount?: boolean }) {
   const today = todayJst();
-  const late = parcel.expected_date !== null && parcel.expected_date < today && parcel.status !== "delivered" && parcel.status !== "cancelled";
-  const when = parcel.expected_date ? `${relativeDateJa(parcel.expected_date, today)}${late ? "の予定" : ""}` : null;
+  // A window ("10/23〜10/31") is late only after its last day.
+  const lastDay = parcel.expected_date_end ?? parcel.expected_date;
+  const late = lastDay !== null && lastDay < today && parcel.status !== "delivered" && parcel.status !== "cancelled";
+  const days = parcel.expected_date_end ? `${relativeDateJa(parcel.expected_date, today)}〜${relativeDateJa(parcel.expected_date_end, today)}` : relativeDateJa(parcel.expected_date, today);
+  const when = parcel.expected_date ? `${days}${late ? "の予定" : ""}` : null;
   const window = formatWindow(parcel.expected_window_start, parcel.expected_window_end);
   return (
     <Link

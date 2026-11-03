@@ -1,13 +1,13 @@
 import type { AdminClient } from "@/lib/supabase/admin";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
-import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, chooseParcel, parcelTotal, startsParcel } from "@/lib/match";
+import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, chooseParcel, parcelTotal, rebuildParcel, splitOrders, startsParcel, twinsByTracking } from "@/lib/match";
 import { env } from "@/lib/env";
 import { isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
 import { PENDING_GRACE_MS } from "@/lib/unread";
 import { screenMail, type ScreenResult } from "@/lib/screen";
 import { emailBodyText } from "@/lib/text/html-to-text";
-import type { Extraction } from "@/lib/extract/schema";
+import { withDefaults, type Extraction } from "@/lib/extract/schema";
 import type { Json } from "@/lib/db/database.types";
 
 export interface InboundEmail {
@@ -191,7 +191,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
       sentAt: mail.sentAt,
       body: emailBodyText(mail.text, mail.html),
     }));
-  const x = extraction.data;
+  const x = withDefaults(extraction.data);
 
   // A refusal says nothing about the mail, so it is kept as unread rather than dropped as unrelated.
   if (extraction.refused) {
@@ -206,22 +206,46 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     return { kind: "discarded", reason: x.relevance_evidence ?? "unrelated" };
   }
 
-  // 4. Find the parcel this mail belongs to.
-  const parcel = await findParcel(db, mail.userId, x);
-  if (!parcel && !startsParcel(x)) {
+  // 4. One reading per order: a mail listing several orders files each into its own parcel.
+  const [main, ...others] = splitOrders(x);
+  const meta = { model: extraction.model, usage: extraction.usage, truncated: extraction.truncated };
+  const filed = await fileReading(db, mail, emailId, main, meta);
+  if (!filed) {
     const { error } = await db.from("extractions").insert({
       user_id: mail.userId,
       email_id: emailId,
       parcel_id: null,
       model: extraction.model,
-      result: { ...x, _usage: extraction.usage, _truncated: extraction.truncated } as unknown as Json,
-      confidence: Math.max(0, Math.min(1, x.overall_confidence)),
+      result: { ...main, _usage: extraction.usage, _truncated: extraction.truncated } as unknown as Json,
+      confidence: Math.max(0, Math.min(1, main.overall_confidence)),
     });
     if (error) throw new Error(`extractions insert failed: ${error.message}`);
     const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
     if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
     return { kind: "noted", emailId };
   }
+  // The usage belongs to the one API call, so only the first reading carries it.
+  for (const other of others) await fileReading(db, mail, emailId, other, { ...meta, usage: null });
+
+  // 5. A carrier mail that came before the shop mail opened a parcel of its own: fold it in.
+  const parcelId = await absorbTwins(db, mail.userId, filed.parcelId);
+
+  const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
+  if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
+
+  return { kind: "processed", emailId, parcelId, created: filed.created, extraction: x };
+}
+
+interface ReadingMeta {
+  model: string;
+  usage: ExtractionResult["usage"] | null;
+  truncated: boolean;
+}
+
+/** File one reading into its parcel, or answer null when it describes no parcel. */
+async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string, x: Extraction, meta: ReadingMeta): Promise<{ parcelId: string; created: boolean } | null> {
+  const parcel = await findParcel(db, mail.userId, x);
+  if (!parcel && !startsParcel(x)) return null;
 
   let parcelId: string;
   let created = false;
@@ -233,17 +257,13 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     }
     parcelId = parcel.id;
   } else {
-    const { data: inserted, error } = await db
-      .from("parcels")
-      .insert(buildParcelInsert(mail.userId, x, mail.sentAt))
-      .select("id")
-      .single();
+    const { data: inserted, error } = await db.from("parcels").insert(buildParcelInsert(mail.userId, x, mail.sentAt)).select("id").single();
     if (error || !inserted) throw new Error(`parcels insert failed: ${error?.message}`);
     parcelId = inserted.id;
     created = true;
   }
 
-  // 5. Items: only when the parcel has none yet (order mails carry the full list).
+  // Items: only when the parcel has none yet (order mails carry the full list).
   if (x.items.length > 0) {
     const { count, error: countError } = await db.from("parcel_items").select("id", { count: "exact", head: true }).eq("parcel_id", parcelId);
     if (countError) throw new Error(`parcel_items count failed: ${countError.message}`);
@@ -262,22 +282,59 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     }
   }
 
-  // 6. Keep the evidence trail.
+  // Keep the evidence trail.
   const { error: extractionError } = await db.from("extractions").insert({
     user_id: mail.userId,
     email_id: emailId,
     parcel_id: parcelId,
-    model: extraction.model,
-    result: { ...x, _usage: extraction.usage, _truncated: extraction.truncated } as unknown as Json,
+    model: meta.model,
+    result: { ...x, _usage: meta.usage, _truncated: meta.truncated } as unknown as Json,
     confidence: Math.max(0, Math.min(1, x.overall_confidence)),
   });
   if (extractionError) throw new Error(`extractions insert failed: ${extractionError.message}`);
   await refreshTotal(db, parcelId);
+  return { parcelId, created };
+}
 
-  const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
-  if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
+/**
+ * Merge parcels that share this parcel's tracking number, then rebuild the survivor from all
+ * of its mails. Returns the id of the parcel that remains.
+ */
+async function absorbTwins(db: AdminClient, userId: string, parcelId: string): Promise<string> {
+  const { data: rows, error } = await db.from("parcels").select("id, tracking_number, order_number, created_at").eq("user_id", userId).not("tracking_number", "is", null);
+  if (error) throw new Error(`parcels lookup failed: ${error.message}`);
+  const twins = twinsByTracking(rows, parcelId);
+  if (!twins) return parcelId;
+  const keepId = twins.keep.id;
+  const absorbIds = twins.absorb.map((p) => p.id);
 
-  return { kind: "processed", emailId, parcelId, created, extraction: x };
+  // The survivor keeps its own item list, and borrows one only when it has none.
+  const { count, error: countError } = await db.from("parcel_items").select("id", { count: "exact", head: true }).eq("parcel_id", keepId);
+  if (countError) throw new Error(`parcel_items count failed: ${countError.message}`);
+  if (!count) {
+    const { data: donor, error: donorError } = await db.from("parcel_items").select("parcel_id").in("parcel_id", absorbIds).limit(1);
+    if (donorError) throw new Error(`parcel_items lookup failed: ${donorError.message}`);
+    if (donor?.[0]) {
+      const { error: moveItemsError } = await db.from("parcel_items").update({ parcel_id: keepId }).eq("parcel_id", donor[0].parcel_id);
+      if (moveItemsError) throw new Error(`parcel_items move failed: ${moveItemsError.message}`);
+    }
+  }
+  const { error: moveError } = await db.from("extractions").update({ parcel_id: keepId }).in("parcel_id", absorbIds);
+  if (moveError) throw new Error(`extractions move failed: ${moveError.message}`);
+  const { error: deleteError } = await db.from("parcels").delete().in("id", absorbIds).eq("user_id", userId);
+  if (deleteError) throw new Error(`parcels delete failed: ${deleteError.message}`);
+
+  const { data: mails, error: mailsError } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", keepId);
+  if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
+  const rebuilt = rebuildParcel(
+    userId,
+    mails.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null })),
+  );
+  const { user_id: _owner, ...fields } = rebuilt;
+  void _owner;
+  const { error: updateError } = await db.from("parcels").update(fields).eq("id", keepId);
+  if (updateError) throw new Error(`parcels rebuild failed: ${updateError.message}`);
+  return keepId;
 }
 
 /** Every parcel of this user, with item names, so the rules in chooseParcel see the same data everywhere. */

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { ExtractionSchema, type Extraction } from "@/lib/extract/schema";
+import { ExtractionSchema, withDefaults, type Extraction } from "@/lib/extract/schema";
 import { addDays, splitDate, todayJst } from "@/lib/format";
 
 /**
@@ -126,7 +126,8 @@ export interface DemoEntry {
 export async function loadDemoEntries(today = todayJst(), now = new Date()): Promise<DemoEntry[]> {
   const set = DemoSet.parse(JSON.parse(await readFile(path.join(DEMO_DIR, "set.json"), "utf8")));
   const cache = z
-    .record(z.string(), ExtractionSchema)
+    // The cache was written before some fields existed; those are filled with "not stated".
+    .record(z.string(), ExtractionSchema.partial({ package_description: true, expected_date_end: true, other_orders: true }).transform((x) => withDefaults(x as Extraction)))
     .parse(JSON.parse(await readFile(path.join(DEMO_DIR, "extractions.json"), "utf8")));
 
   const entries: DemoEntry[] = [];

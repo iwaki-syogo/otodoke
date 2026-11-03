@@ -6,9 +6,9 @@
  */
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { buildParcelInsert, buildParcelUpdate, chooseParcel, isOverdue, isParcelRelevant, parcelTotal, startsParcel, type ParcelCandidate } from "../src/lib/match";
+import { buildParcelInsert, buildParcelUpdate, chooseParcel, isOverdue, isParcelRelevant, parcelTotal, splitOrders, startsParcel, type ParcelCandidate } from "../src/lib/match";
 import { normalizeTracking } from "../src/lib/carriers";
-import type { Extraction } from "../src/lib/extract/schema";
+import { withDefaults, type Extraction } from "../src/lib/extract/schema";
 
 const root = process.cwd();
 const evalDir = path.join(root, "fixtures/raw/eval");
@@ -57,9 +57,8 @@ async function main() {
   const sims: Sim[] = [];
   let discarded = 0;
   let noted = 0;
-  for (const { s, mail } of rows) {
-    const x = s.data;
-    if (!x) continue;
+  const readings = rows.flatMap(({ s, mail }) => (s.data ? splitOrders(withDefaults(s.data)).map((x) => ({ s, mail, x })) : []));
+  for (const { s, mail, x } of readings) {
     if (!isParcelRelevant(x.relevance)) {
       discarded++;
       continue;
