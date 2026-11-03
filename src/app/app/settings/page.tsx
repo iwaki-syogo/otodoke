@@ -34,12 +34,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
     .from("emails")
     .select("id", { count: "exact", head: true })
     .or(UNREAD_FILTER());
-  const { data: dropped } = await supabase
+  const { data: dropped, error: droppedError } = await supabase
     .from("screen_events")
     .select("id, subject, from_domain, created_at, flagged_at")
     .eq("decision", "dropped")
     .order("created_at", { ascending: false })
     .limit(30);
+  // A failed read is told apart from no dropped mail: by its error, never by the empty list.
+  if (droppedError) console.error("settings page (dropped):", droppedError.message);
   const confirmUrl = confirmation ? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "") : null;
 
   return (
@@ -109,7 +111,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
         <h2 className="text-base font-bold">読まなかったメール</h2>
         <p className="mt-1 text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名だけ 14 日間残します。</p>
         {flagged ? <p className="mt-2 text-sm text-emerald-800">覚えました。この差出人のメールは次から読みます。今回のメールは、もう一度転送してください。</p> : null}
-        {dropped && dropped.length > 0 ? (
+        {droppedError ? (
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        ) : dropped && dropped.length > 0 ? (
           <details className="mt-2 rounded-2xl border border-neutral-200 bg-white">
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">荷物のメールが混ざっていないか見る（{dropped.length} 通）</summary>
             <ul className="divide-y divide-neutral-100 border-t border-neutral-100">

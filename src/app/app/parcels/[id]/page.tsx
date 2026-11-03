@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { z } from "zod";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { createClient } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
@@ -15,9 +16,11 @@ type Params = Promise<{ id: string }>;
 
 export default async function ParcelDetailPage({ params }: { params: Params }) {
   const { id } = await params;
+  // Postgres answers a malformed id with an error; that is a page that is not there, not a failed read.
+  if (!z.uuid().safeParse(id).success) notFound();
   const supabase = await createClient();
 
-  const [{ data: parcel }, { data: items }, { data: extractions }] = await Promise.all([
+  const [{ data: parcel, error: parcelError }, { data: items, error: itemsError }, { data: extractions, error: extractionsError }] = await Promise.all([
     supabase.from("parcels").select("*").eq("id", id).maybeSingle(),
     supabase.from("parcel_items").select("*").eq("parcel_id", id).order("created_at"),
     supabase
@@ -25,6 +28,20 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
       .select("id, confidence, result, created_at, emails(id, subject, from_address, from_name, sent_at, classification, text_body, html_body)")
       .eq("parcel_id", id),
   ]);
+  // A failed read is told apart from a parcel, an item list or a mail history that is not there.
+  for (const [what, err] of [["parcel", parcelError], ["items", itemsError], ["extractions", extractionsError]] as const) {
+    if (err) console.error(`parcel page (${what}):`, err.message);
+  }
+  if (parcelError) {
+    return (
+      <article className="flex flex-col gap-6">
+        <Link href="/app" className="text-sm text-neutral-500">
+          ‹ 荷物
+        </Link>
+        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+      </article>
+    );
+  }
   if (!parcel) notFound();
 
   const timeline = (extractions ?? [])
@@ -124,7 +141,12 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
         </dl>
       </section>
 
-      {items && items.length > 0 ? (
+      {itemsError ? (
+        <section>
+          <h2 className="text-base font-bold">内容</h2>
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        </section>
+      ) : items && items.length > 0 ? (
         <section>
           <h2 className="text-base font-bold">内容</h2>
           <ul className="mt-2 divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white">
@@ -143,7 +165,9 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
 
       <section>
         <h2 className="text-base font-bold">メールの履歴</h2>
-        {timeline.length === 0 ? (
+        {extractionsError ? (
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        ) : timeline.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-500">元メールがありません</p>
         ) : (
           <ol className="mt-2 flex flex-col gap-2">

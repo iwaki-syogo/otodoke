@@ -16,7 +16,7 @@ export default async function ParcelsPage() {
   const supabase = await createClient();
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
   // and never stands in for the list or the other counts.
-  const [{ data }, { count: waiting }, { count: deliveredCount, error: deliveredError }, { count: cancelledCount, error: cancelledError }] =
+  const [{ data, error: listError }, { count: waiting }, { count: deliveredCount, error: deliveredError }, { count: cancelledCount, error: cancelledError }] =
     await Promise.all([
       supabase
         .from("parcels")
@@ -29,6 +29,8 @@ export default async function ParcelsPage() {
       supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "delivered"),
       supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "cancelled"),
     ]);
+  // A failed read is told apart from having no parcels: by its error, never by the empty list.
+  if (listError) console.error("parcels page:", listError.message);
   const parcels: ParcelRow[] = data ?? [];
   const today = todayJst();
 
@@ -62,6 +64,17 @@ export default async function ParcelsPage() {
       <PageLink href="/app/cancelled" label="キャンセルした荷物" count={cancelledError ? undefined : (cancelledCount ?? undefined)} />
     </div>
   );
+
+  if (listError) {
+    return (
+      <div className="flex flex-col gap-4">
+        {addLink}
+        {waitingNotice}
+        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        {pageLinks}
+      </div>
+    );
+  }
 
   if (parcels.length === 0) {
     return (
