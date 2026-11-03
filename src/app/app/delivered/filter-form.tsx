@@ -12,20 +12,36 @@ type Options = ReturnType<typeof deliveredFilterOptions>;
  * The search box and the selects of the delivered page, wrapping the results the server drew.
  * Owns the one transition: from the tap until the new URL's page arrives the results are faint
  * with a spinner, and every further filter action waits (so no change is made on an old URL).
+ * Given `count`, it draws the page's heading with it, faint with the results while pending.
  */
-export function DeliveredFilter({ q, s, c, m, options, children }: Values & { options: Options; children?: ReactNode }) {
+export function DeliveredFilter({ q, s, c, m, options, count, children }: Values & { options: Options; count?: number; children?: ReactNode }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const go = (values: Partial<Values>) => startTransition(() => router.push(deliveredHref(values)));
 
   return (
     <>
+      {count === undefined ? null : <DeliveredHeading count={count} pending={pending} />}
       {/* Made anew when the URL changes, so the fields start from the URL's values. */}
       <Fields key={[q, s, c, m].join("\n")} initial={{ q, s, c, m }} options={options} pending={pending} go={go} />
       <div aria-busy={pending || undefined} className={pending ? "opacity-50" : undefined}>
         {children}
       </div>
     </>
+  );
+}
+
+/** 「届いた荷物」 with the number found; the number is the old one until the new page arrives, so faint meanwhile. */
+export function DeliveredHeading({ count, pending = false }: { count?: number; pending?: boolean }) {
+  return (
+    <h1 className="flex items-baseline gap-2 text-lg font-bold">
+      届いた荷物
+      {count === undefined ? null : (
+        <span aria-busy={pending || undefined} className={`text-sm font-normal text-neutral-500 ${pending ? "opacity-50" : ""}`}>
+          {count.toLocaleString("ja-JP")}
+        </span>
+      )}
+    </h1>
   );
 }
 

@@ -6,7 +6,7 @@ import { firstParam } from "@/lib/shop";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ParcelCard } from "../parcel-card";
-import { DeliveredFilter } from "./filter-form";
+import { DeliveredFilter, DeliveredHeading } from "./filter-form";
 
 export const metadata = { title: "届いた荷物" };
 
@@ -55,17 +55,19 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
       <Link href="/app" className="text-sm text-neutral-500">
         ‹ 荷物
       </Link>
-      <h1 className="flex items-baseline gap-2 text-lg font-bold">
-        届いた荷物
-        {shown ? <span className="text-sm font-normal text-neutral-500">{shown.length.toLocaleString("ja-JP")}</span> : null}
-      </h1>
-
+      {/* With the filters, the heading is drawn by DeliveredFilter: its count fades with the results. */}
       {parcels === null || shown === null ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        <>
+          <DeliveredHeading />
+          <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        </>
       ) : parcels.length === 0 ? (
-        <p className="text-sm text-neutral-500">届いた荷物はありません</p>
+        <>
+          <DeliveredHeading count={shown.length} />
+          <p className="text-sm text-neutral-500">届いた荷物はありません</p>
+        </>
       ) : (
-        <DeliveredFilter q={searchWord(q)} s={s} c={c} m={m} options={deliveredFilterOptions(parcels)}>
+        <DeliveredFilter q={searchWord(q)} s={s} c={c} m={m} options={deliveredFilterOptions(parcels)} count={shown.length}>
           {shown.length === 0 ? (
             <p className="text-sm text-neutral-500">見つかりません</p>
           ) : (
