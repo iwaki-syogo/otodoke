@@ -1,5 +1,6 @@
 import { CATEGORIES, isCategory, type Category } from "@/lib/category";
 import { monthParam, shiftMonth } from "@/lib/format";
+import { normalizeShop } from "@/lib/shop";
 
 /** Totals for the spend screen. Only parcels whose amount was read count toward money. */
 
@@ -107,4 +108,35 @@ export function axisTicks(max: number): number[] {
     if (v >= max) break;
   }
   return ticks;
+}
+
+type SlicedParcel = SpendParcel & { shop: string; shop_key: string | null };
+
+/**
+ * What `?c=` (category; null is 未分類) and `?s=` (shop through normalizeShop, compared in full)
+ * narrow on the spend screen, for a month and for the whole period alike:
+ * - picked: the total and the bars, by both;
+ * - orders: the order list, by both (over the whole period parcels with no order date too);
+ * - byCategory: the per-category rows, by `s` only;
+ * - byShop: the per-shop rows, by `c` only;
+ * - undated: over the whole period, the parcels with no order date both let through (they stay
+ *   out of every figure); 0 for a month.
+ */
+export function spendSlices<P extends SlicedParcel>(
+  parcels: P[],
+  { all, c, s }: { all: boolean; c: Category | null | undefined; s: string | undefined },
+): { picked: P[]; orders: P[]; byCategory: P[]; byShop: P[]; undated: number } {
+  const byC = (p: P) => c === undefined || categoryOf(p) === c;
+  const byS = (p: P) => !s || normalizeShop(p) === s;
+  const both = (p: P) => byC(p) && byS(p);
+  // The whole period is told by order month, so parcels with no order date stay out of the figures.
+  const counted = all ? parcels.filter((p) => p.ordered_at) : parcels;
+  const picked = counted.filter(both);
+  return {
+    picked,
+    orders: all ? parcels.filter(both) : picked,
+    byCategory: counted.filter(byS),
+    byShop: counted.filter(byC),
+    undated: all ? parcels.filter((p) => !p.ordered_at && both(p)).length : 0,
+  };
 }

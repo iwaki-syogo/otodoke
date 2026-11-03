@@ -64,6 +64,23 @@ describe("delivered page wiring", () => {
     expect(page).toContain("読み込めませんでした");
   });
 
+  it("reads every item's parcel_id,name with readAll (never .in()) and narrows with filterDelivered", () => {
+    const page = read("delivered/page.tsx");
+    expect(page).toMatch(/from\(\s*["']parcel_items["']\s*\)/);
+    expect(page).toMatch(/select\(\s*["']parcel_id,\s*name["']\s*,\s*\{\s*count:\s*["']exact["']\s*\}\s*\)/);
+    expect(page.match(/readAll\b/g)?.length ?? 0).toBeGreaterThanOrEqual(3); // the import and the two reads
+    expect(page).not.toMatch(/\.in\(/);
+    expect(page).toContain("filterDelivered(");
+    expect(page).toContain("firstParam(");
+    expect(page).toContain("見つかりません");
+    expect(page).toContain("届いた荷物はありません");
+  });
+
+  it("gives the filter form a key made from the URL's values", () => {
+    const both = read("delivered/page.tsx") + read("delivered/filter-form.tsx");
+    expect(both).toMatch(/\bkey=\{/);
+  });
+
   it("drops 「届いた（30 日）」 from the parcel list and links to the delivered and cancelled pages with PageLink", () => {
     const list = read("page.tsx");
     expect(list).not.toContain("届いた（30 日）");
