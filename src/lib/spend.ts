@@ -1,5 +1,5 @@
 import { CATEGORIES, isCategory, type Category } from "@/lib/category";
-import { shiftMonth } from "@/lib/format";
+import { monthParam, shiftMonth } from "@/lib/format";
 
 /** Totals for the spend screen. Only parcels whose amount was read count toward money. */
 
@@ -7,7 +7,7 @@ type SpendParcel = { ordered_at: string | null; total_amount: number | null; cat
 
 /** The month a `?m=` names: "YYYY-MM" with a month of 01 to 12, else this month. */
 export function spendMonthParam(m: string | undefined, today: string): string {
-  return /^\d{4}-(0[1-9]|1[0-2])$/.test(m ?? "") ? (m as string) : today.slice(0, 7);
+  return monthParam(m, today);
 }
 
 /** The total card: the sum of the amounts read, how many had one, and how many did not. */

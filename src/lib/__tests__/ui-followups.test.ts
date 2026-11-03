@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { monthParam } from "@/lib/format";
 
 /**
  * Review follow-ups in client screens, checked in their source (the tests run without a DOM):
@@ -39,5 +40,11 @@ describe("[N4] the calendar", () => {
     expect(source).toMatch(/const \{ data, error \} = await supabase/);
     expect(source).toMatch(/failed \? \(\s*<p[^>]*>読み込めませんでした<\/p>/);
     expect(source).toContain("この月の予定はありません");
+  });
+
+  it("[SEC-N6] takes ?m= only as a month of 01 to 12, else this month", () => {
+    expect(source).toContain("const ym = monthParam(m, today);");
+    for (const m of ["2026-13", "2026-00", "2026-1", "all", undefined]) expect(monthParam(m, "2026-11-03"), String(m)).toBe("2026-11");
+    expect(monthParam("2026-12", "2026-11-03")).toBe("2026-12");
   });
 });

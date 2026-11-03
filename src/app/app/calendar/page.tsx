@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { daysInMonth, formatDateJa, formatWindow, monthLabel, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
+import { daysInMonth, formatDateJa, formatWindow, monthLabel, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
 import { upcomingByDay } from "@/lib/calendar";
 import { DeliveredLink } from "../delivered-link";
@@ -13,7 +13,7 @@ type SearchParams = Promise<{ m?: string }>;
 export default async function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
   const { m } = await searchParams;
   const today = todayJst();
-  const ym = /^\d{4}-\d{2}$/.test(m ?? "") ? (m as string) : today.slice(0, 7);
+  const ym = monthParam(m, today);
   const [y, mo] = ym.split("-").map(Number);
   const first = `${ym}-01`;
   const last = `${ym}-${String(daysInMonth(y, mo)).padStart(2, "0")}`;
