@@ -114,7 +114,7 @@ const attr = (n: HtmlNode, name: string) => Object.entries(n.attrs).find(([k]) =
 
 describe("delivered page: reads", () => {
   it("[SEC-N1] adds user_id to the parcels read and the items read", async () => {
-    await render();
+    await render({ q: "テスト" });
     const parcelsReads = db.callsOn("parcels", "select");
     const itemReads = db.callsOn("parcel_items", "select");
     expect(parcelsReads.length).toBeGreaterThan(0);

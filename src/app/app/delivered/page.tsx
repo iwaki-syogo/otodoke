@@ -28,7 +28,8 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
   let items: Array<{ parcel_id: string; name: string }> | null = null;
   try {
     // Every item is read rather than asked for by parcel id: a long id list breaks the URL and
-    // the 1,000-row cap would drop items. Either read failing fails the page.
+    // the 1,000-row cap would drop items. Items only serve the search word, so with none they
+    // are not read. Either read failing fails the page.
     [parcels, items] = await Promise.all([
       readAll<ParcelRow>(() =>
         supabase
@@ -38,7 +39,9 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
           .eq("status", "delivered")
           .order("ordered_at", { ascending: false, nullsFirst: false }),
       ),
-      readAll<{ parcel_id: string; name: string }>(() => supabase.from("parcel_items").select("parcel_id,name", { count: "exact" }).eq("user_id", user.id)),
+      searchWord(q)
+        ? readAll<{ parcel_id: string; name: string }>(() => supabase.from("parcel_items").select("parcel_id,name", { count: "exact" }).eq("user_id", user.id))
+        : Promise.resolve([]),
     ]);
   } catch (err) {
     parcels = null;
