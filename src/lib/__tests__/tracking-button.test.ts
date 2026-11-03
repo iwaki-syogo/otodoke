@@ -65,9 +65,26 @@ describe("Sagawa popup: each step is a row with a small control on its right", (
     expect(buttonsOf(steps).map((b) => b.label)).toContain("コピー");
   });
 
-  it("step 1 says 「コピー済み ✓」 after copying", () => {
-    expect(buttonsOf(stepsOf(popup("done"))).map((b) => b.label)).toContain("コピー済み ✓");
+  it("step 1 says 「コピー ✓」 after copying", () => {
+    expect(buttonsOf(stepsOf(popup("done"))).map((b) => b.label)).toContain("コピー ✓");
     expect(popup("done")).not.toContain("コピーしました");
+    expect(popup("done")).not.toContain("コピー済み");
+  });
+
+  it("step 1 shows the number without extra letter spacing, so 14 characters stay on one line at phone width", () => {
+    const number = stepsOf(popup()).match(/<span class="([^"]*)">1234-5678-9012<\/span>/)?.[1] ?? "";
+    expect(number).toMatch(/\bfont-mono\b/);
+    expect(number).not.toMatch(/\btracking-/);
+  });
+
+  it("the controls of steps 1 and 2 share one minimum width and center their labels", () => {
+    const steps = stepsOf(popup());
+    const copyButton = [...steps.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find((m) => m[2].includes("コピー"))?.[1] ?? "";
+    const openLink = anchorsOf(steps).find((a) => /開く\s*↗/.test(a.label))?.attrs ?? "";
+    for (const [name, attrs] of [["copy", copyButton], ["open", openLink]] as const) {
+      expect(attrs, name).toMatch(/\bmin-w-20\b/);
+      expect(attrs, name).toMatch(/\btext-center\b/);
+    }
   });
 
   it("step 1 keeps the copy button on the number's row at one width before and after copying", () => {
@@ -78,11 +95,11 @@ describe("Sagawa popup: each step is a row with a small control on its right", (
       expect(row, state).not.toMatch(/\bflex-wrap\b/);
       const copyButton = [...steps.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find((m) => m[2].includes("コピー"));
       expect(copyButton, state).toBeDefined();
-      // Both labels are always rendered in one grid cell, so the width is the wider one's.
+      // Both labels are always rendered in one grid cell, so the width is the wider one's (or the shared minimum).
       expect(copyButton![1], state).toMatch(/\bshrink-0\b/);
       expect(copyButton![1], state).toMatch(/\bwhitespace-nowrap\b/);
       expect(copyButton![1], state).toMatch(/\bgrid\b/);
-      expect(text(copyButton![2]), state).toMatch(/コピー\s*コピー済み\s*✓/);
+      expect(text(copyButton![2]), state).toMatch(/^コピー\s*コピー\s*✓$/);
     }
   });
 

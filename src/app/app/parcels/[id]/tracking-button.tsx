@@ -4,8 +4,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { TrackingLink } from "@/lib/carriers";
 
 const LINK = "font-medium text-sky-700 underline underline-offset-4";
-/** A small framed control at the right end of a step row. */
-const SMALL = "shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1 text-sm font-medium";
+/**
+ * A small framed control at the right end of a step row. One shared minimum width, so the
+ * controls of steps 1 and 2 line up in size as well as at their right ends.
+ */
+const SMALL = "min-w-20 shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1 text-center text-sm font-medium";
 
 /**
  * Copies during the tap itself, without the async Clipboard API: that one needs a secure
@@ -132,19 +135,19 @@ function CopyThenOpen({
                   </div>
                 ) : (
                   <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                    <span className="min-w-0 wrap-anywhere font-mono text-base tracking-wider">{shown}</span>
-                    {/* Both labels share one grid cell, so the button keeps the wider one's width and never moves. */}
+                    <span className="min-w-0 wrap-anywhere font-mono text-base">{shown}</span>
+                    {/* Both labels share one grid cell, so the button keeps the wider one's width (at least the shared minimum) and never moves. */}
                     <button
                       ref={firstButton}
                       type="button"
                       onClick={onCopy}
-                      className={`${SMALL} grid text-center ${copy === "done" ? "border-emerald-300 text-emerald-700" : "border-sky-300 text-sky-700"}`}
+                      className={`${SMALL} grid ${copy === "done" ? "border-emerald-300 text-emerald-700" : "border-sky-300 text-sky-700"}`}
                     >
                       <span aria-hidden={copy === "done" || undefined} className={`[grid-area:1/1] ${copy === "done" ? "invisible" : ""}`}>
                         コピー
                       </span>
                       <span aria-hidden={copy !== "done" || undefined} className={`[grid-area:1/1] ${copy === "done" ? "" : "invisible"}`}>
-                        コピー済み ✓
+                        コピー ✓
                       </span>
                     </button>
                   </div>
