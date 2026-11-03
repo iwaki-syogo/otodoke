@@ -140,17 +140,45 @@ describe("[Codex-H1] two user categories on twins", () => {
   });
 
   it("[N6] (b) on a retry prefers a row that moved since the merge last saw it", () => {
-    const seen = new Map([
-      ["a", T1],
-      ["b", T1],
+    // [Codex-F1] What the merge knew is each row's category, not its time.
+    const knew = (a: string, b: string) =>
+      new Map([
+        ["a", { category: a, category_source: "user" }],
+        ["b", { category: b, category_source: "user" }],
+      ]);
+    // Only the absorbed row's category changed: the person changed it while it was being merged.
+    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T2)], none, knew("hobby", "food")).category).toBe("beauty");
+    // Neither changed: the kept parcel's, as on a first try.
+    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T1)], none, knew("hobby", "beauty")).category).toBe("hobby");
+    // Both changed: the row changed later.
+    expect(categoryForTwins(user("a", "hobby", T3), [user("b", "beauty", T2)], none, knew("food", "food")).category).toBe("hobby");
+    expect(categoryForTwins(user("a", "hobby", T2), [user("b", "beauty", T3)], none, knew("food", "food")).category).toBe("beauty");
+  });
+
+  it("[Codex-F1] on a retry does not count a row whose status and time moved but whose category did not", () => {
+    const knew = new Map([
+      ["a", { category: "hobby", category_source: "user" }],
+      ["b", { category: "beauty", category_source: "user" }],
     ]);
-    // Only the absorbed row moved: the person changed it while it was being merged.
-    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T2)], none, seen).category).toBe("beauty");
-    // Neither moved: the kept parcel's, as on a first try.
-    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T1)], none, seen).category).toBe("hobby");
-    // Both moved: the later of the two.
-    expect(categoryForTwins(user("a", "hobby", T3), [user("b", "beauty", T2)], none, seen).category).toBe("hobby");
-    expect(categoryForTwins(user("a", "hobby", T2), [user("b", "beauty", T3)], none, seen).category).toBe("beauty");
+    // B was marked delivered meanwhile: newer, with the category the merge knew.
+    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T3)], none, knew).category).toBe("hobby");
+  });
+
+  it("[Codex-F1] keeps the kept parcel's user category when the absorbed one only changed its status before being deleted", async () => {
+    const db = twoMailParcels({ category: "beauty", category_source: "user" });
+    Object.assign(db.find("parcels", "p-a")!, { category: "hobby", category_source: "user" });
+    // After the first read, B is marked delivered: its delete misses and the merge retries.
+    db.hooks.push(
+      afterTwinsAreRead((d) => {
+        Object.assign(d.find("parcels", "p-b")!, { status: "delivered", updated_at: d.tick() });
+      }),
+    );
+    await run(db, bothNumbers);
+    expect(db.callsOn("parcels", "delete").length).toBeGreaterThanOrEqual(2);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    const a = db.find("parcels", "p-a")!;
+    expect(a.category).toBe("hobby");
+    expect(a.category_source).toBe("user");
   });
 
   it("[N6] (a) keeps the kept parcel's user category when the mail lands on the other twin first", async () => {

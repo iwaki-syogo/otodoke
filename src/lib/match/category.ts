@@ -13,7 +13,9 @@ export type ParcelCategory = { category: Category | null; category_source: Categ
 
 /** What a parcel row holds; values outside the known keys read as no category. */
 type Stored = { category: string | null; category_source: string | null };
-/** A parcel row's category with its id and when the row last changed, to tell what moved during a merge. */
+/** A row's category columns as the twin merge last knew them. */
+export type TwinCategory = Stored;
+/** A parcel row's category with its id and when the row last changed. */
 type StoredAt = Stored & { id?: string; updated_at?: string | null };
 
 const NONE: ParcelCategory = { category: null, category_source: null };
@@ -44,21 +46,24 @@ export function categoryForUpdate(current: Stored, read: Category | null, brings
  * Two parcels found to be one. `rebuilt` is the category decided again from all the mails.
  * A user's choice wins, the kept parcel's first, then an absorbed one's.
  *
- * `seenBefore` is given on a retry: each row's updated_at as the merge last knew it (after its
- * own writes). A row that moved since then was changed by the person while being merged, so its
- * user choice goes first (the latest of them when several moved). updated_at alone says when a
- * row last changed, not when its category was picked, so it decides nothing on a first try.
+ * `seenBefore` is given on a retry: each row's category columns as the merge last knew them
+ * (after its own category writes). A row whose category changed since then and is now the
+ * user's was changed by the person while being merged, so its choice goes first (the row changed
+ * last when several did). Other changes to a row (its status, its updated_at) decide nothing.
  *
  * Then the rebuilt category; an automatic one already there is kept rather than lost to a null.
  */
-export function categoryForTwins(keep: StoredAt, absorbed: StoredAt[], rebuilt: Stored, seenBefore?: ReadonlyMap<string, string | null>): ParcelCategory {
+export function categoryForTwins(keep: StoredAt, absorbed: StoredAt[], rebuilt: Stored, seenBefore?: ReadonlyMap<string, TwinCategory>): ParcelCategory {
   const rows = [keep, ...absorbed];
   const all = rows.map(stored);
-  const moved = (row: StoredAt) => seenBefore !== undefined && row.id !== undefined && seenBefore.has(row.id) && seenBefore.get(row.id) !== (row.updated_at ?? null);
+  const changed = (row: StoredAt) => {
+    const before = row.id === undefined ? undefined : seenBefore?.get(row.id);
+    return before !== undefined && ((before.category ?? null) !== (row.category ?? null) || (before.category_source ?? null) !== (row.category_source ?? null));
+  };
   let chosen: ParcelCategory | null = null;
   let chosenAt = "";
   for (const [i, c] of all.entries()) {
-    if (c.category_source !== "user" || !moved(rows[i])) continue;
+    if (c.category_source !== "user" || !changed(rows[i])) continue;
     const at = rows[i].updated_at ?? "";
     // Plain comparison of ISO times in one format; no locale can reorder it.
     if (chosen === null || at > chosenAt) {
