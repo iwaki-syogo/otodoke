@@ -39,6 +39,14 @@ export default async function ParcelsPage() {
   const cancelled = parcels.filter((p) => p.status === "cancelled");
   const inPerson = active.filter((p) => faceToFace(p) === true && (lastExpectedDay(p) ?? "") >= today).sort(byNextArrival(today));
 
+  const addLink = (
+    <div className="flex justify-end">
+      <Link href="/app/parcels/new" className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium active:bg-neutral-100">
+        ＋ 登録
+      </Link>
+    </div>
+  );
+
   const waitingNotice = waiting ? (
     <Link href="/app/settings" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
       まだ読んでいないメールが {waiting} 通あります。この一覧は最新ではないかもしれません。
@@ -48,6 +56,7 @@ export default async function ParcelsPage() {
   if (parcels.length === 0) {
     return (
       <div className="flex flex-col gap-4">
+        {addLink}
         {waitingNotice}
         <EmptyState />
       </div>
@@ -57,6 +66,7 @@ export default async function ParcelsPage() {
   return (
     <DeliveredToastProvider>
     <div className="flex flex-col gap-8">
+      {addLink}
       {waitingNotice}
       {inPerson.length > 0 ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
