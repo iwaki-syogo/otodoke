@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { daysInMonth, formatDateJa, formatWindow, monthLabel, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
+import { upcomingByDay } from "@/lib/calendar";
+import { DeliveredLink } from "../delivered-link";
 import { PresenceBadge, StatusBadge } from "../parcel-card";
 
 export const metadata = { title: "カレンダー" };
@@ -28,15 +30,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
     .order("expected_window_start", { ascending: true, nullsFirst: false });
   const parcels: ParcelRow[] = data ?? [];
 
-  const byDay = new Map<string, ParcelRow[]>();
-  for (const p of parcels) {
-    if (!p.expected_date) continue;
-    // A window sits on its first day in this month.
-    const day = p.expected_date < first ? first : p.expected_date;
-    const list = byDay.get(day) ?? [];
-    list.push(p);
-    byDay.set(day, list);
-  }
+  // Only what is still ahead: past days, delivered and cancelled parcels are not shown.
+  const byDay = upcomingByDay(parcels, today, first, last);
 
   const leading = weekdayOf(first);
   const cells: Array<string | null> = [...Array<null>(leading).fill(null)];
@@ -72,8 +67,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
             const presence = list.some((p) => faceToFace(p) === true);
             const isToday = day === today;
             const dnum = Number(day.slice(8));
+            const Cell = list.length ? "a" : "div";
             return (
-              <a
+              <Cell
                 key={day}
                 href={list.length ? `#d-${day}` : undefined}
                 className={`flex min-h-16 flex-col items-center rounded-lg px-0.5 py-1 ${list.length ? "active:bg-neutral-100" : ""}`}
@@ -95,14 +91,14 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                     {list.length}件
                   </span>
                 ) : null}
-              </a>
+              </Cell>
             );
           })}
         </div>
       </div>
 
       {days.length === 0 ? (
-        <p className="py-6 text-center text-sm text-neutral-500">この月にお届け予定の荷物はありません</p>
+        <p className="py-6 text-center text-sm text-neutral-500">この月の予定はありません</p>
       ) : (
         <ol className="flex flex-col gap-5">
           {days.map((day) => {
@@ -139,6 +135,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           })}
         </ol>
       )}
+      <DeliveredLink />
     </div>
   );
 }
