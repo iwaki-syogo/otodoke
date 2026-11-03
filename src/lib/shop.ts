@@ -10,6 +10,18 @@ export function normalizeShop(p: { shop: string; shop_key: string | null }): str
   return p.shop_key === "amazon" ? "Amazon" : p.shop;
 }
 
+/** How much of a shop name is shown where it comes from the URL (`?s=`). */
+export const SHOP_LABEL_MAX = 40;
+
+/**
+ * A shop name for display: cut to SHOP_LABEL_MAX characters with 「…」, so a crafted `?s=` cannot
+ * put a long message on the screen. Only for showing: compare and link with the name in full.
+ */
+export function shopLabel(name: string): string {
+  const chars = Array.from(name);
+  return chars.length > SHOP_LABEL_MAX ? `${chars.slice(0, SHOP_LABEL_MAX).join("")}…` : name;
+}
+
 /** A query value as one string: the first of an array, undefined for none. */
 export function firstParam(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;

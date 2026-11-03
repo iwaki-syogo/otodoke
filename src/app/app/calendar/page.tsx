@@ -3,9 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { daysInMonth, formatDateJa, formatWindow, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
 import { upcomingByDay } from "@/lib/calendar";
+import { MONTH_MIN, monthMax } from "@/lib/month-url";
 import { MonthPicker } from "../month-picker";
 import { PageLink } from "../page-link";
 import { PresenceBadge, StatusBadge } from "../parcel-card";
+import { FilterLink, FilterScope } from "../spend/filter-link";
 
 export const metadata = { title: "カレンダー" };
 
@@ -46,17 +48,20 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between">
-        <Link href={`/app/calendar?m=${shiftMonth(ym, -1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="前の月">
-          ‹ 前月
-        </Link>
-        <h1 className="text-lg font-bold">
-          <MonthPicker value={ym} basePath="/app/calendar" />
-        </h1>
-        <Link href={`/app/calendar?m=${shiftMonth(ym, 1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="次の月">
-          翌月 ›
-        </Link>
-      </header>
+      {/* 前月・翌月 and the picker share one transition: none moves while another is on the way. */}
+      <FilterScope>
+        <header className="flex items-center justify-between">
+          <FilterLink href={`/app/calendar?m=${shiftMonth(ym, -1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="前の月">
+            ‹ 前月
+          </FilterLink>
+          <h1 className="text-lg font-bold">
+            <MonthPicker value={ym} basePath="/app/calendar" min={MONTH_MIN} max={monthMax(today)} />
+          </h1>
+          <FilterLink href={`/app/calendar?m=${shiftMonth(ym, 1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="次の月">
+            翌月 ›
+          </FilterLink>
+        </header>
+      </FilterScope>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-2">
         <div className="grid grid-cols-7 text-center text-[11px] text-neutral-500">

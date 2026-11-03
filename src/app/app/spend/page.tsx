@@ -1,12 +1,13 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { categoryColor, categoryLabel, type Category } from "@/lib/category";
 import { daysInMonth, shiftMonth, todayJst, yen } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { sharePercent, spendByCategory, spendByMonth, spendMonthParam, spendSlices, spendTotal, withEmptyMonths } from "@/lib/spend";
-import { NONE, categoryParam, firstParam, normalizeShop } from "@/lib/shop";
+import { NONE, categoryParam, firstParam, normalizeShop, shopLabel } from "@/lib/shop";
 import { readAll } from "@/lib/supabase/read-all";
-import { createClient } from "@/lib/supabase/server";
-import { FilterArea, FilterLink, FilterSpinner } from "./filter-link";
+import { MONTH_MIN, monthMax } from "@/lib/month-url";
+import { createClient, getUser } from "@/lib/supabase/server";
+import { FilterArea, FilterLink, FilterScope, FilterSpinner } from "./filter-link";
 import { MonthPicker } from "../month-picker";
 import { MonthBars } from "./month-bars";
 import { OrderList } from "./order-list";
@@ -39,11 +40,13 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
   // it still narrows (to nothing), and its chip takes it off.
   const shop = firstParam(params.s) || undefined;
 
+  const user = await getUser();
+  if (!user) redirect("/login");
   const supabase = await createClient();
   let parcels: ParcelRow[] | null = null;
   try {
     parcels = await readAll<ParcelRow>(() => {
-      const q = supabase.from("parcels").select("*", { count: "exact" }).neq("status", "cancelled");
+      const q = supabase.from("parcels").select("*", { count: "exact" }).eq("user_id", user.id).neq("status", "cancelled");
       return (all ? q : q.gte("ordered_at", first).lte("ordered_at", last)).order("ordered_at", { ascending: false, nullsFirst: false });
     });
   } catch (err) {
@@ -58,38 +61,42 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <nav className="grid grid-cols-2 rounded-xl bg-neutral-100 p-1 text-sm" aria-label="期間">
-        <Link href={here({ m: today.slice(0, 7), s: shop })} aria-current={!all ? "page" : undefined} className={`rounded-lg py-2 text-center ${!all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
-          月
-        </Link>
-        <Link href={here({ m: ALL, s: shop })} aria-current={all ? "page" : undefined} className={`rounded-lg py-2 text-center ${all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
-          全期間
-        </Link>
-      </nav>
+    // Every control that changes the conditions (the period, the month, a row, a chip, a bar)
+    // shares one transition, so none is followed from an old URL while another is on the way.
+    <FilterScope>
+      <div className="flex flex-col gap-6">
+        <nav className="grid grid-cols-2 rounded-xl bg-neutral-100 p-1 text-sm" aria-label="期間">
+          <FilterLink href={here({ m: today.slice(0, 7), s: shop })} aria-current={!all ? "page" : undefined} className={`rounded-lg py-2 text-center ${!all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
+            月
+          </FilterLink>
+          <FilterLink href={here({ m: ALL, s: shop })} aria-current={all ? "page" : undefined} className={`rounded-lg py-2 text-center ${all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
+            全期間
+          </FilterLink>
+        </nav>
 
-      {all ? (
-        <h1 className="text-center text-lg font-bold">全期間</h1>
-      ) : (
-        <header className="flex items-center justify-between">
-          <Link href={here({ m: shiftMonth(ym, -1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
-            ‹ 前月
-          </Link>
-          <h1 className="text-lg font-bold">
-            <MonthPicker value={ym} basePath="/app/spend" keep={{ c: only === undefined ? undefined : cParam(only), s: shop }} />
-          </h1>
-          <Link href={here({ m: shiftMonth(ym, 1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
-            翌月 ›
-          </Link>
-        </header>
-      )}
+        {all ? (
+          <h1 className="text-center text-lg font-bold">全期間</h1>
+        ) : (
+          <header className="flex items-center justify-between">
+            <FilterLink href={here({ m: shiftMonth(ym, -1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
+              ‹ 前月
+            </FilterLink>
+            <h1 className="text-lg font-bold">
+              <MonthPicker value={ym} basePath="/app/spend" keep={{ c: only === undefined ? undefined : cParam(only), s: shop }} min={MONTH_MIN} max={monthMax(today)} />
+            </h1>
+            <FilterLink href={here({ m: shiftMonth(ym, 1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
+              翌月 ›
+            </FilterLink>
+          </header>
+        )}
 
-      {parcels === null ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
-      ) : (
-        <Spend parcels={parcels} all={all} only={only} shop={shop} here={here} />
-      )}
-    </div>
+        {parcels === null ? (
+          <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        ) : (
+          <Spend parcels={parcels} all={all} only={only} shop={shop} here={here} />
+        )}
+      </div>
+    </FilterScope>
   );
 }
 
@@ -99,7 +106,8 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
   const card = spendTotal(slices.picked);
   const categories = spendByCategory(slices.byCategory);
   const narrowed = only !== undefined || shop !== undefined;
-  const conditions = [...(shop !== undefined ? [shop] : []), ...(only !== undefined ? [categoryLabel(only)] : [])];
+  // Category first, then shop: the order of the chips. The shop is cut for display only.
+  const conditions = [...(only !== undefined ? [categoryLabel(only)] : []), ...(shop !== undefined ? [shopLabel(shop)] : [])];
 
   const byShop = new Map<string, number>();
   for (const p of slices.byShop) {
@@ -167,6 +175,7 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
                 <li key={name}>
                   <FilterLink
                     href={selected ? here({ c: only }) : here({ c: only, s: name })}
+                    prefetch={false}
                     aria-current={selected ? "true" : undefined}
                     className={`block rounded-xl px-3 py-1.5 active:bg-neutral-100 ${selected ? "bg-neutral-100" : ""} ${shop !== undefined && !selected ? "opacity-50" : ""}`}
                   >
@@ -192,7 +201,7 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
         <h2 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base font-bold">
           注文
           {only !== undefined ? <Chip href={here({ s: shop })} label={categoryLabel(only)} /> : null}
-          {shop !== undefined ? <Chip href={here({ c: only })} label={shop} /> : null}
+          {shop !== undefined ? <Chip href={here({ c: only })} label={shopLabel(shop)} /> : null}
         </h2>
         {slices.orders.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-500">{narrowed ? "この条件の注文はありません" : all ? "注文はありません" : "この月の注文はありません"}</p>

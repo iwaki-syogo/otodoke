@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { CATEGORIES, categoryColor, categoryLabel, type Category } from "@/lib/category";
 import { yen } from "@/lib/format";
 import { axisTicks, type spendByMonth } from "@/lib/spend";
+import { FilterLink } from "./filter-link";
 
 type Month = ReturnType<typeof spendByMonth>[number];
 
@@ -18,7 +18,8 @@ function tickLabel(v: number): string {
 /**
  * Spending per order month as stacked columns, one colour per category in a fixed order.
  * Plain HTML and CSS (no chart library). Newest month on the right; the row scrolls sideways
- * and starts at the newest. Tapping a column opens that month.
+ * and starts at the newest. Tapping a column opens that month, through the FilterArea's one
+ * transition (so it waits while another condition is on the way).
  */
 export function MonthBars({ months, query }: { months: Month[]; query: (month: string) => string }) {
   if (months.length === 0) return null;
@@ -53,7 +54,7 @@ export function MonthBars({ months, query }: { months: Month[]; query: (month: s
               const height = (m.total / top) * PLOT;
               return (
                 <li key={m.month} className="shrink-0" style={{ width: SLOT }}>
-                  <Link
+                  <FilterLink
                     href={query(m.month)}
                     aria-label={`${y}年${mo}月 ${yen(m.total)}`}
                     title={`${y}年${mo}月 ${yen(m.total)}`}
@@ -69,7 +70,7 @@ export function MonthBars({ months, query }: { months: Month[]; query: (month: s
                     </div>
                     <span className="mt-1 text-[10px] tabular-nums text-neutral-500">{mo}月</span>
                     <span className="h-3 text-[9px] leading-3 text-neutral-400">{showYear ? `${String(y).slice(2)}年` : ""}</span>
-                  </Link>
+                  </FilterLink>
                 </li>
               );
             })}
