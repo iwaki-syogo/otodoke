@@ -377,8 +377,10 @@ async function fillManual(db: AdminClient, userId: string, read: ParcelRow, x: E
  * in between, everything is read again and tried once more, then left apart and logged.
  */
 async function absorbTwins(db: AdminClient, userId: string, parcelId: string): Promise<string> {
+  // Each row's updated_at as the merge last knew it, so a retry can tell what moved meanwhile.
+  const seen = new Map<string, string | null>();
   for (let attempt = 0; attempt < 2; attempt++) {
-    const kept = await tryAbsorbTwins(db, userId, parcelId);
+    const kept = await tryAbsorbTwins(db, userId, parcelId, seen, attempt > 0);
     if (kept !== null) return kept;
   }
   // No throw here: the webhook's retry would read the mail with Claude again and pay twice.
@@ -386,8 +388,11 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
   return parcelId;
 }
 
-/** One go at absorbTwins. Answers null when a row changed since it was read. */
-async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string): Promise<string | null> {
+/**
+ * One go at absorbTwins. Answers null when a row changed since it was read. Records in `seen`
+ * each row's updated_at as read, and the kept row's after its own writes.
+ */
+async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string, seen: Map<string, string | null>, retry: boolean): Promise<string | null> {
   const target = await readParcel(db, userId, parcelId);
   if (!target?.tracking_number) return parcelId;
   // Only parcels with this number: the lookup is not cut off by the 1000-row cap.
@@ -397,6 +402,8 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string)
   if (!twins) return parcelId;
   const { keep, absorb } = twins;
   const absorbIds = absorb.map((p) => p.id);
+  const seenBefore = retry ? new Map(seen) : undefined;
+  for (const p of [keep, ...absorb]) seen.set(p.id, p.updated_at);
 
   // Every mail of the parcels being joined, read before anything moves.
   const { data: mails, error: mailsError } = await db
@@ -428,7 +435,7 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string)
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
   }
   const { rest } = splitCategory(fields);
-  const category = categoryForTwins(keep, absorb, merged);
+  const category = categoryForTwins(keep, absorb, merged, seenBefore);
 
   let keepVersion = keep.updated_at;
   if (Object.keys(rest).length > 0) {
@@ -436,13 +443,15 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string)
     if (updateError) throw new Error(`parcels rebuild failed: ${updateError.message}`);
     if (!data || data.length === 0) return null;
     keepVersion = data[0].updated_at;
+    seen.set(keep.id, keepVersion);
   }
   if (category.category !== keep.category || category.category_source !== keep.category_source) {
     if (category.category_source === "user") {
       // The person's choice on a parcel being folded in must land before that parcel goes.
-      const { data, error: carryError } = await db.from("parcels").update(category).eq("id", keep.id).eq("user_id", userId).eq("updated_at", keepVersion).select("id");
+      const { data, error: carryError } = await db.from("parcels").update(category).eq("id", keep.id).eq("user_id", userId).eq("updated_at", keepVersion).select("id, updated_at");
       if (carryError) throw new Error(`parcels category carry-over failed: ${carryError.message}`);
       if (!data || data.length !== 1) return null;
+      seen.set(keep.id, data[0].updated_at);
     } else {
       await writeAutoCategory(db, userId, keep.id, category);
     }

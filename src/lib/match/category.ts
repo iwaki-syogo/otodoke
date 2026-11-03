@@ -13,8 +13,8 @@ export type ParcelCategory = { category: Category | null; category_source: Categ
 
 /** What a parcel row holds; values outside the known keys read as no category. */
 type Stored = { category: string | null; category_source: string | null };
-/** A parcel row's category with when the row last changed, to tell which choice is newer. */
-type StoredAt = Stored & { updated_at?: string | null };
+/** A parcel row's category with its id and when the row last changed, to tell what moved during a merge. */
+type StoredAt = Stored & { id?: string; updated_at?: string | null };
 
 const NONE: ParcelCategory = { category: null, category_source: null };
 
@@ -42,17 +42,23 @@ export function categoryForUpdate(current: Stored, read: Category | null, brings
 
 /**
  * Two parcels found to be one. `rebuilt` is the category decided again from all the mails.
- * A user's choice wins: when several rows hold one, the row changed last (updated_at) wins, and
- * on a tie or without times the kept parcel's first, then an absorbed one's. Then the rebuilt
- * category; an automatic one already there is kept rather than lost to a null.
+ * A user's choice wins, the kept parcel's first, then an absorbed one's.
+ *
+ * `seenBefore` is given on a retry: each row's updated_at as the merge last knew it (after its
+ * own writes). A row that moved since then was changed by the person while being merged, so its
+ * user choice goes first (the latest of them when several moved). updated_at alone says when a
+ * row last changed, not when its category was picked, so it decides nothing on a first try.
+ *
+ * Then the rebuilt category; an automatic one already there is kept rather than lost to a null.
  */
-export function categoryForTwins(keep: StoredAt, absorbed: StoredAt[], rebuilt: Stored): ParcelCategory {
+export function categoryForTwins(keep: StoredAt, absorbed: StoredAt[], rebuilt: Stored, seenBefore?: ReadonlyMap<string, string | null>): ParcelCategory {
   const rows = [keep, ...absorbed];
   const all = rows.map(stored);
+  const moved = (row: StoredAt) => seenBefore !== undefined && row.id !== undefined && seenBefore.has(row.id) && seenBefore.get(row.id) !== (row.updated_at ?? null);
   let chosen: ParcelCategory | null = null;
   let chosenAt = "";
   for (const [i, c] of all.entries()) {
-    if (c.category_source !== "user") continue;
+    if (c.category_source !== "user" || !moved(rows[i])) continue;
     const at = rows[i].updated_at ?? "";
     // Plain comparison of ISO times in one format; no locale can reorder it.
     if (chosen === null || at > chosenAt) {
@@ -60,6 +66,7 @@ export function categoryForTwins(keep: StoredAt, absorbed: StoredAt[], rebuilt: 
       chosenAt = at;
     }
   }
+  chosen ??= all.find((c) => c.category_source === "user") ?? null;
   if (chosen) return chosen;
   const fresh = stored(rebuilt);
   if (fresh.category) return auto(fresh.category);

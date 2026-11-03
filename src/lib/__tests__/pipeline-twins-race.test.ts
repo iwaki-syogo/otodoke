@@ -123,17 +123,44 @@ describe("[Codex-H1] two user categories on twins", () => {
     expect(a.category_source).toBe("user");
   });
 
-  it("picks the newer user choice, and the kept parcel's on a tie or without times", () => {
-    const user = (category: string, updated_at?: string) => ({ category, category_source: "user", updated_at });
-    const none = { category: null, category_source: null };
-    expect(categoryForTwins(user("hobby", "2026-11-03T00:00:01.000Z"), [user("beauty", "2026-11-03T00:00:02.000Z")], none).category).toBe("beauty");
-    expect(categoryForTwins(user("hobby", "2026-11-03T00:00:02.000Z"), [user("beauty", "2026-11-03T00:00:01.000Z")], none).category).toBe("hobby");
-    expect(categoryForTwins(user("hobby", "2026-11-03T00:00:01.000Z"), [user("beauty", "2026-11-03T00:00:01.000Z")], none).category).toBe("hobby");
-    expect(categoryForTwins(user("hobby"), [user("beauty")], none).category).toBe("hobby");
-    expect(categoryForTwins({ category: "food", category_source: "auto", updated_at: "2026-11-03T00:00:09.000Z" }, [user("beauty", "2026-11-03T00:00:01.000Z")], none)).toEqual({
+  // [N6] updated_at says when a row last changed, not when its category was picked.
+  const T1 = "2026-11-03T00:00:01.000Z";
+  const T2 = "2026-11-03T00:00:02.000Z";
+  const T3 = "2026-11-03T00:00:03.000Z";
+  const user = (id: string, category: string, updated_at?: string) => ({ id, category, category_source: "user", updated_at });
+  const none = { category: null, category_source: null };
+
+  it("[N6] (a) prefers the kept parcel's choice on a first try, even when the absorbed row changed later", () => {
+    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T2)], none).category).toBe("hobby");
+    expect(categoryForTwins(user("a", "hobby"), [user("b", "beauty")], none).category).toBe("hobby");
+    expect(categoryForTwins({ id: "a", category: "food", category_source: "auto", updated_at: T3 }, [user("b", "beauty", T1)], none)).toEqual({
       category: "beauty",
       category_source: "user",
     });
+  });
+
+  it("[N6] (b) on a retry prefers a row that moved since the merge last saw it", () => {
+    const seen = new Map([
+      ["a", T1],
+      ["b", T1],
+    ]);
+    // Only the absorbed row moved: the person changed it while it was being merged.
+    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T2)], none, seen).category).toBe("beauty");
+    // Neither moved: the kept parcel's, as on a first try.
+    expect(categoryForTwins(user("a", "hobby", T1), [user("b", "beauty", T1)], none, seen).category).toBe("hobby");
+    // Both moved: the later of the two.
+    expect(categoryForTwins(user("a", "hobby", T3), [user("b", "beauty", T2)], none, seen).category).toBe("hobby");
+    expect(categoryForTwins(user("a", "hobby", T2), [user("b", "beauty", T3)], none, seen).category).toBe("beauty");
+  });
+
+  it("[N6] (a) keeps the kept parcel's user category when the mail lands on the other twin first", async () => {
+    const db = twoMailParcels({ category: "beauty", category_source: "user", updated_at: "2026-11-02T00:00:00Z" });
+    Object.assign(db.find("parcels", "p-a")!, { category: "hobby", category_source: "user", tracking_number: T });
+    await run(db, reading({ relevance: "out_for_delivery", shop_name: null, tracking_number: sure(T_RAW), category: null }));
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    const a = db.find("parcels", "p-a")!;
+    expect(a.category).toBe("hobby");
+    expect(a.category_source).toBe("user");
   });
 });
 
