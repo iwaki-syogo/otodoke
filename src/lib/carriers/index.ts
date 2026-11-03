@@ -8,8 +8,8 @@ export type CarrierKey = "yamato" | "sagawa" | "japanpost" | "amazon" | "seino" 
  * How to show a parcel on the carrier's own site with its number already in.
  * - open: a plain link whose URL carries the number.
  * - post: the carrier's form only takes the number by POST, so the app submits that form.
- * - copy: the carrier takes no number from outside; copy it, then open the input page.
- *   pageName is that page's own title, shown while the app moves there.
+ * - copy: the carrier takes no number from outside; the user copies it, then opens the input
+ *   page in a new tab. pageName is that page's own title, shown on the link to it.
  * Checked against each site on 2026-11-03. Sagawa's new page (after its October 2026
  * outage) runs on Server Actions, which refuse a cross-site POST, hence "copy".
  */

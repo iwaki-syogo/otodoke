@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { TrackingLink } from "@/lib/carriers";
 
 const LINK = "font-medium text-sky-700 underline underline-offset-4";
 
 /**
- * Copies during the tap itself. The async Clipboard API is refused once the new tab has taken
- * focus, so the synchronous copy goes first and the API is only a fallback.
+ * Copies during the tap itself, without the async Clipboard API: that one needs a secure
+ * context and focus, so it is only tried when this fails.
  */
 function copyNow(text: string): boolean {
   const area = document.createElement("textarea");
@@ -25,79 +25,144 @@ function copyNow(text: string): boolean {
     ok = false;
   }
   area.remove();
-  if (!ok) navigator.clipboard?.writeText(text).catch(() => {});
   return ok;
 }
 
-/** How long the "copied" popup stays up before the carrier's page opens: long enough to read both lines. */
-const OPEN_AFTER_MS = 1500;
-
-/**
- * Opens a page in a new tab. A tab opened after a delay can be blocked as a popup (iOS Safari
- * especially), so the page then opens in this tab instead. "noopener" is not passed because it
- * makes window.open return null every time; the opener is cut by hand.
- */
-function openLater(url: string) {
-  const w = window.open(url, "_blank");
-  if (w) w.opener = null;
-  else window.location.assign(url);
+function StepNumber({ n }: { n: number }) {
+  return (
+    <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
+      {n}
+    </span>
+  );
 }
 
 /**
- * For carriers that take no number from outside (Sagawa): copies the number during the tap,
- * says so in a popup, then opens the carrier's page so the number can be pasted there.
+ * For carriers that take no number from outside (Sagawa): a popup that walks through copying
+ * the number and opening the carrier's page. Nothing happens on its own. The page opens from a
+ * real link in a new tab, so it is never blocked as a popup and this page always stays put.
  */
-function CopyThenOpen({ url, number, pageName }: { url: string; number: string; pageName: string }) {
-  // null: idle. Otherwise whether the copy worked; the popup stays up until the page opens.
-  const [copied, setCopied] = useState<boolean | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+function CopyThenOpen({
+  url,
+  number,
+  shown,
+  pageName,
+  carrierName,
+}: {
+  url: string;
+  number: string;
+  shown: string;
+  pageName: string;
+  carrierName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
+  const titleId = useId();
+  const opener = useRef<HTMLButtonElement>(null);
+  const firstButton = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  useEffect(() => {
+    if (!open) return;
+    firstButton.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
 
-  function onTap() {
-    if (copied !== null) return; // already on its way
-    // Synchronous, inside the tap: the async Clipboard API fails once another tab has focus.
-    setCopied(copyNow(number));
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      openLater(url);
-      setCopied(null);
-    }, OPEN_AFTER_MS);
+  function show() {
+    setCopy("idle");
+    setOpen(true);
+  }
+
+  function close() {
+    setOpen(false);
+    opener.current?.focus();
+  }
+
+  async function onCopy() {
+    // Synchronous first, inside the tap; the Clipboard API only as a fallback.
+    if (copyNow(number)) {
+      setCopy("done");
+      return;
+    }
+    try {
+      if (!navigator.clipboard) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(number);
+      setCopy("done");
+    } catch {
+      setCopy("failed");
+    }
   }
 
   return (
     <>
       {" "}
-      <button type="button" onClick={onTap} disabled={copied !== null} className={LINK}>
+      <button ref={opener} type="button" onClick={show} className={LINK}>
         追跡ページを開く
       </button>
-      {copied !== null ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-          <div role="status" aria-live="polite" className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
-            {copied ? (
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="mx-auto size-12 rounded-full bg-emerald-100 p-2.5 text-emerald-600">
-                <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : null}
-            <p className={`text-lg font-bold text-neutral-900 ${copied ? "mt-3" : ""}`}>
-              {copied ? "追跡番号をコピーしました" : "追跡番号をコピーできませんでした"}
-            </p>
-            {copied ? null : (
-              <p className="mt-3 select-all break-all font-mono text-2xl font-bold tracking-wider text-neutral-900">{number}</p>
-            )}
-            <p className="mt-3 text-sm text-neutral-600">
-              {`${pageName}ページに`}
-              {/* Kept on one line with the spinner, so a wrap on a phone never splits 移動中. */}
-              <span className="whitespace-nowrap">
-                移動中です
-                <span
-                  aria-hidden="true"
-                  className="ml-1.5 inline-block size-3.5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 align-[-2px]"
-                />
-              </span>
-            </p>
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) close();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="w-full max-w-sm rounded-2xl bg-white p-6 text-sm text-neutral-900 shadow-xl"
+          >
+            <h2 id={titleId} className="text-center text-lg font-bold">
+              {carrierName}で追跡する
+            </h2>
+            <ol className="mt-5 flex flex-col gap-5">
+              <li className="flex gap-3">
+                <StepNumber n={1} />
+                <div className="min-w-0 flex-1">
+                  {copy === "failed" ? (
+                    <>
+                      <p className="font-medium">コピーできませんでした</p>
+                      <p className="mt-2 select-all break-all font-mono text-2xl font-bold tracking-wider">{shown}</p>
+                      <p className="mt-1 text-neutral-600">長押ししてコピーしてください</p>
+                    </>
+                  ) : (
+                    <button
+                      ref={firstButton}
+                      type="button"
+                      onClick={onCopy}
+                      className={`w-full rounded-xl border px-4 py-3 text-center font-bold ${
+                        copy === "done" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-sky-300 bg-white text-sky-700"
+                      }`}
+                    >
+                      <span className="block">{copy === "done" ? "✓ コピーしました" : "追跡番号をコピー"}</span>
+                      <span className="mt-0.5 block font-mono text-base font-medium tracking-wider text-neutral-700">{shown}</span>
+                    </button>
+                  )}
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <StepNumber n={2} />
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 rounded-xl bg-sky-600 px-4 py-3 text-center font-bold text-white shadow-sm"
+                >
+                  {pageName}に移動
+                </a>
+              </li>
+              <li className="flex gap-3">
+                <StepNumber n={3} />
+                <p className="min-w-0 flex-1 pt-0.5 leading-relaxed text-neutral-700">
+                  送り状番号の欄に貼り付けて、「お問い合わせ開始」を押してください
+                </p>
+              </li>
+            </ol>
+            <button type="button" onClick={close} className="mt-6 w-full rounded-xl px-4 py-2.5 font-medium text-neutral-600">
+              閉じる
+            </button>
           </div>
         </div>
       ) : null}
@@ -105,8 +170,23 @@ function CopyThenOpen({ url, number, pageName }: { url: string; number: string; 
   );
 }
 
-/** Opens the carrier's tracking page with the number already in, as far as the carrier allows. */
-export function TrackingButton({ link, number }: { link: TrackingLink; number: string }) {
+/**
+ * Opens the carrier's tracking page with the number already in, as far as the carrier allows.
+ * Always in a new tab: the parcel page itself never navigates away.
+ */
+export function TrackingButton({
+  link,
+  number,
+  shown,
+  carrierName,
+}: {
+  link: TrackingLink;
+  /** Normalized: what is copied or sent. */
+  number: string;
+  /** As stored on the parcel, for reading. */
+  shown: string;
+  carrierName: string;
+}) {
   if (link.kind === "post") {
     return (
       <form method="post" action={link.url} target="_blank" className="inline">
@@ -119,7 +199,9 @@ export function TrackingButton({ link, number }: { link: TrackingLink; number: s
       </form>
     );
   }
-  if (link.kind === "copy") return <CopyThenOpen url={link.url} number={number} pageName={link.pageName} />;
+  if (link.kind === "copy") {
+    return <CopyThenOpen url={link.url} number={number} shown={shown} pageName={link.pageName} carrierName={carrierName} />;
+  }
   return (
     <>
       {" "}

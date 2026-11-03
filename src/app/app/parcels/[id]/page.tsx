@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { amazonOrderTrackingUrl, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
+import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { createClient } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
 import { faceToFace } from "@/lib/match";
@@ -77,7 +77,14 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
             {parcel.tracking_number ? (
               <div className="text-xs text-neutral-600">
                 伝票 {parcel.tracking_number}
-                {tracking ? <TrackingButton link={tracking} number={normalizeTracking(parcel.tracking_number)} /> : null}
+                {tracking ? (
+                  <TrackingButton
+                    link={tracking}
+                    number={normalizeTracking(parcel.tracking_number)}
+                    shown={parcel.tracking_number}
+                    carrierName={identifyCarrier(parcel.tracking_number, parcel.carrier).name}
+                  />
+                ) : null}
               </div>
             ) : null}
             {amazonUrl ? (
