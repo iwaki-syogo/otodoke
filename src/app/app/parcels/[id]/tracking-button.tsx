@@ -131,15 +131,21 @@ function CopyThenOpen({
                     <p className="mt-1 text-neutral-600">長押ししてコピー</p>
                   </div>
                 ) : (
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                    <span className="min-w-0 break-all font-mono text-base tracking-wider">{shown}</span>
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                    <span className="min-w-0 wrap-anywhere font-mono text-base tracking-wider">{shown}</span>
+                    {/* Both labels share one grid cell, so the button keeps the wider one's width and never moves. */}
                     <button
                       ref={firstButton}
                       type="button"
                       onClick={onCopy}
-                      className={`${SMALL} ${copy === "done" ? "border-emerald-300 text-emerald-700" : "border-sky-300 text-sky-700"}`}
+                      className={`${SMALL} grid text-center ${copy === "done" ? "border-emerald-300 text-emerald-700" : "border-sky-300 text-sky-700"}`}
                     >
-                      {copy === "done" ? "コピー済み ✓" : "コピー"}
+                      <span aria-hidden={copy === "done" || undefined} className={`[grid-area:1/1] ${copy === "done" ? "invisible" : ""}`}>
+                        コピー
+                      </span>
+                      <span aria-hidden={copy !== "done" || undefined} className={`[grid-area:1/1] ${copy === "done" ? "" : "invisible"}`}>
+                        コピー済み ✓
+                      </span>
                     </button>
                   </div>
                 )}

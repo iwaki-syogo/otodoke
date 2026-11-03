@@ -2,7 +2,7 @@ import Link from "next/link";
 import { categoryColor, categoryLabel, isCategory, type Category } from "@/lib/category";
 import { daysInMonth, formatDateJa, monthLabel, shiftMonth, todayJst, yen } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
-import { categoryOf, spendByCategory, spendByMonth, spendMonthParam, spendTotal, withEmptyMonths } from "@/lib/spend";
+import { categoryOf, sharePercent, spendByCategory, spendByMonth, spendMonthParam, spendTotal, withEmptyMonths } from "@/lib/spend";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { CategorySheet } from "../category-sheet";
@@ -143,7 +143,7 @@ function Spend({
                       <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: categoryColor(r.category) }} />
                       <span className="min-w-0 flex-1 truncate font-medium">{categoryLabel(r.category)}</span>
                       <span className="shrink-0 tabular-nums text-neutral-700">{yen(r.amount)}</span>
-                      <span className="w-10 shrink-0 text-right text-xs tabular-nums text-neutral-500">{Math.round(r.share * 100)}%</span>
+                      <span className="w-10 shrink-0 text-right text-xs tabular-nums text-neutral-500">{sharePercent(r.share)}</span>
                     </div>
                     <div className="mt-1.5 h-2 w-full rounded-full bg-neutral-100">
                       <div className="h-full rounded-full" style={{ width: `${r.amount > 0 ? Math.max(2, r.share * 100) : 0}%`, backgroundColor: categoryColor(r.category) }} />

@@ -49,9 +49,9 @@ function isRealDate(v: string): boolean {
   return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
 }
 
-const optionalDate = () =>
+const optionalDate = (message: string) =>
   text()
-    .refine((v) => v === "" || isRealDate(v), "日付が正しくありません")
+    .refine((v) => v === "" || isRealDate(v), message)
     .transform((v) => (v === "" ? null : v));
 
 // Allows "1,980" and full-width digits; still a whole number of yen.
@@ -64,8 +64,8 @@ const amount = () =>
 export const ManualParcelSchema = z.object({
   title: text().pipe(z.string().min(1, "品名を入れてください").max(MANUAL_LIMITS.title, "品名が長すぎます")),
   shop: text().pipe(z.string().min(1, "店を入れてください").max(MANUAL_LIMITS.shop, "店の名前が長すぎます")),
-  ordered_at: optionalDate(),
-  expected_date: optionalDate(),
+  ordered_at: optionalDate("注文日が正しくありません"),
+  expected_date: optionalDate("お届け予定日が正しくありません"),
   total_amount: amount(),
   category: text()
     .refine((v) => v === "" || isCategory(v), "分類が正しくありません")

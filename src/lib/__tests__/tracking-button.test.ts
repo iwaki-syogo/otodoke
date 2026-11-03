@@ -45,7 +45,9 @@ function popup(copyState: "idle" | "done" | "failed" = "idle"): string {
 
 const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 const stepsOf = (html: string) => html.match(/<ol[\s\S]*<\/ol>/)?.[0] ?? "";
-const buttonsOf = (html: string) => [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].map((m) => ({ attrs: m[1], label: text(m[2]) }));
+/** What a button reads: its text without the parts hidden from screen readers (a label kept only for width). */
+const visible = (html: string) => html.replace(/<span\b[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/span>/g, "");
+const buttonsOf = (html: string) => [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].map((m) => ({ attrs: m[1], label: text(visible(m[2])) }));
 const anchorsOf = (html: string) => [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => ({ attrs: m[1], label: text(m[2]) }));
 
 afterEach(() => {
@@ -64,8 +66,24 @@ describe("Sagawa popup: each step is a row with a small control on its right", (
   });
 
   it("step 1 says 「コピー済み ✓」 after copying", () => {
-    expect(text(stepsOf(popup("done")))).toMatch(/コピー済み\s*✓/);
+    expect(buttonsOf(stepsOf(popup("done"))).map((b) => b.label)).toContain("コピー済み ✓");
     expect(popup("done")).not.toContain("コピーしました");
+  });
+
+  it("step 1 keeps the copy button on the number's row at one width before and after copying", () => {
+    for (const state of ["idle", "done"] as const) {
+      const steps = stepsOf(popup(state));
+      const row = steps.match(/<div class="([^"]*)"><span[^>]*>1234-5678-9012<\/span>/)?.[1] ?? "";
+      expect(row, state).toMatch(/\bflex\b/);
+      expect(row, state).not.toMatch(/\bflex-wrap\b/);
+      const copyButton = [...steps.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find((m) => m[2].includes("コピー"));
+      expect(copyButton, state).toBeDefined();
+      // Both labels are always rendered in one grid cell, so the width is the wider one's.
+      expect(copyButton![1], state).toMatch(/\bshrink-0\b/);
+      expect(copyButton![1], state).toMatch(/\bwhitespace-nowrap\b/);
+      expect(copyButton![1], state).toMatch(/\bgrid\b/);
+      expect(text(copyButton![2]), state).toMatch(/コピー\s*コピー済み\s*✓/);
+    }
   });
 
   it("step 1 shows the number large and selectable when copying failed", () => {

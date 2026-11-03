@@ -46,6 +46,13 @@ export function spendByCategory(parcels: SpendParcel[]): Array<{ category: Categ
     .sort((a, b) => b.amount - a.amount);
 }
 
+/** A share (0..1) as a whole percent; a share above 0 that would round to 0 reads "<1%". */
+export function sharePercent(share: number): string {
+  if (!(share > 0)) return "0%";
+  const percent = Math.round(share * 100);
+  return percent === 0 ? "<1%" : `${percent}%`;
+}
+
 /**
  * One bar per order month, oldest first, stacked by category in the same fixed order every
  * month. Parcels with no order date or no amount are not on the bars.

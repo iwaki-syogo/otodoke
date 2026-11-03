@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Category } from "@/lib/category";
 import type { ParcelRow } from "@/lib/match";
-import { spendByCategory, spendByMonth } from "@/lib/spend";
+import { sharePercent, spendByCategory, spendByMonth } from "@/lib/spend";
 
 /**
  * Pure totals for the spend screen (src/lib/spend.ts):
@@ -119,5 +119,30 @@ describe("spend screen wiring", () => {
   it("adds no chart library", () => {
     const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
     expect(deps.filter((d) => /chart|recharts|d3|victory|nivo|visx|plotly|echarts/i.test(d))).toEqual([]);
+  });
+});
+
+describe("sharePercent", () => {
+  it("reads 0% for nothing spent", () => {
+    expect(sharePercent(0)).toBe("0%");
+  });
+
+  it("reads <1% for an amount above 0 that would round to 0%", () => {
+    expect(sharePercent(400 / 82_044)).toBe("<1%");
+    expect(sharePercent(0.0049)).toBe("<1%");
+    expect(sharePercent(1e-9)).toBe("<1%");
+  });
+
+  it("rounds to a whole percent from 0.5% up", () => {
+    expect(sharePercent(0.005)).toBe("1%");
+    expect(sharePercent(0.0149)).toBe("1%");
+    expect(sharePercent(0.5)).toBe("50%");
+    expect(sharePercent(1)).toBe("100%");
+  });
+
+  it("is what the breakdown shows, for a month and for all time", () => {
+    const source = readFileSync(path.resolve(__dirname, "../../app/app/spend/page.tsx"), "utf8");
+    expect(source).toContain("sharePercent(r.share)");
+    expect(source).not.toMatch(/Math\.round\(r\.share/);
   });
 });

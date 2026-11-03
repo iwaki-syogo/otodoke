@@ -66,6 +66,12 @@ describe("ManualParcelSchema: what it lets through", () => {
     rejects({ ordered_at: "明日" });
   });
 
+  it("names the date field that is wrong", () => {
+    const messageOf = (over: Record<string, string>) => ManualParcelSchema.safeParse(form(over)).error?.issues[0]?.message;
+    expect(messageOf({ ordered_at: "2026-02-30" })).toBe("注文日が正しくありません");
+    expect(messageOf({ expected_date: "2026-02-30" })).toBe("お届け予定日が正しくありません");
+  });
+
   it("takes a whole yen amount from 0 to 10,000,000", () => {
     expect(ok({ total_amount: "0" }).total_amount).toBe(0);
     expect(ok({ total_amount: "1980" }).total_amount).toBe(1980);
