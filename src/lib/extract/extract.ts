@@ -61,7 +61,8 @@ export async function extractEmail(email: EmailForPrompt): Promise<ExtractionRes
 
   const response = await getClient().messages.parse({
     model,
-    max_tokens: 8000,
+    // A mail listing many orders carries an evidence line per value; 8000 cut one off mid-answer.
+    max_tokens: 16000,
     system: [{ type: "text", text: EXTRACT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: text }],
     output_config: { format: zodOutputFormat(ExtractionSchema), effort },
