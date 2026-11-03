@@ -155,7 +155,7 @@ export function DeliverAll({ items }: { items: Marked }) {
       try {
         const n = await markDelivered(items.map((it) => it.id));
         setStep("idle");
-        showToast({ text: `${n} 件を届いたにしました`, undo: items });
+        showToast({ text: `${n} 件を受取済にしました`, undo: items });
       } catch {
         setStep("error");
       }
@@ -166,7 +166,7 @@ export function DeliverAll({ items }: { items: Marked }) {
     return (
       <div className="flex gap-2">
         <button type="button" onClick={run} disabled={pending} className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-70">
-          {pending ? "保存中…" : `${items.length} 件を届いたにする`}
+          {pending ? "保存中…" : `${items.length} 件を受取済にする`}
         </button>
         <button type="button" onClick={() => setStep("idle")} disabled={pending} className="rounded-xl border border-neutral-300 px-4 py-3 text-sm">
           やめる
@@ -177,7 +177,7 @@ export function DeliverAll({ items }: { items: Marked }) {
   return (
     <div>
       <button type="button" onClick={() => setStep("confirm")} className="w-full rounded-xl border border-emerald-600 px-4 py-3 text-sm font-bold text-emerald-700">
-        すべて届いたにする
+        すべて受取済にする
       </button>
       {step === "error" ? <p className="mt-1 text-xs text-red-700">保存できませんでした。もう一度押してください。</p> : null}
     </div>
