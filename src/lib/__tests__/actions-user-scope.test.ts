@@ -22,7 +22,10 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { setCategory } = await import("@/app/app/category-actions");
-const { markDelivered, restoreStatuses } = await import("@/app/app/parcel-actions");
+const parcelActions = await import("@/app/app/parcel-actions");
+const { markDelivered, restoreStatuses } = parcelActions;
+// Added for [Feedback 3]; read through the module so the other tests run before it exists.
+const markNotDelivered = (id: string) => (parcelActions as unknown as { markNotDelivered: (id: string) => Promise<{ ok: boolean }> }).markNotDelivered(id);
 
 let db: FakeDb;
 const row = (id: string, user_id: string, status: string) => ({ id, user_id, shop: "テスト店", status, category: null, category_source: null, updated_at: "2026-11-01T00:00:00Z" });
@@ -65,5 +68,35 @@ describe("markDelivered and restoreStatuses", () => {
     expect(await markDelivered([MINE])).toBe(0);
     await restoreStatuses([{ id: MINE, status: "ordered" }]);
     expect(db.callsOn("parcels", "update")).toHaveLength(0);
+  });
+});
+
+describe("markNotDelivered", () => {
+  it("puts back only the signed-in user's parcel", async () => {
+    db.find("parcels", MINE)!.status = "delivered";
+    db.find("parcels", THEIRS)!.status = "delivered";
+    expect(await markNotDelivered(THEIRS)).toMatchObject({ ok: false });
+    expect(db.find("parcels", THEIRS)!.status).toBe("delivered");
+    expect(await markNotDelivered(MINE)).toEqual({ ok: true });
+    expect(db.find("parcels", MINE)!.status).not.toBe("delivered");
+    expect(db.find("parcels", THEIRS)!.status).toBe("delivered");
+  });
+
+  it("names the user's id on every read and update", async () => {
+    db.find("parcels", MINE)!.status = "delivered";
+    db.find("parcels", THEIRS)!.status = "delivered";
+    await markNotDelivered(THEIRS);
+    await markNotDelivered(MINE);
+    const queries = db.callsOn("parcels");
+    expect(db.callsOn("parcels", "update").length).toBeGreaterThanOrEqual(1);
+    expect(queries.every((q) => q.filters.some((f) => f.method === "eq" && f.args[0] === "user_id" && f.args[1] === USER.id))).toBe(true);
+  });
+
+  it("writes nothing when nobody is signed in", async () => {
+    db.find("parcels", MINE)!.status = "delivered";
+    mocks.state.user = null;
+    expect(await markNotDelivered(MINE)).toMatchObject({ ok: false });
+    expect(db.callsOn("parcels", "update")).toHaveLength(0);
+    expect(db.find("parcels", MINE)!.status).toBe("delivered");
   });
 });

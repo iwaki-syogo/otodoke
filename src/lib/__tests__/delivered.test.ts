@@ -64,13 +64,18 @@ describe("delivered page wiring", () => {
     expect(page).toContain("読み込めませんでした");
   });
 
-  it("drops 「届いた（30 日）」 from the parcel list and links to the delivered page", () => {
+  it("drops 「届いた（30 日）」 from the parcel list and links to the delivered and cancelled pages with PageLink", () => {
     const list = read("page.tsx");
     expect(list).not.toContain("届いた（30 日）");
-    expect(list).toContain("DeliveredLink");
+    expect(list).toMatch(/import\s*\{\s*PageLink\s*\}\s*from\s*["']\.\/page-link["']/);
+    expect(list).toMatch(/<PageLink\b[^>]*href=\{?\s*["']\/app\/delivered["']/);
+    expect(list).toMatch(/<PageLink\b[^>]*href=\{?\s*["']\/app\/cancelled["']/);
+    expect(list).not.toContain("DeliveredLink");
   });
 
-  it("keeps the 荷物 tab selected on /app/delivered", () => {
-    expect(read("tab-bar.tsx")).toContain("/app/delivered");
+  it("keeps the 荷物 tab selected on /app/delivered and /app/cancelled", () => {
+    const tabs = read("tab-bar.tsx");
+    expect(tabs).toContain("/app/delivered");
+    expect(tabs).toContain("/app/cancelled");
   });
 });

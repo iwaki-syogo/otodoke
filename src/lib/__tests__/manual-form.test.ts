@@ -1,10 +1,13 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { CARRIERS } from "@/lib/carriers";
 import { ManualParcelSchema, manualParcelRow } from "@/lib/manual-parcel";
 import type { ParcelRow } from "@/lib/match";
-import { manualFormDefaults } from "@/app/app/parcels/manual-form";
+import { ManualForm, manualFormDefaults } from "@/app/app/parcels/manual-form";
+import { ancestorsOf, classesOf, findAll, parseHtml, type HtmlNode } from "./html-tree";
 
 /**
  * manualFormDefaults(parcel | null, today) -> Record<string, string>, exported from
@@ -121,5 +124,88 @@ describe("manual form screens", () => {
     for (const f of ["parcels/manual-form.tsx", "parcels/new/page.tsx", "parcels/[id]/edit/page.tsx"]) {
       expect(read(f), f).not.toContain("dangerouslySetInnerHTML");
     }
+  });
+});
+
+/**
+ * [Feedback 1] On an iPhone the two date fields ran past the right edge: iOS Safari gives
+ * type=date a minimum width of its own and a grid child does not shrink below its content
+ * (min-width: auto), so the two-column grid overflowed. The fix takes the cause away: each date
+ * field gets a row of its own like every other field, may shrink to the row, and keeps its height
+ * when empty. Checked on the rendered form, so the class names count however they are put together.
+ */
+describe("[Feedback 1] date fields on a phone", () => {
+  const forms = {
+    register: renderToStaticMarkup(createElement(ManualForm, { parcel: null, today: TODAY })),
+    edit: renderToStaticMarkup(createElement(ManualForm, { parcel: typedIn(), today: TODAY })),
+  };
+  const inputs = (html: string) => findAll(parseHtml(html), (n) => n.tag === "input");
+  const named = (html: string, name: string) => {
+    const hit = inputs(html).filter((n) => n.attrs.name === name);
+    expect(hit, name).toHaveLength(1);
+    return hit[0];
+  };
+  const dates = (html: string) => inputs(html).filter((n) => n.attrs.type === "date");
+  /** The element the field's <label> sits in. */
+  const rowOf = (input: HtmlNode) => ancestorsOf(input)[1];
+
+  for (const [screen, html] of Object.entries(forms)) {
+    it(`${screen}: has the two date fields, 注文日 and お届け予定日`, () => {
+      expect(dates(html).map((n) => n.attrs.name).sort()).toEqual(["expected_date", "ordered_at"]);
+    });
+
+    it(`${screen}: puts each date field on a row of its own, like 品名 and 金額`, () => {
+      const column = rowOf(named(html, "title"));
+      for (const d of dates(html)) {
+        const [label] = ancestorsOf(d);
+        expect(label.tag, d.attrs.name).toBe("label");
+        expect(classesOf(label), d.attrs.name).toEqual(expect.arrayContaining(["text-sm", "font-medium"]));
+        // Same column as the other fields, not a grid of its own.
+        expect(rowOf(d), d.attrs.name).toBe(column);
+        expect(rowOf(named(html, "total_amount"))).toBe(column);
+        for (const a of ancestorsOf(d)) expect(classesOf(a).filter((c) => /^grid-cols-/.test(c)), d.attrs.name).toEqual([]);
+      }
+    });
+
+    it(`${screen}: lets each date field shrink to the row and keeps its height when empty`, () => {
+      for (const d of dates(html)) {
+        const cls = classesOf(d);
+        expect(cls, d.attrs.name).toEqual(expect.arrayContaining(["block", "w-full", "min-w-0", "max-w-full", "appearance-none"]));
+        expect(cls.some((c) => /^min-h-/.test(c)), `${d.attrs.name}: min-h-*`).toBe(true);
+      }
+    });
+
+    it(`${screen}: keeps the look of the other fields on the date fields`, () => {
+      const field = classesOf(named(html, "title"));
+      expect(field).toEqual(expect.arrayContaining(["rounded-xl", "border", "border-neutral-300", "bg-white", "px-3", "py-2.5", "text-base"]));
+      for (const d of dates(html)) expect(classesOf(d), d.attrs.name).toEqual(expect.arrayContaining(["rounded-xl", "border", "border-neutral-300", "bg-white", "px-3", "py-2.5", "text-base"]));
+    });
+  }
+
+  it("drops the two-column grid from the form", () => {
+    const source = readFileSync(path.resolve(__dirname, "../../app/app/parcels/manual-form.tsx"), "utf8");
+    expect(source).not.toContain("grid-cols-2");
+  });
+
+  it("aligns the date text to the left in WebKit", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../app/globals.css"), "utf8");
+    expect(css).toMatch(/input\[type=["']?date["']?\]::-webkit-date-and-time-value\s*\{[^}]*text-align:\s*left\s*;?[^}]*\}/);
+  });
+
+  it("has no other type=date field in src (the fix covers every one)", () => {
+    const src = path.resolve(__dirname, "../..");
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) {
+          if (name !== "__tests__") walk(full);
+        } else if (/\.tsx?$/.test(name)) {
+          for (const m of readFileSync(full, "utf8").matchAll(/type=(?:"date"|'date'|\{\s*["']date["']\s*\})/g)) hits.push(`${path.relative(src, full)}:${m.index}`);
+        }
+      }
+    };
+    walk(src);
+    expect(hits.map((h) => h.split(":")[0])).toEqual(["app/app/parcels/manual-form.tsx", "app/app/parcels/manual-form.tsx"]);
   });
 });
