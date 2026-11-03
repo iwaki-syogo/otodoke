@@ -362,6 +362,16 @@ export function needsCheck(p: DatedParcel, today: string): boolean {
   return p.last_email_at !== null && todayJst(new Date(p.last_email_at)) <= cutoff;
 }
 
+/**
+ * Whether the parcel has to be handed over in person, as shown to the user. A mail that says
+ * nothing about it counts as face-to-face (the owner's decision: being home is the safe guess),
+ * except Amazon, which mostly leaves parcels at the door, so it stays unknown. The stored value
+ * is never changed; this is worked out on display.
+ */
+export function faceToFace(p: Pick<ParcelRow, "requires_presence" | "shop_key">): boolean | null {
+  return p.requires_presence ?? (p.shop_key === "amazon" ? null : true);
+}
+
 /** Past its date with no delivery mail yet, but not long enough to ask. */
 export function isLate(p: DatedParcel, today: string): boolean {
   if (p.status === "delivered" || p.status === "cancelled") return false;

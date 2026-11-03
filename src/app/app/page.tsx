@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, formatWindow, relativeDateJa, todayJst } from "@/lib/format";
-import { isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
+import { faceToFace, isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
 import { ParcelCard } from "./parcel-card";
@@ -36,7 +36,7 @@ export default async function ParcelsPage() {
     .filter((p) => p.status === "delivered" && touched(p) >= addDays(today, -30))
     .sort((a, b) => touched(b).localeCompare(touched(a)));
   const cancelled = parcels.filter((p) => p.status === "cancelled");
-  const faceToFace = active.filter((p) => p.requires_presence && (lastExpectedDay(p) ?? "") >= today).sort(byNextArrival(today));
+  const inPerson = active.filter((p) => faceToFace(p) === true && (lastExpectedDay(p) ?? "") >= today).sort(byNextArrival(today));
 
   const waitingNotice = waiting ? (
     <Link href="/app/settings" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
@@ -57,11 +57,11 @@ export default async function ParcelsPage() {
     <DeliveredToastProvider>
     <div className="flex flex-col gap-8">
       {waitingNotice}
-      {faceToFace.length > 0 ? (
+      {inPerson.length > 0 ? (
         <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
           <h2 className="text-sm font-bold text-red-900">対面受け取りが必要な商品</h2>
           <ul className="mt-2 flex flex-col gap-1 text-sm text-red-900">
-            {faceToFace.map((p) => (
+            {inPerson.map((p) => (
               <li key={p.id}>
                 <Link href={`/app/parcels/${p.id}`} className="underline underline-offset-4">
                   {relativeDateJa(p.expected_date)} {formatWindow(p.expected_window_start, p.expected_window_end)} {p.title ?? p.shop}

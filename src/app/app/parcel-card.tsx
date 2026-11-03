@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ParcelRow } from "@/lib/match";
+import { faceToFace, type ParcelRow } from "@/lib/match";
 import { STATUS_LABEL, formatWindow, relativeDateJa, todayJst, yen } from "@/lib/format";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -20,7 +20,9 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function PresenceBadge({ value, compact = false }: { value: boolean | null; compact?: boolean }) {
+/** Face-to-face or not, decided by `faceToFace` (an unstated method counts as face-to-face, except Amazon). */
+export function PresenceBadge({ parcel, compact = false }: { parcel: Pick<ParcelRow, "requires_presence" | "shop_key">; compact?: boolean }) {
+  const value = faceToFace(parcel);
   if (value === true) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
@@ -63,7 +65,7 @@ export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; 
         ) : parcel.status === "ordered" ? (
           <span className="text-neutral-500">お届け日はまだ未定</span>
         ) : null}
-        <PresenceBadge value={parcel.requires_presence} compact />
+        <PresenceBadge parcel={parcel} compact />
         {parcel.needs_review ? <span className="text-xs text-amber-700">要確認</span> : null}
         {showAmount && parcel.total_amount !== null ? <span className="ml-auto text-neutral-700">{yen(parcel.total_amount)}</span> : null}
       </div>

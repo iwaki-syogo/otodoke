@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { daysInMonth, formatDateJa, formatWindow, monthLabel, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
-import type { ParcelRow } from "@/lib/match";
+import { faceToFace, type ParcelRow } from "@/lib/match";
 import { PresenceBadge, StatusBadge } from "../parcel-card";
 
 export const metadata = { title: "カレンダー" };
@@ -69,7 +69,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           {cells.map((day, i) => {
             if (!day) return <div key={`e${i}`} />;
             const list = byDay.get(day) ?? [];
-            const presence = list.some((p) => p.requires_presence);
+            const presence = list.some((p) => faceToFace(p) === true);
             const isToday = day === today;
             const dnum = Number(day.slice(8));
             return (
@@ -107,7 +107,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
         <ol className="flex flex-col gap-5">
           {days.map((day) => {
             const list = byDay.get(day)!;
-            const presence = list.some((p) => p.requires_presence);
+            const presence = list.some((p) => faceToFace(p) === true);
             return (
               <li key={day} id={`d-${day}`} className="scroll-mt-4">
                 <h2 className={`flex items-center gap-2 text-sm font-bold ${day === today ? "text-neutral-900" : "text-neutral-700"}`}>
@@ -127,7 +127,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                           <p className="line-clamp-2 text-sm font-medium leading-snug">{p.title ?? "品名の記載なし"}</p>
                           <div className="mt-1.5 flex flex-wrap gap-1.5">
                             <StatusBadge status={p.status} />
-                            <PresenceBadge value={p.requires_presence} compact />
+                            <PresenceBadge parcel={p} compact />
                           </div>
                         </div>
                       </Link>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identifyCarrier, normalizeTracking, trackingLinkFor, trackingUrlFor } from "@/lib/carriers";
+import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor, trackingUrlFor } from "@/lib/carriers";
 import { shiftDatesDeep, shiftDatesInText } from "@/lib/demo";
 import { buildUserMessage } from "@/lib/extract/prompt";
 import type { Extraction } from "@/lib/extract/schema";
@@ -10,6 +10,7 @@ import {
   buildParcelInsert,
   buildParcelUpdate,
   chooseParcel,
+  faceToFace,
   isLate,
   needsCheck,
   parcelTotal,
@@ -82,6 +83,15 @@ describe("carriers", () => {
     expect(post?.url).toContain("reqCodeNo1=123456789012");
     expect(trackingLinkFor("TBA123456789012", null)).toBeNull();
     expect(trackingLinkFor("---", "ヤマト運輸")).toBeNull();
+  });
+  it("links an Amazon order number to Amazon's own tracking", () => {
+    expect(amazonOrderTrackingUrl(" 250-1234567-1234567 ")).toBe("https://www.amazon.co.jp/gp/your-account/ship-track?orderId=250-1234567-1234567");
+    expect(amazonOrderTrackingUrl("250-1234567-123456")).toBeNull();
+    expect(amazonOrderTrackingUrl("D01-1234567-1234567")).toBeNull();
+    expect(amazonOrderTrackingUrl("250-1234567-1234567&x=1")).toBeNull();
+    expect(amazonOrderTrackingUrl("")).toBeNull();
+    expect(amazonOrderTrackingUrl(null)).toBeNull();
+    expect(amazonOrderTrackingUrl(undefined)).toBeNull();
   });
 });
 
@@ -369,6 +379,20 @@ describe("needsCheck", () => {
     expect(isLate(row("shipped", "2026-11-01", null), "2026-11-02")).toBe(true);
     expect(isLate(row("shipped", "2026-11-02", null), "2026-11-02")).toBe(false);
     expect(isLate(row("shipped", "2026-10-30", null, "2026-11-03"), "2026-11-02")).toBe(false);
+  });
+});
+
+describe("faceToFace", () => {
+  it.each([
+    ["unstated, not Amazon, counts as face-to-face", null, "other", true],
+    ["unstated, no shop key, counts as face-to-face", null, null, true],
+    ["unstated at Amazon stays unknown", null, "amazon", null],
+    ["explicitly not needed stays false", false, "other", false],
+    ["explicitly not needed at Amazon stays false", false, "amazon", false],
+    ["explicitly needed stays true", true, "other", true],
+    ["explicitly needed at Amazon stays true", true, "amazon", true],
+  ] as const)("%s", (_name, requires_presence, shop_key, want) => {
+    expect(faceToFace({ requires_presence, shop_key })).toBe(want);
   });
 });
 

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { normalizeTracking, trackingLinkFor } from "@/lib/carriers";
+import { amazonOrderTrackingUrl, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { createClient } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
+import { faceToFace } from "@/lib/match";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { PresenceBadge, StatusBadge } from "../../parcel-card";
 import { TrackingButton } from "./tracking-button";
@@ -31,6 +32,9 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
   const windowText = formatWindow(parcel.expected_window_start, parcel.expected_window_end);
   // Worked out when shown, so parcels saved with an old carrier URL get the current way in.
   const tracking = trackingLinkFor(parcel.tracking_number, parcel.carrier) ?? (parcel.tracking_url ? { kind: "open" as const, url: parcel.tracking_url } : null);
+  // Most Amazon parcels name no carrier or number; Amazon's own page tracks them by order.
+  const amazonUrl = parcel.shop_key === "amazon" ? amazonOrderTrackingUrl(parcel.order_number) : null;
+  const presence = faceToFace(parcel);
 
   return (
     <article className="flex flex-col gap-6">
@@ -43,7 +47,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
         <h1 className="mt-1 line-clamp-3 text-xl font-bold leading-snug">{parcel.title ?? "品名の記載なし"}</h1>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={parcel.status} />
-          <PresenceBadge value={parcel.requires_presence} />
+          <PresenceBadge parcel={parcel} />
           {parcel.needs_review ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">要確認</span> : null}
         </div>
       </header>
@@ -64,17 +68,22 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           </dd>
           <dt className="text-neutral-500">受け取り</dt>
           <dd>
-            {parcel.requires_presence === true ? "対面受け取りが必要" : parcel.requires_presence === false ? "置き配・投函でOK" : <span className="text-neutral-500">メールに記載なし</span>}
+            {presence === true ? "対面受け取りが必要" : presence === false ? "置き配・投函でOK" : <span className="text-neutral-500">メールに記載なし</span>}
             {parcel.presence_evidence ? <span className="block text-xs text-neutral-500">根拠: 「{parcel.presence_evidence}」</span> : null}
           </dd>
           <dt className="text-neutral-500">配送</dt>
           <dd>
-            {parcel.carrier ?? <span className="text-neutral-500">メールに記載なし</span>}
+            {parcel.carrier ?? (amazonUrl ? null : <span className="text-neutral-500">メールに記載なし</span>)}
             {parcel.tracking_number ? (
               <div className="text-xs text-neutral-600">
                 伝票 {parcel.tracking_number}
                 {tracking ? <TrackingButton link={tracking} number={normalizeTracking(parcel.tracking_number)} /> : null}
               </div>
+            ) : null}
+            {amazonUrl ? (
+              <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className={`${parcel.carrier || parcel.tracking_number ? "mt-1 " : ""}block text-xs font-medium text-sky-700 underline underline-offset-4`}>
+                Amazonで配送状況を見る
+              </a>
             ) : null}
           </dd>
           <dt className="text-neutral-500">注文</dt>
@@ -122,10 +131,10 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                   </div>
                   <p className="mt-1 text-sm leading-snug">{email.subject}</p>
                   <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_name ? `${email.from_name} <${email.from_address}>` : email.from_address}</p>
-                  {result?.notes ? <p className="mt-2 text-xs text-amber-800">読み取りメモ: {result.notes}</p> : null}
                   {x.confidence !== null ? <p className="mt-1 text-[11px] text-neutral-400">確信度 {Math.round(Number(x.confidence) * 100)}%</p> : null}
                   <details className="mt-2">
                     <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
+                    {result?.notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {result.notes}</p> : null}
                     <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
                       {body || "（本文なし）"}
                     </pre>
