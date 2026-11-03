@@ -6,9 +6,10 @@ import { z } from "zod";
 import { ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, type ManualFormState } from "@/lib/manual-parcel";
 import { createClient } from "@/lib/supabase/server";
 
-// Parcels typed in by hand. Writes go through the user's own session (row-level security);
-// user_id comes from the session, never from the form. source = 'manual' is how the app tells
-// these apart from parcels built from mails, so only those can be edited or deleted here.
+// Parcels typed in by hand. Writes go through the user's own session (row-level security), and
+// are also limited to the session's user_id, which never comes from the form. source = 'manual'
+// is how the app tells these apart from parcels built from mails, so only those can be edited or
+// deleted here.
 
 const NOT_SIGNED_IN = "ログインしてください";
 const NOT_FOUND = "見つかりません";
@@ -62,9 +63,15 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
   const id = Id.safeParse(values.id);
   if (!id.success) return { error: NOT_FOUND, values };
 
-  // What is stored decides what the form may send: a cancelled parcel may stay cancelled, and an
-  // unchanged category keeps who set it.
-  const { data: saved, error: readError } = await session.supabase.from("parcels").select("status, category").eq("id", id.data).eq("source", "manual").maybeSingle();
+  // What is stored decides what the form may send (a cancelled parcel may stay cancelled) and
+  // what an unchanged field keeps (see manualParcelFields).
+  const { data: saved, error: readError } = await session.supabase
+    .from("parcels")
+    .select("status, category, ordered_at, expected_date, tracking_number, carrier, requires_presence")
+    .eq("id", id.data)
+    .eq("user_id", session.userId)
+    .eq("source", "manual")
+    .maybeSingle();
   if (readError) {
     console.error("updateManualParcel:", readError.message);
     return { error: FAILED, values };
@@ -78,6 +85,7 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
     .from("parcels")
     .update(manualParcelFields(parsed.data, new Date(), saved))
     .eq("id", id.data)
+    .eq("user_id", session.userId)
     .eq("source", "manual")
     .select("id");
   if (error) {
@@ -96,7 +104,7 @@ export async function deleteManualParcel(_prev: ManualFormState, formData: FormD
   const id = Id.safeParse(values.id);
   if (!id.success) return { error: NOT_FOUND, values };
 
-  const { data, error } = await session.supabase.from("parcels").delete().eq("id", id.data).eq("source", "manual").select("id");
+  const { data, error } = await session.supabase.from("parcels").delete().eq("id", id.data).eq("user_id", session.userId).eq("source", "manual").select("id");
   if (error) {
     console.error("deleteManualParcel:", error.message);
     return { error: "削除できませんでした", values };

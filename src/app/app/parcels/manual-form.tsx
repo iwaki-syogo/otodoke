@@ -5,7 +5,16 @@ import { useFormStatus } from "react-dom";
 import { CARRIERS } from "@/lib/carriers";
 import { CATEGORIES, categoryLabel, isCategory } from "@/lib/category";
 import { STATUS_LABEL } from "@/lib/format";
-import { MANUAL_CANCELLED, MANUAL_CARRIED_STATUSES, MANUAL_CARRIERS, MANUAL_LIMITS, MANUAL_STATUSES, type ManualFormState } from "@/lib/manual-parcel";
+import {
+  MANUAL_CANCELLED,
+  MANUAL_CARRIED_STATUSES,
+  MANUAL_CARRIERS,
+  MANUAL_KEEP_CARRIER,
+  MANUAL_LIMITS,
+  MANUAL_STATUSES,
+  manualCarrierChoice,
+  type ManualFormState,
+} from "@/lib/manual-parcel";
 import type { ParcelRow } from "@/lib/match";
 import { createManualParcel, deleteManualParcel, updateManualParcel } from "./manual-actions";
 
@@ -24,11 +33,6 @@ export function manualStatusChoices(current: string): string[] {
 }
 const NAMED_CARRIERS = MANUAL_CARRIERS.filter((c) => c !== "auto");
 
-/** The carrier choice that saves back the stored name; "auto" when no choice names it. */
-function carrierChoice(name: string | null): string {
-  return NAMED_CARRIERS.find((c) => CARRIERS[c].name === name) ?? "auto";
-}
-
 /**
  * The values the form starts with, as strings under the names ManualParcelSchema reads.
  * A new parcel was ordered today; an edited one starts with what is stored.
@@ -45,7 +49,7 @@ export function manualFormDefaults(parcel: ParcelRow | null, today: string): Rec
     total_amount: parcel.total_amount === null ? "" : String(parcel.total_amount),
     category: isCategory(parcel.category) ? parcel.category : "",
     tracking_number: parcel.tracking_number ?? "",
-    carrier: carrierChoice(parcel.carrier),
+    carrier: manualCarrierChoice(parcel.carrier, parcel.tracking_number),
     presence: parcel.requires_presence === null ? "" : parcel.requires_presence ? "face" : "drop",
     status: ALL_STATUSES.includes(parcel.status) ? parcel.status : "ordered",
   };
@@ -60,6 +64,8 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
   const values = { ...defaults, ...state.values };
   // Statuses a mail moved the parcel to are offered only while it is there.
   const statuses = manualStatusChoices(values.status);
+  // A carrier name a mail filled in that the five do not cover stays as a choice of its own.
+  const keptCarrier = parcel && manualCarrierChoice(parcel.carrier, parcel.tracking_number) === MANUAL_KEEP_CARRIER ? parcel.carrier : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -108,6 +114,7 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
             運送会社
             <select name="carrier" defaultValue={values.carrier} className={field}>
               <option value="auto">自動判定</option>
+              {keptCarrier ? <option value={MANUAL_KEEP_CARRIER}>{keptCarrier}</option> : null}
               {NAMED_CARRIERS.map((c) => (
                 <option key={c} value={c}>
                   {CARRIERS[c].name}

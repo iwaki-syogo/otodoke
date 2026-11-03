@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeIntoManual, type ParcelRow } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
-import { ManualParcelSchema, manualParcelFields, manualParcelSchemaFor, type ManualFormState } from "@/lib/manual-parcel";
+import { CARRIERS } from "@/lib/carriers";
+import {
+  MANUAL_KEEP_CARRIER,
+  ManualParcelSchema,
+  manualCarrierChoice,
+  manualParcelFields,
+  manualParcelRow,
+  manualParcelSchemaFor,
+  type ManualFormState,
+} from "@/lib/manual-parcel";
 import { manualFormDefaults, manualStatusChoices } from "@/app/app/parcels/manual-form";
 import { FakeDb } from "./fake-db";
 import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
@@ -237,5 +246,158 @@ describe("(b) manualParcelFields with the stored category", () => {
     const f = manualParcelFields(parsed("hobby"), NOW);
     expect(f.category).toBe("hobby");
     expect(f.category_source).toBe("user");
+  });
+});
+
+/**
+ * Review follow-ups on saving an edit: a save compares with what is stored, so what a mail added
+ * stays when the person did not change the field it belongs to ([M1] [S1] [QA-4] [SEC-N2]).
+ */
+describe("saving an edit keeps what a mail added to unchanged fields", () => {
+  let db: FakeDb;
+  const seed = (over: Record<string, unknown>) => {
+    db = new FakeDb({ parcels: [typedIn(over) as unknown as Record<string, unknown>] });
+    mocks.state.db = db;
+    return typedIn(over);
+  };
+  /** The edit form as it starts for this row, with the person's changes. */
+  const formOf = (row: ParcelRow, over: Record<string, string> = {}) => ({ id: MANUAL_ID, ...manualFormDefaults(row, "2026-11-03"), ...over });
+  const stored = () => db.find("parcels", MANUAL_ID)!;
+  beforeEach(() => {
+    mocks.state.user = { id: USER };
+  });
+
+  const ranged = {
+    expected_date: "2026-11-05",
+    expected_date_end: "2026-11-07",
+    expected_window_start: "14:00",
+    expected_window_end: "16:00",
+    expected_text: "11月5日から7日",
+  };
+
+  it("[M1] clears the range, time and wording when the date is changed", async () => {
+    const row = seed(ranged);
+    expect(await save(formOf(row, { expected_date: "2026-11-10" }))).toBe("redirected");
+    const p = stored();
+    expect(p.expected_date).toBe("2026-11-10");
+    expect(p.expected_date_end).toBeNull();
+    expect(p.expected_window_start).toBeNull();
+    expect(p.expected_window_end).toBeNull();
+    expect(p.expected_text).toBeNull();
+  });
+
+  it("[M1] clears them too when the date is emptied", async () => {
+    const row = seed(ranged);
+    await save(formOf(row, { expected_date: "" }));
+    const p = stored();
+    expect(p.expected_date).toBeNull();
+    expect(p.expected_date_end).toBeNull();
+    expect(p.expected_text).toBeNull();
+  });
+
+  it("[M1] keeps them when the date is not changed", async () => {
+    const row = seed(ranged);
+    expect(await save(formOf(row, { title: "直した品名" }))).toBe("redirected");
+    const p = stored();
+    expect(p.title).toBe("直した品名");
+    expect(p).toMatchObject(ranged);
+  });
+
+  const tracked = { tracking_number: T, carrier: CARRIERS.sagawa.name, tracking_url: "https://example.test/track/123456789012" };
+
+  it("[S1] keeps the tracking URL when the number and carrier are not changed", async () => {
+    const row = seed(tracked);
+    await save(formOf(row, { title: "直した品名" }));
+    expect(stored()).toMatchObject(tracked);
+  });
+
+  it("[S1] keeps the tracking URL when the number is sent in another spelling", async () => {
+    const row = seed(tracked);
+    await save(formOf(row, { tracking_number: "1234-5678-9012" }));
+    expect(stored()).toMatchObject(tracked);
+  });
+
+  it("[S1] drops the tracking URL when the number changes", async () => {
+    const row = seed(tracked);
+    await save(formOf(row, { tracking_number: "999988887777" }));
+    const p = stored();
+    expect(p.tracking_number).toBe("999988887777");
+    expect(p.tracking_url).toBeNull();
+  });
+
+  it("[S1] drops the tracking URL when the carrier changes", async () => {
+    const row = seed(tracked);
+    await save(formOf(row, { carrier: "yamato" }));
+    const p = stored();
+    expect(p.carrier).toBe(CARRIERS.yamato.name);
+    expect(p.tracking_url).toBeNull();
+  });
+
+  it("[S1] offers a carrier name outside the five as its own choice and keeps it", async () => {
+    const other = { tracking_number: T, carrier: "テスト配送", tracking_url: "https://example.test/track/other" };
+    const row = seed(other);
+    const form = formOf(row, { title: "直した品名" });
+    expect(form.carrier).toBe(MANUAL_KEEP_CARRIER);
+    expect(ManualParcelSchema.safeParse(form).success).toBe(true);
+    await save(form);
+    expect(stored()).toMatchObject(other);
+  });
+
+  it("[S1] replaces a carrier name outside the five only when another is picked", async () => {
+    const row = seed({ tracking_number: T, carrier: "テスト配送", tracking_url: "https://example.test/track/other" });
+    await save(formOf(row, { carrier: "sagawa" }));
+    const p = stored();
+    expect(p.carrier).toBe(CARRIERS.sagawa.name);
+    expect(p.tracking_url).toBeNull();
+  });
+
+  it("[S1] reads a stored carrier name the number itself gives as 自動判定", () => {
+    expect(manualCarrierChoice(CARRIERS.amazon.name, "TBA123456789012")).toBe("auto");
+    expect(manualCarrierChoice(null, T)).toBe("auto");
+    expect(manualCarrierChoice(CARRIERS.sagawa.name, T)).toBe("sagawa");
+    expect(manualCarrierChoice("テスト配送", T)).toBe(MANUAL_KEEP_CARRIER);
+  });
+
+  it("[S1] keeps the evidence of how it is received when that is not changed", async () => {
+    const row = seed({ requires_presence: true, presence_evidence: "対面でお渡しします" });
+    await save(formOf(row, { title: "直した品名" }));
+    const p = stored();
+    expect(p.requires_presence).toBe(true);
+    expect(p.presence_evidence).toBe("対面でお渡しします");
+  });
+
+  it("[S1] drops that evidence when the way of receiving changes", async () => {
+    const row = seed({ requires_presence: true, presence_evidence: "対面でお渡しします" });
+    await save(formOf(row, { presence: "drop" }));
+    const p = stored();
+    expect(p.requires_presence).toBe(false);
+    expect(p.presence_evidence).toBeNull();
+  });
+
+  it("[QA-4] keeps the stored order date when it is emptied on edit", async () => {
+    const row = seed({ ordered_at: "2026-10-01" });
+    await save(formOf(row, { ordered_at: "" }));
+    expect(stored().ordered_at).toBe("2026-10-01");
+  });
+
+  it("[QA-4] still starts a new parcel's empty order date as today", () => {
+    const r = ManualParcelSchema.safeParse({ title: "品名", shop: "店", status: "ordered", ordered_at: "" });
+    if (!r.success) throw new Error(r.error.message);
+    expect(manualParcelRow(r.data, NOW).ordered_at).toBe("2026-11-03");
+  });
+
+  it("[SEC-N2] limits the read and the write to the signed-in user", async () => {
+    const row = seed({});
+    await save(formOf(row, { title: "直した品名" }));
+    const queries = [...db.callsOn("parcels", "select"), ...db.callsOn("parcels", "update")];
+    expect(queries.length).toBeGreaterThanOrEqual(2);
+    for (const q of queries) expect(q.filters).toContainEqual({ method: "eq", args: ["user_id", USER] });
+  });
+
+  it("[SEC-N2] answers 見つかりません for another user's parcel", async () => {
+    const row = seed({ user_id: "00000000-0000-4000-8000-0000000000ff" });
+    const out = await save(formOf(row, { title: "直した品名" }));
+    expect((out as ManualFormState).error).toContain("見つかりません");
+    expect(db.callsOn("parcels", "update")).toHaveLength(0);
   });
 });

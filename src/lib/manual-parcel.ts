@@ -16,6 +16,9 @@ export const MANUAL_MAX_AMOUNT = 10_000_000;
 /** Carrier choices on the form. "auto" lets the number's shape decide. */
 export const MANUAL_CARRIERS = ["auto", "yamato", "sagawa", "japanpost", "seino", "fukutsu"] as const;
 export type ManualCarrier = (typeof MANUAL_CARRIERS)[number];
+/** Keeps a stored carrier name the five do not cover (a mail filled it in). Offered only then. */
+export const MANUAL_KEEP_CARRIER = "keep";
+export type ManualCarrierChoice = ManualCarrier | typeof MANUAL_KEEP_CARRIER;
 
 /** How it is received: face to face, left at the door / in the mailbox, or not said. */
 export const MANUAL_PRESENCE = ["face", "drop", ""] as const;
@@ -70,7 +73,7 @@ export const ManualParcelSchema = z.object({
   tracking_number: text()
     .refine((v) => v.length <= MANUAL_LIMITS.tracking, "追跡番号が長すぎます")
     .transform((v) => normalizeTracking(v) || null),
-  carrier: z.enum(MANUAL_CARRIERS).default("auto"),
+  carrier: z.enum([...MANUAL_CARRIERS, MANUAL_KEEP_CARRIER]).default("auto"),
   presence: z.enum(MANUAL_PRESENCE).default(""),
   status: z.enum([...MANUAL_STATUSES, ...MANUAL_CARRIED_STATUSES]),
 });
@@ -95,24 +98,63 @@ function carrierName(choice: ManualCarrier, tracking: string | null): string | n
   return found.key === "unknown" ? null : found.name;
 }
 
+/** The carrier choice that saves back a stored name: one of the five, "auto" when the number gives it, else keep it. */
+export function manualCarrierChoice(name: string | null, tracking: string | null): ManualCarrierChoice {
+  const named = MANUAL_CARRIERS.find((c) => c !== "auto" && CARRIERS[c].name === name);
+  if (named) return named;
+  if (name === null || carrierName("auto", tracking) === name) return "auto";
+  return MANUAL_KEEP_CARRIER;
+}
+
+/** What is stored for the parcel being edited. A column not given counts as changed. */
+export type ManualSaved = {
+  category: string | null;
+  ordered_at?: string | null;
+  expected_date?: string | null;
+  tracking_number?: string | null;
+  carrier?: string | null;
+  requires_presence?: boolean | null;
+};
+
 /**
- * The columns the form edits. Saving an edit writes only these. Given the stored category, an
- * unchanged one is left out, so an automatic category stays automatic.
+ * The columns the form edits. Saving an edit compares with what is stored, so a save without
+ * changes keeps what a mail added: an unchanged category stays automatic, an unchanged date keeps
+ * its range, time and wording, an unchanged number and carrier keep the tracking URL, and an
+ * unchanged way of receiving keeps its evidence. A changed one drops what came with the old value.
  */
-export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: { category: string | null }): ManualParcelColumns {
+export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: ManualSaved): ManualParcelColumns {
   const category = saved && saved.category === v.category ? {} : { category: v.category, category_source: v.category ? ("user" as const) : null };
+
+  const dateKept = saved?.expected_date !== undefined && saved.expected_date === v.expected_date;
+  const date = dateKept ? {} : { expected_date: v.expected_date, expected_date_end: null, expected_window_start: null, expected_window_end: null, expected_text: null };
+
+  const storedCarrier = saved?.carrier;
+  const storedNumber = saved?.tracking_number;
+  const trackingKept =
+    storedCarrier !== undefined &&
+    storedNumber !== undefined &&
+    (normalizeTracking(storedNumber ?? "") || null) === v.tracking_number &&
+    manualCarrierChoice(storedCarrier, storedNumber) === v.carrier;
+  const carrier = v.carrier === MANUAL_KEEP_CARRIER ? (storedCarrier !== undefined ? storedCarrier : carrierName("auto", v.tracking_number)) : carrierName(v.carrier, v.tracking_number);
+  const tracking = trackingKept ? {} : { tracking_number: v.tracking_number, carrier, tracking_url: null };
+
+  const presence = v.presence === "" ? null : v.presence === "face";
+  const evidence = saved?.requires_presence !== undefined && saved.requires_presence === presence ? {} : { presence_evidence: null };
+
+  // An order date left empty is today for a new parcel; an edit keeps the stored one.
+  const orderedAt = v.ordered_at ?? (saved?.ordered_at !== undefined ? saved.ordered_at : todayJst(now));
+
   return {
     title: v.title,
     shop: v.shop,
     shop_key: "other",
-    ordered_at: v.ordered_at ?? todayJst(now),
-    expected_date: v.expected_date,
+    ordered_at: orderedAt,
+    ...date,
     total_amount: v.total_amount,
     ...category,
-    tracking_number: v.tracking_number,
-    carrier: carrierName(v.carrier, v.tracking_number),
-    tracking_url: null,
-    requires_presence: v.presence === "" ? null : v.presence === "face",
+    ...tracking,
+    requires_presence: presence,
+    ...evidence,
     status: v.status,
   };
 }
