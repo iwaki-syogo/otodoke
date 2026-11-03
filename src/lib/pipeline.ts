@@ -1,7 +1,24 @@
 import type { AdminClient } from "@/lib/supabase/admin";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
-import { isParcelRelevant, buildParcelInsert, buildParcelUpdate, chooseParcel, parcelTotal, rebuildParcel, splitOrders, startsParcel, twinsByTracking } from "@/lib/match";
+import {
+  isParcelRelevant,
+  buildParcelInsert,
+  buildParcelUpdate,
+  chooseParcel,
+  mergeIntoManual,
+  normalizeOrderNumber,
+  parcelTotal,
+  rebuildParcel,
+  splitOrders,
+  startsParcel,
+  twinsByTracking,
+  type ParcelCandidate,
+  type ParcelRow,
+  type ParcelUpdate,
+} from "@/lib/match";
+import { categoryForTwins } from "@/lib/match/category";
+import { normalizeTracking } from "@/lib/carriers";
 import { env } from "@/lib/env";
 import { isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
 import { PENDING_GRACE_MS } from "@/lib/unread";
@@ -250,10 +267,15 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
   let parcelId: string;
   let created = false;
   if (parcel) {
-    const update = buildParcelUpdate(parcel, x, mail.sentAt);
-    if (Object.keys(update).length > 0) {
-      const { error } = await db.from("parcels").update(update).eq("id", parcel.id).eq("user_id", mail.userId);
-      if (error) throw new Error(`parcels update failed: ${error.message}`);
+    if (parcel.source === "manual") {
+      await fillManual(db, mail.userId, parcel, x, mail.sentAt);
+    } else {
+      const { rest, category } = splitCategory(buildParcelUpdate(parcel, x, mail.sentAt));
+      if (Object.keys(rest).length > 0) {
+        const { error } = await db.from("parcels").update(rest).eq("id", parcel.id).eq("user_id", mail.userId);
+        if (error) throw new Error(`parcels update failed: ${error.message}`);
+      }
+      if (category) await writeAutoCategory(db, mail.userId, parcel.id, category);
     }
     parcelId = parcel.id;
   } else {
@@ -300,23 +322,133 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
   return { parcelId, created };
 }
 
+/** `category_source is distinct from 'user'`, in PostgREST's words. */
+const NOT_USER_CATEGORY = "category_source.is.null,category_source.neq.user";
+
+type CategoryColumns = Pick<ParcelUpdate, "category" | "category_source">;
+
+/** The category columns go in a write of their own, so their guard never holds back the rest. */
+function splitCategory(update: ParcelUpdate): { rest: ParcelUpdate; category: CategoryColumns | null } {
+  const { category, category_source, ...rest } = update;
+  const has = category !== undefined || category_source !== undefined;
+  return { rest, category: has ? { category, category_source } : null };
+}
+
+/** An automatic category, written only while the person has not chosen one (also when they chose after the read). */
+async function writeAutoCategory(db: AdminClient, userId: string, parcelId: string, category: CategoryColumns) {
+  const { error } = await db.from("parcels").update(category).eq("id", parcelId).eq("user_id", userId).or(NOT_USER_CATEGORY);
+  if (error) throw new Error(`parcels category update failed: ${error.message}`);
+}
+
+async function readParcel(db: AdminClient, userId: string, parcelId: string): Promise<ParcelRow | null> {
+  const { data, error } = await db.from("parcels").select("*").eq("id", parcelId).eq("user_id", userId).maybeSingle();
+  if (error) throw new Error(`parcels lookup failed: ${error.message}`);
+  return data;
+}
+
 /**
- * Merge parcels that share this parcel's tracking number, then rebuild the survivor from all
- * of its mails. Returns the id of the parcel that remains.
+ * A mail fills the gaps of a parcel the person typed in. The write holds only while the row is
+ * as it was read (updated_at), so a value they save in between is kept: the row is read again
+ * and merged once more, and a second miss is only logged.
+ */
+async function fillManual(db: AdminClient, userId: string, read: ParcelRow, x: Extraction, sentAt: string | null) {
+  let row: ParcelRow | null = read;
+  for (let attempt = 0; attempt < 2 && row; attempt++) {
+    const { rest, category } = splitCategory(mergeIntoManual(row, x, sentAt));
+    if (Object.keys(rest).length > 0) {
+      const { data, error } = await db.from("parcels").update(rest).eq("id", row.id).eq("user_id", userId).eq("updated_at", row.updated_at).select("id");
+      if (error) throw new Error(`parcels update failed: ${error.message}`);
+      if (!data || data.length === 0) {
+        row = await readParcel(db, userId, row.id);
+        continue;
+      }
+    }
+    if (category) await writeAutoCategory(db, userId, row.id, category);
+    return;
+  }
+  console.error(`parcel ${read.id}: changed by the user while a mail was merged; left as they saved it`);
+}
+
+/**
+ * Merge parcels that share this parcel's tracking number into one. Returns the id of the parcel
+ * that remains. Every write holds only while the rows are as they were read; when one changed
+ * in between, everything is read again and tried once more, then left apart and logged.
  */
 async function absorbTwins(db: AdminClient, userId: string, parcelId: string): Promise<string> {
-  const { data: rows, error } = await db.from("parcels").select("id, tracking_number, order_number, created_at").eq("user_id", userId).not("tracking_number", "is", null);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const kept = await tryAbsorbTwins(db, userId, parcelId);
+    if (kept !== null) return kept;
+  }
+  console.error(`parcel ${parcelId}: its twins changed while being merged; left apart`);
+  return parcelId;
+}
+
+/** One go at absorbTwins. Answers null when a row changed since it was read. */
+async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string): Promise<string | null> {
+  const target = await readParcel(db, userId, parcelId);
+  if (!target?.tracking_number) return parcelId;
+  // Only parcels with this number: the lookup is not cut off by the 1000-row cap.
+  const { data: rows, error } = await db.from("parcels").select("*").eq("user_id", userId).eq("tracking_number", target.tracking_number);
   if (error) throw new Error(`parcels lookup failed: ${error.message}`);
   const twins = twinsByTracking(rows, parcelId);
   if (!twins) return parcelId;
-  const keepId = twins.keep.id;
-  const absorbIds = twins.absorb.map((p) => p.id);
+  const { keep, absorb } = twins;
+  const absorbIds = absorb.map((p) => p.id);
+
+  // Every mail of the parcels being joined, read before anything moves.
+  const { data: mails, error: mailsError } = await db
+    .from("extractions")
+    .select("result, emails(sent_at)")
+    .in("parcel_id", [keep.id, ...absorbIds])
+    .eq("user_id", userId);
+  if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
+  const readings = mails.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null }));
+
+  // A typed-in parcel keeps what the person typed: the mails only fill its gaps, oldest first.
+  // Twins from mails are built again from all their mails.
+  let fields: ParcelUpdate;
+  let merged: { category: string | null; category_source: string | null };
+  if (keep.source === "manual") {
+    const row: ParcelRow = { ...keep };
+    fields = {};
+    for (const m of [...readings].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""))) {
+      const update = mergeIntoManual(row, m.x, m.sentAt);
+      Object.assign(row, update);
+      Object.assign(fields, update);
+    }
+    merged = row;
+  } else {
+    const { user_id: _owner, ...rebuilt } = rebuildParcel(userId, readings);
+    void _owner;
+    fields = rebuilt;
+    merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
+  }
+  const { rest } = splitCategory(fields);
+  const category = categoryForTwins(keep, absorb, merged);
+
+  let keepVersion = keep.updated_at;
+  if (Object.keys(rest).length > 0) {
+    const { data, error: updateError } = await db.from("parcels").update(rest).eq("id", keep.id).eq("user_id", userId).eq("updated_at", keep.updated_at).select("id, updated_at");
+    if (updateError) throw new Error(`parcels rebuild failed: ${updateError.message}`);
+    if (!data || data.length === 0) return null;
+    keepVersion = data[0].updated_at;
+  }
+  if (category.category !== keep.category || category.category_source !== keep.category_source) {
+    if (category.category_source === "user") {
+      // The person's choice on a parcel being folded in must land before that parcel goes.
+      const { data, error: carryError } = await db.from("parcels").update(category).eq("id", keep.id).eq("user_id", userId).eq("updated_at", keepVersion).select("id");
+      if (carryError) throw new Error(`parcels category carry-over failed: ${carryError.message}`);
+      if (!data || data.length !== 1) return null;
+    } else {
+      await writeAutoCategory(db, userId, keep.id, category);
+    }
+  }
 
   // The survivor keeps its own item list, and borrows one only when it has none.
   const { count, error: countError } = await db
     .from("parcel_items")
     .select("id", { count: "exact", head: true })
-    .eq("parcel_id", keepId)
+    .eq("parcel_id", keep.id)
     .eq("user_id", userId);
   if (countError) throw new Error(`parcel_items count failed: ${countError.message}`);
   if (!count) {
@@ -325,29 +457,25 @@ async function absorbTwins(db: AdminClient, userId: string, parcelId: string): P
     if (donor?.[0]) {
       const { error: moveItemsError } = await db
         .from("parcel_items")
-        .update({ parcel_id: keepId })
+        .update({ parcel_id: keep.id })
         .eq("parcel_id", donor[0].parcel_id)
         .eq("user_id", userId);
       if (moveItemsError) throw new Error(`parcel_items move failed: ${moveItemsError.message}`);
     }
   }
-  const { error: moveError } = await db.from("extractions").update({ parcel_id: keepId }).in("parcel_id", absorbIds).eq("user_id", userId);
+  const { error: moveError } = await db.from("extractions").update({ parcel_id: keep.id }).in("parcel_id", absorbIds).eq("user_id", userId);
   if (moveError) throw new Error(`extractions move failed: ${moveError.message}`);
 
-  const { data: mails, error: mailsError } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", keepId).eq("user_id", userId);
-  if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
-  const rebuilt = rebuildParcel(
-    userId,
-    mails.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null })),
-  );
-  const { user_id: _owner, ...fields } = rebuilt;
-  void _owner;
-  const { error: updateError } = await db.from("parcels").update(fields).eq("id", keepId).eq("user_id", userId);
-  if (updateError) throw new Error(`parcels rebuild failed: ${updateError.message}`);
   // Last, so a failure above leaves the twin in place and the next delivery of this mail merges again.
-  const { error: deleteError } = await db.from("parcels").delete().in("id", absorbIds).eq("user_id", userId);
-  if (deleteError) throw new Error(`parcels delete failed: ${deleteError.message}`);
-  return keepId;
+  // A twin the person changed since it was read stays until it is read again.
+  for (const twin of absorb) {
+    const { data, error: deleteError } = await db.from("parcels").delete().eq("id", twin.id).eq("user_id", userId).eq("updated_at", twin.updated_at).select("id");
+    if (deleteError) throw new Error(`parcels delete failed: ${deleteError.message}`);
+    if (!data || data.length === 0) return null;
+  }
+  // A typed-in amount stays; an empty one is filled from the mails.
+  if (keep.source === "manual") await refreshTotal(db, userId, keep.id);
+  return keep.id;
 }
 
 /** Every parcel of this user, with item names, so the rules in chooseParcel see the same data everywhere. */
@@ -356,14 +484,45 @@ async function findParcel(db: AdminClient, userId: string, x: Extraction) {
   const { data, error } = await db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId).eq("parcel_items.user_id", userId);
   if (error) throw new Error(`parcels lookup failed: ${error.message}`);
   const candidates = data.map(({ parcel_items, ...row }) => ({ ...row, itemNames: parcel_items.map((it: { name: string }) => it.name) }));
+  const seen = new Set(candidates.map((c) => c.id));
+  for (const typed of await typedInByNumber(db, userId, x)) if (!seen.has(typed.id)) candidates.push(typed);
   return chooseParcel(candidates, x);
 }
 
-/** The total depends on every mail read for the parcel, including the one just stored. */
+/**
+ * Typed-in parcels whose tracking or order number is the mail's, looked up by the number so the
+ * 1000-row cap on the list above cannot hide them. chooseParcel still decides whether they match.
+ */
+async function typedInByNumber(db: AdminClient, userId: string, x: Extraction): Promise<ParcelCandidate[]> {
+  const typedIn = () => db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId).eq("parcel_items.user_id", userId).eq("source", "manual");
+  const lookups: Array<ReturnType<typeof typedIn>> = [];
+  const tracking = x.tracking_number.value ? normalizeTracking(x.tracking_number.value) : "";
+  if (tracking) lookups.push(typedIn().eq("tracking_number", tracking));
+  const order = x.order_number.value?.trim();
+  if (order) lookups.push(typedIn().in("order_number", [...new Set([order, normalizeOrderNumber(order)])]));
+
+  const found: ParcelCandidate[] = [];
+  for (const lookup of lookups) {
+    const { data, error } = await lookup;
+    if (error) throw new Error(`parcels lookup failed: ${error.message}`);
+    for (const { parcel_items, ...row } of data) found.push({ ...row, itemNames: parcel_items.map((it: { name: string }) => it.name) });
+  }
+  return found;
+}
+
+/**
+ * The total depends on every mail read for the parcel, including the one just stored.
+ * A typed-in parcel's amount is the person's: it is only filled while empty, checked by the write itself.
+ */
 async function refreshTotal(db: AdminClient, userId: string, parcelId: string) {
   const { data, error } = await db.from("extractions").select("result").eq("parcel_id", parcelId).eq("user_id", userId);
   if (error) throw new Error(`extractions lookup failed: ${error.message}`);
   const total = parcelTotal(data.map((row) => row.result as unknown as Extraction));
-  const { error: updateError } = await db.from("parcels").update({ total_amount: total }).eq("id", parcelId).eq("user_id", userId);
+  const { error: updateError } = await db
+    .from("parcels")
+    .update({ total_amount: total })
+    .eq("id", parcelId)
+    .eq("user_id", userId)
+    .or("source.neq.manual,total_amount.is.null");
   if (updateError) throw new Error(`parcels total update failed: ${updateError.message}`);
 }
