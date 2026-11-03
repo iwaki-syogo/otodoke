@@ -56,6 +56,8 @@ export function manualFormDefaults(parcel: ParcelRow | null, today: string): Rec
 }
 
 const field = "mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-base";
+// iOS Safari gives type=date a minimum width of its own; min-h is the other fields' height.
+const dateField = `${field} block min-w-0 max-w-full appearance-none min-h-[2.875rem]`;
 
 /** Register (parcel = null) or edit a parcel typed in by hand. */
 export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today: string }) {
@@ -81,16 +83,14 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
             店
             <input name="shop" required maxLength={MANUAL_LIMITS.shop} defaultValue={values.shop} className={field} />
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="min-w-0 text-sm font-medium">
-              注文日
-              <input type="date" name="ordered_at" defaultValue={values.ordered_at} className={field} />
-            </label>
-            <label className="min-w-0 text-sm font-medium">
-              お届け予定日
-              <input type="date" name="expected_date" defaultValue={values.expected_date} className={field} />
-            </label>
-          </div>
+          <label className="text-sm font-medium">
+            注文日
+            <input type="date" name="ordered_at" defaultValue={values.ordered_at} className={dateField} />
+          </label>
+          <label className="text-sm font-medium">
+            お届け予定日
+            <input type="date" name="expected_date" defaultValue={values.expected_date} className={dateField} />
+          </label>
           <label className="text-sm font-medium">
             金額（円）
             <input name="total_amount" inputMode="numeric" autoComplete="off" defaultValue={values.total_amount} className={field} />
