@@ -1,13 +1,16 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { groupByOrderMonth } from "@/lib/delivered";
 import type { ParcelRow } from "@/lib/match";
 import { readAll } from "@/lib/supabase/read-all";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUser } from "@/lib/supabase/server";
 import { ParcelCard } from "../parcel-card";
 
 export const metadata = { title: "キャンセルした荷物" };
 
 export default async function CancelledPage() {
+  const user = await getUser();
+  if (!user) redirect("/login");
   const supabase = await createClient();
   let parcels: ParcelRow[] | null = null;
   try {
@@ -15,6 +18,7 @@ export default async function CancelledPage() {
       supabase
         .from("parcels")
         .select("*", { count: "exact" })
+        .eq("user_id", user.id)
         .eq("status", "cancelled")
         .order("ordered_at", { ascending: false, nullsFirst: false }),
     );

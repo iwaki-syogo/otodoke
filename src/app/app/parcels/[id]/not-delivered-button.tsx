@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { markNotDelivered } from "../../parcel-actions";
 
 const FAILED = "更新できませんでした。開き直してください";
@@ -10,18 +9,14 @@ const FAILED = "更新できませんでした。開き直してください";
 export function NotDeliveredButton({ id }: { id: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   function press() {
     setError(null);
     startTransition(async () => {
       try {
         const r = await markNotDelivered(id);
-        if (!r.ok) {
-          setError(r.error);
-          return;
-        }
-        router.refresh();
+        // On success the action's revalidatePath("/app", "layout") sends this page back redrawn.
+        if (!r.ok) setError(r.error);
       } catch {
         setError(FAILED);
       }

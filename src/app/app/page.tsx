@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
 import { isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
 import { UNREAD_FILTER } from "@/lib/unread";
@@ -10,27 +11,26 @@ import { ParcelCard } from "./parcel-card";
 export const metadata = { title: "荷物" };
 
 export default async function ParcelsPage() {
+  const user = await getUser();
+  if (!user) redirect("/login");
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("parcels")
-    .select("*")
-    .order("expected_date", { ascending: true, nullsFirst: false })
-    .order("last_email_at", { ascending: false, nullsFirst: false });
+  // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
+  // and never stands in for the list or the other counts.
+  const [{ data }, { count: waiting }, { count: deliveredCount, error: deliveredError }, { count: cancelledCount, error: cancelledError }] =
+    await Promise.all([
+      supabase
+        .from("parcels")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("expected_date", { ascending: true, nullsFirst: false })
+        .order("last_email_at", { ascending: false, nullsFirst: false }),
+      supabase.from("emails").select("id", { count: "exact", head: true }).or(UNREAD_FILTER()),
+      // Counted by the database, so the 1000-row cap on reads cannot cut it short.
+      supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "delivered"),
+      supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "cancelled"),
+    ]);
   const parcels: ParcelRow[] = data ?? [];
   const today = todayJst();
-  const { count: waiting } = await supabase
-    .from("emails")
-    .select("id", { count: "exact", head: true })
-    .or(UNREAD_FILTER());
-  // Counted by the database, so the 1000-row cap on reads cannot cut it short.
-  const { count: deliveredCount, error: deliveredError } = await supabase
-    .from("parcels")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "delivered");
-  const { count: cancelledCount, error: cancelledError } = await supabase
-    .from("parcels")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "cancelled");
 
   const open = parcels.filter((p) => p.status !== "delivered" && p.status !== "cancelled");
   // Two weeks past the date with no word: ask the user instead of guessing.
