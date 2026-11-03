@@ -17,6 +17,7 @@
         "evidence": "* EMEET Webカメラ C960 HD1080P 200万画素 90°広角"
       }
     ],
+    "category": "electronics",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -79,6 +80,7 @@
         "evidence": "* EMEET Webカメラ C960 HD1080P 200万画素 90°広角 ...  数量: 1"
       }
     ],
+    "category": "electronics",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -141,6 +143,7 @@
         "evidence": "2599 JPY"
       }
     ],
+    "category": "electronics",
     "total_amount": {
       "value": 2339,
       "evidence": "2339 JPY",
@@ -203,6 +206,7 @@
         "evidence": "2599 JPY"
       }
     ],
+    "category": "electronics",
     "total_amount": {
       "value": 2339,
       "evidence": "2339 JPY",
@@ -265,6 +269,7 @@
         "evidence": "商品名：マットレス シングル ポケットコイル 厚さ20cm PMTS20NR-S Sheep"
       }
     ],
+    "category": "daily",
     "total_amount": {
       "value": 12800,
       "evidence": "■お支払い金額：12,800円",
@@ -327,6 +332,7 @@
         "evidence": "* オルファ(OLFA) 大型 カッター スピードハイパーAL型 227B オートロック フッ素"
       }
     ],
+    "category": "daily",
     "total_amount": {
       "value": 525,
       "evidence": "525 JPY",
@@ -389,6 +395,7 @@
         "evidence": "* オルファ(OLFA) 大型 カッター スピードハイパーAL型 227B オートロック フッ素"
       }
     ],
+    "category": "daily",
     "total_amount": {
       "value": 525,
       "evidence": "525 JPY",
@@ -444,6 +451,7 @@
       "confidence": 0.95
     },
     "items": [],
+    "category": "daily",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -499,6 +507,7 @@
       "confidence": 0.95
     },
     "items": [],
+    "category": "daily",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -554,6 +563,7 @@
       "confidence": 0.9
     },
     "items": [],
+    "category": "daily",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -609,6 +619,7 @@
       "confidence": 0.9
     },
     "items": [],
+    "category": null,
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -664,6 +675,7 @@
       "confidence": 0.9
     },
     "items": [],
+    "category": null,
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -719,6 +731,7 @@
       "confidence": 0.9
     },
     "items": [],
+    "category": null,
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -774,6 +787,7 @@
       "confidence": 0.95
     },
     "items": [],
+    "category": "fashion",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -836,6 +850,7 @@
         "evidence": "商品名　　　APC RS 550VA 無停電電源装置 UPS (550VA/330W/ライン"
       }
     ],
+    "category": "electronics",
     "total_amount": {
       "value": null,
       "evidence": null,
@@ -898,6 +913,7 @@
         "evidence": "価格：￥18,980 x 数量：1 = 合計：￥18,980"
       }
     ],
+    "category": "electronics",
     "total_amount": {
       "value": 18980,
       "evidence": "注文金額合計：￥18,980",
@@ -953,6 +969,7 @@
       "confidence": 0.95
     },
     "items": [],
+    "category": "fashion",
     "total_amount": {
       "value": null,
       "evidence": null,
