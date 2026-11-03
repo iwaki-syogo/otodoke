@@ -8,6 +8,7 @@ import { isHttpsUrl } from "@/lib/safe-url";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
 import { PresenceBadge, StatusBadge } from "../../parcel-card";
+import { NotDeliveredButton } from "./not-delivered-button";
 import { TrackingButton } from "./tracking-button";
 
 type Params = Promise<{ id: string }>;
@@ -61,6 +62,11 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           <PresenceBadge parcel={parcel} />
           {parcel.needs_review ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">要確認</span> : null}
         </div>
+        {parcel.status === "delivered" ? (
+          <div className="mt-3">
+            <NotDeliveredButton id={parcel.id} />
+          </div>
+        ) : null}
       </header>
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-4">

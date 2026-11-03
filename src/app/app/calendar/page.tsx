@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { daysInMonth, formatDateJa, formatWindow, monthLabel, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
 import { upcomingByDay } from "@/lib/calendar";
-import { DeliveredLink } from "../delivered-link";
+import { PageLink } from "../page-link";
 import { PresenceBadge, StatusBadge } from "../parcel-card";
 
 export const metadata = { title: "カレンダー" };
@@ -140,7 +140,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           })}
         </ol>
       )}
-      <DeliveredLink />
+      <PageLink href="/app/delivered" label="届いた荷物" />
     </div>
   );
 }

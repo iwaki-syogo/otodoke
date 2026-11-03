@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { undeliveredStatus } from "@/lib/undelivered";
 
 /** Statuses a parcel may be put back to after it was marked as arrived by hand. */
 const RESTORABLE = ["ordered", "shipped", "out_for_delivery", "attempted", "unknown"];
@@ -50,4 +52,47 @@ export async function restoreStatuses(items: { id: string; status: string }[]): 
     if (error) throw new Error(error.message);
   }
   revalidatePath("/app", "layout");
+}
+
+const NOT_UPDATED = "更新できませんでした。開き直してください";
+
+/**
+ * The user says a parcel marked as arrived has not. Where it goes back to is decided from the row
+ * read here, never from the client. The update changes it only if it is still the row that was
+ * read (same updated_at): if a mail saved the delivery in between, nothing is written and nothing
+ * is retried.
+ */
+export async function markNotDelivered(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false, error: NOT_UPDATED };
+  const session = await signedIn();
+  if (!session) return { ok: false, error: NOT_UPDATED };
+
+  const { data: row, error: readError } = await session.supabase
+    .from("parcels")
+    .select("tracking_number,carrier,status,updated_at")
+    .eq("id", parsed.data)
+    .eq("user_id", session.userId)
+    .maybeSingle();
+  if (readError) {
+    console.error("markNotDelivered:", readError.message);
+    return { ok: false, error: NOT_UPDATED };
+  }
+  if (!row || row.status !== "delivered") return { ok: false, error: NOT_UPDATED };
+
+  const { data, error } = await session.supabase
+    .from("parcels")
+    .update({ status: undeliveredStatus(row) })
+    .eq("id", parsed.data)
+    .eq("user_id", session.userId)
+    .eq("status", "delivered")
+    .eq("updated_at", row.updated_at)
+    .select("id");
+  if (error) {
+    console.error("markNotDelivered:", error.message);
+    return { ok: false, error: NOT_UPDATED };
+  }
+  if (!data || data.length !== 1) return { ok: false, error: NOT_UPDATED };
+  revalidatePath("/app", "layout");
+  return { ok: true };
 }

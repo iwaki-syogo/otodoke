@@ -19,7 +19,7 @@ export function TabBar() {
     >
       <ul className="mx-auto grid w-full max-w-md grid-cols-4">
         {TABS.map((t) => {
-          const active = t.href === "/app" ? pathname === "/app" || pathname.startsWith("/app/parcels") || pathname.startsWith("/app/delivered") : pathname.startsWith(t.href);
+          const active = t.href === "/app" ? pathname === "/app" || pathname.startsWith("/app/parcels") || pathname.startsWith("/app/delivered") || pathname.startsWith("/app/cancelled") : pathname.startsWith(t.href);
           return (
             <li key={t.href}>
               <Link

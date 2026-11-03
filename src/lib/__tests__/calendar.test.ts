@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { upcomingByDay } from "@/lib/calendar";
 import type { ParcelRow } from "@/lib/match";
-import { DeliveredLink } from "@/app/app/delivered-link";
+import { findAll, hasClasses, linksTo, parseHtml, textOf } from "./html-tree";
 
 /**
  * upcomingByDay(parcels, today, first, last): the calendar's parcels from today on, grouped by
@@ -99,25 +99,63 @@ describe("upcomingByDay", () => {
   });
 });
 
-describe("DeliveredLink", () => {
-  it("links to /app/delivered as 「届いた荷物 ›」", () => {
-    const html = renderToStaticMarkup(createElement(DeliveredLink, {}));
-    expect(html).toMatch(/<a\b[^>]*href="\/app\/delivered"/);
-    expect(html.replace(/<[^>]+>/g, "")).toContain("届いた荷物 ›");
+/**
+ * PageLink({ href, label, count? }) from src/app/app/page-link.tsx (replaces DeliveredLink): a
+ * framed row that is one link as a whole, the label underlined, and on the right the count (only
+ * when given, as 「1,234 件」) and 「›」. Used for 届いた荷物 and キャンセルした荷物 in the list and
+ * 届いた荷物 in the calendar.
+ */
+describe("PageLink", () => {
+  type Props = { href: string; label: string; count?: number };
+  const render = async (props: Props) => {
+    const { PageLink } = (await import("@/app/app/page-link")) as unknown as { PageLink: (p: Props) => ReturnType<typeof createElement> };
+    return parseHtml(renderToStaticMarkup(createElement(PageLink, props)));
+  };
+
+  it("is one framed link to the href that holds the whole row", async () => {
+    const root = await render({ href: "/app/delivered", label: "届いた荷物" });
+    const links = findAll(root, (n) => n.tag === "a");
+    expect(links).toHaveLength(1);
+    expect(linksTo(root, "/app/delivered")).toHaveLength(1);
+    // Nothing of the row is outside the link.
+    expect(textOf(links[0])).toBe(textOf(root));
+    expect(hasClasses(links[0], "rounded-xl", "border", "border-neutral-200", "bg-white", "px-4", "py-3"), links[0].attrs.class).toBe(true);
   });
 
-  it("shows the count when given one", () => {
-    const html = renderToStaticMarkup(createElement(DeliveredLink, { count: 1234 }));
-    expect(html.replace(/<[^>]+>/g, "")).toMatch(/1,?234/);
+  it("underlines the label, and only the label", async () => {
+    const root = await render({ href: "/app/delivered", label: "届いた荷物", count: 12 });
+    const underlined = findAll(root, (n) => hasClasses(n, "underline", "underline-offset-4"));
+    expect(underlined.map((n) => textOf(n).trim())).toEqual(["届いた荷物"]);
+  });
+
+  it("puts the count and 「›」 to the right of the label", async () => {
+    const text = textOf(await render({ href: "/app/cancelled", label: "キャンセルした荷物", count: 1234 }));
+    expect(text).toMatch(/^\s*キャンセルした荷物\s*1,234\s*件\s*›\s*$/);
+  });
+
+  it("shows 0 as 「0 件」", async () => {
+    expect(textOf(await render({ href: "/app/cancelled", label: "キャンセルした荷物", count: 0 }))).toMatch(/0\s*件/);
+  });
+
+  it("shows no count without one", async () => {
+    const text = textOf(await render({ href: "/app/delivered", label: "届いた荷物" }));
+    expect(text).toMatch(/^\s*届いた荷物\s*›\s*$/);
+    expect(text).not.toContain("件");
   });
 });
 
 describe("calendar page", () => {
   const source = readFileSync(path.resolve(__dirname, "../../app/app/calendar/page.tsx"), "utf8");
 
-  it("draws from upcomingByDay and offers 「届いた荷物 ›」", () => {
+  it("draws from upcomingByDay and offers 「届いた荷物 ›」 as a PageLink without a count", () => {
     expect(source).toContain("upcomingByDay");
-    expect(source).toContain("DeliveredLink");
+    expect(source).toMatch(/import\s*\{\s*PageLink\s*\}\s*from\s*["']\.\.\/page-link["']/);
+    const uses = source.match(/<PageLink\b[^>]*\/>/g) ?? [];
+    expect(uses).toHaveLength(1);
+    expect(uses[0]).toMatch(/href=\{?\s*["']\/app\/delivered["']/);
+    expect(uses[0]).toMatch(/label=\{?\s*["']届いた荷物["']/);
+    expect(uses[0]).not.toMatch(/\bcount=/);
+    expect(source).not.toContain("DeliveredLink");
   });
 
   it("says 「この月の予定はありません」 for a month with nothing ahead", () => {
