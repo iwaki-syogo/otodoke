@@ -56,14 +56,15 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
     go({ ...next, q: next.q.trim() });
   };
 
-  const select = (name: "s" | "c" | "m", all: string, choices: Array<{ value: string; label: string }>) => (
+  // `wide`: the whole row (the shop, whose names run long).
+  const select = (name: "s" | "c" | "m", all: string, choices: Array<{ value: string; label: string }>, wide = false) => (
     <select
       name={name}
       value={values[name]}
       disabled={pending}
       onChange={(e) => pick(name, e.target.value)}
       aria-label={all}
-      className="w-full min-w-0 truncate rounded-lg border border-neutral-300 bg-white px-2 py-2 text-base disabled:opacity-60"
+      className={`${wide ? "col-span-2 " : ""}w-full min-w-0 truncate rounded-lg border border-neutral-300 bg-white px-2 py-2 text-base disabled:opacity-60`}
     >
       <option value="">{all}</option>
       {choices.map((o) => (
@@ -120,8 +121,9 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
           </Link>
         ) : null}
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {select("s", "すべての店", options.shops.map((v) => ({ value: v, label: v })))}
+      {/* Three in a row cut 「2026年11月」 and 「家電・ガジェット」 at 390px: the shop takes a row, the category and the month share the next. */}
+      <div className="grid grid-cols-2 gap-2">
+        {select("s", "すべての店", options.shops.map((v) => ({ value: v, label: v })), true)}
         {select("c", "すべての分類", options.categories)}
         {select("m", "すべての月", monthChoices(options.months, initial.m).map((v) => ({ value: v, label: monthName(v) })))}
       </div>
