@@ -9,6 +9,7 @@
  */
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PRICES } from "./prices";
 
 const root = process.cwd();
 process.loadEnvFile(path.join(root, [".env", "local"].join(".")));
@@ -25,13 +26,6 @@ const maxUsd = Number(opt("max-usd", "1"));
 const concurrency = Number(opt("concurrency", "4"));
 const limit = Number(opt("limit", "0"));
 if (args.includes("--model")) process.env.OTODOKE_MODEL = opt("model", "");
-
-/** USD per million tokens: input, output, cache read, cache write. */
-const PRICES: Record<string, [number, number, number, number]> = {
-  "claude-opus-5-5": [4, 20, 0.2, 5],
-  "claude-sonnet-5-5": [2, 10, 0.1, 2.5],
-  "claude-haiku-5-5": [0.1, 0.5, 0.01, 0.125],
-};
 
 interface Mail {
   file: string;
