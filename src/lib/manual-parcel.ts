@@ -27,6 +27,8 @@ export const MANUAL_STATUSES = ["ordered", "shipped", "delivered"] as const;
  * already there, so saving it unchanged still works.
  */
 export const MANUAL_CARRIED_STATUSES = ["out_for_delivery", "attempted"] as const;
+/** A cancel notice moves a typed-in parcel here. Only a parcel already cancelled may be saved with it. */
+export const MANUAL_CANCELLED = "cancelled";
 
 /** What the form's Server Actions answer: the error, and what was sent so the fields can refill. */
 export type ManualFormState = { error: string | null; values: Record<string, string> };
@@ -73,7 +75,16 @@ export const ManualParcelSchema = z.object({
   status: z.enum([...MANUAL_STATUSES, ...MANUAL_CARRIED_STATUSES]),
 });
 
-export type ManualParcelInput = z.output<typeof ManualParcelSchema>;
+const ManualParcelWhileCancelled = ManualParcelSchema.extend({
+  status: z.enum([...MANUAL_STATUSES, ...MANUAL_CARRIED_STATUSES, MANUAL_CANCELLED]),
+});
+
+/** The checks for saving an edit, given the parcel's status now: a cancelled one may stay cancelled. */
+export function manualParcelSchemaFor(currentStatus: string | null) {
+  return currentStatus === MANUAL_CANCELLED ? ManualParcelWhileCancelled : ManualParcelSchema;
+}
+
+export type ManualParcelInput = z.output<typeof ManualParcelWhileCancelled>;
 
 type ParcelInsert = Database["public"]["Tables"]["parcels"]["Insert"];
 export type ManualParcelColumns = Omit<ParcelInsert, "user_id">;
@@ -84,8 +95,12 @@ function carrierName(choice: ManualCarrier, tracking: string | null): string | n
   return found.key === "unknown" ? null : found.name;
 }
 
-/** The columns the form edits. Saving an edit writes only these. */
-export function manualParcelFields(v: ManualParcelInput, now: Date): ManualParcelColumns {
+/**
+ * The columns the form edits. Saving an edit writes only these. Given the stored category, an
+ * unchanged one is left out, so an automatic category stays automatic.
+ */
+export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: { category: string | null }): ManualParcelColumns {
+  const category = saved && saved.category === v.category ? {} : { category: v.category, category_source: v.category ? ("user" as const) : null };
   return {
     title: v.title,
     shop: v.shop,
@@ -93,8 +108,7 @@ export function manualParcelFields(v: ManualParcelInput, now: Date): ManualParce
     ordered_at: v.ordered_at ?? todayJst(now),
     expected_date: v.expected_date,
     total_amount: v.total_amount,
-    category: v.category,
-    category_source: v.category ? "user" : null,
+    ...category,
     tracking_number: v.tracking_number,
     carrier: carrierName(v.carrier, v.tracking_number),
     tracking_url: null,

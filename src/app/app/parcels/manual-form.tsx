@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import { CARRIERS } from "@/lib/carriers";
 import { CATEGORIES, categoryLabel, isCategory } from "@/lib/category";
 import { STATUS_LABEL } from "@/lib/format";
-import { MANUAL_CARRIED_STATUSES, MANUAL_CARRIERS, MANUAL_LIMITS, MANUAL_STATUSES, type ManualFormState } from "@/lib/manual-parcel";
+import { MANUAL_CANCELLED, MANUAL_CARRIED_STATUSES, MANUAL_CARRIERS, MANUAL_LIMITS, MANUAL_STATUSES, type ManualFormState } from "@/lib/manual-parcel";
 import type { ParcelRow } from "@/lib/match";
 import { createManualParcel, deleteManualParcel, updateManualParcel } from "./manual-actions";
 
@@ -14,7 +14,14 @@ const STATUS_CHOICES: Record<string, string> = {
   shipped: "発送済み",
   delivered: "届いた",
 };
-const ALL_STATUSES: readonly string[] = [...MANUAL_STATUSES, ...MANUAL_CARRIED_STATUSES];
+/** Statuses only a mail sets: offered while the parcel is there, so it saves back unchanged. */
+const KEPT_STATUSES: readonly string[] = [...MANUAL_CARRIED_STATUSES, MANUAL_CANCELLED];
+const ALL_STATUSES: readonly string[] = [...MANUAL_STATUSES, ...KEPT_STATUSES];
+
+/** The status choices for a parcel whose status is `current`. */
+export function manualStatusChoices(current: string): string[] {
+  return [...MANUAL_STATUSES, ...KEPT_STATUSES.filter((s) => s === current)];
+}
 const NAMED_CARRIERS = MANUAL_CARRIERS.filter((c) => c !== "auto");
 
 /** The carrier choice that saves back the stored name; "auto" when no choice names it. */
@@ -52,7 +59,7 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
   const [state, action] = useActionState<ManualFormState, FormData>(parcel ? updateManualParcel : createManualParcel, { error: null, values: defaults });
   const values = { ...defaults, ...state.values };
   // Statuses a mail moved the parcel to are offered only while it is there.
-  const statuses = [...MANUAL_STATUSES, ...MANUAL_CARRIED_STATUSES.filter((s) => s === values.status)];
+  const statuses = manualStatusChoices(values.status);
 
   return (
     <div className="flex flex-col gap-6">

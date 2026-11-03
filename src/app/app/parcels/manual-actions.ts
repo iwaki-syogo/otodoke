@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { ManualParcelSchema, manualParcelFields, manualParcelRow, type ManualFormState } from "@/lib/manual-parcel";
+import { ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, type ManualFormState } from "@/lib/manual-parcel";
 import { createClient } from "@/lib/supabase/server";
 
 // Parcels typed in by hand. Writes go through the user's own session (row-level security);
@@ -61,11 +61,25 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
   if (!session) return { error: NOT_SIGNED_IN, values };
   const id = Id.safeParse(values.id);
   if (!id.success) return { error: NOT_FOUND, values };
-  const parsed = ManualParcelSchema.safeParse(values);
+
+  // What is stored decides what the form may send: a cancelled parcel may stay cancelled, and an
+  // unchanged category keeps who set it.
+  const { data: saved, error: readError } = await session.supabase.from("parcels").select("status, category").eq("id", id.data).eq("source", "manual").maybeSingle();
+  if (readError) {
+    console.error("updateManualParcel:", readError.message);
+    return { error: FAILED, values };
+  }
+  if (!saved) return { error: NOT_FOUND, values };
+  const parsed = manualParcelSchemaFor(saved.status).safeParse(values);
   if (!parsed.success) return { error: invalid(parsed.error), values };
 
   // Editing keeps when the parcel last heard from a mail; source stays as it is.
-  const { data, error } = await session.supabase.from("parcels").update(manualParcelFields(parsed.data, new Date())).eq("id", id.data).eq("source", "manual").select("id");
+  const { data, error } = await session.supabase
+    .from("parcels")
+    .update(manualParcelFields(parsed.data, new Date(), saved))
+    .eq("id", id.data)
+    .eq("source", "manual")
+    .select("id");
   if (error) {
     console.error("updateManualParcel:", error.message);
     return { error: FAILED, values };
