@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { TrackingLink } from "@/lib/carriers";
 
 const LINK = "font-medium text-sky-700 underline underline-offset-4";
+/** A small framed control at the right end of a step row. */
+const SMALL = "shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1 text-sm font-medium";
 
 /**
  * Copies during the tap itself, without the async Clipboard API: that one needs a secure
@@ -120,44 +122,37 @@ function CopyThenOpen({
             <ol className="mt-5 flex flex-col gap-5">
               <li className="flex gap-3">
                 <StepNumber n={1} />
-                <div className="min-w-0 flex-1">
-                  {copy === "failed" ? (
-                    <>
-                      <p className="font-medium">コピーできませんでした</p>
-                      <p className="mt-2 select-all break-all font-mono text-2xl font-bold tracking-wider">{shown}</p>
-                      <p className="mt-1 text-neutral-600">長押ししてコピーしてください</p>
-                    </>
-                  ) : (
+                {copy === "failed" ? (
+                  <div className="min-w-0 flex-1">
+                    <p className="select-all break-all font-mono text-2xl font-bold tracking-wider">{shown}</p>
+                    <p className="mt-1 text-neutral-600">長押ししてコピー</p>
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="min-w-0 break-all font-mono text-base tracking-wider">{shown}</span>
                     <button
                       ref={firstButton}
                       type="button"
                       onClick={onCopy}
-                      className={`w-full rounded-xl border px-4 py-3 text-center font-bold ${
-                        copy === "done" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-sky-300 bg-white text-sky-700"
-                      }`}
+                      className={`${SMALL} ${copy === "done" ? "border-emerald-300 text-emerald-700" : "border-sky-300 text-sky-700"}`}
                     >
-                      <span className="block">{copy === "done" ? "✓ コピーしました" : "追跡番号をコピー"}</span>
-                      <span className="mt-0.5 block font-mono text-base font-medium tracking-wider text-neutral-700">{shown}</span>
+                      {copy === "done" ? "コピー済み ✓" : "コピー"}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </li>
               <li className="flex gap-3">
                 <StepNumber n={2} />
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="min-w-0 flex-1 rounded-xl bg-sky-600 px-4 py-3 text-center font-bold text-white shadow-sm"
-                >
-                  {pageName}に移動
-                </a>
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                  <span className="min-w-0">{pageName}</span>
+                  <a href={url} target="_blank" rel="noopener noreferrer" className={`${SMALL} border-neutral-300 text-neutral-700`}>
+                    開く ↗
+                  </a>
+                </div>
               </li>
               <li className="flex gap-3">
                 <StepNumber n={3} />
-                <p className="min-w-0 flex-1 pt-0.5 leading-relaxed text-neutral-700">
-                  送り状番号の欄に貼り付けて、「お問い合わせ開始」を押してください
-                </p>
+                <p className="min-w-0 flex-1 pt-0.5 leading-relaxed text-neutral-700">送り状番号を貼り付けて『お問い合わせ開始』を押す</p>
               </li>
             </ol>
             <button type="button" onClick={close} className="mt-6 w-full rounded-xl px-4 py-2.5 font-medium text-neutral-600">
