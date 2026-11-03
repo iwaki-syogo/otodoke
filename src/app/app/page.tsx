@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { addDays, formatWindow, relativeDateJa, todayJst } from "@/lib/format";
+import { formatWindow, relativeDateJa, todayJst } from "@/lib/format";
 import { faceToFace, isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
+import { DeliveredLink } from "./delivered-link";
 import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
@@ -21,6 +22,11 @@ export default async function ParcelsPage() {
     .from("emails")
     .select("id", { count: "exact", head: true })
     .or(UNREAD_FILTER());
+  // Counted by the database, so the 1000-row cap on reads cannot cut it short.
+  const { count: deliveredCount, error: deliveredError } = await supabase
+    .from("parcels")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "delivered");
 
   const open = parcels.filter((p) => p.status !== "delivered" && p.status !== "cancelled");
   // Two weeks past the date with no word: ask the user instead of guessing.
@@ -30,11 +36,6 @@ export default async function ParcelsPage() {
   const ordered = active.filter((p) => ["ordered", "unknown"].includes(p.status) && !isLate(p, today));
   // Everything else on its way, including a parcel past its date that may still come.
   const soon = active.filter((p) => !delivering.includes(p) && !ordered.includes(p)).sort(byNextArrival(today));
-  // A parcel marked by hand counts from when it was marked, not from its last mail.
-  const touched = (p: ParcelRow) => [p.last_email_at ?? "", p.updated_at].sort().at(-1) ?? "";
-  const delivered = parcels
-    .filter((p) => p.status === "delivered" && touched(p) >= addDays(today, -30))
-    .sort((a, b) => touched(b).localeCompare(touched(a)));
   const cancelled = parcels.filter((p) => p.status === "cancelled");
   const inPerson = active.filter((p) => faceToFace(p) === true && (lastExpectedDay(p) ?? "") >= today).sort(byNextArrival(today));
 
@@ -76,7 +77,7 @@ export default async function ParcelsPage() {
       <Section title="配達中" count={delivering.length} items={delivering} swipe />
       <Section title="もうすぐ届く" count={soon.length} items={soon} swipe />
       <Section title="注文中" count={ordered.length} items={ordered} empty="注文中の荷物はありません" swipe />
-      <Section title="届いた（30 日）" count={delivered.length} items={delivered} empty="最近届いた荷物はありません" />
+      <DeliveredLink count={deliveredError ? undefined : (deliveredCount ?? undefined)} />
       <Folded summary={`キャンセル ${cancelled.length} 件`} items={cancelled} />
       {open.length > 0 ? <p className="text-center text-xs text-neutral-500">届いた荷物は、左にスワイプして「届いた」にできます</p> : null}
     </div>
