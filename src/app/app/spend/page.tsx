@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { categoryColor, categoryLabel, type Category } from "@/lib/category";
-import { daysInMonth, monthLabel, shiftMonth, todayJst, yen } from "@/lib/format";
+import { daysInMonth, shiftMonth, todayJst, yen } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { sharePercent, spendByCategory, spendByMonth, spendMonthParam, spendSlices, spendTotal, withEmptyMonths } from "@/lib/spend";
 import { NONE, categoryParam, firstParam, normalizeShop } from "@/lib/shop";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { FilterArea, FilterLink, FilterSpinner } from "./filter-link";
+import { MonthPicker } from "../month-picker";
 import { MonthBars } from "./month-bars";
 import { OrderList } from "./order-list";
 
@@ -74,7 +75,9 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
           <Link href={here({ m: shiftMonth(ym, -1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
             ‹ 前月
           </Link>
-          <h1 className="text-lg font-bold">{monthLabel(ym)}</h1>
+          <h1 className="text-lg font-bold">
+            <MonthPicker value={ym} basePath="/app/spend" keep={{ c: only === undefined ? undefined : cParam(only), s: shop }} />
+          </h1>
           <Link href={here({ m: shiftMonth(ym, 1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
             翌月 ›
           </Link>

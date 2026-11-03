@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { daysInMonth, formatDateJa, formatWindow, monthLabel, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
+import { daysInMonth, formatDateJa, formatWindow, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
 import { upcomingByDay } from "@/lib/calendar";
+import { MonthPicker } from "../month-picker";
 import { PageLink } from "../page-link";
 import { PresenceBadge, StatusBadge } from "../parcel-card";
 
@@ -49,7 +50,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
         <Link href={`/app/calendar?m=${shiftMonth(ym, -1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="前の月">
           ‹ 前月
         </Link>
-        <h1 className="text-lg font-bold">{monthLabel(ym)}</h1>
+        <h1 className="text-lg font-bold">
+          <MonthPicker value={ym} basePath="/app/calendar" />
+        </h1>
         <Link href={`/app/calendar?m=${shiftMonth(ym, 1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="次の月">
           翌月 ›
         </Link>
