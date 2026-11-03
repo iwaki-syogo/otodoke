@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CATEGORIES, categoryLabel } from "@/lib/category";
 
 /**
  * What Claude returns for one email. Every value carries the line of the mail it
@@ -46,6 +47,11 @@ export const ShopKey = z.enum([
 ]);
 export type ShopKey = z.infer<typeof ShopKey>;
 
+const category = z
+  .enum(CATEGORIES)
+  .nullable()
+  .describe(`品名と店から選ぶ支出の分類: ${CATEGORIES.map((c) => `${c}=${categoryLabel(c)}`).join(" / ")}。品名も店も分からなければ null`);
+
 export const ItemSchema = z.object({
   name: z.string().describe("商品名。省略記号「...」で切れていてもそのまま"),
   quantity: z.number().int().nullable(),
@@ -57,6 +63,7 @@ export const ItemSchema = z.object({
 export const OtherOrderSchema = z.object({
   order_number: StrField.describe("この注文の注文番号"),
   items: z.array(ItemSchema).describe("この注文の商品だけ"),
+  category: category.describe("この注文の商品の分類。品名も店も分からなければ null"),
   total_amount: IntField.describe("この注文の合計（円）"),
   expected_date: StrField.describe("この注文の配達予定日 YYYY-MM-DD"),
   expected_date_end: StrField.describe("この注文の配達予定が範囲なら最後の日 YYYY-MM-DD。範囲でなければ null"),
@@ -74,6 +81,7 @@ export const ExtractionSchema = z.object({
   shop_key: ShopKey.nullable(),
   order_number: StrField.describe("注文番号・受付番号・ご注文 ID。ハイフン等は原文のまま"),
   items: z.array(ItemSchema).describe("最初の注文の商品だけ。別の注文の商品は other_orders に入れる"),
+  category,
   package_description: StrField.describe("運送会社の伝票の品名（例: 衣料品、電子機器）。店の商品名ではない"),
   total_amount: IntField.describe("注文合計（円、送料込み）。この通知で金額が分からなければ null"),
   ordered_at: StrField.describe("注文日 YYYY-MM-DD"),
@@ -106,6 +114,7 @@ export function withDefaults(x: Extraction): Extraction {
     ...x,
     package_description: partial.package_description ?? { ...NO_VALUE },
     expected_date_end: partial.expected_date_end ?? { ...NO_VALUE },
-    other_orders: partial.other_orders ?? [],
+    category: partial.category ?? null,
+    other_orders: (partial.other_orders ?? []).map((o) => ({ ...o, category: o.category ?? null })),
   };
 }

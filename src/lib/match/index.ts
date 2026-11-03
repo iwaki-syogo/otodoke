@@ -396,6 +396,7 @@ export function splitOrders(x: Extraction): Extraction[] {
         ...first,
         order_number: o.order_number,
         items: o.items,
+        category: o.category ?? null,
         total_amount: o.total_amount,
         expected_date: o.expected_date,
         expected_date_end: o.expected_date_end,

@@ -35,6 +35,7 @@ function extraction(over: Partial<Extraction>): Extraction {
     shop_key: "other",
     order_number: none,
     items: [],
+    category: null,
     package_description: none,
     total_amount: none,
     ordered_at: none,
@@ -517,8 +518,8 @@ describe("mails that list several orders", () => {
     items: [item("断熱クッション", 495)],
     total_amount: sure(495),
     other_orders: [
-      { order_number: sure("250-0000000-0007844"), items: [item("サウナハット", 2480)], total_amount: sure(2480), expected_date: sure("2026-10-20"), expected_date_end: none, expected_text: null },
-      { order_number: none, items: [item("番号のない注文", 1)], total_amount: none, expected_date: none, expected_date_end: none, expected_text: null },
+      { order_number: sure("250-0000000-0007844"), items: [item("サウナハット", 2480)], category: null, total_amount: sure(2480), expected_date: sure("2026-10-20"), expected_date_end: none, expected_text: null },
+      { order_number: none, items: [item("番号のない注文", 1)], category: null, total_amount: none, expected_date: none, expected_date_end: none, expected_text: null },
     ],
   });
 
