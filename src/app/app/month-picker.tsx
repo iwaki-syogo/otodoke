@@ -6,8 +6,18 @@ import { monthLabel } from "@/lib/format";
 import { MONTH_MIN, monthHref, monthMax } from "@/lib/month-url";
 import { useFilterScope } from "./spend/filter-link";
 
-/** A touch screen: the iPhone's wheels send a change at each stop, so the month goes on closing. */
-const isTouch = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+/**
+ * iOS / iPadOS WebKit: its wheels send a change at each stop, so the month is held until the
+ * picker closes. iPadOS asks as a Mac, told apart by its touch points. Android and desktops send
+ * one change for one pick, so they move at once. With no user agent to read, a touch screen holds.
+ */
+const holdsUntilClosed = () => {
+  if (typeof window === "undefined") return false;
+  const nav = window.navigator as Navigator | undefined;
+  if (!nav || typeof nav.userAgent !== "string") return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  const ua = nav.userAgent;
+  return /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && (nav.maxTouchPoints ?? 0) > 1);
+};
 
 /**
  * The month in a heading, as a button that opens the browser's own month picker (the wheels on
@@ -35,8 +45,10 @@ export function MonthPicker({
   const key = useId();
   const [picked, setPicked] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
+  // On iOS the month turned to, sent once when the picker closes: `held` for sending, `heldMonth`
+  // for the name shown meanwhile.
+  const [heldMonth, setHeldMonth] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // On a touch screen the month turned to, sent when the picker closes.
   const held = useRef<string | null>(null);
 
   // A browser without type=month turns the input into a text box; known only once mounted.
@@ -49,6 +61,14 @@ export function MonthPicker({
   // Whether the move on the way is the one this picker sent (its spinner and the picked name).
   const mine = scope ? scope.pending && scope.target === key : ownPending;
 
+  // Another move on the way drops a held month: the name goes back to the month shown, and
+  // nothing is sent for it later.
+  const otherMove = pending && !mine;
+  if (otherMove && heldMonth !== null) setHeldMonth(null);
+  useEffect(() => {
+    if (otherMove) held.current = null;
+  }, [otherMove]);
+
   // The one place a picked month is sent.
   const send = (month: string) => {
     if (!month || month === value || pending) return;
@@ -58,7 +78,33 @@ export function MonthPicker({
     else startTransition(() => router.push(href));
   };
 
-  const shown = mine && picked ? picked : value;
+  // Sends the held month, once: the first of blur / a tap elsewhere / the page hidden.
+  const flush = () => {
+    const month = held.current;
+    held.current = null;
+    setHeldMonth(null);
+    if (month) send(month);
+  };
+
+  // iOS may close the wheels without a blur (a tap outside): while a month is held, a tap
+  // anywhere but the picker, or leaving the page, sends it too. Off again once it is sent.
+  useEffect(() => {
+    if (heldMonth === null || typeof document === "undefined") return;
+    const onDown = (e: Event) => {
+      if (e.target !== inputRef.current) flush();
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("visibilitychange", onHide);
+    };
+  });
+
+  const shown = mine && picked ? picked : heldMonth !== null && !otherMove ? heldMonth : value;
 
   return (
     <span className="relative inline-flex items-center gap-1 rounded-lg px-2 py-1 active:bg-neutral-100">
@@ -81,14 +127,11 @@ export function MonthPicker({
           disabled={pending}
           aria-label="月を選ぶ"
           onChange={(e) => {
-            if (isTouch()) held.current = e.target.value;
-            else send(e.target.value);
+            if (!holdsUntilClosed()) return send(e.target.value);
+            held.current = e.target.value || null;
+            setHeldMonth(held.current);
           }}
-          onBlur={() => {
-            const month = held.current;
-            held.current = null;
-            if (month) send(month);
-          }}
+          onBlur={flush}
           onClick={(e) => {
             // Straight from the click, nothing awaited first: the browser needs the tap itself.
             try {
