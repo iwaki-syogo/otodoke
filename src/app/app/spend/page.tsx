@@ -2,7 +2,7 @@ import Link from "next/link";
 import { categoryColor, categoryLabel, isCategory, type Category } from "@/lib/category";
 import { daysInMonth, formatDateJa, monthLabel, shiftMonth, todayJst, yen } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
-import { categoryOf, spendByCategory, spendByMonth } from "@/lib/spend";
+import { categoryOf, spendByCategory, spendByMonth, spendMonthParam, spendTotal, withEmptyMonths } from "@/lib/spend";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { CategorySheet } from "../category-sheet";
@@ -23,7 +23,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
   const { m, c } = await searchParams;
   const today = todayJst();
   const all = m === ALL;
-  const ym = !all && /^\d{4}-\d{2}$/.test(m ?? "") ? (m as string) : today.slice(0, 7);
+  const ym = spendMonthParam(all ? undefined : m, today);
   const [y, mo] = ym.split("-").map(Number);
   const first = `${ym}-01`;
   const last = `${ym}-${String(daysInMonth(y, mo)).padStart(2, "0")}`;
@@ -95,12 +95,13 @@ function Spend({
   // The whole period is told by order month, so parcels with no order date stay out of every
   // figure and the bars add up to the total.
   const counted = all ? parcels.filter((p) => p.ordered_at) : parcels;
-  const undated = parcels.length - counted.length;
-  const priced = counted.filter((p) => p.total_amount !== null);
-  const unpriced = counted.length - priced.length;
-  const total = priced.reduce((s, p) => s + (p.total_amount ?? 0), 0);
   const categories = spendByCategory(counted);
   const picked = only === undefined ? counted : counted.filter((p) => categoryOf(p) === only);
+  // Over the whole period a picked category narrows the total card too; the breakdowns stay whole.
+  const narrowed = all && only !== undefined;
+  const card = spendTotal(narrowed ? picked : counted);
+  const undated = narrowed ? parcels.filter((p) => !p.ordered_at && categoryOf(p) === only).length : parcels.length - counted.length;
+  const priced = counted.filter((p) => p.total_amount !== null);
 
   const byShop = new Map<string, number>();
   for (const p of priced) {
@@ -114,16 +115,16 @@ function Spend({
   return (
     <>
       <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-        <p className="text-sm text-neutral-500">ネット注文の合計</p>
-        <p className="mt-1 text-4xl font-bold tracking-tight">{yen(total)}</p>
+        <p className="text-sm text-neutral-500">{narrowed ? `${categoryLabel(only)}の合計` : "ネット注文の合計"}</p>
+        <p className="mt-1 text-4xl font-bold tracking-tight">{yen(card.total)}</p>
         <p className="mt-2 text-xs text-neutral-500">
-          {priced.length} 件
-          {unpriced > 0 ? `（ほかに金額を読み取れなかった注文が ${unpriced} 件）` : ""}
+          {card.priced} 件
+          {card.unpriced > 0 ? `（ほかに金額を読み取れなかった注文が ${card.unpriced} 件）` : ""}
           {undated > 0 ? `（注文日の無い ${undated} 件は除く）` : ""}
         </p>
       </section>
 
-      {all ? <MonthBars months={spendByMonth(picked)} query={(month) => here({ m: month, c: only })} /> : null}
+      {all ? <MonthBars months={withEmptyMonths(spendByMonth(picked))} query={(month) => here({ m: month, c: only })} /> : null}
 
       {categories.length > 0 ? (
         <section>

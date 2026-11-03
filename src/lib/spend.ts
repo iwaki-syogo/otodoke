@@ -1,8 +1,20 @@
 import { CATEGORIES, isCategory, type Category } from "@/lib/category";
+import { shiftMonth } from "@/lib/format";
 
 /** Totals for the spend screen. Only parcels whose amount was read count toward money. */
 
 type SpendParcel = { ordered_at: string | null; total_amount: number | null; category: string | null };
+
+/** The month a `?m=` names: "YYYY-MM" with a month of 01 to 12, else this month. */
+export function spendMonthParam(m: string | undefined, today: string): string {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(m ?? "") ? (m as string) : today.slice(0, 7);
+}
+
+/** The total card: the sum of the amounts read, how many had one, and how many did not. */
+export function spendTotal(parcels: SpendParcel[]): { total: number; priced: number; unpriced: number } {
+  const priced = parcels.filter((p) => p.total_amount !== null);
+  return { total: priced.reduce((s, p) => s + (p.total_amount ?? 0), 0), priced: priced.length, unpriced: parcels.length - priced.length };
+}
 
 /** A stored category, or null (未分類) for none or a value outside the seven. */
 export function categoryOf(p: { category: string | null }): Category | null {
@@ -52,6 +64,28 @@ export function spendByMonth(parcels: SpendParcel[]): Array<{ month: string; tot
     const segments = ORDER.filter((c) => (sums.get(c) ?? 0) > 0).map((category) => ({ category, amount: sums.get(category) ?? 0 }));
     return { month, total: segments.reduce((s, x) => s + x.amount, 0), segments };
   });
+}
+
+type MonthBar = ReturnType<typeof spendByMonth>[number];
+
+/** Longest run of months the bars fill in; a stray year in a reading must not draw thousands of bars. */
+const MAX_FILLED_MONTHS = 240;
+
+/**
+ * The bars with every month from the first to the last, a month without spending as 0, so the
+ * time axis does not skip. Left as given when the run is longer than MAX_FILLED_MONTHS.
+ */
+export function withEmptyMonths(months: MonthBar[]): MonthBar[] {
+  if (months.length < 2) return months;
+  const first = months[0].month;
+  const last = months[months.length - 1].month;
+  const byMonth = new Map(months.map((m) => [m.month, m]));
+  const out: MonthBar[] = [];
+  for (let month = first; month <= last; month = shiftMonth(month, 1)) {
+    if (out.length >= MAX_FILLED_MONTHS) return months;
+    out.push(byMonth.get(month) ?? { month, total: 0, segments: [] });
+  }
+  return out;
 }
 
 /** Round numbers for the y axis: 0 up to a clean top that covers `max`, at most 4 steps. */
