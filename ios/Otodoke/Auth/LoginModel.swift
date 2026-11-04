@@ -1,5 +1,3 @@
-// TDD-STUB(task 3): type stub written by the test architect so the test target compiles.
-// Keep the names and shapes; replace the bodies with the implementation and delete this marker line.
 // The view model of LoginView: e-mail → 8-digit code, the error texts, the 60-second resend wait,
 // the spinner flag. LaunchOptions reads the DEBUG-only argument that starts at code entry.
 
@@ -12,6 +10,13 @@ struct LaunchOptions: Equatable, Sendable {
 
     init(arguments: [String]) {
         startAtCodeEntryEmail = nil
+        #if DEBUG
+        // UI tests start at code entry with a code made on the server, so no login mail is sent.
+        if let i = arguments.firstIndex(of: "-otodoke-start-at-code"), arguments.indices.contains(i + 1) {
+            let address = AuthService.normalizeEmail(arguments[i + 1])
+            startAtCodeEntryEmail = address.isEmpty ? nil : address
+        }
+        #endif
     }
 
     static var current: LaunchOptions { LaunchOptions(arguments: ProcessInfo.processInfo.arguments) }
@@ -36,21 +41,72 @@ final class LoginModel {
     private(set) var errorMessage: String?
 
     let auth: AuthService
+    @ObservationIgnored private let now: @Sendable () -> Date
+    private var lastSentAt: Date?
 
     init(auth: AuthService, launch: LaunchOptions = .current, now: @escaping @Sendable () -> Date = { Date() }) {
         self.auth = auth
+        self.now = now
+        if let address = launch.startAtCodeEntryEmail {
+            email = address
+            step = .code(email: address)
+        }
     }
 
     /// True when `code` is exactly 8 ASCII digits.
-    var canVerify: Bool { false }
+    var canVerify: Bool {
+        code.utf8.count == Self.codeLength && code.utf8.allSatisfy { (0x30...0x39).contains($0) }
+    }
 
     /// Whole seconds left before the code may be sent again (rounded up); 0 when it may.
-    func resendWaitSeconds() -> Int { -1 }
+    func resendWaitSeconds() -> Int {
+        guard let lastSentAt else { return 0 }
+        let left = Self.resendInterval - now().timeIntervalSince(lastSentAt)
+        return left > 0 ? Int(left.rounded(.up)) : 0
+    }
 
-    func sendCode() async {}
+    func sendCode() async {
+        await send(to: email)
+    }
 
-    func verify() async {}
+    func verify() async {
+        guard case let .code(address) = step, canVerify, !isWorking else { return }
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await auth.verifyCode(email: address, code: code)
+        } catch {
+            errorMessage = error.message
+        }
+    }
 
     /// Sends the code again to the same address, only once the wait is over.
-    func resend() async {}
+    func resend() async {
+        guard case let .code(address) = step, resendWaitSeconds() == 0 else { return }
+        await send(to: address)
+    }
+
+    /// Back to the address field (a typo in the address).
+    func changeAddress() {
+        guard !isWorking else { return }
+        step = .email
+        code = ""
+        errorMessage = nil
+    }
+
+    private func send(to raw: String) async {
+        guard !isWorking else { return }
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await auth.sendCode(email: raw)
+            lastSentAt = now()
+            code = ""
+            step = .code(email: AuthService.normalizeEmail(raw))
+        } catch {
+            errorMessage = error.message
+        }
+    }
 }

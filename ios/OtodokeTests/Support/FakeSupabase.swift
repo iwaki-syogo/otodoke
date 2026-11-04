@@ -207,33 +207,43 @@ actor FakeSupabase {
         case ("POST", "otp"):
             switch otpMode {
             case .ok: return .json(200, [String: Any]())
-            case .rateLimited: return .json(429, ["code": 429, "error_code": "over_email_send_rate_limit", "msg": "email rate limit exceeded"])
+            case .rateLimited: return Self.gotrueError(request, 429, "over_email_send_rate_limit", "email rate limit exceeded")
             }
         case ("POST", "verify"):
             if verifyMode == .rateLimited {
-                return .json(429, ["code": 429, "error_code": "over_request_rate_limit", "msg": "Request rate limit reached"])
+                return Self.gotrueError(request, 429, "over_request_rate_limit", "Request rate limit reached")
             }
             let token = request.jsonDictionary?["token"] as? String
             if verifyMode == .rejected || token != Self.goodCode {
-                return .json(403, ["code": 403, "error_code": "otp_expired", "msg": "Token has expired or is invalid"])
+                return Self.gotrueError(request, 403, "otp_expired", "Token has expired or is invalid")
             }
             return .json(200, newSession())
         case ("POST", "token"):
             let refresh = request.jsonDictionary?["refresh_token"] as? String
             guard request.query("grant_type").first == "refresh_token", refreshMode == .ok, let refresh, refreshTokens.contains(refresh) else {
-                return .json(400, ["code": 400, "error_code": "refresh_token_not_found", "msg": "Invalid Refresh Token: Refresh Token Not Found"])
+                return Self.gotrueError(request, 400, "refresh_token_not_found", "Invalid Refresh Token: Refresh Token Not Found")
             }
             return .json(200, newSession())
         case ("POST", "logout"):
             return .empty(204)
         case ("GET", "user"):
             guard bearerIsValid(request) else {
-                return .json(401, ["code": 401, "error_code": "bad_jwt", "msg": "invalid JWT"])
+                return Self.gotrueError(request, 401, "bad_jwt", "invalid JWT")
             }
             return .json(200, Self.user())
         default:
-            return .json(404, ["code": 404, "error_code": "not_found", "msg": "not found"])
+            return Self.gotrueError(request, 404, "not_found", "not found")
         }
+    }
+
+    /// GoTrue's error body. A client that sends `X-Supabase-Api-Version: 2024-01-01` (supabase-swift
+    /// does) gets the newer shape {"code": "<error code>", "msg"} and the version header back, as the
+    /// real server answers; other clients get the older {"code": <status>, "error_code", "msg"}.
+    private static func gotrueError(_ request: StubRequest, _ status: Int, _ errorCode: String, _ msg: String) -> StubReply {
+        if request.header("x-supabase-api-version") == "2024-01-01" {
+            return .json(status, ["code": errorCode, "msg": msg], headers: ["X-Supabase-Api-Version": "2024-01-01"])
+        }
+        return .json(status, ["code": status, "error_code": errorCode, "msg": msg])
     }
 
     private func bearerIsValid(_ request: StubRequest) -> Bool {
