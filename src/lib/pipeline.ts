@@ -1,4 +1,5 @@
 import type { AdminClient } from "@/lib/supabase/admin";
+import { readAll } from "@/lib/supabase/read-all";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
 import {
@@ -7,7 +8,6 @@ import {
   buildParcelUpdate,
   chooseParcel,
   mergeIntoManual,
-  normalizeOrderNumber,
   parcelTotal,
   rebuildParcel,
   splitOrders,
@@ -18,7 +18,6 @@ import {
   type ParcelUpdate,
 } from "@/lib/match";
 import { categoryForTwins, type TwinCategory } from "@/lib/match/category";
-import { normalizeTracking } from "@/lib/carriers";
 import { env } from "@/lib/env";
 import { isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
 import { PENDING_GRACE_MS } from "@/lib/unread";
@@ -492,35 +491,17 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
 }
 
 /** Every parcel of this user, with item names, so the rules in chooseParcel see the same data everywhere. */
-async function findParcel(db: AdminClient, userId: string, x: Extraction) {
+async function findParcel(db: AdminClient, userId: string, x: Extraction): Promise<ParcelCandidate | null> {
   // The embedded items are filtered too: the service role sees every account's rows.
-  const { data, error } = await db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId).eq("parcel_items.user_id", userId);
-  if (error) throw new Error(`parcels lookup failed: ${error.message}`);
-  const candidates = data.map(({ parcel_items, ...row }) => ({ ...row, itemNames: parcel_items.map((it: { name: string }) => it.name) }));
-  const seen = new Set(candidates.map((c) => c.id));
-  for (const typed of await typedInByNumber(db, userId, x)) if (!seen.has(typed.id)) candidates.push(typed);
-  return chooseParcel(candidates, x);
-}
-
-/**
- * Typed-in parcels whose tracking or order number is the mail's, looked up by the number so the
- * 1000-row cap on the list above cannot hide them. chooseParcel still decides whether they match.
- */
-async function typedInByNumber(db: AdminClient, userId: string, x: Extraction): Promise<ParcelCandidate[]> {
-  const typedIn = () => db.from("parcels").select("*, parcel_items(name)").eq("user_id", userId).eq("parcel_items.user_id", userId).eq("source", "manual");
-  const lookups: Array<ReturnType<typeof typedIn>> = [];
-  const tracking = x.tracking_number.value ? normalizeTracking(x.tracking_number.value) : "";
-  if (tracking) lookups.push(typedIn().eq("tracking_number", tracking));
-  const order = x.order_number.value?.trim();
-  if (order) lookups.push(typedIn().in("order_number", [...new Set([order, normalizeOrderNumber(order)])]));
-
-  const found: ParcelCandidate[] = [];
-  for (const lookup of lookups) {
-    const { data, error } = await lookup;
-    if (error) throw new Error(`parcels lookup failed: ${error.message}`);
-    for (const { parcel_items, ...row } of data) found.push({ ...row, itemNames: parcel_items.map((it: { name: string }) => it.name) });
+  // Read past the 1000-row cap: a parcel cut off here would be missed and opened a second time.
+  let data: Array<ParcelRow & { parcel_items: Array<{ name: string }> }>;
+  try {
+    data = await readAll(() => db.from("parcels").select("*, parcel_items(name)", { count: "exact" }).eq("user_id", userId).eq("parcel_items.user_id", userId));
+  } catch (err) {
+    throw new Error(`parcels lookup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  return found;
+  const candidates = data.map(({ parcel_items, ...row }) => ({ ...row, itemNames: parcel_items.map((it) => it.name) }));
+  return chooseParcel(candidates, x);
 }
 
 /**

@@ -5,14 +5,17 @@
  */
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { readAll } from "../src/lib/supabase/read-all";
 
 process.loadEnvFile(path.join(process.cwd(), [".env", "local"].join(".")));
 
 async function main() {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
 
-  const { data: events, error } = await db.from("screen_events").select("decision, reason, from_domain, flagged_at").limit(10000);
-  if (error) throw new Error(error.message);
+  // Every event, past the 1000-row cap (a `.limit` above it is still cut at 1000): the counts below are read as totals.
+  const events = await readAll<{ decision: string; reason: string | null; from_domain: string | null; flagged_at: string | null }>(() =>
+    db.from("screen_events").select("decision, reason, from_domain, flagged_at", { count: "exact" }),
+  );
   const { count: read } = await db.from("extractions").select("id", { count: "exact", head: true });
   const { count: parcels } = await db.from("parcels").select("id", { count: "exact", head: true });
   const { count: noOrder } = await db.from("parcels").select("id", { count: "exact", head: true }).is("ordered_at", null);

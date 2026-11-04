@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
 import { isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
@@ -16,22 +17,32 @@ export default async function ParcelsPage() {
   const supabase = await createClient();
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
   // and never stands in for the list or the other counts.
-  const [{ data, error: listError }, { count: waiting }, { count: deliveredCount, error: deliveredError }, { count: cancelledCount, error: cancelledError }] =
+  const [list, { count: waiting }, { count: deliveredCount, error: deliveredError }, { count: cancelledCount, error: cancelledError }] =
     await Promise.all([
-      supabase
-        .from("parcels")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("expected_date", { ascending: true, nullsFirst: false })
-        .order("last_email_at", { ascending: false, nullsFirst: false }),
+      // Every parcel, past the 1000-row cap: the sections and their counts are read as complete.
+      // A failed page is caught here, so the counts below still show.
+      readAll<ParcelRow>(() =>
+        supabase
+          .from("parcels")
+          .select("*", { count: "exact" })
+          .eq("user_id", user.id)
+          .order("expected_date", { ascending: true, nullsFirst: false })
+          .order("last_email_at", { ascending: false, nullsFirst: false }),
+      ).then(
+        (rows): ParcelRow[] | null => rows,
+        (err: unknown) => {
+          console.error("parcels page:", err instanceof Error ? err.message : err);
+          return null;
+        },
+      ),
       supabase.from("emails").select("id", { count: "exact", head: true }).or(UNREAD_FILTER()),
       // Counted by the database, so the 1000-row cap on reads cannot cut it short.
       supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "delivered"),
       supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "cancelled"),
     ]);
-  // A failed read is told apart from having no parcels: by its error, never by the empty list.
-  if (listError) console.error("parcels page:", listError.message);
-  const parcels: ParcelRow[] = data ?? [];
+  // A failed read is told apart from having no parcels: by null, never by the empty list.
+  const listFailed = list === null;
+  const parcels: ParcelRow[] = list ?? [];
   const today = todayJst();
 
   const open = parcels.filter((p) => p.status !== "delivered" && p.status !== "cancelled");
@@ -65,7 +76,7 @@ export default async function ParcelsPage() {
     </div>
   );
 
-  if (listError) {
+  if (listFailed) {
     return (
       <div className="flex flex-col gap-4">
         {addLink}
