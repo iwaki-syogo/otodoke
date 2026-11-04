@@ -48,9 +48,9 @@ port = 54329
 # Configure one of the supported pooler modes: `transaction`, `session`.
 pool_mode = "transaction"
 # How many server connections to allow per user/database pair.
-default_pool_size = 20
+default_pool_size = 15
 # Maximum number of client connections allowed.
-max_client_conn = 100
+max_client_conn = 200
 
 # [db.vault]
 # secret_key = "env(SECRET_VALUE)"
@@ -128,8 +128,8 @@ file_size_limit = "50MiB"
 enabled = true
 
 # Image transformation API is available to Supabase Pro plan.
-# [storage.image_transformation]
-# enabled = true
+[storage.image_transformation]
+enabled = true
 
 # Store analytical data in S3 for running ETL jobs over Iceberg Catalog
 # This feature is only available on the hosted platform.
@@ -159,7 +159,7 @@ site_url = "https://otodoke.app"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://otodoke.app/auth/confirm**", "https://*-syodgo-9062s-projects.vercel.app/auth/confirm**", "http://localhost:3015/auth/confirm**", "http://otodoke.localhost:3015/auth/confirm**"]
+additional_redirect_urls = ["https://otodoke.app/auth/confirm**", "https://otodoke-app-git-dev-syodgo-9062s-projects.vercel.app/auth/confirm**", "http://localhost:3015/auth/confirm**", "http://otodoke.localhost:3015/auth/confirm**"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
