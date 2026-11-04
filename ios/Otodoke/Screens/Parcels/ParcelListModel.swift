@@ -53,6 +53,9 @@ final class ParcelListModel {
     private(set) var isDeliveringAll = false
     /// Under 「すべて受取済にする」 when some of them could not be saved.
     private(set) var deliverAllMessage: String?
+    /// A read again (pull to refresh, back from a detail) failed: the list shown is kept, with
+    /// 「読み込めませんでした」 above it.
+    private(set) var refreshFailed = false
 
     @ObservationIgnored private let today: @Sendable () -> String
     @ObservationIgnored private let now: @Sendable () -> Date
@@ -115,17 +118,28 @@ final class ParcelListModel {
 
     // MARK: reading
 
-    /// Reads the list and the counts (also pull to refresh). A failed list is 「読み込めませんでした」,
-    /// never an empty list; the counts show on their own either way.
+    /// Reads the list and the counts (also pull to refresh). A failed first read is
+    /// 「読み込めませんでした」, never an empty list; a failed read again keeps the list shown and says
+    /// 「読み込めませんでした」 above it. The counts show on their own either way.
     func load() async {
         if loadState == .idle { loadState = .loading }
+        let shown = loadState == .loaded
         if await reread() {
+            refreshFailed = false
             rowMessages = [:]
             deliverAllMessage = nil
+        } else if shown {
+            refreshFailed = true
         } else {
             rows = []
             loadState = .failed
         }
+    }
+
+    /// Back on the list from a parcel's detail, where 「届いていない」 or the category may have
+    /// changed it: the list is read again (kept on screen while it is read).
+    func returnedFromDetail() async {
+        await load()
     }
 
     /// Reads the list and the counts. The counts are taken as they come (each fails on its own); the
@@ -139,6 +153,7 @@ final class ParcelListModel {
         guard case let .loaded(fresh) = readList else { return false }
         rows = ParcelRules.baseOrder(fresh)
         loadState = .loaded
+        refreshFailed = false
         return true
     }
 

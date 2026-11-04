@@ -9,6 +9,11 @@ enum ParcelRoute: Hashable {
     case parcel(id: String)
     case delivered
     case cancelled
+
+    var isParcel: Bool {
+        if case .parcel = self { return true }
+        return false
+    }
 }
 
 struct ParcelListView<Detail: View>: View {
@@ -28,6 +33,12 @@ struct ParcelListView<Detail: View>: View {
             content
                 .navigationTitle("荷物")
                 .navigationBarTitleDisplayMode(.inline)
+                .onChange(of: path) { before, after in
+                    // Back from a detail: read the list again (it stays on screen meanwhile).
+                    if before.contains(where: \.isParcel) && !after.contains(where: \.isParcel) {
+                        Task { await model.returnedFromDetail() }
+                    }
+                }
                 .navigationDestination(for: ParcelRoute.self) { route in
                     switch route {
                     case let .parcel(id): detail(id)
@@ -58,7 +69,7 @@ struct ParcelListView<Detail: View>: View {
             if let notice = model.waitingNotice {
                 waitingNotice(notice)
             }
-            if model.loadState == .failed {
+            if model.loadState == .failed || model.refreshFailed {
                 Text("読み込めませんでした")
                     .font(.subheadline)
                     .foregroundStyle(OtodokeColor.errorText)
@@ -67,6 +78,8 @@ struct ParcelListView<Detail: View>: View {
                     .background(Palette.errorBackground, in: RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.errorBorder))
                     .listRowStyle()
+            }
+            if model.loadState == .failed {
                 pageLinks
             } else if model.isEmpty {
                 EmptyParcels(openSettings: openSettings, openDemo: { openURL(WebLink.settingsDemo) })

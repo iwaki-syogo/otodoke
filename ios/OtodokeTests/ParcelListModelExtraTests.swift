@@ -101,6 +101,46 @@ struct ParcelListModelExtraTests {
         #expect(model.deliveredCount == 1)
     }
 
+    @Test func backFromADetailReadsTheListAgain() async throws {
+        // 「届いていない」 on the detail page put a delivered parcel back to shipped.
+        let fake = FakeSupabase.make()
+        await fake.insert("parcels", [Rows.parcel(5, ["status": "delivered", "expected_date": "2026-11-05"])])
+        let model = try await make(fake)
+        await model.load()
+        #expect(model.sections.open.isEmpty)
+        await fake.touch("parcels", id: Rows.id(5), ["status": "shipped"])
+        let before = await fake.requests().filter(Self.isListRead).count
+        await model.returnedFromDetail()
+        #expect(await fake.requests().filter(Self.isListRead).count == before + 1)
+        #expect(model.sections.soon.map(\.id) == [Rows.id(5)])
+        #expect(model.refreshFailed == false)
+    }
+
+    @Test func aFailedReadBackFromADetailKeepsTheListAndSaysSo() async throws {
+        let fake = FakeSupabase.make()
+        await fake.insert("parcels", [Rows.parcel(1, ["status": "shipped", "expected_date": "2026-11-05"])])
+        let model = try await make(fake)
+        await model.load()
+        await fake.fail(where: Self.isListRead, nth: 2, with: .transport(.notConnectedToInternet))
+        await model.returnedFromDetail()
+        #expect(model.loadState == .loaded)
+        #expect(model.refreshFailed == true)
+        #expect(model.sections.soon.map(\.id) == [Rows.id(1)])
+        // The next read that works takes the message away.
+        await model.load()
+        #expect(model.refreshFailed == false)
+    }
+
+    @Test func aFirstReadThatFailsShowsNoList() async throws {
+        let fake = FakeSupabase.make()
+        await fake.insert("parcels", [Rows.parcel(1, ["status": "shipped", "expected_date": "2026-11-05"])])
+        await fake.fail(where: Self.isListRead, with: .http(500))
+        let model = try await make(fake)
+        await model.load()
+        #expect(model.loadState == .failed)
+        #expect(model.rows.isEmpty)
+    }
+
     @Test func aSwipeOnAParcelNotInTheListSendsNothing() async throws {
         let fake = FakeSupabase.make()
         let model = try await make(fake)

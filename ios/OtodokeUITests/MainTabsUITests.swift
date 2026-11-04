@@ -41,6 +41,19 @@ final class MainTabsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["読み込めませんでした"].firstMatch.waitForExistence(timeout: 10))
     }
 
+    func testBackFromADetailReadsAgainAndKeepsTheList() {
+        let app = launch("list")
+        let card = app.staticTexts["架空の本 上下巻セット"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["読み込めませんでした"].exists)
+        card.tap()
+        XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        // The read again fails here (no session): the list stays, with the message above it.
+        XCTAssertTrue(app.staticTexts["読み込めませんでした"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["架空の本 上下巻セット"].exists)
+    }
+
     func testTheSwipeSaysItCouldNotSaveWithoutASession() {
         let app = launch("list")
         let card = app.staticTexts["架空の本 上下巻セット"]
