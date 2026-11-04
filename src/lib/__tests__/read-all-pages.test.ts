@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { todayJst } from "@/lib/format";
+import { shiftMonth, todayJst } from "@/lib/format";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, describeQuery, type Query, type Row } from "./fake-db";
 import { findAll, hasClasses, linksTo, parseHtml, textOf, type HtmlNode } from "./html-tree";
@@ -121,6 +121,46 @@ describe("/app reads every parcel", () => {
     expect(parcelLinks(root)).toHaveLength(3);
     expect(listReads(db)).toHaveLength(1);
     expect(failureBoxes(root)).toHaveLength(0);
+  });
+});
+
+describe("/app/calendar reads every parcel of the month", () => {
+  // Next month, so every day of it is still ahead whatever today is.
+  const next = shiftMonth(todayJst().slice(0, 7), 1);
+  const render = async () => {
+    const Page = (await import("@/app/app/calendar/page")).default;
+    return parseHtml(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ m: next }) })));
+  };
+  const seed = (n: number) => {
+    for (let i = 0; i < n; i++) {
+      db.rows("parcels").push({ id: `p-${String(i).padStart(5, "0")}`, user_id: USER, shop: "テスト店", title: `品名${i}`, status: "shipped", expected_date: `${next}-15`, created_at: "2026-11-01T00:00:00Z" });
+    }
+  };
+
+  it("shows 1,001 parcels on one day, past the 1000-row cap", async () => {
+    seed(1001);
+    const root = await render();
+    expect(parcelLinks(root)).toHaveLength(1001);
+    expect(textOf(root)).toContain("1001件");
+    expect(failureBoxes(root)).toHaveLength(0);
+    const reads = listReads(db);
+    expect(reads.map((q) => q.range)).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+    for (const q of reads) expect(q.orders.map((o) => o.column), describeQuery(q)).toEqual(["expected_date", "expected_window_start", "id"]);
+  });
+
+  it("shows 「読み込めませんでした」, not a shorter list, when the second page fails", async () => {
+    seed(1001);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    db.hooks.push((q) => (q.table === "parcels" && q.range?.[0] === 1000 ? fail : undefined));
+    const root = await render();
+    expect(failureBoxes(root)).toHaveLength(1);
+    expect(parcelLinks(root)).toHaveLength(0);
+    expect(textOf(root)).not.toContain("この月の予定はありません");
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
   });
 });
 

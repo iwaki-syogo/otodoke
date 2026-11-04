@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { daysInMonth, formatDateJa, formatWindow, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
 import { faceToFace, type ParcelRow } from "@/lib/match";
@@ -22,19 +23,26 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const last = `${ym}-${String(daysInMonth(y, mo)).padStart(2, "0")}`;
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("parcels")
-    .select("*")
-    // A window that started last month and runs into this one belongs here too.
-    .lte("expected_date", last)
-    .or(`expected_date.gte.${first},expected_date_end.gte.${first}`)
-    .neq("status", "cancelled")
-    .order("expected_date", { ascending: true })
-    .order("expected_window_start", { ascending: true, nullsFirst: false });
-  // A failed read is told apart from a month with nothing ahead.
-  if (error) console.error("calendar page:", error.message);
-  const failed = Boolean(error);
-  const parcels: ParcelRow[] = data ?? [];
+  // Every parcel of the month, past the 1000-row cap: the days and their counts are read as complete.
+  let list: ParcelRow[] | null = null;
+  try {
+    list = await readAll<ParcelRow>(() =>
+      supabase
+        .from("parcels")
+        .select("*", { count: "exact" })
+        // A window that started last month and runs into this one belongs here too.
+        .lte("expected_date", last)
+        .or(`expected_date.gte.${first},expected_date_end.gte.${first}`)
+        .neq("status", "cancelled")
+        .order("expected_date", { ascending: true })
+        .order("expected_window_start", { ascending: true, nullsFirst: false }),
+    );
+  } catch (err) {
+    console.error("calendar page:", err instanceof Error ? err.message : err);
+  }
+  // A failed read is told apart from a month with nothing ahead: by null, never by the empty list.
+  const failed = list === null;
+  const parcels: ParcelRow[] = list ?? [];
 
   // Only what is still ahead: past days, delivered and cancelled parcels are not shown.
   const byDay = upcomingByDay(parcels, today, first, last);

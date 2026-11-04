@@ -37,7 +37,7 @@ describe("[N4] the calendar", () => {
   const source = read("calendar/page.tsx");
 
   it("says 読み込めませんでした when the read fails, apart from an empty month", () => {
-    expect(source).toMatch(/const \{ data, error \} = await supabase/);
+    expect(source).toMatch(/let list: ParcelRow\[\] \| null = null;\s*try \{\s*list = await readAll<ParcelRow>\([\s\S]*?\} catch \(err\) \{[\s\S]*?const failed = list === null;/);
     expect(source).toMatch(/failed \? \(\s*<p[^>]*>読み込めませんでした<\/p>/);
     expect(source).toContain("この月の予定はありません");
   });
