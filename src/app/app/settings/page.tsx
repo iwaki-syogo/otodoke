@@ -6,11 +6,15 @@ import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
+import { readAll } from "@/lib/supabase/read-all";
+import type { Tables } from "@/lib/db/database.types";
 
 export const metadata = { title: "設定" };
 
 /** One filter for every shop: it names what the mail is about, never who sent it. */
 const GMAIL_FILTER = "{注文 発送 出荷 配達 お届け 配送 到着 荷物}";
+
+type DroppedRow = Pick<Tables<"screen_events">, "id" | "subject" | "from_domain" | "created_at" | "flagged_at">;
 
 type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string; flagged?: string }>;
 
@@ -34,14 +38,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
     .from("emails")
     .select("id", { count: "exact", head: true })
     .or(UNREAD_FILTER());
-  const { data: dropped, error: droppedError } = await supabase
-    .from("screen_events")
-    .select("id, subject, from_domain, created_at, flagged_at")
-    .eq("decision", "dropped")
-    .order("created_at", { ascending: false })
-    .limit(30);
-  // A failed read is told apart from no dropped mail: by its error, never by the empty list.
-  if (droppedError) console.error("settings page (dropped):", droppedError.message);
+  // Every dropped mail, newest first: the heading's count is the whole count, and each one can be marked.
+  let dropped: DroppedRow[] | null;
+  try {
+    dropped = await readAll<DroppedRow>(() =>
+      supabase
+        .from("screen_events")
+        .select("id, subject, from_domain, created_at, flagged_at", { count: "exact" })
+        .eq("decision", "dropped")
+        .order("created_at", { ascending: false }),
+    );
+  } catch (err) {
+    dropped = null;
+    console.error("settings page (dropped):", err instanceof Error ? err.message : err);
+  }
+  // A failed read is told apart from no dropped mail: by the failure, never by the empty list.
+  const droppedError = dropped === null;
   const confirmUrl = confirmation ? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "") : null;
 
   return (
