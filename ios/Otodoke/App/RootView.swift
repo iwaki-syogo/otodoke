@@ -21,6 +21,18 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        #if DEBUG
+        if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
+            MainTabView(listModel: preview.makeModel())
+        } else {
+            signedInOrOut
+        }
+        #else
+        signedInOrOut
+        #endif
+    }
+
+    private var signedInOrOut: some View {
         Group {
             switch RootScreen.of(auth.state) {
             case .loading:
@@ -28,8 +40,7 @@ struct RootView: View {
             case .login:
                 LoginView(auth: auth)
             case .main:
-                // The tabs (荷物 / カレンダー / 支出 / 設定) go here.
-                Color.clear
+                MainTabView(reader: ParcelReader(provider: auth.provider), writer: ParcelWriter(provider: auth.provider))
             }
         }
         .task { await auth.start() }
