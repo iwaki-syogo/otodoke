@@ -1,9 +1,17 @@
-// TDD-STUB(task 7): type stub written by the test architect so the test target compiles.
-// Keep the names and shapes; replace the bodies with the implementation and delete this marker line.
-// Every write goes through ONE private function: id validated as a UUID, `user_id = me` always,
-// select("id,status,updated_at"), exactly one row back or it is not a success.
+// Every write to parcels goes through ONE private function, `write(id:_:)`: the id validated as a
+// UUID, `user_id = me` always, select("id,status,updated_at"), and exactly one row back or it is not
+// a success. The conditions of each kind of change are built inside that function from the change
+// itself, so a caller cannot leave one out:
+//  1. user_id = me on every write
+//  2. 「届いた」 never from cancelled (status != cancelled), and only on the version the screen showed
+//  3. back only to a RESTORABLE status, and only from delivered (status = delivered, updated_at as read)
+//  4. a category is one of the seven, recorded as the user's (category_source = "user")
+// updated_at is sent exactly as it was read (a String; supabase-swift percent-encodes its "+").
+// No automatic retries (PostgREST's retryEnabled is false), and a result that is unknown is never
+// sent again: the caller reads the row again instead.
 
 import Foundation
+import PostgREST
 
 /// A parcel as the screen saw it: the version a write is conditioned on.
 struct ParcelVersion: Equatable, Sendable {
@@ -63,21 +71,202 @@ struct ParcelWriter: Sendable {
 
     /// 「届いた」 on the version shown: status → delivered where id, user_id = me, status != cancelled,
     /// status = shown.status and updated_at = shown.updatedAt (sent verbatim).
-    func markDelivered(_ shown: ParcelVersion) async -> WriteOutcome<UndoToken> { .notUpdated(.failed) }
+    func markDelivered(_ shown: ParcelVersion) async -> WriteOutcome<UndoToken> {
+        switch await write(id: shown.id, .deliver(shown)) {
+        case let .success(after):
+            return .success(UndoToken(id: after.id, restoreTo: shown.status, deliveredUpdatedAt: after.updatedAt))
+        case let .notUpdated(reason):
+            return .notUpdated(reason)
+        case .unknown:
+            return .unknown
+        }
+    }
 
     /// 「すべて受取済にする」: the single-row write for each, in the order given, one result per id.
-    func markDelivered(all shown: [ParcelVersion]) async -> [BulkItemResult<UndoToken>] { [] }
+    func markDelivered(all shown: [ParcelVersion]) async -> [BulkItemResult<UndoToken>] {
+        guard shown.count <= Self.maxAtOnce else {
+            return shown.map { BulkItemResult(id: $0.id, outcome: .notUpdated(.invalidInput)) }
+        }
+        var results: [BulkItemResult<UndoToken>] = []
+        for version in shown {
+            results.append(BulkItemResult(id: version.id, outcome: await markDelivered(version)))
+        }
+        return results
+    }
 
     /// 「元に戻す」: status → token.restoreTo (RESTORABLE only) where id, user_id = me, status = delivered
     /// and updated_at = token.deliveredUpdatedAt.
-    func undoDelivered(_ token: UndoToken) async -> WriteOutcome<ParcelVersion> { .notUpdated(.failed) }
+    func undoDelivered(_ token: UndoToken) async -> WriteOutcome<ParcelVersion> {
+        await write(id: token.id, .restore(to: token.restoreTo, deliveredUpdatedAt: token.deliveredUpdatedAt))
+    }
 
-    func undoDelivered(all tokens: [UndoToken]) async -> [BulkItemResult<ParcelVersion>] { [] }
+    func undoDelivered(all tokens: [UndoToken]) async -> [BulkItemResult<ParcelVersion>] {
+        guard tokens.count <= Self.maxAtOnce else {
+            return tokens.map { BulkItemResult(id: $0.id, outcome: .notUpdated(.invalidInput)) }
+        }
+        var results: [BulkItemResult<ParcelVersion>] = []
+        for token in tokens {
+            results.append(BulkItemResult(id: token.id, outcome: await undoDelivered(token)))
+        }
+        return results
+    }
 
     /// 「届いていない」: reads the row (tracking_number, carrier, status, updated_at), refuses unless
     /// delivered, then status → StatusRules.undeliveredStatus where status = delivered and updated_at = read.
-    func markNotDelivered(id: String) async -> WriteOutcome<ParcelVersion> { .notUpdated(.failed) }
+    func markNotDelivered(id: String) async -> WriteOutcome<ParcelVersion> {
+        guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
+        guard let me = await provider.currentUserID() else { return .notUpdated(.failed) }
+        let rows: [ReadBack]
+        do {
+            let response = try await provider.database.from("parcels")
+                .select("tracking_number,carrier,status,updated_at")
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+                .execute()
+            rows = try JSONDecoder().decode([ReadBack].self, from: response.data)
+        } catch {
+            return .notUpdated(.failed)
+        }
+        guard rows.count <= 1 else { return .notUpdated(.failed) }
+        // Not there (or not ours), or no longer delivered: nothing to put back.
+        guard let row = rows.first, row.status == "delivered" else { return .notUpdated(.conflict) }
+        let to = StatusRules.undeliveredStatus(trackingNumber: row.trackingNumber, carrier: row.carrier)
+        return await write(id: id, .restore(to: to, deliveredUpdatedAt: row.updatedAt))
+    }
 
     /// category = one of the seven, category_source = "user".
-    func setCategory(id: String, category: ParcelCategory) async -> WriteOutcome<ParcelVersion> { .notUpdated(.failed) }
+    func setCategory(id: String, category: ParcelCategory) async -> WriteOutcome<ParcelVersion> {
+        await write(id: id, .category(category))
+    }
+
+    // MARK: the one write
+
+    /// One kind of change; the conditions it is written under follow from it.
+    private enum Change {
+        /// status → delivered, on the version shown (never from cancelled).
+        case deliver(ParcelVersion)
+        /// status → a RESTORABLE status, only from delivered at the updated_at given.
+        case restore(to: String, deliveredUpdatedAt: String)
+        /// category → one of the seven, as the user's choice.
+        case category(ParcelCategory)
+    }
+
+    /// The columns asked back from a write.
+    private struct Written: Decodable {
+        let id: String
+        let status: String
+        let updatedAt: String
+
+        enum CodingKeys: String, CodingKey {
+            case id, status
+            case updatedAt = "updated_at"
+        }
+    }
+
+    /// The columns 「届いていない」 reads before it writes.
+    private struct ReadBack: Decodable {
+        let trackingNumber: String?
+        let carrier: String?
+        let status: String
+        let updatedAt: String
+
+        enum CodingKeys: String, CodingKey {
+            case status, carrier
+            case trackingNumber = "tracking_number"
+            case updatedAt = "updated_at"
+        }
+    }
+
+    private func write(id: String, _ change: Change) async -> WriteOutcome<ParcelVersion> {
+        guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
+        let values: [String: String]
+        switch change {
+        case let .deliver(shown):
+            // Only from a status 「元に戻す」 can return to: never cancelled, never delivered again.
+            guard StatusRules.restorable.contains(shown.status), !shown.updatedAt.isEmpty else { return .notUpdated(.invalidInput) }
+            values = ["status": "delivered"]
+        case let .restore(to, deliveredUpdatedAt):
+            guard StatusRules.restorable.contains(to), !deliveredUpdatedAt.isEmpty else { return .notUpdated(.invalidInput) }
+            values = ["status": to]
+        case let .category(category):
+            guard ParcelCategory.allCases.contains(category) else { return .notUpdated(.invalidInput) }
+            values = ["category": category.rawValue, "category_source": "user"]
+        }
+
+        // Signed out, or the token could not be refreshed: nothing is sent.
+        guard let me = await provider.currentUserID() else { return .notUpdated(.failed) }
+        do {
+            _ = try await provider.auth.session
+        } catch {
+            return .notUpdated(.failed)
+        }
+
+        let response: PostgrestResponse<Void>
+        do {
+            var query = try provider.database.from("parcels").update(values)
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+            switch change {
+            case let .deliver(shown):
+                query = query
+                    .neq("status", value: "cancelled")
+                    .eq("status", value: shown.status)
+                    .eq("updated_at", value: shown.updatedAt)
+            case let .restore(_, deliveredUpdatedAt):
+                query = query
+                    .eq("status", value: "delivered")
+                    .eq("updated_at", value: deliveredUpdatedAt)
+            case .category:
+                break
+            }
+            response = try await query.select("id,status,updated_at").execute()
+        } catch {
+            return Self.outcome(of: error)
+        }
+
+        // A 2xx answer: the rows the update changed, as an array.
+        guard let rows = try? JSONDecoder().decode([Written].self, from: response.data) else {
+            // The server said yes but the body is unreadable: whether a row changed is not known.
+            return .unknown
+        }
+        guard !rows.isEmpty else { return .notUpdated(.conflict) }
+        guard rows.count == 1, let row = rows.first else { return .notUpdated(.failed) }
+        guard row.id.lowercased() == id.lowercased() else { return .unknown }
+        return .success(ParcelVersion(id: row.id, status: row.status, updatedAt: row.updatedAt))
+    }
+
+    // MARK: helpers
+
+    static func isUUID(_ id: String) -> Bool {
+        UUID(uuidString: id) != nil
+    }
+
+    /// URL errors raised before the request could leave the device: the write surely did not happen.
+    private static let neverSent: Set<URLError.Code> = [
+        .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+        .internationalRoamingOff, .dataNotAllowed, .callIsActive, .badURL, .unsupportedURL,
+        .appTransportSecurityRequiresSecureConnection, .secureConnectionFailed,
+        .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot,
+        .serverCertificateNotYetValid, .clientCertificateRejected, .clientCertificateRequired,
+    ]
+
+    /// Codex-P3. An answer from PostgREST with an error: the statement was rolled back (not updated).
+    /// No answer after the request may have left (a timeout, a lost connection), or a gateway that
+    /// gave up waiting (502, 504): unknown.
+    private static func outcome<T>(of error: any Error) -> WriteOutcome<T> {
+        switch error {
+        case let error as URLError:
+            return neverSent.contains(error.code) ? .notUpdated(.failed) : .unknown
+        case is PostgrestError:
+            return .notUpdated(.failed)
+        case let error as HTTPError:
+            return [502, 504].contains(error.response.statusCode) ? .unknown : .notUpdated(.failed)
+        case is CancellationError:
+            // Thrown by the client's cancellation check, before anything is sent.
+            return .notUpdated(.failed)
+        default:
+            // Encoding the body, or the session in the fetch: nothing was sent.
+            return .notUpdated(.failed)
+        }
+    }
 }
