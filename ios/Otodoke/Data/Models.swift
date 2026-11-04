@@ -1,6 +1,4 @@
-// TDD-STUB(task 4): type stub written by the test architect so the test target compiles.
-// Keep the names and shapes; replace the bodies with the implementation and delete this marker line.
-// Rows decode with a plain JSONDecoder() from the database's snake_case JSON (add CodingKeys).
+// Rows decode with a plain JSONDecoder() from the database's snake_case JSON (explicit CodingKeys).
 // Every date and time column stays a String exactly as PostgREST sent it (updated_at above all:
 // it is sent back verbatim as the optimistic-check value).
 
@@ -50,6 +48,35 @@ struct ParcelRow: Codable, Equatable, Identifiable, Sendable {
     var totalAmount: Int?
     var createdAt: String
     var updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case shop
+        case shopKey = "shop_key"
+        case title
+        case status
+        case source
+        case category
+        case categorySource = "category_source"
+        case carrier
+        case trackingNumber = "tracking_number"
+        case trackingUrl = "tracking_url"
+        case orderNumber = "order_number"
+        case orderedAt = "ordered_at"
+        case expectedDate = "expected_date"
+        case expectedDateEnd = "expected_date_end"
+        case expectedText = "expected_text"
+        case expectedWindowStart = "expected_window_start"
+        case expectedWindowEnd = "expected_window_end"
+        case lastEmailAt = "last_email_at"
+        case needsReview = "needs_review"
+        case requiresPresence = "requires_presence"
+        case presenceEvidence = "presence_evidence"
+        case totalAmount = "total_amount"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
 }
 
 /// public.parcel_items.
@@ -60,6 +87,15 @@ struct ParcelItemRow: Codable, Equatable, Identifiable, Sendable {
     var quantity: Int?
     var unitPrice: Int?
     var createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case parcelId = "parcel_id"
+        case name
+        case quantity
+        case unitPrice = "unit_price"
+        case createdAt = "created_at"
+    }
 }
 
 /// The embedded public.emails columns the detail page reads.
@@ -72,9 +108,21 @@ struct EmailSummary: Decodable, Equatable, Sendable {
     var classification: String?
     var textBody: String?
     var htmlBody: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case subject
+        case fromAddress = "from_address"
+        case fromName = "from_name"
+        case sentAt = "sent_at"
+        case classification
+        case textBody = "text_body"
+        case htmlBody = "html_body"
+    }
 }
 
-/// public.extractions with its mail embedded (`emails(...)` may come back as an object, an array or null).
+/// public.extractions with its mail embedded (`emails(...)` may come back as an object, an array or null;
+/// an array gives its first mail, as the Web's detail page does).
 /// `notes` is `result.notes` when it is a string.
 struct ExtractionWithEmail: Decodable, Equatable, Sendable {
     var id: String
@@ -83,12 +131,39 @@ struct ExtractionWithEmail: Decodable, Equatable, Sendable {
     var notes: String?
     var email: EmailSummary?
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case confidence
+        case createdAt = "created_at"
+        case result
+        case emails
+    }
+
+    private enum ResultKeys: String, CodingKey {
+        case notes
+    }
+
     init(from decoder: Decoder) throws {
-        id = ""
-        confidence = nil
-        createdAt = ""
-        notes = nil
-        email = nil
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
+        createdAt = try c.decode(String.self, forKey: .createdAt)
+
+        // result is free-form JSON: only a string `notes` inside an object counts.
+        if let result = try? c.nestedContainer(keyedBy: ResultKeys.self, forKey: .result) {
+            notes = try? result.decodeIfPresent(String.self, forKey: .notes)
+        } else {
+            notes = nil
+        }
+
+        let noMail = try !c.contains(.emails) || c.decodeNil(forKey: .emails)
+        if noMail {
+            email = nil
+        } else if let one = try? c.decode(EmailSummary.self, forKey: .emails) {
+            email = one
+        } else {
+            email = try c.decode([EmailSummary].self, forKey: .emails).first
+        }
     }
 }
 
@@ -96,4 +171,9 @@ struct ExtractionWithEmail: Decodable, Equatable, Sendable {
 struct InboxAddressRow: Codable, Equatable, Sendable {
     var userId: String
     var localPart: String
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case localPart = "local_part"
+    }
 }
