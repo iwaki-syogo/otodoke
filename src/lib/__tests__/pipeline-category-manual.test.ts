@@ -128,11 +128,33 @@ describe("a mail for a parcel typed in by hand", () => {
     const many = Array.from({ length: 1000 }, (_, i) =>
       parcel({ id: `p-old-${i}`, shop: "過去の店", status: "delivered", tracking_number: `9${String(i).padStart(11, "0")}`, created_at: "2026-01-01T00:00:00Z" }),
     );
-    const db = new FakeDb({ parcels: [...many, manual()] });
+    // readAll orders by id: this id sorts after every "p-old-*", so the parcel is only on the second page.
+    const ID = "p-zz-manual";
+    const db = new FakeDb({ parcels: [...many, manual({ id: ID })] });
+    // Record what each lookup page actually returned.
+    const pages: Array<{ range: [number, number] | null; ids: unknown[] }> = [];
+    const execute = db.execute.bind(db);
+    db.execute = (q: Query) => {
+      const result = execute(q);
+      if (q.table === "parcels" && q.op === "select" && /parcel_items\(name\)/.test(q.columns ?? "")) {
+        pages.push({ range: q.range, ids: Array.isArray(result.data) ? (result.data as Row[]).map((r) => r.id) : [] });
+      }
+      return result;
+    };
     await run(db);
     expect(userParcels(db)).toHaveLength(1001);
-    expect(db.find("parcels", "p-manual")!.status).toBe("shipped");
-    expect(userParcels(db).filter((r) => r.tracking_number === T).map((r) => r.id)).toEqual(["p-manual"]);
+    expect(db.find("parcels", ID)!.status).toBe("shipped");
+    expect(userParcels(db).filter((r) => r.tracking_number === T).map((r) => r.id)).toEqual([ID]);
+    // Found, not opened anew and then folded in as a twin (that ends in the same rows).
+    expect(db.callsOn("parcels", "insert")).toHaveLength(0);
+    // Two pages were read, and the parcel came back on the second one, not the first.
+    expect(pages.map((p) => p.range)).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+    expect(pages[0].ids).toHaveLength(1000);
+    expect(pages[0].ids).not.toContain(ID);
+    expect(pages[1].ids).toEqual([ID]);
   });
 });
 

@@ -199,6 +199,30 @@ describe("the pipeline finds the parcel past the first 1000", () => {
     expect(mine).toHaveLength(1001);
     expect(pipelineDb.find("parcels", "p-target")!.status).toBe("shipped");
   });
+
+  it("fails the mail, and opens no new parcel, when the second page of the lookup fails", async () => {
+    const pipelineDb = new FakeDb({
+      parcels: [
+        ...Array.from({ length: 1000 }, (_, i) => row({ id: `p-old-${String(i).padStart(4, "0")}`, status: "delivered", order_number: `OLD-${i}` })),
+        row({ id: "p-target", order_number: ORDER }),
+      ],
+      emails: [],
+    });
+    pipelineDb.hooks.push((q) => (q.table === "parcels" && q.op === "select" && q.range?.[0] === 1000 ? fail : undefined));
+    await expect(
+      processInboundEmail(asAdmin(pipelineDb), mailOf("2026-11-03T01:00:00Z"), {
+        precomputed: precomputed(reading({ relevance: "shipped", order_number: sure(ORDER), expected_date: sure("2026-11-05") })),
+      }),
+    ).rejects.toThrow(/parcels lookup failed/);
+    // The second page was asked for and failed; nothing was filed on a shorter list.
+    expect(pipelineDb.callsOn("parcels", "select").some((q) => q.range?.[0] === 1000)).toBe(true);
+    expect(pipelineDb.rows("parcels").filter((r) => r.user_id === USER)).toHaveLength(1001);
+    expect(pipelineDb.callsOn("parcels", "insert")).toHaveLength(0);
+    expect(pipelineDb.find("parcels", "p-target")!.status).toBe("ordered");
+    const emails = pipelineDb.rows("emails");
+    expect(emails).toHaveLength(1);
+    expect(emails[0].processing_status).toBe("failed");
+  });
 });
 
 describe("report:screen counts every screen event", () => {
