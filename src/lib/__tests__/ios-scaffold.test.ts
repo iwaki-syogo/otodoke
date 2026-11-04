@@ -49,6 +49,8 @@ describe("task 1: ios/.gitignore", () => {
       mkdirSync(path.join(dir, "ios"), { recursive: true });
       cpSync(path.join(IOS, ".gitignore"), path.join(dir, "ios/.gitignore"));
       for (const p of paths) {
+        // Never overwrite a file already there (the copied ignore files are among the paths).
+        if (existsSync(path.join(dir, p))) continue;
         mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
         writeFileSync(path.join(dir, p), "x");
       }
@@ -124,7 +126,13 @@ describe("task 1: settings and secrets", () => {
   });
 
   it("no file under ios/ holds this project's ref, a JWT, or another service's key", () => {
-    const texts = walk(IOS).filter((f) => /\.(swift|yml|yaml|xcconfig|example|plist|xcprivacy|json|resolved|md|txt|strings)$/.test(f));
+    // Files git tracks or would take (`git add -A`); git-ignored ones such as Secrets.xcconfig never leave the machine.
+    const listed = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "ios"], { cwd: ROOT, encoding: "utf8" })
+      .split("\0")
+      .filter(Boolean)
+      .map((f) => path.join(ROOT, f))
+      .filter((f) => existsSync(f));
+    const texts = listed.filter((f) => /\.(swift|yml|yaml|xcconfig|example|plist|xcprivacy|json|resolved|md|txt|strings)$/.test(f));
     expect(texts.length).toBeGreaterThan(0);
     for (const f of texts) {
       const s = readFileSync(f, "utf8");
