@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { loginErrorMessage, sentAddress } from "@/lib/login-errors";
 import { sendMagicLink } from "./actions";
+import { LoginSubmitButton } from "./submit-button";
 
 type SearchParams = Promise<{ sent?: string; error?: string; next?: string }>;
 
@@ -43,12 +44,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
           placeholder="you@example.com"
           className="rounded-lg border border-neutral-300 px-3 py-3 text-base outline-none focus:border-neutral-900"
         />
-        <button
-          type="submit"
-          className="rounded-lg bg-neutral-900 px-4 py-3 text-base font-medium text-white active:opacity-80"
-        >
-          リンクを送る
-        </button>
+        <LoginSubmitButton />
       </form>
     </main>
   );
