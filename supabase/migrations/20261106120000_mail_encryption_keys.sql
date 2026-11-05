@@ -63,3 +63,52 @@ alter table public.emails
 
 -- For the "暗号化する" batches: a user's processed rows still in plaintext.
 create index emails_user_plain_idx on public.emails(user_id) where body_state = 'plain';
+
+-- Put a registered key in use: retire the key in use (if any) and activate the new one in one
+-- call, so there is never a moment with no key in use (a mail read then would be dropped, not
+-- sealed). Called only by the server (src/lib/mail-keys.ts activateKey) after it checked the
+-- browser's answer; the answer's SHA-256 is checked again here against the stored challenge_hash.
+-- Returns the activated key_id. Raises 'P0002' when no such pending key matches.
+create function public.activate_user_key(
+  p_user_id uuid,
+  p_key_id text,
+  p_challenge_hash text
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_now timestamptz := now();
+  v_count integer;
+begin
+  if p_user_id is null or p_key_id is null or p_key_id !~ '^[0-9a-f]{32}$'
+     or p_challenge_hash is null or p_challenge_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'activate_user_key: expected a user id, a key id and a SHA-256 hex hash' using errcode = '22023';
+  end if;
+
+  -- One activation at a time per user: lock this user's key rows until the end of this call.
+  perform 1 from public.user_keys where user_id = p_user_id for update;
+
+  perform 1 from public.user_keys
+  where user_id = p_user_id and key_id = p_key_id and activated_at is null and challenge_hash = p_challenge_hash;
+  if not found then
+    raise exception 'activate_user_key: no matching key is waiting to be activated' using errcode = 'P0002';
+  end if;
+
+  update public.user_keys set retired_at = v_now
+  where user_id = p_user_id and activated_at is not null and retired_at is null;
+
+  update public.user_keys set activated_at = v_now
+  where user_id = p_user_id and key_id = p_key_id and activated_at is null;
+  get diagnostics v_count = row_count;
+  if v_count <> 1 then
+    raise exception 'activate_user_key: the key was not activated' using errcode = 'P0002';
+  end if;
+  return p_key_id;
+end;
+$$;
+
+revoke all on function public.activate_user_key(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.activate_user_key(uuid, text, text) to service_role;

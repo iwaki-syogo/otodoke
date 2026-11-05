@@ -272,7 +272,23 @@ export class FakeDb {
 
   rpc(name: string, args?: unknown): Promise<Result> {
     this.rpcCalls.push({ name, args });
+    if (name === "activate_user_key") return Promise.resolve(this.activateUserKey(args as { p_user_id: string; p_key_id: string; p_challenge_hash: string }));
     return Promise.resolve({ data: "ok", error: null });
+  }
+
+  /**
+   * supabase/migrations/20261106120000 activate_user_key, in one synchronous step like the one
+   * database call: the pending key with this id and challenge hash is activated and the key in use
+   * (if any) retired together. The real function is exercised on Postgres; this mirrors its rule.
+   */
+  private activateUserKey(a: { p_user_id: string; p_key_id: string; p_challenge_hash: string }): Result {
+    const keys = this.rows("user_keys").filter((k) => k.user_id === a.p_user_id);
+    const pending = keys.find((k) => k.key_id === a.p_key_id && isNil(k.activated_at) && k.challenge_hash === a.p_challenge_hash);
+    if (!pending) return { data: null, error: { message: "activate_user_key: no matching key is waiting to be activated" } };
+    const now = this.tick();
+    for (const k of keys) if (!isNil(k.activated_at) && isNil(k.retired_at)) k.retired_at = now;
+    pending.activated_at = now;
+    return { data: a.p_key_id, error: null };
   }
 
   /** Queries on one table with one operation, in the order they ran. */

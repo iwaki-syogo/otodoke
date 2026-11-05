@@ -104,6 +104,44 @@ describe("key registration", () => {
     expect(db.rows("user_keys").find((k) => k.key_id === first.keyId)?.retired_at).toBeTruthy();
   });
 
+  it("retires the old key and activates the new one in one database call, never two writes", async () => {
+    const db = new FakeDb();
+    const first = await registerAndActivate(db);
+    const { input } = await newRegistration("あたらしい合言葉ですよ");
+    const reg = await registerKey(asAdmin(db), USER, input);
+    if (!reg.ok) throw new Error(reg.error);
+    const recipient = await openStoredKey(stored(db, reg.keyId), "あたらしい合言葉ですよ", USER);
+    const answer = await openBytes(recipient, challengeAad(USER, reg.keyId), reg.challenge);
+    const updatesBefore = db.callsOn("user_keys", "update").length;
+    const rpcBefore = db.rpcCalls.length;
+
+    expect(await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer) })).toEqual({ ok: true, keyId: reg.keyId });
+    expect(db.callsOn("user_keys", "update").length).toBe(updatesBefore);
+    const calls = db.rpcCalls.slice(rpcBefore);
+    expect(calls.map((c) => c.name)).toEqual(["activate_user_key"]);
+    // The hash of what the browser opened, for the database to check again (not the stored value echoed back).
+    const { sha256, toHex } = await import("@/lib/crypto/bytes");
+    expect(calls[0].args).toEqual({ p_user_id: USER, p_key_id: reg.keyId, p_challenge_hash: toHex(await sha256(answer)) });
+    expect(current(db).map((k) => k.key_id)).toEqual([reg.keyId]);
+    expect(stored(db, first.keyId).retired_at).toBeTruthy();
+  });
+
+  it("when the database refuses the activation, the old key stays in use", async () => {
+    const db = new FakeDb();
+    const first = await registerAndActivate(db);
+    const { input } = await newRegistration();
+    const reg = await registerKey(asAdmin(db), USER, input);
+    if (!reg.ok) throw new Error(reg.error);
+    const answer = await openBytes(await openStoredKey(stored(db, reg.keyId), PASS, USER), challengeAad(USER, reg.keyId), reg.challenge);
+    db.rpc = (name: string, args?: unknown) => {
+      db.rpcCalls.push({ name, args });
+      return Promise.resolve({ data: null, error: { message: "activate_user_key: no matching key is waiting to be activated" } });
+    };
+    const res = await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer) });
+    expect(res.ok).toBe(false);
+    expect(current(db).map((k) => k.key_id)).toEqual([first.keyId]);
+  });
+
   it("an unfinished registration is replaced by the next one", async () => {
     const db = new FakeDb();
     await registerKey(asAdmin(db), USER, (await newRegistration()).input);

@@ -421,6 +421,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_user_key: {
+        Args: { p_challenge_hash: string; p_key_id: string; p_user_id: string }
+        Returns: string
+      }
       claim_claude_call: {
         Args: {
           p_global_limit: number

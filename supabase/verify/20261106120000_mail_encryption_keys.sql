@@ -7,6 +7,7 @@
 --   2. anon: no privilege on user_keys; authenticated: select only; service_role: select/insert/update/delete
 --   3. emails has the four new columns and the three checks
 --   4. every existing email is 'plain' (nothing has been sealed by the old code)
+--   5. activate_user_key: security definer, search_path='', execute for service_role only
 
 -- 1
 select c.relname, c.relrowsecurity as rls_on,
@@ -37,3 +38,11 @@ order by conname;
 
 -- 4
 select body_state, processing_status, count(*) from public.emails group by 1, 2 order by 1, 2;
+
+-- 5
+select p.proname, p.prosecdef as security_definer, p.proconfig as settings,
+       has_function_privilege('anon', p.oid, 'execute') as anon_exec,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated_exec,
+       has_function_privilege('service_role', p.oid, 'execute') as service_role_exec
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname = 'activate_user_key';

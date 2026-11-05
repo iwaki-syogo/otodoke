@@ -111,27 +111,21 @@ export async function activateKey(db: AdminClient, userId: string, input: unknow
     if (error) throw new Error(`user_keys lookup failed: ${error.message}`);
     if (!pending) throw new Error("no key is waiting to be activated");
     const answer = fromBase64(a.challenge);
-    if (answer.length !== 32 || toHex(await sha256(answer)) !== pending.challenge_hash) {
+    const answerHash = toHex(await sha256(answer));
+    if (answer.length !== 32 || answerHash !== pending.challenge_hash) {
       throw new Error("the key did not open its challenge");
     }
 
-    const now = new Date().toISOString();
-    const { error: retireError } = await db
-      .from("user_keys")
-      .update({ retired_at: now })
-      .eq("user_id", userId)
-      .not("activated_at", "is", null)
-      .is("retired_at", null);
-    if (retireError) throw new Error(`user_keys retire failed: ${retireError.message}`);
-    const { data: activated, error: activateError } = await db
-      .from("user_keys")
-      .update({ activated_at: now })
-      .eq("user_id", userId)
-      .eq("key_id", a.keyId)
-      .is("activated_at", null)
-      .select("key_id");
+    // Retire the old key and activate this one in one database call (activate_user_key), so a
+    // mail read in between never finds no key in use and gets dropped instead of sealed. The
+    // function checks the answer's hash against the stored one again, under a lock.
+    const { data: activated, error: activateError } = await db.rpc("activate_user_key", {
+      p_user_id: userId,
+      p_key_id: a.keyId,
+      p_challenge_hash: answerHash,
+    });
     if (activateError) throw new Error(`user_keys activate failed: ${activateError.message}`);
-    if (!activated || activated.length !== 1) throw new Error("the key was not activated");
+    if (activated !== a.keyId) throw new Error("the key was not activated");
     return { ok: true, keyId: a.keyId };
   } catch (err) {
     return fail(err);

@@ -12,6 +12,8 @@
 --
 --   select body_state, count(*) from public.emails group by body_state;
 
+drop function public.activate_user_key(uuid, text, text);
+
 drop index if exists public.emails_user_plain_idx;
 alter table public.emails
   drop constraint emails_body_closed_has_no_plaintext,
