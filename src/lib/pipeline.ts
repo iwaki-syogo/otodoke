@@ -202,12 +202,18 @@ async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenRes
   return isPurchaseMail(mail);
 }
 
-/** Bookkeeping must never cost a mail, so a failure here is only logged. */
+/**
+ * Bookkeeping must never cost a mail, so a failure here is only logged.
+ *
+ * The subject is kept only for a dropped mail (disclosed: the settings list shows it so a wrong
+ * drop can be noticed). A rescued mail goes on to be read and sealed, so its subject must not
+ * stay here in plaintext.
+ */
 async function logScreenEvent(db: AdminClient, mail: InboundEmail, decision: "dropped" | "rescued", reason: string) {
   const { error } = await db.from("screen_events").insert({
     user_id: mail.userId,
     from_domain: domainOf(mail.from),
-    subject: mail.subject.slice(0, 200),
+    subject: decision === "dropped" ? mail.subject.slice(0, 200) : null,
     decision,
     reason,
   });
