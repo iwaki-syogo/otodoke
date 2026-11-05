@@ -96,6 +96,9 @@ final class ParcelDetailModel {
     static let categoryNotFound = "見つかりません"
     static let categoryNotAllowed = "選べない分類です"
     static let unconfirmed = "確かめられませんでした"
+    /// A tap after 「確かめられませんでした」 read the parcel, and the last write had not gone through.
+    static let notDeliveredNotSaved = "保存されていませんでした。もう一度押してください。"
+    static let categoryNotSaved = "保存されていませんでした。もう一度選んでください。"
 
     let id: String
     let reader: ParcelReader
@@ -217,7 +220,14 @@ final class ParcelDetailModel {
         defer { isMarkingNotDelivered = false }
 
         if isUnconfirmed {
-            if await rereadParcel() != .applied, isUnconfirmed { notDeliveredError = Self.unconfirmed }
+            switch await rereadParcel() {
+            case .applied:
+                // Still delivered: the lost 「届いていない」 had not gone through. Otherwise the page now
+                // shows what it is.
+                if row?.status == "delivered" { notDeliveredError = Self.notDeliveredNotSaved }
+            default:
+                if isUnconfirmed { notDeliveredError = Self.unconfirmed }
+            }
             return
         }
 
@@ -252,8 +262,14 @@ final class ParcelDetailModel {
             isSavingCategory = true
             categoryError = nil
             defer { isSavingCategory = false }
-            if await rereadParcel() != .applied, isUnconfirmed { categoryError = Self.unconfirmed }
+            let outcome = await rereadParcel()
+            if outcome != .applied, isUnconfirmed { categoryError = Self.unconfirmed }
             shownCategory = Self.category(of: row)
+            // The category read is the one shown before: the lost choice had not gone through.
+            // Otherwise the chip now shows what was saved.
+            if outcome == .applied, row != nil, shownCategory == previous, shownCategory != category {
+                categoryError = Self.categoryNotSaved
+            }
             return false
         }
 
