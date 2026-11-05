@@ -90,7 +90,7 @@ const PARCEL_DEFAULTS: Row = {
 
 const DEFAULTS: Record<string, Row> = {
   parcels: PARCEL_DEFAULTS,
-  emails: { classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null },
+  emails: { classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
   extractions: { parcel_id: null, confidence: null },
   parcel_items: { quantity: null, unit_price: null, evidence: null },
 };

@@ -59,10 +59,14 @@ export type Database = {
       }
       emails: {
         Row: {
+          body_envelope: Json | null
+          body_state: string
           classification: string | null
           created_at: string
           error: string | null
+          forwarding_confirm_url: string | null
           from_address: string | null
+          from_domain: string | null
           from_name: string | null
           html_body: string | null
           id: string
@@ -76,10 +80,14 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          body_envelope?: Json | null
+          body_state?: string
           classification?: string | null
           created_at?: string
           error?: string | null
+          forwarding_confirm_url?: string | null
           from_address?: string | null
+          from_domain?: string | null
           from_name?: string | null
           html_body?: string | null
           id?: string
@@ -93,10 +101,14 @@ export type Database = {
           user_id: string
         }
         Update: {
+          body_envelope?: Json | null
+          body_state?: string
           classification?: string | null
           created_at?: string
           error?: string | null
+          forwarding_confirm_url?: string | null
           from_address?: string | null
+          from_domain?: string | null
           from_name?: string | null
           html_body?: string | null
           id?: string
@@ -359,6 +371,48 @@ export type Database = {
           reason?: string | null
           subject?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      user_keys: {
+        Row: {
+          activated_at: string | null
+          challenge_hash: string
+          created_at: string
+          kdf_iterations: number
+          kdf_salt: string
+          key_id: string
+          public_key: string
+          retired_at: string | null
+          user_id: string
+          wrap_iv: string
+          wrapped_private_key: string
+        }
+        Insert: {
+          activated_at?: string | null
+          challenge_hash: string
+          created_at?: string
+          kdf_iterations: number
+          kdf_salt: string
+          key_id: string
+          public_key: string
+          retired_at?: string | null
+          user_id: string
+          wrap_iv: string
+          wrapped_private_key: string
+        }
+        Update: {
+          activated_at?: string | null
+          challenge_hash?: string
+          created_at?: string
+          kdf_iterations?: number
+          kdf_salt?: string
+          key_id?: string
+          public_key?: string
+          retired_at?: string | null
+          user_id?: string
+          wrap_iv?: string
+          wrapped_private_key?: string
         }
         Relationships: []
       }

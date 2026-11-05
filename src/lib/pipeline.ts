@@ -19,7 +19,9 @@ import {
 } from "@/lib/match";
 import { categoryForTwins, type TwinCategory } from "@/lib/match/category";
 import { env } from "@/lib/env";
-import { isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
+import { forwardingConfirmUrl, isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
+import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
+import type { MailPlaintext, PublicRecipient } from "@/lib/crypto/envelope";
 import { PENDING_GRACE_MS } from "@/lib/unread";
 import { screenMail, type ScreenResult } from "@/lib/screen";
 import { emailBodyText } from "@/lib/text/html-to-text";
@@ -51,6 +53,11 @@ export type PipelineOutcome =
 export interface PipelineOptions {
   /** A Claude result computed earlier (the demo loader). Skips the API call. */
   precomputed?: ExtractionResult;
+  /**
+   * An anonymized sample mail from the repository (the demo loader). While the user has no key it
+   * stays readable after it is read; a real mail is dropped instead. With a key it is sealed too.
+   */
+  publicSample?: boolean;
 }
 
 /**
@@ -101,9 +108,14 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     }
   }
 
+  // Decided before anything is stored or paid for: a read mail is sealed to this key, or not kept.
+  const key = await currentSealKey(db, mail.userId);
+  const emailId = crypto.randomUUID();
+
   const { data: emailRow, error: insertError } = await db
     .from("emails")
     .insert({
+      id: emailId,
       user_id: mail.userId,
       provider_email_id: mail.providerEmailId,
       message_id: mail.messageId,
@@ -113,8 +125,16 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       sent_at: mail.sentAt,
       text_body: mail.text,
       html_body: mail.html,
+      from_domain: domainOf(mail.from),
       classification: isForwardingConfirmation ? "forwarding_confirmation" : null,
       processing_status: isForwardingConfirmation ? "processed" : "pending",
+      // Gmail's confirmation is done as it arrives: only its approval link stays in plaintext.
+      ...(isForwardingConfirmation
+        ? {
+            forwarding_confirm_url: forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? ""),
+            ...(await closedBody(key, mail.userId, emailId, plaintextOf(mail), false)),
+          }
+        : {}),
     })
     .select("id")
     .single();
@@ -142,7 +162,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 
   try {
-    return await understandAndFile(db, mail, emailRow.id, options);
+    return await understandAndFile(db, mail, emailRow.id, key, options);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await db.from("emails").update({ processing_status: "failed", error: message }).eq("id", emailRow.id);
@@ -150,8 +170,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 }
 
-function domainOf(address: string): string | null {
-  return address.split("@")[1]?.trim().toLowerCase() || null;
+function plaintextOf(mail: InboundEmail): MailPlaintext {
+  return { subject: mail.subject, from_name: mail.fromName, from_address: mail.from, text: mail.text, html: mail.html };
 }
 
 /**
@@ -197,7 +217,7 @@ async function logScreenEvent(db: AdminClient, mail: InboundEmail, decision: "dr
   if (cleanupError) console.error("screen_events cleanup failed:", cleanupError.message);
 }
 
-async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: string, options: PipelineOptions): Promise<PipelineOutcome> {
+async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: string, key: PublicRecipient | null, options: PipelineOptions): Promise<PipelineOutcome> {
   // 2. Understand it.
   const extraction =
     options.precomputed ??
@@ -236,7 +256,9 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
       confidence: Math.max(0, Math.min(1, main.overall_confidence)),
     });
     if (error) throw new Error(`extractions insert failed: ${error.message}`);
-    const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
+    // Marked read and closed in one write: a read mail never stays in plaintext.
+    const closed = await closedBody(key, mail.userId, emailId, plaintextOf(mail), options.publicSample === true);
+    const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed", ...closed }).eq("id", emailId);
     if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
     return { kind: "noted", emailId };
   }
@@ -246,7 +268,9 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
   // 5. A carrier mail that came before the shop mail opened a parcel of its own: fold it in.
   const parcelId = await absorbTwins(db, mail.userId, filed.parcelId);
 
-  const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed" }).eq("id", emailId);
+  // Marked read and closed in one write: a read mail never stays in plaintext.
+  const closed = await closedBody(key, mail.userId, emailId, plaintextOf(mail), options.publicSample === true);
+  const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed", ...closed }).eq("id", emailId);
   if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
 
   return { kind: "processed", emailId, parcelId, created: filed.created, extraction: x };
