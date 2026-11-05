@@ -4,6 +4,7 @@
 
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import WebKit
 
 struct TrackingLinkView: View {
@@ -66,6 +67,25 @@ enum TrackingPage {
             .joined(separator: "&")
     }
 
+    /// The sheet's title: the host of the page shown now (the web view has no address bar, so a page
+    /// that moved to another site is never shown under the carrier's name).
+    static func title(for url: URL?) -> String {
+        url?.host() ?? ""
+    }
+
+    /// How long a copied tracking number stays on the pasteboard.
+    static let copyLifetime: TimeInterval = 5 * 60
+
+    /// This device only (not Universal Clipboard), and gone after copyLifetime.
+    static func copyOptions(now: Date) -> [UIPasteboard.OptionsKey: Any] {
+        [.localOnly: true, .expirationDate: now.addingTimeInterval(copyLifetime)]
+    }
+
+    @MainActor
+    static func copy(_ number: String, to pasteboard: UIPasteboard = .general, now: Date = Date()) {
+        pasteboard.setItems([[UTType.utf8PlainText.identifier: number]], options: copyOptions(now: now))
+    }
+
     private static func formEncode(_ text: String) -> String {
         var out = ""
         for byte in Array(text.utf8) {
@@ -88,12 +108,14 @@ private struct PostedPageSheet: View {
     let fields: [String: String]
     @Environment(\.dismiss) private var dismiss
     @State private var state = PostedWebView.LoadState.loading
+    /// The page shown now (the title follows it).
+    @State private var shownURL: URL?
 
     var body: some View {
         NavigationStack {
             ZStack {
                 if let request = TrackingPage.postRequest(url: url, fields: fields) {
-                    PostedWebView(request: request, state: $state)
+                    PostedWebView(request: request, state: $state, shownURL: $shownURL)
                 }
                 switch state {
                 case .loading:
@@ -109,7 +131,7 @@ private struct PostedPageSheet: View {
                     EmptyView()
                 }
             }
-            .navigationTitle(url.host() ?? "")
+            .navigationTitle(TrackingPage.title(for: shownURL ?? url))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -126,9 +148,10 @@ private struct PostedWebView: UIViewRepresentable {
 
     let request: URLRequest
     @Binding var state: LoadState
+    @Binding var shownURL: URL?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(state: $state)
+        Coordinator(state: $state, shownURL: $shownURL)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -146,9 +169,11 @@ private struct PostedWebView: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let state: Binding<LoadState>
+        private let shownURL: Binding<URL?>
 
-        init(state: Binding<LoadState>) {
+        init(state: Binding<LoadState>, shownURL: Binding<URL?>) {
             self.state = state
+            self.shownURL = shownURL
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
@@ -170,7 +195,12 @@ private struct PostedWebView: UIViewRepresentable {
             if state.wrappedValue != .loaded { state.wrappedValue = .loading }
         }
 
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            shownURL.wrappedValue = webView.url
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            shownURL.wrappedValue = webView.url
             state.wrappedValue = .loaded
         }
 
@@ -217,7 +247,7 @@ struct CopyThenOpenSheet: View {
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Button {
-                            UIPasteboard.general.string = number
+                            TrackingPage.copy(number)
                             copied = true
                         } label: {
                             // Both labels share the place, so the button keeps the wider one's width.

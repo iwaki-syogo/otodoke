@@ -63,6 +63,40 @@ final class KeychainSessionStorage: SessionStorage {
     }
 }
 
+extension KeychainSessionStorage {
+    /// Deletes every item of this service. true when none is left (deleted, or there was none).
+    @discardableResult
+    func removeAll() -> Bool {
+        let status = SecItemDelete([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ] as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+}
+
+/// The Keychain outlives the app: deleting the app leaves the session, and installing it again would
+/// open signed in (there is no sign-out button in this batch, so deleting the app is how people sign
+/// out). A marker file in Application Support goes with the app: when it is missing, this is the first
+/// launch of this install, and any session left in the Keychain is removed before anything reads it.
+enum FreshInstall {
+    static var marker: URL {
+        URL.applicationSupportDirectory.appending(path: "installed", directoryHint: .notDirectory)
+    }
+
+    /// true when the leftovers were cleared (the marker was missing). The marker is placed only once
+    /// the Keychain is clear, so a failed delete is tried again on the next launch.
+    @discardableResult
+    static func clearLeftoverSession(marker: URL = FreshInstall.marker, keychain: KeychainSessionStorage = KeychainSessionStorage()) -> Bool {
+        let files = FileManager.default
+        guard !files.fileExists(atPath: marker.path(percentEncoded: false)) else { return false }
+        guard keychain.removeAll() else { return false }
+        try? files.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+        files.createFile(atPath: marker.path(percentEncoded: false), contents: Data())
+        return true
+    }
+}
+
 /// supabase-swift's storage slot, filled by the app's SessionStorage.
 private struct SessionStorageBridge: AuthLocalStorage {
     let storage: any SessionStorage

@@ -25,6 +25,8 @@ enum AppStart {
     static func load(info: [String: Any] = Bundle.main.infoDictionary ?? [:]) -> AppStart {
         do {
             let config = try AppConfig.load(info: info)
+            // Before the auth client reads the Keychain: a session left by an earlier install goes.
+            FreshInstall.clearLeftoverSession()
             return .ready(AuthService(provider: .live(config: config)))
         } catch {
             return .misconfigured(error)
