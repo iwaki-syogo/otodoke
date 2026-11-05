@@ -35,6 +35,14 @@ final class ParcelListModel {
     static let undoFailedText = "元に戻せませんでした"
     static let unconfirmedText = "確かめられませんでした"
 
+    /// Under 「N 件を受取済にしました」 when some of them were saved with an unknown answer (Codex-P3):
+    /// 「元に戻す」 cannot put those back.
+    static func cannotUndoNote(_ n: Int) -> String { "\(n) 件は元に戻せません" }
+    /// After 「元に戻す」 on such a toast: the rows put back, and the rows left delivered.
+    static func undoneButKeptText(restored: Int, kept: Int) -> String {
+        "\(restored) 件を元に戻しました。\(kept) 件は受取済のままです"
+    }
+
     enum LoadState: Equatable, Sendable {
         case idle
         case loading
@@ -65,6 +73,8 @@ final class ParcelListModel {
     private(set) var counts: ParcelCounts?
     /// Ids whose 「届いた」 is being saved (保存中…).
     private(set) var saving: Set<String> = []
+    /// Ids being read again after an unknown result (「確かめる」): 確認中…, nothing is sent.
+    private(set) var checking: Set<String> = []
     /// Per-card messages: 保存できませんでした。もう一度スワイプしてください。 / 確かめられませんでした
     private(set) var rowMessages: [String: String] = [:]
     /// Ids whose last write has an unknown result that no read has settled yet (Codex-P3). Nothing is
@@ -72,6 +82,8 @@ final class ParcelListModel {
     /// a swipe on one only reads the list again.
     private(set) var unconfirmed: Set<String> = []
     private(set) var toast: ListToast?
+    /// A second line of the toast: 「1 件は元に戻せません」.
+    private(set) var toastNote: String?
     /// Bumped by every new toast, so an older timer or an older 「元に戻す」 never touches a newer toast.
     private(set) var toastGeneration = 0
     /// The toasts (by generation) whose 「元に戻す」 is being sent.
@@ -90,6 +102,8 @@ final class ParcelListModel {
     @ObservationIgnored private let sleep: Sleep
     /// What 「元に戻す」 on the current toast puts back: only the rows that were written.
     @ObservationIgnored private var undoTokens: [UndoToken] = []
+    /// How many rows the current toast counts that 「元に戻す」 does not put back.
+    @ObservationIgnored private var undoKeeps = 0
     @ObservationIgnored private var toastTimer: Task<Void, Never>?
 
     /// Each read of the list gets a number; only the newest one is shown.
@@ -289,6 +303,8 @@ final class ParcelListModel {
         defer { saving.remove(id) }
 
         if unconfirmed.contains(id) {
+            checking.insert(id)
+            defer { checking.remove(id) }
             if await reread() != .applied, unconfirmed.contains(id) {
                 rowMessages[id] = Self.unconfirmedText
             }
@@ -381,7 +397,14 @@ final class ParcelListModel {
         }
         let written = tokens.count + confirmed
         if written > 0 {
-            showToast(ListToast(text: "\(written) 件を受取済にしました", canUndo: !tokens.isEmpty), undo: tokens)
+            // R1: the rows whose answer was lost are counted, but 「元に戻す」 cannot put them back.
+            let canUndo = !tokens.isEmpty
+            showToast(
+                ListToast(text: "\(written) 件を受取済にしました", canUndo: canUndo),
+                undo: tokens,
+                note: canUndo && confirmed > 0 ? Self.cannotUndoNote(confirmed) : nil,
+                keeps: canUndo ? confirmed : 0
+            )
         }
         if failed { deliverAllMessage = Self.deliverAllFailedText }
     }
@@ -404,6 +427,7 @@ final class ParcelListModel {
         defer { undoingGenerations.remove(generation) }
 
         let tokens = undoTokens
+        let keeps = undoKeeps
         // Not known yet (rare): not sent; the read below tells.
         let blocked = tokens.filter { unconfirmed.contains($0.id) }.map(\.id)
         let sendable = tokens.filter { !unconfirmed.contains($0.id) }
@@ -457,7 +481,13 @@ final class ParcelListModel {
             return
         }
         switch outcome {
-        case .done: hideToast()
+        case .done:
+            if keeps > 0 {
+                // R1: say that some stay delivered, rather than hide the toast as if all went back.
+                showToast(ListToast(text: Self.undoneButKeptText(restored: tokens.count, kept: keeps), canUndo: false), undo: [])
+            } else {
+                hideToast()
+            }
         case .failed: showToast(ListToast(text: Self.undoFailedText, canUndo: false), undo: [])
         case .unconfirmed: showToast(ListToast(text: Self.unconfirmedText, canUndo: false), undo: [])
         }
@@ -489,9 +519,11 @@ final class ParcelListModel {
         counts?.delivered = .loaded(max(0, count + n))
     }
 
-    private func showToast(_ next: ListToast, undo tokens: [UndoToken]) {
+    private func showToast(_ next: ListToast, undo tokens: [UndoToken], note: String? = nil, keeps: Int = 0) {
         toast = next
+        toastNote = note
         undoTokens = next.canUndo ? tokens : []
+        undoKeeps = next.canUndo ? keeps : 0
         toastGeneration += 1
         let generation = toastGeneration
         toastTimer?.cancel()
@@ -503,7 +535,9 @@ final class ParcelListModel {
             }
             guard let self, self.toastGeneration == generation, !self.isUndoing else { return }
             self.toast = nil
+            self.toastNote = nil
             self.undoTokens = []
+            self.undoKeeps = 0
         }
     }
 
@@ -512,7 +546,9 @@ final class ParcelListModel {
         toastTimer?.cancel()
         toastTimer = nil
         toast = nil
+        toastNote = nil
         undoTokens = []
+        undoKeeps = 0
     }
 }
 
@@ -525,7 +561,9 @@ extension ParcelListModel {
         loadState: LoadState,
         rowMessages: [String: String] = [:],
         saving: Set<String> = [],
-        toast: ListToast? = nil
+        checking: Set<String> = [],
+        toast: ListToast? = nil,
+        toastNote: String? = nil
     ) {
         self.rows = ParcelRules.baseOrder(rows)
         rowsVersion &+= 1
@@ -533,7 +571,9 @@ extension ParcelListModel {
         self.loadState = loadState
         self.rowMessages = rowMessages
         self.saving = saving
+        self.checking = checking
         self.toast = toast
+        self.toastNote = toastNote
     }
 }
 #endif

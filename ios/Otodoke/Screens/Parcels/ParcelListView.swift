@@ -289,13 +289,14 @@ struct ParcelListView<Detail: View>: View {
 
     private func cardRow(_ parcel: ParcelRow) -> some View {
         let isSaving = model.saving.contains(parcel.id)
+        let isChecking = model.checking.contains(parcel.id)
         return VStack(alignment: .leading, spacing: 4) {
             Button {
                 path.append(.parcel(id: parcel.id))
             } label: {
                 ParcelCardView(parcel: parcel, today: model.todayJst)
                     .overlay(alignment: .trailing) {
-                        if isSaving { SavingBadge() }
+                        if isSaving { SavingBadge(text: isChecking ? "確認中…" : "保存中…") }
                     }
             }
             .buttonStyle(.plain)
@@ -332,8 +333,13 @@ struct ParcelListView<Detail: View>: View {
     private var toast: some View {
         if let toast = model.toast {
             HStack(spacing: 12) {
-                Text(toast.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(toast.text)
+                    if let note = model.toastNote {
+                        Text(note).font(.caption)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if toast.canUndo {
                     Button {
                         Task { await model.undo() }
@@ -365,12 +371,14 @@ struct ParcelListView<Detail: View>: View {
 
 // MARK: - parts
 
-/// 「保存中…」 over a card whose 「届いた」 is being saved.
+/// 「保存中…」 over a card whose 「届いた」 is being saved (「確認中…」 while it is only read again).
 private struct SavingBadge: View {
+    let text: String
+
     var body: some View {
         HStack(spacing: 6) {
             ProgressView().tint(.white)
-            Text("保存中…")
+            Text(text)
         }
         .font(.subheadline.weight(.bold))
         .foregroundStyle(.white)
@@ -380,22 +388,61 @@ private struct SavingBadge: View {
     }
 }
 
-/// The amber box of 要確認, made of its rows' backgrounds.
+/// The amber box of 要確認 (border-amber-300 bg-amber-50), made of its rows' backgrounds: each row
+/// draws its part of the fill and of the border.
 private struct AmberBox: View {
     let top: Bool
     let bottom: Bool
 
     var body: some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: top ? 16 : 0,
-            bottomLeadingRadius: bottom ? 16 : 0,
-            bottomTrailingRadius: bottom ? 16 : 0,
-            topTrailingRadius: top ? 16 : 0
-        )
-        .fill(Palette.amberBackground)
+        ZStack {
+            UnevenRoundedRectangle(
+                topLeadingRadius: top ? 16 : 0,
+                bottomLeadingRadius: bottom ? 16 : 0,
+                bottomTrailingRadius: bottom ? 16 : 0,
+                topTrailingRadius: top ? 16 : 0
+            )
+            .fill(Palette.amberBackground)
+            AmberBoxEdge(top: top, bottom: bottom, radius: 16)
+                .stroke(Palette.amberBorder, lineWidth: 1)
+        }
         .padding(.horizontal, 16)
         .padding(.top, top ? 6 : 0)
         .padding(.bottom, bottom ? 6 : 0)
+    }
+}
+
+/// The part of the box's 1-pt border one row draws: both sides always, the top edge on the first row,
+/// the bottom edge on the last. The line runs inside the row, so the rows' sides meet end to end.
+private struct AmberBoxEdge: Shape {
+    let top: Bool
+    let bottom: Bool
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let inset: CGFloat = 0.5
+        let minX = rect.minX + inset, maxX = rect.maxX - inset
+        let minY = top ? rect.minY + inset : rect.minY
+        let maxY = bottom ? rect.maxY - inset : rect.maxY
+        let r = max(0, min(radius, (maxX - minX) / 2, (maxY - minY) / ((top && bottom) ? 2 : 1)))
+        var p = Path()
+        // Left side, upwards; then the top edge and the right side, downwards.
+        p.move(to: CGPoint(x: minX, y: bottom ? maxY - r : maxY))
+        if top {
+            p.addArc(tangent1End: CGPoint(x: minX, y: minY), tangent2End: CGPoint(x: maxX, y: minY), radius: r)
+            p.addArc(tangent1End: CGPoint(x: maxX, y: minY), tangent2End: CGPoint(x: maxX, y: maxY), radius: r)
+        } else {
+            p.addLine(to: CGPoint(x: minX, y: minY))
+            p.move(to: CGPoint(x: maxX, y: minY))
+        }
+        if bottom {
+            p.addArc(tangent1End: CGPoint(x: maxX, y: maxY), tangent2End: CGPoint(x: minX, y: maxY), radius: r)
+            p.addArc(tangent1End: CGPoint(x: minX, y: maxY), tangent2End: CGPoint(x: minX, y: minY), radius: r)
+            if top { p.closeSubpath() }
+        } else {
+            p.addLine(to: CGPoint(x: maxX, y: maxY))
+        }
+        return p
     }
 }
 

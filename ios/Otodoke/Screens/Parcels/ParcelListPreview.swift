@@ -9,6 +9,8 @@ import Foundation
 struct ListPreview {
     enum Scenario: String {
         case list, empty, failed, toast, saving, many, bottom
+        /// 「確認中…」 on a card, and a toast whose 「元に戻す」 cannot put back every row.
+        case checking
         /// As list; a card opens a detail filled with made-up data.
         case detail
         /// The login screen: the address, the code with the resend wait, an error.
@@ -106,6 +108,12 @@ struct ListPreview {
                 rows: rows, counts: counts, loadState: .loaded,
                 rowMessages: [Self.id(3): ParcelListModel.saveFailedText, Self.id(4): ParcelListModel.unconfirmedText],
                 toast: ListToast(text: ParcelListModel.savedText, canUndo: true)
+            )
+        case .checking:
+            model.debugShow(
+                rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded,
+                saving: [Self.id(2)], checking: [Self.id(2)],
+                toast: ListToast(text: "3 件を受取済にしました", canUndo: true), toastNote: ParcelListModel.cannotUndoNote(1)
             )
         case .saving:
             model.debugShow(rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded, saving: [Self.id(2)])

@@ -56,6 +56,25 @@ final class ScreenshotUITests: XCTestCase {
         try shoot("detail-back")
     }
 
+    /// [Fix 2] The 要確認 box with its border (closed and opened), 「確認中…」 and the toast's second line.
+    func testTheCheckBoxAndTheToastNote() throws {
+        let app = launch("many")
+        let more = app.buttons["ほか 4 件を見る"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        try shoot("check-box")
+        more.tap()
+        try shoot("check-box-open")
+        app.terminate()
+
+        let checking = launch("checking")
+        let labelled = { (text: String) in
+            checking.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        }
+        XCTAssertTrue(labelled("確認中…").waitForExistence(timeout: 10))
+        XCTAssertTrue(labelled("1 件は元に戻せません").waitForExistence(timeout: 5))
+        try shoot("checking-toast-note")
+    }
+
     func testTheLoginScreens() throws {
         for scenario in ["login", "login-code", "login-error"] {
             let app = launch(scenario)
