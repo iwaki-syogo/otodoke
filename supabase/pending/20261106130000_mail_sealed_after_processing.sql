@@ -16,10 +16,17 @@
 --   - refused when the user has no key, unless it is a public sample mail (message_id 'demo:…',
 --     anonymized fixtures from the repository). A real mail is dropped instead.
 -- Unread mail (pending / over_limit / failed) stays plaintext so it can be read again later.
--- Rows written before this trigger are not touched; the "暗号化する" flow seals them. Any other
--- UPDATE of such a row (read and still plain) is refused too, since its result is processed and
--- plain; nothing in the app updates a read mail except to seal it. DELETE is not affected.
--- (Checked on a local Postgres 17 on 2026-11-06: see the commit that added this line.)
+--
+-- Rows written before this trigger: the trigger does not rewrite them, but it DOES act on them.
+-- Any UPDATE of a row that is read and still plain is refused (its result is processed and plain),
+-- unless that same UPDATE seals it (body_state 'sealed') or drops it (body_state 'dropped' with the
+-- five plaintext columns null). So the "暗号化する" flow, which seals, still works; an UPDATE that
+-- only nulls the body of such a row (text_body = null, say) is refused. Nothing in the app updates
+-- a read mail except to seal it. DELETE is not affected.
+-- Decision 7 (remove the plaintext left by users who never set a passphrase) must therefore set
+-- body_state = 'dropped' and null all five columns in one UPDATE:
+-- supabase/pending/20261114090000_drop_unsealed_plaintext.sql.
+-- (Checked on a local Postgres 17 on 2026-11-06: see the commits that added these lines.)
 --
 -- Rollback: supabase/rollback/20261106130000_mail_sealed_after_processing.down.sql
 
