@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 
 @main
@@ -16,6 +17,8 @@ struct OtodokeApp: App {
     }
 }
 
+private let launchLog = Logger(subsystem: "com.iwakisyogo.otodoke", category: "launch")
+
 /// The settings from Info.plist, checked before anything talks to Supabase.
 @MainActor
 enum AppStart {
@@ -26,7 +29,15 @@ enum AppStart {
         do {
             let config = try AppConfig.load(info: info)
             // Before the auth client reads the Keychain: a session left by an earlier install goes.
-            FreshInstall.clearLeftoverSession()
+            // When the marker cannot be made, the Keychain is left alone (CF3) and the failure is logged.
+            switch FreshInstall.prepare() {
+            case .installed, .cleared:
+                break
+            case .markerFailed:
+                launchLog.error("Fresh-install marker could not be written; the Keychain was left as it is")
+            case .clearFailed:
+                launchLog.error("Leftover Keychain items could not be removed; trying again on the next launch")
+            }
             return .ready(AuthService(provider: .live(config: config)))
         } catch {
             return .misconfigured(error)

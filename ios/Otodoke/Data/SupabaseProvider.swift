@@ -79,21 +79,46 @@ extension KeychainSessionStorage {
 /// open signed in (there is no sign-out button in this batch, so deleting the app is how people sign
 /// out). A marker file in Application Support goes with the app: when it is missing, this is the first
 /// launch of this install, and any session left in the Keychain is removed before anything reads it.
+/// The Keychain is cleared only once the marker is written (CF3): when the marker cannot be made, the
+/// Keychain is left alone, so a session saved now is not taken for a leftover on the next launch.
 enum FreshInstall {
+    enum Outcome: Equatable, Sendable {
+        /// The marker was there: a later launch, nothing touched.
+        case installed
+        /// The marker was missing; it is written and the Keychain is clear.
+        case cleared
+        /// The marker could not be made (the folder or the file): the Keychain is left as it is.
+        case markerFailed
+        /// The marker was written but the Keychain could not be cleared: the marker is taken away
+        /// again, so the clearing is tried on the next launch.
+        case clearFailed
+    }
+
     static var marker: URL {
         URL.applicationSupportDirectory.appending(path: "installed", directoryHint: .notDirectory)
     }
 
-    /// true when the leftovers were cleared (the marker was missing). The marker is placed only once
-    /// the Keychain is clear, so a failed delete is tried again on the next launch.
+    /// Looks for the marker; when it is missing, writes it and then clears the Keychain.
+    static func prepare(marker: URL = FreshInstall.marker, keychain: KeychainSessionStorage = KeychainSessionStorage()) -> Outcome {
+        let files = FileManager.default
+        guard !files.fileExists(atPath: marker.path(percentEncoded: false)) else { return .installed }
+        do {
+            try files.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: marker, options: .withoutOverwriting)
+        } catch {
+            return .markerFailed
+        }
+        guard keychain.removeAll() else {
+            try? files.removeItem(at: marker)
+            return .clearFailed
+        }
+        return .cleared
+    }
+
+    /// true when the leftovers were cleared (the marker was missing and could be made).
     @discardableResult
     static func clearLeftoverSession(marker: URL = FreshInstall.marker, keychain: KeychainSessionStorage = KeychainSessionStorage()) -> Bool {
-        let files = FileManager.default
-        guard !files.fileExists(atPath: marker.path(percentEncoded: false)) else { return false }
-        guard keychain.removeAll() else { return false }
-        try? files.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
-        files.createFile(atPath: marker.path(percentEncoded: false), contents: Data())
-        return true
+        prepare(marker: marker, keychain: keychain) == .cleared
     }
 }
 
