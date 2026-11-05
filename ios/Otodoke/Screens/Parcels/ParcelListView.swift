@@ -400,7 +400,8 @@ private struct AmberBox: View {
                 topLeadingRadius: top ? 16 : 0,
                 bottomLeadingRadius: bottom ? 16 : 0,
                 bottomTrailingRadius: bottom ? 16 : 0,
-                topTrailingRadius: top ? 16 : 0
+                topTrailingRadius: top ? 16 : 0,
+                style: .circular
             )
             .fill(Palette.amberBackground)
             AmberBoxEdge(top: top, bottom: bottom, radius: 16)
