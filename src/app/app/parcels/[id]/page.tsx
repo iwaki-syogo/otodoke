@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUser } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
 import { faceToFace } from "@/lib/match";
 import { isHttpsUrl } from "@/lib/safe-url";
@@ -11,6 +11,7 @@ import { CategorySheet } from "../../category-sheet";
 import { PresenceBadge, StatusBadge } from "../../parcel-card";
 import { NotDeliveredButton } from "./not-delivered-button";
 import { TrackingButton } from "./tracking-button";
+import { SealedMail } from "./sealed-mail";
 
 type Params = Promise<{ id: string }>;
 
@@ -19,13 +20,14 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
   // Postgres answers a malformed id with an error; that is a page that is not there, not a failed read.
   if (!z.uuid().safeParse(id).success) notFound();
   const supabase = await createClient();
+  const userId = (await getUser())?.id ?? "";
 
   const [{ data: parcel, error: parcelError }, { data: items, error: itemsError }, { data: extractions, error: extractionsError }] = await Promise.all([
     supabase.from("parcels").select("*").eq("id", id).maybeSingle(),
     supabase.from("parcel_items").select("*").eq("parcel_id", id).order("created_at"),
     supabase
       .from("extractions")
-      .select("id, confidence, result, created_at, emails(id, subject, from_address, from_name, sent_at, classification, text_body, html_body)")
+      .select("id, confidence, result, created_at, emails(id, subject, from_address, from_name, from_domain, sent_at, classification, body_state, text_body, html_body)")
       .eq("parcel_id", id),
   ]);
   // A failed read is told apart from a parcel, an item list or a mail history that is not there.
@@ -175,22 +177,40 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
               const email = x.email!;
               const result = x.result as { notes?: string | null } | null;
               const body = email.text_body?.trim() || (email.html_body ? htmlToText(email.html_body) : "");
+              const notes = result?.notes ?? null;
               return (
                 <li key={x.id} className="rounded-2xl border border-neutral-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
                     <span className="font-medium text-neutral-800">{RELEVANCE_LABEL[email.classification ?? ""] ?? email.classification ?? "メール"}</span>
                     <span>{formatDateTimeJa(email.sent_at)}</span>
                   </div>
-                  <p className="mt-1 text-sm leading-snug">{email.subject}</p>
-                  <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_name ? `${email.from_name} <${email.from_address}>` : email.from_address}</p>
                   {x.confidence !== null ? <p className="mt-1 text-[11px] text-neutral-400">確信度 {Math.round(Number(x.confidence) * 100)}%</p> : null}
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
-                    {result?.notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {result.notes}</p> : null}
-                    <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
-                      {body || "（本文なし）"}
-                    </pre>
-                  </details>
+                  {email.body_state === "sealed" ? (
+                    // Opened in the browser with the passphrase; the server never sees the content.
+                    <SealedMail userId={userId} emailId={email.id} fromDomain={email.from_domain} notes={notes} />
+                  ) : email.body_state === "dropped" ? (
+                    <>
+                      <p className="mt-1 text-sm leading-snug text-neutral-500">本文は保存していません</p>
+                      {email.from_domain ? <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_domain}</p> : null}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
+                        {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
+                        <p className="mt-2 text-xs leading-5 text-neutral-600">合言葉を決める前に届いたメールです。件名・差出人・本文は保存していません。</p>
+                      </details>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-sm leading-snug">{email.subject}</p>
+                      <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_name ? `${email.from_name} <${email.from_address}>` : email.from_address}</p>
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
+                        {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
+                        <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
+                          {body || "（本文なし）"}
+                        </pre>
+                      </details>
+                    </>
+                  )}
                 </li>
               );
             })}
