@@ -383,7 +383,14 @@ export type Database = {
           p_ip_1h_limit: number
           p_ip_hash: string
         }
-        Returns: string
+        Returns: {
+          claim_id: number
+          verdict: string
+        }[]
+      }
+      release_login_mail: {
+        Args: { p_claim_id: number; p_email_hash: string }
+        Returns: number
       }
     }
     Enums: {

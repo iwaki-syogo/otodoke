@@ -25,7 +25,11 @@ vi.mock("next/navigation", () => ({
   },
 }));
 // The mail limit has its own tests (login-mail-limit.test.ts); here it must never reach a database.
-vi.mock("@/lib/login-mail-limit", () => ({ clientIp: () => null, claimLoginMail: async () => "ok" }));
+vi.mock("@/lib/login-mail-limit", () => ({
+  clientIp: () => null,
+  claimLoginMail: async () => ({ verdict: "ok", claimId: null }),
+  releaseLoginMail: async () => {},
+}));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {

@@ -52,6 +52,13 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 const EMAIL = "someone@example.com";
+const CLAIM_ID = 41;
+/** What PostgREST returns for claim_login_mail (a set-returning function): one row. */
+const claimAnswer = (verdict: string, claimId: number | null = verdict === "ok" ? CLAIM_ID : null) => ({
+  data: [{ verdict, claim_id: claimId }],
+  error: null,
+});
+const rpcCalls = (fn: string) => mocks.rpc.mock.calls.filter(([name]) => name === fn);
 const IP = "203.0.113.7";
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -93,7 +100,7 @@ afterEach(() => {
 
 describe("sendMagicLink with the mail limit", () => {
   it("sends when the limit allows, passing only hashes and the limits", async () => {
-    mocks.rpc.mockResolvedValue({ data: "ok", error: null });
+    mocks.rpc.mockResolvedValue(claimAnswer("ok"));
     expect(await submit()).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
     expect(mocks.otp).toHaveLength(1);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
@@ -112,13 +119,13 @@ describe("sendMagicLink with the mail limit", () => {
   });
 
   it("hashes the address as typed in any case and with spaces the same way", async () => {
-    mocks.rpc.mockResolvedValue({ data: "ok", error: null });
+    mocks.rpc.mockResolvedValue(claimAnswer("ok"));
     await submit("  SomeOne@Example.COM ");
     expect(mocks.rpc.mock.calls[0][1].p_email_hash).toBe(sha(`otodoke:login-mail:email:${EMAIL}`));
   });
 
   it.each(["email_10m", "email_1h", "ip_1h"] as const)("sends nothing and shows a fixed wait message when the answer is %s", async (verdict) => {
-    mocks.rpc.mockResolvedValue({ data: verdict, error: null });
+    mocks.rpc.mockResolvedValue(claimAnswer(verdict));
     const result = await submit();
     expect(result).toBe(`REDIRECT:/login?error=${verdict}`);
     expect(mocks.otp).toHaveLength(0);
@@ -148,7 +155,7 @@ describe("sendMagicLink with the mail limit", () => {
 
   it("checks only the address limits when there is no client IP", async () => {
     mocks.headers = new Headers();
-    mocks.rpc.mockResolvedValue({ data: "ok", error: null });
+    mocks.rpc.mockResolvedValue(claimAnswer("ok"));
     await submit();
     expect(mocks.rpc.mock.calls[0][1].p_ip_hash).toBeNull();
     expect(mocks.otp).toHaveLength(1);
@@ -160,11 +167,86 @@ describe("sendMagicLink with the mail limit", () => {
   });
 
   it("puts a code in the URL, not Supabase's message, when Supabase refuses", async () => {
-    mocks.rpc.mockResolvedValue({ data: "ok", error: null });
+    mocks.rpc.mockResolvedValue(claimAnswer("ok"));
     mocks.otpError = { status: 429, code: "over_email_send_rate_limit", message: "email rate limit exceeded" };
     expect(await submit()).toBe("REDIRECT:/login?error=busy");
     mocks.otpError = { status: 500, code: "unexpected_failure", message: "Error sending magic link email" };
     expect(await submit()).toBe("REDIRECT:/login?error=send_failed");
+  });
+});
+
+describe("a send Supabase refuses does not count", () => {
+  /** claim_login_mail answers `claim`; release_login_mail answers `release` (or throws it). */
+  function answer(claim: ReturnType<typeof claimAnswer>, release: unknown = { data: 1, error: null }) {
+    mocks.rpc.mockImplementation(async (fn: string) => {
+      if (fn === "claim_login_mail") return claim;
+      if (fn === "release_login_mail") {
+        if (release instanceof Error) throw release;
+        return release;
+      }
+      throw new Error(`unexpected rpc ${fn}`);
+    });
+  }
+
+  it.each([
+    [429, "over_email_send_rate_limit", "busy"],
+    [500, "unexpected_failure", "send_failed"],
+  ] as const)("gives back exactly the claimed send when Supabase answers %i", async (status, code, shown) => {
+    answer(claimAnswer("ok", 77));
+    mocks.otpError = { status, code, message: "refused" };
+    expect(await submit()).toBe(`REDIRECT:/login?error=${shown}`);
+    expect(mocks.otp).toHaveLength(1);
+    const releases = rpcCalls("release_login_mail");
+    expect(releases).toHaveLength(1);
+    // Only that row, and only for this address (hash, never the address itself).
+    expect(releases[0][1]).toEqual({ p_claim_id: 77, p_email_hash: sha(`otodoke:login-mail:email:${EMAIL}`) });
+    expect(JSON.stringify(releases[0][1])).not.toContain(EMAIL);
+  });
+
+  it("keeps the send counted when the mail went out", async () => {
+    answer(claimAnswer("ok", 77));
+    expect(await submit()).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(rpcCalls("claim_login_mail")).toHaveLength(1);
+    expect(rpcCalls("release_login_mail")).toHaveLength(0);
+  });
+
+  it("does not release anything when nothing was claimed (the limit check had failed open)", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "function public.claim_login_mail does not exist" } });
+    mocks.otpError = { status: 429, code: "over_email_send_rate_limit", message: "refused" };
+    expect(await submit()).toBe("REDIRECT:/login?error=busy");
+    expect(rpcCalls("release_login_mail")).toHaveLength(0);
+  });
+
+  it("still shows the send error, and warns, when giving the send back returns an error", async () => {
+    answer(claimAnswer("ok", 77), { data: null, error: { message: "permission denied for function release_login_mail" } });
+    mocks.otpError = { status: 429, code: "over_email_send_rate_limit", message: "refused" };
+    expect(await submit()).toBe("REDIRECT:/login?error=busy");
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("could not give back"), expect.stringContaining("permission denied"));
+  });
+
+  it("still shows the send error, and warns, when giving the send back throws", async () => {
+    answer(claimAnswer("ok", 77), new Error("fetch failed"));
+    mocks.otpError = { status: 500, code: "unexpected_failure", message: "refused" };
+    expect(await submit()).toBe("REDIRECT:/login?error=send_failed");
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("could not give back"), "fetch failed");
+  });
+
+  it("releaseLoginMail never throws, even without a service key", async () => {
+    const { releaseLoginMail } = await import("../login-mail-limit");
+    mocks.adminThrows = true;
+    await expect(releaseLoginMail(EMAIL, 77)).resolves.toBeUndefined();
+    await expect(releaseLoginMail(EMAIL, null)).resolves.toBeUndefined();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("reads the claim id only from an 'ok' row", async () => {
+    const { claimLoginMail } = await import("../login-mail-limit");
+    mocks.rpc.mockResolvedValue(claimAnswer("ok", 5));
+    expect(await claimLoginMail(EMAIL, null)).toEqual({ verdict: "ok", claimId: 5 });
+    mocks.rpc.mockResolvedValue(claimAnswer("email_10m", 5));
+    expect(await claimLoginMail(EMAIL, null)).toEqual({ verdict: "email_10m", claimId: null });
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    expect(await claimLoginMail(EMAIL, null)).toEqual({ verdict: "ok", claimId: null });
   });
 });
 
