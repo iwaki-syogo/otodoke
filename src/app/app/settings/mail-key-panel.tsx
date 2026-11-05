@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { passphraseProblem, PASSPHRASE_MIN_LENGTH } from "@/lib/crypto/key-wrap";
-import { changePassphrase, createMailKey, keyErrorText, useTabKey } from "@/lib/crypto/tab-key";
+import { changePassphrase, createMailKey, keyErrorText, PassphraseChangeUnconfirmedError, useTabKey } from "@/lib/crypto/tab-key";
 import { UnlockForm } from "../unlock-form";
 import { sealStoredMail } from "./key-actions";
 
@@ -139,6 +139,12 @@ function ChangeForm({ userId }: { userId: string }) {
       setAgain("");
       setMessage({ ok: true, text: "変えました。前のメールも新しい合言葉で開けます" });
     } catch (err) {
+      // Most likely changed: the old passphrase no longer opens it, so do not leave it in the form.
+      if (err instanceof PassphraseChangeUnconfirmedError) {
+        setOld("");
+        setFirst("");
+        setAgain("");
+      }
       setMessage({ ok: false, text: keyErrorText(err) });
     } finally {
       setBusy(false);

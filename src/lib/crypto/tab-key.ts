@@ -59,8 +59,20 @@ async function readKey(keyId: string): Promise<StoredKey | null> {
   return data;
 }
 
+/**
+ * The new wrap was saved but could not be read back and opened. The change most likely went
+ * through, so it must not be told as a failure (the user would retry with the old passphrase).
+ */
+export class PassphraseChangeUnconfirmedError extends Error {
+  constructor() {
+    super("passphrase change saved but not confirmed");
+    this.name = "PassphraseChangeUnconfirmedError";
+  }
+}
+
 /** Words for the screen. A failed decryption almost always means a mistyped passphrase. */
 export function keyErrorText(err: unknown): string {
+  if (err instanceof PassphraseChangeUnconfirmedError) return "変わったはずですが、確かめられませんでした。ページを読み込み直して、新しい合言葉で開けるか確かめてください";
   if (err instanceof Error && err.name === "OperationError") return "合言葉が違います";
   if (err instanceof Error && err.message === "no key") return "合言葉がまだありません。設定で決めてください";
   return "うまくいきませんでした。もう一度試してください";
@@ -115,7 +127,12 @@ export async function changePassphrase(userId: string, oldPassphrase: string, ne
   if (!same) throw new Error("rewrap check failed");
   const res = await rewrapMailKey({ keyId: stored.key_id, wrappedPrivateKey: wrapped.wrapped_private_key, wrapIv: wrapped.wrap_iv, kdfSalt: wrapped.kdf_salt, kdfIterations: wrapped.kdf_iterations });
   if (!res.ok) throw new Error(res.error);
-  const back = await readCurrentKey();
-  if (!back || back.key_id !== stored.key_id || back.wrapped_private_key !== wrapped.wrapped_private_key) throw new Error("stored key differs");
-  setTabKey({ userId, recipient: await openStoredKey(back, newPassphrase, userId) });
+  // Saved. What follows only confirms it: a failure from here on is not "nothing changed".
+  try {
+    const back = await readCurrentKey();
+    if (!back || back.key_id !== stored.key_id || back.wrapped_private_key !== wrapped.wrapped_private_key) throw new Error("stored key differs");
+    setTabKey({ userId, recipient: await openStoredKey(back, newPassphrase, userId) });
+  } catch {
+    throw new PassphraseChangeUnconfirmedError();
+  }
 }
