@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "Otodoke", template: "%s | Otodoke" },
-  description: "注文メールを転送するだけで、何がいつ届くか・いつ家にいればいいか・今月いくら使ったかが分かる荷物カレンダー。",
+  description: "荷物に、予定を合わせない。どの店で買った荷物も、いつ届くか・いつ家にいればいいか・今月いくら使ったかが分かる荷物カレンダー。設定は最初の 1 回だけ。",
 };
 
 export const viewport: Viewport = {

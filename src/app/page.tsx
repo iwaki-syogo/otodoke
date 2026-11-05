@@ -15,12 +15,12 @@ export default async function Home() {
 
       <section className="mt-16">
         <h1 className="text-4xl font-bold leading-tight tracking-tight">
-          転送するだけ。
+          荷物に、
           <br />
-          届く日が、分かる。
+          予定を合わせない。
         </h1>
         <p className="mt-5 text-base leading-7 text-neutral-600">
-          Amazon も楽天も、メーカー直販も。注文メールを 1 つのアドレスに転送するだけで、何がいつ届くか、いつ家にいればいいか、今月いくら使ったかが 1 か所に並びます。
+          どの店で買った荷物も、いつ届くか・いつ家にいればいいかが 1 つのカレンダーに並びます。設定は最初の 1 回だけ。
         </p>
         <Link
           href={user ? "/app" : "/login"}
