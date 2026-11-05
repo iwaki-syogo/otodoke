@@ -35,6 +35,7 @@ export async function loadDemo(): Promise<void> {
           html: mail.html,
         },
         {
+          publicSample: true,
           precomputed: {
             data: extraction,
             model: "precomputed",
@@ -64,6 +65,7 @@ export async function readWaitingMail(): Promise<void> {
     .from("emails")
     .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
     .eq("user_id", user.id)
+    .eq("body_state", "plain")
     .or(UNREAD_FILTER())
     .order("sent_at", { ascending: true })
     .limit(20);
