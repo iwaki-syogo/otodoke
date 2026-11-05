@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fake-db";
@@ -124,8 +126,32 @@ describe("/app/settings: あなたのメールの扱い", () => {
       "Resend",
       "最大 7 日間",
       "コードはすべて",
+      // Mail read before encryption began stays plaintext until 「暗号化する」.
+      "暗号化を始める前に読み取ったメールは、暗号化していません",
+      "Message-ID",
+      "承認リンク",
+      "「これは荷物」と押したものは、次から読むために消さずに残します",
     ]) {
       expect(text).toContain(fact);
     }
+  });
+
+  it("README says the same about mail read before encryption, Message-ID, the approval link and flagged ads", () => {
+    const readme = readFileSync(path.resolve(__dirname, "../../../README.md"), "utf8");
+    const section = readme.slice(readme.indexOf("## あなたのメールの扱い"), readme.indexOf("## 技術"));
+    for (const fact of ["暗号化を始める前に読み取ったメールは、暗号化していません", "Message-ID", "承認リンク", "「これは荷物」と押したものは、次から読むために消さずに残します", "暗号化を始めた後、合言葉を決める前に届いたメール"]) {
+      expect(section).toContain(fact);
+    }
+  });
+
+  it("the plaintext banner says the operator can read those mails until they are sealed", async () => {
+    activeKey();
+    plainRead(2);
+    expect(textOf(sectionTitled(await render(), "合言葉")[0])).toContain("押すまでは、運営者が読める形で残ります");
+    db = new FakeDb();
+    db.hooks.push((q) => (q.table === "emails" && q.filters.some((f) => f.method === "or") ? { data: null, error: null, count: 0 } : undefined));
+    mocks.state.db = db;
+    plainRead(3);
+    expect(textOf(sectionTitled(await render(), "合言葉を決める")[0])).toContain("それまでは運営者が読める形です");
   });
 });

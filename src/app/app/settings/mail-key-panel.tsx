@@ -29,7 +29,11 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
       <section className="rounded-2xl border border-sky-300 bg-sky-50 p-4">
         <h2 className="text-base font-bold">合言葉を決める</h2>
         <p className="mt-1 text-sm leading-6">届いたメールは、この合言葉でしか開けない形で保存します。運営者にも読めません。</p>
-        {plainCount ? <p className="mt-1 text-sm leading-6">保存済みのメール {plainCount} 通も、決めたあとに暗号化できます。</p> : null}
+        {plainCount ? (
+          <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold leading-6">
+            暗号化されていない保存済みのメール {plainCount} 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。
+          </p>
+        ) : null}
         <NewKeyForm userId={userId} button="決める" busyLabel="準備しています…" acknowledge="忘れたら、前のメールは誰にも戻せない（荷物は残る）" />
       </section>
     );
@@ -192,6 +196,7 @@ function SealBanner({ count }: { count: number }) {
   return (
     <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <p className="text-sm font-bold">暗号化されていないメールが {remaining} 通あります</p>
+      <p className="mt-1 text-sm leading-6">暗号化を始める前に読み取ったメールなどです。押すまでは、運営者が読める形で残ります。</p>
       <button type="button" onClick={run} disabled={busy} className={`mt-3 ${primary}`}>
         {busy ? `暗号化しています…あと ${remaining} 通` : "暗号化する"}
       </button>
