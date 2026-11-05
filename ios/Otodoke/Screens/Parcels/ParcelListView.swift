@@ -209,7 +209,8 @@ struct ParcelListView<Detail: View>: View {
                     } label: {
                         HStack(spacing: 6) {
                             if model.isDeliveringAll { ProgressView().tint(.white) }
-                            Text(model.isDeliveringAll ? "保存中…" : "\(count) 件を受取済にする")
+                            Text(model.isDeliveringAll ? model.deliverAllProgressText : "\(count) 件を受取済にする")
+                                .monospacedDigit()
                         }
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.white)
@@ -307,7 +308,8 @@ struct ParcelListView<Detail: View>: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !isSaving {
-                Button("届いた") {
+                // A parcel whose last 「届いた」 is not known yet is only read again, never sent again.
+                Button(model.unconfirmed.contains(parcel.id) ? "確かめる" : "届いた") {
                     Task { await model.markDelivered(id: parcel.id) }
                 }
                 .tint(Palette.emerald)
