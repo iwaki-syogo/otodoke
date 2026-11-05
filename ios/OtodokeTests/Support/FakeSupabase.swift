@@ -43,6 +43,20 @@ actor FakeSupabase {
         case applyThenDrop(URLError.Code)
         /// Waits until the gate opens, then is handled as usual.
         case hold(Gate)
+        /// Something in front of PostgREST answers with this status and a body that is not PostgREST's
+        /// (Cloudflare's 520/522/524 page, an HTML 503). `applied`: the request reached the database first.
+        case gateway(Int, body: String, contentType: String, applied: Bool)
+        /// Waits until the gate opens, then fails as `kind` (a read held and then lost, say).
+        case holdThen(Gate, FakeFault)
+        /// Handled now (the data as it is now), the answer delivered only when the gate opens: a slow
+        /// answer that is older than writes made meanwhile.
+        case delay(Gate)
+    }
+
+    /// The faults `holdThen` can end in (no nesting).
+    enum FakeFault: Sendable {
+        case http(Int)
+        case transport(URLError.Code)
     }
 
     private struct Fault {
@@ -188,6 +202,21 @@ actor FakeSupabase {
             case let .hold(gate):
                 await gate.wait()
                 return route(request)
+            case let .gateway(status, body, contentType, applied):
+                if applied { _ = route(request) }
+                return .http(status: status, headers: ["Content-Type": contentType], body: Data(body.utf8))
+            case let .delay(gate):
+                let reply = route(request)
+                await gate.wait()
+                return reply
+            case let .holdThen(gate, fault):
+                await gate.wait()
+                switch fault {
+                case let .http(status):
+                    return .json(status, ["code": "XX000", "message": "injected failure", "details": NSNull(), "hint": NSNull()])
+                case let .transport(code):
+                    return .failure(code)
+                }
             }
         }
         return route(request)

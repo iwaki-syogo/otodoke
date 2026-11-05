@@ -83,13 +83,18 @@ struct ParcelWriter: Sendable {
     }
 
     /// 「すべて受取済にする」: the single-row write for each, in the order given, one result per id.
-    func markDelivered(all shown: [ParcelVersion]) async -> [BulkItemResult<UndoToken>] {
+    /// `progress` hears how many have been answered after each one (for 「保存中… 12/80」).
+    func markDelivered(
+        all shown: [ParcelVersion],
+        progress: (@Sendable (Int) async -> Void)? = nil
+    ) async -> [BulkItemResult<UndoToken>] {
         guard shown.count <= Self.maxAtOnce else {
             return shown.map { BulkItemResult(id: $0.id, outcome: .notUpdated(.invalidInput)) }
         }
         var results: [BulkItemResult<UndoToken>] = []
         for version in shown {
             results.append(BulkItemResult(id: version.id, outcome: await markDelivered(version)))
+            await progress?(results.count)
         }
         return results
     }
@@ -251,16 +256,20 @@ struct ParcelWriter: Sendable {
     ]
 
     /// Codex-P3. An answer from PostgREST with an error: the statement was rolled back (not updated).
-    /// No answer after the request may have left (a timeout, a lost connection), or a gateway that
-    /// gave up waiting (502, 504): unknown.
+    /// No answer after the request may have left (a timeout, a lost connection): unknown. A 5xx whose
+    /// body is not PostgREST's error (Cloudflare's 520/522/524, a gateway's 502/504, an HTML 503) came
+    /// from something in front of PostgREST, which may have run the update: unknown too. A 4xx that is
+    /// not PostgREST's is a refusal before the database: not updated.
     private static func outcome<T>(of error: any Error) -> WriteOutcome<T> {
         switch error {
         case let error as URLError:
             return neverSent.contains(error.code) ? .notUpdated(.failed) : .unknown
-        case is PostgrestError:
-            return .notUpdated(.failed)
+        case let error as PostgrestError:
+            // PostgREST's own errors always carry a code. A JSON body with only a message is the API
+            // gateway's (Kong's 502 "An invalid response was received from the upstream server").
+            return error.code == nil ? .unknown : .notUpdated(.failed)
         case let error as HTTPError:
-            return [502, 504].contains(error.response.statusCode) ? .unknown : .notUpdated(.failed)
+            return (500...599).contains(error.response.statusCode) ? .unknown : .notUpdated(.failed)
         case is CancellationError:
             // Thrown by the client's cancellation check, before anything is sent.
             return .notUpdated(.failed)
