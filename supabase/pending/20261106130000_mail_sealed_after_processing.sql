@@ -7,8 +7,8 @@
 --
 -- That is why this file waits in supabase/pending/: `supabase db push` applies every file in
 -- supabase/migrations/, so keeping it there would apply it together with 20261106120000.
--- When the time comes: move it to supabase/migrations/ (same name) and push, or run it with
--- `supabase db query --linked -f`.
+-- When the time comes: move it to supabase/migrations/ renamed with a fresh timestamp
+-- (supabase/pending/README.md) and push, or run it with `supabase db query --linked -f`.
 --
 -- Rule, for every insert or update of public.emails whose result is processing_status
 -- 'processed' and body_state 'plain':
@@ -16,7 +16,10 @@
 --   - refused when the user has no key, unless it is a public sample mail (message_id 'demo:…',
 --     anonymized fixtures from the repository). A real mail is dropped instead.
 -- Unread mail (pending / over_limit / failed) stays plaintext so it can be read again later.
--- Rows written before this trigger are not touched; the "暗号化する" flow seals them.
+-- Rows written before this trigger are not touched; the "暗号化する" flow seals them. Any other
+-- UPDATE of such a row (read and still plain) is refused too, since its result is processed and
+-- plain; nothing in the app updates a read mail except to seal it. DELETE is not affected.
+-- (Checked on a local Postgres 17 on 2026-11-06: see the commit that added this line.)
 --
 -- Rollback: supabase/rollback/20261106130000_mail_sealed_after_processing.down.sql
 
