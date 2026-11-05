@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-next";
+import { loginErrorPath } from "@/lib/login-errors";
 
 /** A relative Location keeps the visitor on the host they opened, whatever host the server thinks it has. */
 function go(path: string, status: number) {
@@ -27,7 +28,9 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash });
     if (!error) return go(safeNextPath(typeof next === "string" ? next : null), 303);
-    return go(`/login?error=${encodeURIComponent(`リンクを確認できませんでした（${error.message}）。もう一度リンクを送ってください。`)}`, 303);
+    // The reason goes to the log only: the login page shows fixed wording for the code.
+    console.warn("[auth] verifyOtp failed:", error.status, error.code, error.message);
+    return go(loginErrorPath("link_invalid"), 303);
   }
-  return go(`/login?error=${encodeURIComponent("リンクが不完全です。もう一度リンクを送ってください。")}`, 303);
+  return go(loginErrorPath("link_incomplete"), 303);
 }

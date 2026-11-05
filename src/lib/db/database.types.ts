@@ -180,6 +180,27 @@ export type Database = {
         }
         Relationships: []
       }
+      login_mail_sends: {
+        Row: {
+          email_hash: string
+          id: number
+          ip_hash: string | null
+          sent_at: string
+        }
+        Insert: {
+          email_hash: string
+          id?: never
+          ip_hash?: string | null
+          sent_at?: string
+        }
+        Update: {
+          email_hash?: string
+          id?: never
+          ip_hash?: string | null
+          sent_at?: string
+        }
+        Relationships: []
+      }
       parcel_items: {
         Row: {
           created_at: string
@@ -351,6 +372,16 @@ export type Database = {
           p_global_limit: number
           p_user_id: string
           p_user_limit: number
+        }
+        Returns: string
+      }
+      claim_login_mail: {
+        Args: {
+          p_email_10m_limit: number
+          p_email_1h_limit: number
+          p_email_hash: string
+          p_ip_1h_limit: number
+          p_ip_hash: string
         }
         Returns: string
       }

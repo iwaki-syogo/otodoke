@@ -1,15 +1,18 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { appUrl } from "@/lib/env";
+import { loginErrorPath } from "@/lib/login-errors";
+import { claimLoginMail, clientIp } from "@/lib/login-mail-limit";
 
 /** Send a magic link. The link lands on /auth/confirm with a token_hash (works in any browser). */
 export async function sendMagicLink(formData: FormData): Promise<void> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const next = String(formData.get("next") ?? "/app");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    redirect(`/login?error=${encodeURIComponent("メールアドレスの形式を確認してください")}`);
+    redirect(loginErrorPath("invalid_email"));
   }
   let origin: string;
   try {
@@ -17,8 +20,21 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
   } catch (error) {
     // Do not send a link that points somewhere the user cannot open (e.g. localhost on a preview).
     console.error("[login] app URL is not configured", error);
-    redirect(`/login?error=${encodeURIComponent("ログインの設定に問題があり、メールを送れませんでした")}`);
+    redirect(loginErrorPath("not_configured"));
   }
+
+  let ip: string | null = null;
+  try {
+    ip = clientIp(await headers());
+  } catch {
+    // No request headers (not inside a request): only the per-address limits apply.
+  }
+  const verdict = await claimLoginMail(email, ip);
+  if (verdict !== "ok") {
+    console.warn("[login] login mail limited:", verdict);
+    redirect(loginErrorPath(verdict));
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
     email,
@@ -27,7 +43,9 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     },
   });
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    // The message goes to the log only; the page shows fixed wording for the code.
+    console.warn("[login] signInWithOtp failed:", error.status, error.code, error.message);
+    redirect(loginErrorPath(error.status === 429 ? "busy" : "send_failed"));
   }
   redirect(`/login?sent=${encodeURIComponent(email)}`);
 }

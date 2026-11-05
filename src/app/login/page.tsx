@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
+import { loginErrorMessage, sentAddress } from "@/lib/login-errors";
 import { sendMagicLink } from "./actions";
 
 type SearchParams = Promise<{ sent?: string; error?: string; next?: string }>;
 
 export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
   const { sent, error, next } = await searchParams;
+  // Both come from the URL, which anyone can write: show fixed wording, never the raw text.
+  const errorMessage = loginErrorMessage(error);
+  const sentTo = sentAddress(sent);
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
       <Link href="/" className="mb-8 text-sm text-neutral-500">
@@ -16,12 +20,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
 
       {sent ? (
         <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          <p className="font-medium">{sent} にリンクを送りました。</p>
+          <p className="font-medium">{sentTo ? `${sentTo} にリンクを送りました。` : "リンクを送りました。"}</p>
           <p className="mt-1">届いたメールのリンクを開くとログインできます。届かないときは迷惑メールも見てください。</p>
         </div>
       ) : null}
-      {error ? (
-        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">{error}</div>
+      {errorMessage ? (
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">{errorMessage}</div>
       ) : null}
 
       <form action={sendMagicLink} className="mt-6 flex flex-col gap-3">

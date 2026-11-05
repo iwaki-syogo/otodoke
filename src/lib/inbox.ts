@@ -2,9 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/database.types";
 import { env } from "@/lib/env";
 
-const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o/1/l/i to keep it readable
+// The database only accepts this shape (inbox_addresses_local_part_format, migration
+// 20261106110000). Change both together: inbox-local-part.test.ts compares them.
+export const LOCAL_PART_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o/1/l/i to keep it readable
+export const LOCAL_PART_LENGTH = 10;
+const ALPHABET = LOCAL_PART_ALPHABET;
 
-function randomLocalPart(length = 10): string {
+export function randomLocalPart(length = LOCAL_PART_LENGTH): string {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   let s = "";
