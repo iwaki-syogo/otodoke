@@ -3,6 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-next";
 import { loginErrorPath } from "@/lib/login-errors";
+import { fromThisSite } from "@/lib/request-origin";
 
 /** A relative Location keeps the visitor on the host they opened, whatever host the server thinks it has. */
 function go(path: string, status: number) {
@@ -19,6 +20,12 @@ export async function GET(request: NextRequest) {
 
 /** Verifies the token_hash server-side, so the link works in a different browser than the one that asked. */
 export async function POST(request: NextRequest) {
+  // Only the button on /auth/continue may post here. Another site's form would sign this browser
+  // in to the account whose link it holds (login CSRF); its token is left unused.
+  if (!fromThisSite(request.headers)) {
+    console.warn("[auth] refused a login POST from another site:", request.headers.get("sec-fetch-site"), request.headers.get("origin")?.slice(0, 100));
+    return go(loginErrorPath("link_invalid"), 303);
+  }
   const form = await request.formData();
   const tokenHash = form.get("token_hash");
   const type = form.get("type");
