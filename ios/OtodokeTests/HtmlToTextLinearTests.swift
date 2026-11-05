@@ -140,14 +140,18 @@ struct HtmlToTextLinearTests {
 
     // MARK: time
 
-    /// The best of five runs, in seconds (the least disturbed by other work on the machine).
+    /// The best of five runs, in seconds (the least disturbed by other work on the machine). A run over
+    /// a second ends it there with that run's time (NtH-B): a slow implementation fails rather than
+    /// running the other four.
     private static func time(_ body: () -> Void) -> Double {
         var best = Double.infinity
         for _ in 0..<5 {
             let start = ContinuousClock.now
             body()
             let d = ContinuousClock.now - start
-            best = min(best, Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18)
+            let seconds = Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
+            if seconds > 1 { return seconds }
+            best = min(best, seconds)
         }
         return best
     }
@@ -166,6 +170,11 @@ struct HtmlToTextLinearTests {
         let large = String(repeating: unit, count: 8000)
         _ = HtmlText.htmlToText(small) // warm up
         let t1 = Self.time { _ = HtmlText.htmlToText(small) }
+        // NtH-B: when the small input already takes over a second, the large one is not run.
+        guard t1 <= 1 else {
+            Issue.record("\(unit): \(t1)s for the small input")
+            return
+        }
         let t2 = Self.time { _ = HtmlText.htmlToText(large) }
         // Four times the input: about four times the time when linear, sixteen times when quadratic.
         // Eight leaves room for a busy machine and still tells the two apart.
