@@ -140,10 +140,10 @@ struct HtmlToTextLinearTests {
 
     // MARK: time
 
-    /// The best of three runs, in seconds.
+    /// The best of five runs, in seconds (the least disturbed by other work on the machine).
     private static func time(_ body: () -> Void) -> Double {
         var best = Double.infinity
-        for _ in 0..<3 {
+        for _ in 0..<5 {
             let start = ContinuousClock.now
             body()
             let d = ContinuousClock.now - start
@@ -162,13 +162,14 @@ struct HtmlToTextLinearTests {
         "<a <img <a ",
     ])
     func unclosedStartTagsTakeAboutLinearTime(unit: String) {
-        let small = String(repeating: unit, count: 4000)
+        let small = String(repeating: unit, count: 2000)
         let large = String(repeating: unit, count: 8000)
         _ = HtmlText.htmlToText(small) // warm up
         let t1 = Self.time { _ = HtmlText.htmlToText(small) }
         let t2 = Self.time { _ = HtmlText.htmlToText(large) }
-        // Twice the input: about twice the time when linear, four times when quadratic.
-        #expect(t2 < max(t1, 0.002) * 3, "\(unit): \(t1)s → \(t2)s")
+        // Four times the input: about four times the time when linear, sixteen times when quadratic.
+        // Eight leaves room for a busy machine and still tells the two apart.
+        #expect(t2 < max(t1, 0.001) * 8, "\(unit): \(t1)s → \(t2)s")
         #expect(t2 < 1.0, "\(unit): \(t2)s")
     }
 }
