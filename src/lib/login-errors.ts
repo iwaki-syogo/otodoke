@@ -8,6 +8,8 @@ export const LOGIN_ERROR_MESSAGES = {
   send_failed: "メールを送れませんでした。少し時間をおいて、もう一度お試しください。",
   // Supabase refused to send (one address once a minute, or the project's hourly allowance).
   busy: "いまはリンクを送れませんでした。少し時間をおいて、もう一度お試しください。",
+  // Supabase's CAPTCHA refused the Turnstile token (missing, expired or already used).
+  captcha: "確認が切れました。もう一度お試しください。",
   // The app's own limits (src/lib/login-mail-limit.ts).
   email_10m:
     "このメールアドレスには続けてリンクを送りました。10分ほど待ってから、もう一度お試しください。届いたメールが迷惑メールに入っていないかも見てください。",
@@ -24,6 +26,18 @@ export const UNKNOWN_LOGIN_ERROR = "ログインできませんでした。も�
 
 export function loginErrorPath(code: LoginErrorCode): string {
   return `/login?error=${code}`;
+}
+
+/**
+ * Which fixed message a refused signInWithOtp gets. Decided by Supabase's error code and status,
+ * never by the English message text.
+ * - `captcha_failed` (400): CAPTCHA is on and the token is missing, expired, used or invalid.
+ * - 429: Supabase's own send limits.
+ */
+export function loginSendErrorCode(error: { status?: number; code?: string }): LoginErrorCode {
+  if (error.code === "captcha_failed") return "captcha";
+  if (error.status === 429) return "busy";
+  return "send_failed";
 }
 
 /** The message for a query value; null when there is no error to show. */

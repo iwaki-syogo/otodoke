@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { appUrl } from "@/lib/env";
-import { loginErrorPath } from "@/lib/login-errors";
+import { loginErrorPath, loginSendErrorCode } from "@/lib/login-errors";
+import { turnstileToken } from "@/lib/turnstile";
 import { claimLoginMail, clientIp, releaseLoginMail } from "@/lib/login-mail-limit";
 
 /** Send a magic link. The link lands on /auth/confirm with a token_hash (works in any browser). */
@@ -40,6 +41,9 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     email,
     options: {
       emailRedirectTo: `${origin}/auth/confirm?next=${encodeURIComponent(next)}`,
+      // Supabase checks it with Cloudflare when CAPTCHA protection is on, and ignores it while
+      // it is off. Absent (not solved yet, script blocked) is sent as absent. Never logged.
+      captchaToken: turnstileToken(formData),
     },
   });
   if (error) {
@@ -47,7 +51,7 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     console.warn("[login] signInWithOtp failed:", error.status, error.code, error.message);
     // No mail went out, so this press does not count against the limit (never throws).
     await releaseLoginMail(email, claim.claimId);
-    redirect(loginErrorPath(error.status === 429 ? "busy" : "send_failed"));
+    redirect(loginErrorPath(loginSendErrorCode(error)));
   }
   redirect(`/login?sent=${encodeURIComponent(email)}`);
 }
