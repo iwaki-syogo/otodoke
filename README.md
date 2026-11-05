@@ -43,10 +43,10 @@
 
 ## 仕組み
 
-1. 登録すると、あなた専用の受信アドレスが発行されます
+1. 登録して合言葉を決めると、あなた専用の受信アドレスが出ます（合言葉は保存するメールの暗号化に使います。下の「あなたのメールの扱い」）
 2. 自分のメール（Gmail / iCloud / Outlook など）で、そのアドレスへの自動転送を最初に 1 回だけ設定します。店ごとの設定はありません
 3. 届いたメールは Resend の webhook（署名を検証）で受け取り、広告を落としてから Claude が読みます。荷物へのまとめと運送会社の判定はコードです
-4. 一覧・カレンダー・支出として表示します。画面からはいつでも元メールに戻れます
+4. 一覧・カレンダー・支出として表示します。画面からはいつでも元メールに戻れます（合言葉で開きます）
 
 ## Claude をどう使ったか
 
@@ -83,6 +83,7 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 ## 安全への配慮
 
 - **データ**: 全テーブルで RLS。メール本文・読み取り結果・品目は、ログインした利用者からは読むだけで、書くのはサーバーだけです（実際に書き込みを試し、拒否されることを確かめました）
+- **保存したメール**: 件名・差出人・本文は、利用者の合言葉でしか開けない形で保存します（下の「あなたのメールの扱い」）
 - **費用**: 有料の呼び出しの前に、DB の関数 `claim_claude_call` で 1 人 1 日と全体 1 日の枠を取ります。超えたメールは保存しておき、あとで読み直せます
 - **広告メール**: 本文は保存せず、件名だけ 14 日残します
 - **運送会社**: 追跡ページをスクレイピングしません。押したときにリンクを開くだけです
@@ -91,6 +92,23 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 - **公開リポジトリ**: 実メールは置かず、デモの 17 通は匿名化済み。鍵は gitleaks で止めます
 
 **まだできないこと**: Amazon の分割発送では、品目が最初の便の分だけになることがあります。メールが来ない注文は、手で登録する画面から入れます。
+
+## あなたのメールの扱い
+
+アプリの「設定」にも同じことを書いています。
+
+- 届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません（2026-11-06 に privacy.claude.com で確認）
+- 読み取った後のメール（件名・差出人の名前とアドレス・本文）は、あなたの合言葉でしか開けない形で保存します。運営者もデータベースからは読めません
+- 荷物の情報（店・品名・金額・日付・注文番号・伝票番号・根拠の行・読み取り結果）と、差出人のドメイン（例 amazon.co.jp）は暗号化しません。一覧・カレンダー・支出を出すのと、同じメールを見分けるのに使うためです
+- 読み取る前のメール（1 日の上限を超えた分など）は、読み取るまで暗号化せずに置いておきます。読み取ったら暗号化します
+- 合言葉を決める前に届いたメールは、件名・差出人・本文を保存しません。荷物の情報は残ります。サンプルのメール（匿名化して公開しているもの）は、合言葉がなくても読めるまま入ります
+- 合言葉を忘れると、前のメールは誰にも戻せません。荷物は残ります。合言葉を変えるだけなら、前のメールもそのまま開けます
+- 受信を受け持つ Resend にも、メールの写しが一定期間残ります
+- 暗号化を始める前のバックアップには、最大 7 日間、暗号化していないメールが残ります
+- 広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します
+- 運営者が正しいプログラムを動かしていることが前提です。コードはすべてこのリポジトリで公開しています
+
+**仕組み。** 合言葉を決めると、ブラウザが鍵の組（ECDH P-256）を作ります。秘密鍵は合言葉から作った鍵（PBKDF2-SHA256 60 万回）で包んでから保存するので、サーバーには合言葉も開いた秘密鍵も届きません。サーバーは公開鍵だけを持ち、メールを読み取った時点で件名・差出人・本文を 1 つの封筒（HKDF-SHA256 ＋ AES-256-GCM）にして、平文の列を同じ書き込みで空にします。登録のときは、データベースから読み戻した包みが合言葉で開き、公開鍵と対になっていることをブラウザで確かめてから鍵を使い始めます。元メールはブラウザで合言葉から開き、文字だけを表示します（HTML は描画しません）。開いた鍵はそのタブのメモリにだけ置きます。形式は `src/lib/crypto/`、固定のテストベクトルは `fixtures/crypto/envelope-v1.json` です。
 
 ## 技術
 
@@ -136,6 +154,7 @@ MIT
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home (no 置き配), and how much you spent this month.
 Set up mail forwarding once; nothing else is needed, even for shops you have never used.
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
+Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your passphrase opens (ECDH P-256 + HKDF + AES-256-GCM; the private key is wrapped in the browser with PBKDF2). The operator cannot read it from the database; parcel data and sender domains stay plaintext, and this is disclosed in the app.
 A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement (71/73 fields vs 73/73 for Opus, at about 1/20 of the cost).
 Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and a field-by-field check of 341 real emails.
 Try it: sign in with your email at https://otodoke.app, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed).
