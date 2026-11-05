@@ -97,10 +97,11 @@ function NewKeyForm({ userId, button, busyLabel, acknowledge }: { userId: string
   }
 
   return (
-    <form onSubmit={submit} className="mt-3 flex flex-col gap-2">
-      <input type="text" name="username" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
-      <input type="password" name="new-passphrase" autoComplete="new-password" aria-label="合言葉" placeholder={`合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
-      <input type="password" name="new-passphrase-again" autoComplete="new-password" aria-label="合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
+    // No `name` on any field, POST: submitted before the script runs, it sends nothing (see UnlockForm).
+    <form method="post" onSubmit={submit} className="mt-3 flex flex-col gap-2">
+      <input type="text" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
+      <input type="password" autoComplete="new-password" aria-label="合言葉" placeholder={`合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
+      <input type="password" autoComplete="new-password" aria-label="合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
       <label className="flex items-start gap-2 text-sm leading-6">
         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" />
         {acknowledge}
@@ -141,11 +142,12 @@ function ChangeForm({ userId }: { userId: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2">
-      <input type="text" name="username" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
-      <input type="password" name="passphrase" autoComplete="current-password" aria-label="今の合言葉" placeholder="今の合言葉" value={old} onChange={(e) => setOld(e.target.value)} className={input} />
-      <input type="password" name="new-passphrase" autoComplete="new-password" aria-label="新しい合言葉" placeholder={`新しい合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
-      <input type="password" name="new-passphrase-again" autoComplete="new-password" aria-label="新しい合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
+    // No `name` on any field, POST: submitted before the script runs, it sends nothing (see UnlockForm).
+    <form method="post" onSubmit={submit} className="flex flex-col gap-2">
+      <input type="text" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
+      <input type="password" autoComplete="current-password" aria-label="今の合言葉" placeholder="今の合言葉" value={old} onChange={(e) => setOld(e.target.value)} className={input} />
+      <input type="password" autoComplete="new-password" aria-label="新しい合言葉" placeholder={`新しい合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
+      <input type="password" autoComplete="new-password" aria-label="新しい合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
       <button type="submit" disabled={busy || !old} className={primary}>
         {busy ? "変えています…" : "変える"}
       </button>

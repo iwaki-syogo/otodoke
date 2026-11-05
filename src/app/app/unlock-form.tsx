@@ -25,13 +25,14 @@ export function UnlockForm({ userId, label = "開く" }: { userId: string; label
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2">
+    // No field has a `name` and the method is POST: a press before the page's script runs (or
+    // when it fails to load) sends nothing, never the passphrase in a URL (passphrase-forms.test.ts).
+    <form method="post" onSubmit={submit} className="flex flex-col gap-2">
       {/* Lets a password manager keep the passphrase under one name. */}
-      <input type="text" name="username" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
+      <input type="text" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
       <div className="flex gap-2">
         <input
           type="password"
-          name="passphrase"
           autoComplete="current-password"
           aria-label="合言葉"
           placeholder="合言葉"
