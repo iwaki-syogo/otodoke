@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { fromBase64, toBase64 } from "@/lib/crypto/bytes";
 import { challengeAad, openBytes, openMail, type PrivateRecipient } from "@/lib/crypto/envelope";
@@ -327,5 +329,23 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
     const res = await sealPlainBatch(asAdmin(db), USER);
     expect(res.ok).toBe(false);
     expect(db.rows("emails").every((e) => e.body_state === "plain")).toBe(true);
+  });
+});
+
+describe("activate_user_key in migration A (exercised on Postgres 17; this pins its grants)", () => {
+  const sql = readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20261106120000_mail_encryption_keys.sql"), "utf8");
+  const fn = sql.slice(sql.indexOf("create function public.activate_user_key"));
+
+  it("is security definer with an empty search_path, executable by service_role only", () => {
+    expect(fn).toMatch(/security definer\s+set search_path = ''/);
+    expect(sql).toContain("revoke all on function public.activate_user_key(uuid, text, text) from public, anon, authenticated;");
+    expect(sql).toContain("grant execute on function public.activate_user_key(uuid, text, text) to service_role;");
+  });
+
+  it("checks the challenge hash and does both writes in the one call", () => {
+    expect(fn).toMatch(/challenge_hash = p_challenge_hash/);
+    expect(fn.indexOf("set retired_at")).toBeGreaterThan(0);
+    expect(fn.indexOf("set activated_at")).toBeGreaterThan(fn.indexOf("set retired_at"));
+    expect(readFileSync(path.resolve(__dirname, "../../../supabase/rollback/20261106120000_mail_encryption_keys.down.sql"), "utf8")).toContain("drop function public.activate_user_key(uuid, text, text);");
   });
 });
