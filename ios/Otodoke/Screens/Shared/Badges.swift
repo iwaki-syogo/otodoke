@@ -54,22 +54,26 @@ struct StatusBadge: View {
         Text(BadgeText.status(status))
             .font(.caption2.weight(.medium))
             .strikethrough(status == "cancelled")
-            .foregroundStyle(OtodokeColor.hex(style.text))
+            .foregroundStyle(OtodokeColor.adaptive(light: style.light.text, dark: style.dark.text))
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .background(OtodokeColor.hex(style.background), in: Capsule())
+            .background(OtodokeColor.adaptive(light: style.light.background, dark: style.dark.background), in: Capsule())
     }
 
-    private static func style(_ status: String) -> (background: String, text: String) {
+    typealias Pair = (background: String, text: String)
+
+    /// The Web's STATUS_STYLE in light mode. The Web has no dark mode: in dark mode each pill takes the
+    /// same hue, dark (the 900s / 950s) behind a light text (the 200s / 300s), as the amber and red boxes do.
+    static func style(_ status: String) -> (light: Pair, dark: Pair) {
         switch status {
-        case "ordered": return ("#f5f5f5", "#404040")
-        case "shipped": return ("#e0f2fe", "#075985")
-        case "out_for_delivery": return ("#fef3c7", "#78350f")
-        case "attempted": return ("#fee2e2", "#991b1b")
-        case "delivered": return ("#d1fae5", "#065f46")
-        default: return ("#f5f5f5", "#737373") // cancelled, unknown and anything else
+        case "ordered": return (("#f5f5f5", "#404040"), ("#262626", "#d4d4d4"))
+        case "shipped": return (("#e0f2fe", "#075985"), ("#082f49", "#bae6fd"))
+        case "out_for_delivery": return (("#fef3c7", "#78350f"), ("#3a2a0a", "#fde68a"))
+        case "attempted": return (("#fee2e2", "#991b1b"), ("#3b0d0d", "#fca5a5"))
+        case "delivered": return (("#d1fae5", "#065f46"), ("#022c22", "#6ee7b7"))
+        default: return (("#f5f5f5", "#737373"), ("#262626", "#a3a3a3")) // cancelled, unknown and anything else
         }
     }
 }
@@ -84,12 +88,12 @@ struct PresenceBadge: View {
             let face = faceToFace == true
             Text(text)
                 .font(.caption2.weight(face ? .bold : .medium))
-                .foregroundStyle(face ? Color.white : OtodokeColor.hex("#065f46"))
+                .foregroundStyle(face ? Color.white : OtodokeColor.adaptive(light: "#065f46", dark: "#6ee7b7"))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
-                .background(face ? OtodokeColor.hex("#dc2626") : OtodokeColor.hex("#ecfdf5"), in: Capsule())
+                .background(face ? OtodokeColor.hex("#dc2626") : OtodokeColor.adaptive(light: "#ecfdf5", dark: "#022c22"), in: Capsule())
         }
     }
 }
@@ -99,12 +103,12 @@ struct ReviewBadge: View {
     var body: some View {
         Text("要確認")
             .font(.caption2.weight(.medium))
-            .foregroundStyle(OtodokeColor.hex("#78350f"))
+            .foregroundStyle(OtodokeColor.adaptive(light: "#78350f", dark: "#fde68a"))
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .background(OtodokeColor.hex("#fef3c7"), in: Capsule())
+            .background(OtodokeColor.adaptive(light: "#fef3c7", dark: "#3a2a0a"), in: Capsule())
     }
 }
 

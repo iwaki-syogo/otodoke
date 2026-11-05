@@ -43,6 +43,8 @@ final class LoginModel {
     let auth: AuthService
     @ObservationIgnored private let now: @Sendable () -> Date
     private var lastSentAt: Date?
+    /// The address the last code went to (normalized).
+    private var lastSentTo: String?
 
     init(auth: AuthService, launch: LaunchOptions = .current, now: @escaping @Sendable () -> Date = { Date() }) {
         self.auth = auth
@@ -65,7 +67,17 @@ final class LoginModel {
         return left > 0 ? Int(left.rounded(.up)) : 0
     }
 
+    /// Sends the code. Back on the address field with the same address before the 60 seconds are
+    /// over, nothing is sent: the code already sent is asked for again (Supabase would refuse anyway).
     func sendCode() async {
+        let address = AuthService.normalizeEmail(email)
+        if address == lastSentTo, resendWaitSeconds() > 0 {
+            guard !isWorking else { return }
+            errorMessage = nil
+            code = ""
+            step = .code(email: address)
+            return
+        }
         await send(to: email)
     }
 
@@ -103,6 +115,7 @@ final class LoginModel {
         do {
             try await auth.sendCode(email: raw)
             lastSentAt = now()
+            lastSentTo = AuthService.normalizeEmail(raw)
             code = ""
             step = .code(email: AuthService.normalizeEmail(raw))
         } catch {
