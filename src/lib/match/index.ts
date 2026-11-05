@@ -451,6 +451,15 @@ export function faceToFace(p: Pick<ParcelRow, "requires_presence" | "shop_key">)
   return p.requires_presence ?? (p.shop_key === "amazon" ? null : true);
 }
 
+/**
+ * Whether `faceToFace` says face-to-face only by that default, with nothing stored. Worded apart
+ * on screen (念のため対面) so a guess never reads like what a mail said; it is still coloured and
+ * counted as face-to-face. Never true unless `faceToFace` is.
+ */
+export function faceToFaceAssumed(p: Pick<ParcelRow, "requires_presence" | "shop_key">): boolean {
+  return faceToFace(p) === true && p.requires_presence !== true;
+}
+
 /** Past its date with no delivery mail yet, but not long enough to ask. */
 export function isLate(p: DatedParcel, today: string): boolean {
   if (p.status === "delivered" || p.status === "cancelled") return false;

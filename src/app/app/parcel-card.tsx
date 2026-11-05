@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { faceToFace, type ParcelRow } from "@/lib/match";
+import { faceToFace, faceToFaceAssumed, type ParcelRow } from "@/lib/match";
 import { STATUS_LABEL, formatWindow, relativeDateJa, todayJst, yen } from "@/lib/format";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -20,13 +20,19 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-/** Face-to-face or not, decided by `faceToFace` (an unstated method counts as face-to-face, except Amazon). */
+/** Face-to-face only because nothing said otherwise (`faceToFaceAssumed`). The same words everywhere. */
+export const ASSUMED_FACE_TO_FACE = "念のため対面";
+
+/**
+ * Face-to-face or not, decided by `faceToFace` (an unstated method counts as face-to-face, except Amazon).
+ * That default keeps the red but has its own words, so it never reads like what a mail said.
+ */
 export function PresenceBadge({ parcel, compact = false }: { parcel: Pick<ParcelRow, "requires_presence" | "shop_key">; compact?: boolean }) {
   const value = faceToFace(parcel);
   if (value === true) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
-        🤝 {compact ? "対面受け取り" : "対面受け取りが必要"}
+        🤝 {faceToFaceAssumed(parcel) ? ASSUMED_FACE_TO_FACE : compact ? "対面受け取り" : "対面受け取りが必要"}
       </span>
     );
   }

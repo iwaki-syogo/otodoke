@@ -4,11 +4,11 @@ import { z } from "zod";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
-import { faceToFace } from "@/lib/match";
+import { faceToFace, faceToFaceAssumed } from "@/lib/match";
 import { isHttpsUrl } from "@/lib/safe-url";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
-import { PresenceBadge, StatusBadge } from "../../parcel-card";
+import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../../parcel-card";
 import { NotDeliveredButton } from "./not-delivered-button";
 import { TrackingButton } from "./tracking-button";
 import { SealedMail } from "./sealed-mail";
@@ -58,6 +58,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
   // Most Amazon parcels name no carrier or number; Amazon's own page tracks them by order.
   const amazonUrl = parcel.shop_key === "amazon" ? amazonOrderTrackingUrl(parcel.order_number) : null;
   const presence = faceToFace(parcel);
+  const presenceAssumed = faceToFaceAssumed(parcel);
 
   return (
     <article className="flex flex-col gap-6">
@@ -104,8 +105,13 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           </dd>
           <dt className="text-neutral-500">受け取り</dt>
           <dd>
-            {presence === true ? "対面受け取りが必要" : presence === false ? "置き配・投函でOK" : <span className="text-neutral-500">メールに記載なし</span>}
-            {parcel.presence_evidence ? <span className="block text-xs text-neutral-500">根拠: 「{parcel.presence_evidence}」</span> : null}
+            {presence === true ? (presenceAssumed ? ASSUMED_FACE_TO_FACE : "対面受け取りが必要") : presence === false ? "置き配・投函でOK" : <span className="text-neutral-500">メールに記載なし</span>}
+            {/* The default rests on nothing being said, so that fact stands where evidence would. */}
+            {presenceAssumed ? (
+              <span className="block text-xs text-neutral-500">{parcel.source === "manual" ? "指定なし" : "メールに記載なし"}</span>
+            ) : parcel.presence_evidence ? (
+              <span className="block text-xs text-neutral-500">根拠: 「{parcel.presence_evidence}」</span>
+            ) : null}
           </dd>
           <dt className="text-neutral-500">配送</dt>
           <dd>
