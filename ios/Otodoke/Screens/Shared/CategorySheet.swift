@@ -16,9 +16,12 @@ struct CategoryChip: View {
 
     @State private var isOpen = false
     @State private var picked: ParcelCategory?
+    /// Which opening of the sheet is up: a save started in an earlier one never closes a later one.
+    @State private var presentation = SheetPresentation()
 
     var body: some View {
         Button {
+            presentation.open()
             isOpen = true
         } label: {
             HStack(spacing: 6) {
@@ -39,11 +42,14 @@ struct CategoryChip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        // Not reopened while a choice is being saved.
+        .disabled(isSaving)
         .accessibilityLabel("分類: \(ParcelCategory.label(for: shown?.rawValue))（変える）")
         .sheet(isPresented: $isOpen) {
             CategorySheet(current: current, picked: picked, isSaving: isSaving, error: error) { category in
                 picked = category
-                if await choose(category) { isOpen = false }
+                let opening = presentation.current
+                if await choose(category), presentation.isCurrent(opening) { isOpen = false }
             } close: {
                 isOpen = false
             }
@@ -74,6 +80,7 @@ struct CategorySheet: View {
                 Button("閉じる", action: close)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .disabled(isSaving)
             }
             VStack(spacing: 0) {
                 ForEach(ParcelCategory.allCases, id: \.self) { category in
@@ -115,4 +122,13 @@ struct CategorySheet: View {
         .presentationDetents([.medium, .large])
         .interactiveDismissDisabled(isSaving)
     }
+}
+
+/// Numbers each opening of a sheet, so work started in one opening can tell whether it is still up.
+struct SheetPresentation: Equatable, Sendable {
+    private(set) var current = 0
+
+    mutating func open() { current += 1 }
+
+    func isCurrent(_ opening: Int) -> Bool { opening == current }
 }

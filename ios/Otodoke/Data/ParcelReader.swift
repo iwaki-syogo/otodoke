@@ -54,16 +54,19 @@ struct ParcelReader: Sendable {
         async let delivered = statusCount(me: me, status: "delivered")
         async let cancelled = statusCount(me: me, status: "cancelled")
         async let unread = Self.count(
-            provider.database.from("emails").select("id", head: true, count: .exact).or(StatusRules.unreadFilter(now: now))
+            provider.database.from("emails").select("id", head: true, count: .exact)
+                .eq("user_id", value: me).or(StatusRules.unreadFilter(now: now))
         )
         return await ParcelCounts(delivered: delivered, cancelled: cancelled, unread: unread)
     }
 
-    /// .loaded(nil) when there is no such parcel; .failed when the read failed.
+    /// .loaded(nil) when there is no such parcel; .failed when the read failed. Like every read here
+    /// it carries `user_id = me` besides RLS (signed out, nothing is sent).
     func parcel(id: String) async -> LoadResult<ParcelRow?> {
         // Postgres answers a malformed id with an error: that is a parcel that is not there.
         guard UUID(uuidString: id) != nil else { return .loaded(nil) }
-        let request = provider.database.from("parcels").select("*").eq("id", value: id)
+        guard let me = await provider.currentUserID() else { return .failed }
+        let request = provider.database.from("parcels").select("*").eq("id", value: id).eq("user_id", value: me)
         guard let rows: [ParcelRow] = await Self.decoded(request) else { return .failed }
         return .loaded(rows.first)
     }
@@ -71,7 +74,9 @@ struct ParcelReader: Sendable {
     /// parcel_items of the parcel, created_at ascending.
     func items(parcelID: String) async -> LoadResult<[ParcelItemRow]> {
         guard UUID(uuidString: parcelID) != nil else { return .loaded([]) }
+        guard let me = await provider.currentUserID() else { return .failed }
         let request = provider.database.from("parcel_items").select("*").eq("parcel_id", value: parcelID)
+            .eq("user_id", value: me)
             .order("created_at", ascending: true)
         guard let rows: [ParcelItemRow] = await Self.decoded(request) else { return .failed }
         return .loaded(rows)
@@ -81,7 +86,9 @@ struct ParcelReader: Sendable {
     /// classification, text_body, html_body)` embedded, as the Web's detail page selects.
     func extractions(parcelID: String) async -> LoadResult<[ExtractionWithEmail]> {
         guard UUID(uuidString: parcelID) != nil else { return .loaded([]) }
+        guard let me = await provider.currentUserID() else { return .failed }
         let request = provider.database.from("extractions").select(Self.extractionColumns).eq("parcel_id", value: parcelID)
+            .eq("user_id", value: me)
         guard let rows: [ExtractionWithEmail] = await Self.decoded(request) else { return .failed }
         return .loaded(rows)
     }

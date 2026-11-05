@@ -115,6 +115,31 @@ final class ParcelDetailModel {
     private(set) var isSavingCategory = false
     private(set) var categoryError: String?
 
+    /// The last write's result is unknown and no read of the parcel has settled it (Codex-P3).
+    /// Nothing is written (「届いていない」, the category) until a read does: a tap only reads again.
+    private(set) var isUnconfirmed = false
+
+    /// What became of a read of the parcel.
+    private enum ReadOutcome: Equatable {
+        case applied
+        case failed
+        /// A newer read of the parcel was started: its answer is the one shown.
+        case superseded
+        /// A write started or finished while it was read: not shown; read again (now, or once the
+        /// writes in flight are done).
+        case stale
+    }
+
+    /// Each read of the parcel gets a number (only the newest is shown); so does each read of the
+    /// items and mails.
+    @ObservationIgnored private var parcelReadNumber = 0
+    @ObservationIgnored private var restReadNumber = 0
+    /// Bumped when a write is sent and when it is answered: a read of the parcel that saw it change
+    /// is not shown.
+    @ObservationIgnored private var writeGeneration = 0
+    @ObservationIgnored private var writesInFlight = 0
+    @ObservationIgnored private var readAfterWrites = false
+
     init(id: String, reader: ParcelReader, writer: ParcelWriter, today: @escaping @Sendable () -> String) {
         self.id = id
         self.reader = reader
@@ -122,17 +147,30 @@ final class ParcelDetailModel {
         self.today = today
     }
 
-    /// The three reads at once (parcel, items, mails), each kept apart.
+    /// The three reads at once (parcel, items, mails), each kept apart. The mails' text is made off the
+    /// main thread. A parcel read that a write overlapped is not shown but read again.
     func load() async {
+        parcelReadNumber += 1
+        restReadNumber += 1
+        let parcelNumber = parcelReadNumber
+        let restNumber = restReadNumber
+        let generation = writeGeneration
+        let day = today()
         async let parcelRead = reader.parcel(id: id)
         async let itemsRead = reader.items(parcelID: id)
         async let mailsRead = reader.extractions(parcelID: id)
         let (p, i, x) = await (parcelRead, itemsRead, mailsRead)
-        show(p)
-        items = i
-        switch x {
-        case let .loaded(rows): timeline = .loaded(Self.timeline(rows, today: today()))
-        case .failed: timeline = .failed
+        let t = await Self.makeTimeline(x, today: day)
+        if restNumber == restReadNumber {
+            items = i
+            timeline = t
+        }
+        if finishParcelRead(number: parcelNumber, generation: generation, p, keepShownOnFailure: false) == .stale {
+            if writesInFlight > 0 {
+                readAfterWrites = true
+            } else {
+                _ = await rereadParcel()
+            }
         }
     }
 
@@ -170,43 +208,64 @@ final class ParcelDetailModel {
         return WebLink.parcelEdit(id: row.id)
     }
 
-    /// 「届いていない」: the spinner from the tap; on success everything is read again.
+    /// 「届いていない」: the spinner from the tap; on success everything is read again. While the last
+    /// write is not known, a tap only reads the parcel again.
     func markNotDelivered() async {
         guard !isMarkingNotDelivered, showsNotDelivered else { return }
         isMarkingNotDelivered = true
         notDeliveredError = nil
         defer { isMarkingNotDelivered = false }
 
-        switch await writer.markNotDelivered(id: id) {
+        if isUnconfirmed {
+            if await rereadParcel() != .applied, isUnconfirmed { notDeliveredError = Self.unconfirmed }
+            return
+        }
+
+        beginWrite()
+        let result = await writer.markNotDelivered(id: id)
+        endWrite()
+        switch result {
         case .success:
             await load()
         case .notUpdated:
             notDeliveredError = Self.notDeliveredFailed
         case .unknown:
             // Not sent again: the row tells whether it went through.
-            switch await reader.parcel(id: id) {
-            case let .loaded(p?):
-                show(.loaded(p))
-                if p.status == "delivered" { notDeliveredError = Self.notDeliveredFailed }
-            case .loaded(nil):
-                show(.loaded(nil))
-            case .failed:
+            isUnconfirmed = true
+            if await rereadParcel() == .applied {
+                if row?.status == "delivered" { notDeliveredError = Self.notDeliveredFailed }
+            } else if isUnconfirmed {
                 notDeliveredError = Self.unconfirmed
             }
         }
     }
 
     /// The chip shows the choice from the tap; a choice that surely was not saved goes back, with the
-    /// Web's words. On success the parcel takes the written values (no read needed).
-    func setCategory(_ category: ParcelCategory) async {
-        guard !isSavingCategory, let before = row else { return }
+    /// Web's words. On success the parcel takes the written values (no read needed). While the last
+    /// write is not known, a choice only reads the parcel again. true when the choice was saved.
+    @discardableResult
+    func setCategory(_ category: ParcelCategory) async -> Bool {
+        guard !isSavingCategory, let before = row else { return false }
         let previous = Self.category(of: before)
+
+        if isUnconfirmed {
+            isSavingCategory = true
+            categoryError = nil
+            defer { isSavingCategory = false }
+            if await rereadParcel() != .applied, isUnconfirmed { categoryError = Self.unconfirmed }
+            shownCategory = Self.category(of: row)
+            return false
+        }
+
         shownCategory = category
         isSavingCategory = true
         categoryError = nil
         defer { isSavingCategory = false }
 
-        switch await writer.setCategory(id: id, category: category) {
+        beginWrite()
+        let result = await writer.setCategory(id: id, category: category)
+        endWrite()
+        switch result {
         case let .success(written):
             var p = row ?? before
             p.category = category.rawValue
@@ -214,6 +273,7 @@ final class ParcelDetailModel {
             p.status = written.status
             p.updatedAt = written.updatedAt
             parcel = .loaded(p)
+            return true
         case let .notUpdated(reason):
             shownCategory = previous
             switch reason {
@@ -221,22 +281,90 @@ final class ParcelDetailModel {
             case .invalidInput: categoryError = Self.categoryNotAllowed
             case .failed: categoryError = Self.categoryFailed
             }
+            return false
         case .unknown:
-            switch await reader.parcel(id: id) {
-            case let .loaded(p?):
-                parcel = .loaded(p)
+            isUnconfirmed = true
+            if await rereadParcel() == .applied {
+                guard let p = row else {
+                    shownCategory = previous
+                    categoryError = Self.categoryNotFound
+                    return false
+                }
                 shownCategory = Self.category(of: p)
                 if shownCategory != category { categoryError = Self.categoryFailed }
-            case .loaded(nil):
-                parcel = .loaded(nil)
-                shownCategory = previous
-                categoryError = Self.categoryNotFound
-            case .failed:
-                // Neither saved nor not saved is known: the chip keeps the last value read.
-                shownCategory = previous
-                categoryError = Self.unconfirmed
+                return shownCategory == category
+            }
+            // Neither saved nor not saved is known: the chip keeps the last value read.
+            shownCategory = Self.category(of: row) ?? previous
+            if isUnconfirmed { categoryError = Self.unconfirmed }
+            return false
+        }
+    }
+
+    // MARK: reading the parcel again
+
+    /// Reads the parcel again and shows it unless a newer read or a write overlapped it (then reads
+    /// again, at most twice here). A failed read keeps the parcel shown.
+    private func rereadParcel() async -> ReadOutcome {
+        var retries = 0
+        while true {
+            parcelReadNumber += 1
+            let number = parcelReadNumber
+            let generation = writeGeneration
+            let result = await reader.parcel(id: id)
+            let outcome = finishParcelRead(number: number, generation: generation, result, keepShownOnFailure: true)
+            guard outcome == .stale else { return outcome }
+            if writesInFlight > 0 {
+                readAfterWrites = true
+                return .stale
+            }
+            retries += 1
+            guard retries <= 2 else {
+                readAfterWrites = true
+                return .stale
             }
         }
+    }
+
+    /// Shows a parcel read when it is the newest and no write overlapped it. A read that is shown
+    /// settles an unknown write.
+    private func finishParcelRead(number: Int, generation: Int, _ result: LoadResult<ParcelRow?>, keepShownOnFailure: Bool) -> ReadOutcome {
+        guard number == parcelReadNumber else { return .superseded }
+        guard generation == writeGeneration, writesInFlight == 0 else { return .stale }
+        guard case .loaded = result else {
+            if !keepShownOnFailure { show(result) }
+            return .failed
+        }
+        show(result)
+        if isUnconfirmed {
+            isUnconfirmed = false
+            if notDeliveredError == Self.unconfirmed { notDeliveredError = nil }
+            if categoryError == Self.unconfirmed { categoryError = nil }
+        }
+        return .applied
+    }
+
+    private func beginWrite() {
+        writesInFlight += 1
+        writeGeneration &+= 1
+    }
+
+    private func endWrite() {
+        writesInFlight -= 1
+        writeGeneration &+= 1
+        if writesInFlight == 0, readAfterWrites {
+            readAfterWrites = false
+            Task { [weak self] in _ = await self?.rereadParcel() }
+        }
+    }
+
+    /// The mail history, made off the main thread (a long or broken HTML body never holds the screen).
+    nonisolated private static func makeTimeline(_ read: LoadResult<[ExtractionWithEmail]>, today: String) async -> LoadResult<[TimelineEntry]> {
+        guard case let .loaded(rows) = read else { return .failed }
+        let entries = await Task.detached(priority: .userInitiated) {
+            ParcelDetailModel.timeline(rows, today: today)
+        }.value
+        return .loaded(entries)
     }
 
     /// trackingLinkFor(number, carrier) ?? (stored URL if isHttpsUrl) — only when there is a tracking number.
@@ -268,7 +396,7 @@ final class ParcelDetailModel {
     }
 
     /// Mails with their e-mail, sorted by sent_at (text order, nil as "").
-    static func timeline(_ extractions: [ExtractionWithEmail], today: String) -> [TimelineEntry] {
+    nonisolated static func timeline(_ extractions: [ExtractionWithEmail], today: String) -> [TimelineEntry] {
         let withMail = extractions.enumerated().compactMap { offset, x in x.email.map { (offset, x, $0) } }
         // Stable, as Array.prototype.sort.
         let sorted = withMail.sorted { a, b in

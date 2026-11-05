@@ -180,7 +180,6 @@ struct ParcelDetailView: View {
                     error: model.categoryError
                 ) { category in
                     await model.setCategory(category)
-                    return model.categoryError == nil
                 }
             }
         }
