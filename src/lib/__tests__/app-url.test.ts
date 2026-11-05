@@ -24,6 +24,8 @@ vi.mock("next/navigation", () => ({
     throw new Error(`REDIRECT:${url}`);
   },
 }));
+// The mail limit has its own tests (login-mail-limit.test.ts); here it must never reach a database.
+vi.mock("@/lib/login-mail-limit", () => ({ clientIp: () => null, claimLoginMail: async () => "ok" }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
