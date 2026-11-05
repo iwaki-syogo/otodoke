@@ -19,6 +19,8 @@ import type { AdminClient } from "@/lib/supabase/admin";
 export const MIN_KDF_ITERATIONS = 600_000;
 const MAX_KDF_ITERATIONS = 10_000_000;
 export const SEAL_BATCH_SIZE = 50;
+/** At most this many unsealable rows are skipped in one run (they travel in the request). */
+export const MAX_SEAL_SKIP = 200;
 
 const b64 = z.string().max(4096);
 
@@ -153,59 +155,76 @@ export async function rewrapKey(db: AdminClient, userId: string, input: unknown)
   }
 }
 
-/** Read mail of this user still in plaintext, counted by the database. */
-export async function countPlainRead(db: AdminClient, userId: string): Promise<number> {
-  const { count, error } = await db
+/** Read mail of this user still in plaintext, counted by the database (leaving out `except`). */
+export async function countPlainRead(db: AdminClient, userId: string, except: readonly string[] = []): Promise<number> {
+  let query = db
     .from("emails")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
     .eq("processing_status", "processed")
     .eq("body_state", "plain");
+  if (except.length > 0) query = query.not("id", "in", `(${except.join(",")})`);
+  const { count, error } = await query;
   if (error) throw new Error(`emails count failed: ${error.message}`);
   return count ?? 0;
 }
 
+/** Rows that could not be sealed earlier in this run of 「暗号化する」, so the next batch moves past them. */
+// Ids only (hex and hyphens): they go into a PostgREST in-list, so nothing else may pass.
+export const SealBatchSchema = z.object({ skip: z.array(z.string().regex(/^[0-9a-f-]{1,36}$/i)).max(MAX_SEAL_SKIP) }).strict();
+export type SealBatch = z.infer<typeof SealBatchSchema>;
+
 /**
  * Seal up to SEAL_BATCH_SIZE of this user's read mails that are still in plaintext, with the key
  * in use. Safe to run again and side by side: a row is written only while it is still plaintext.
- * Answers how many were sealed and how many remain.
+ *
+ * A row that cannot be sealed does not stop the run: it is answered in `failed` and the browser
+ * passes it back in `skip`, so the next batch moves past it instead of picking it first forever.
+ * `remaining` counts what is still plaintext apart from the skipped rows (0: this run is done).
  */
-export async function sealPlainBatch(db: AdminClient, userId: string): Promise<KeyResult<{ sealed: number; remaining: number }>> {
+export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { skip: [] }): Promise<KeyResult<{ sealed: number; failed: string[]; remaining: number }>> {
   try {
+    const { skip } = SealBatchSchema.parse(input);
     const key = await currentSealKey(db, userId);
     if (!key) throw new Error("no key in use");
-    const { data: rows, error } = await db
+    let query = db
       .from("emails")
       .select("id, classification, subject, from_name, from_address, from_domain, text_body, html_body, forwarding_confirm_url")
       .eq("user_id", userId)
       .eq("processing_status", "processed")
-      .eq("body_state", "plain")
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true })
-      .limit(SEAL_BATCH_SIZE);
+      .eq("body_state", "plain");
+    if (skip.length > 0) query = query.not("id", "in", `(${skip.join(",")})`);
+    const { data: rows, error } = await query.order("created_at", { ascending: true }).order("id", { ascending: true }).limit(SEAL_BATCH_SIZE);
     if (error) throw new Error(`emails lookup failed: ${error.message}`);
 
     let sealed = 0;
+    const failed: string[] = [];
     for (const row of rows) {
-      const mail = { subject: row.subject, from_name: row.from_name, from_address: row.from_address, text: row.text_body, html: row.html_body };
-      const confirmUrl =
-        row.forwarding_confirm_url ??
-        (row.classification === "forwarding_confirmation" ? (forwardingConfirmUrl(row.text_body ?? "") ?? forwardingConfirmUrl(row.html_body ?? "")) : null);
-      const { data: written, error: writeError } = await db
-        .from("emails")
-        .update({
-          ...(await closedBody(key, userId, row.id, mail, false)),
-          from_domain: row.from_domain ?? domainOf(row.from_address),
-          forwarding_confirm_url: confirmUrl,
-        })
-        .eq("id", row.id)
-        .eq("user_id", userId)
-        .eq("body_state", "plain")
-        .select("id");
-      if (writeError) throw new Error(`emails seal failed: ${writeError.message}`);
-      sealed += written?.length ?? 0;
+      try {
+        const mail = { subject: row.subject, from_name: row.from_name, from_address: row.from_address, text: row.text_body, html: row.html_body };
+        const confirmUrl =
+          row.forwarding_confirm_url ??
+          (row.classification === "forwarding_confirmation" ? (forwardingConfirmUrl(row.text_body ?? "") ?? forwardingConfirmUrl(row.html_body ?? "")) : null);
+        const { data: written, error: writeError } = await db
+          .from("emails")
+          .update({
+            ...(await closedBody(key, userId, row.id, mail, false)),
+            from_domain: row.from_domain ?? domainOf(row.from_address),
+            forwarding_confirm_url: confirmUrl,
+          })
+          .eq("id", row.id)
+          .eq("user_id", userId)
+          .eq("body_state", "plain")
+          .select("id");
+        if (writeError) throw new Error(writeError.message);
+        sealed += written?.length ?? 0;
+      } catch (err) {
+        // Only the id and the database's message: never the mail.
+        console.error("seal: a row could not be sealed", row.id, err instanceof Error ? err.message : "unknown error");
+        failed.push(row.id);
+      }
     }
-    return { ok: true, sealed, remaining: await countPlainRead(db, userId) };
+    return { ok: true, sealed, failed, remaining: await countPlainRead(db, userId, [...skip, ...failed]) };
   } catch (err) {
     return fail(err);
   }

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { activateKey, registerKey, rewrapKey, sealPlainBatch, type KeyActivation, type KeyRegistration, type KeyResult, type KeyRewrap } from "@/lib/mail-keys";
+import { activateKey, registerKey, rewrapKey, sealPlainBatch, type KeyActivation, type KeyRegistration, type KeyResult, type KeyRewrap, type SealBatch } from "@/lib/mail-keys";
 import type { EnvelopeV1 } from "@/lib/crypto/envelope";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
@@ -33,11 +33,14 @@ export async function rewrapMailKey(input: KeyRewrap): Promise<KeyResult<{ keyId
   return rewrapKey(createAdminClient(), user.id, input);
 }
 
-/** One batch of 「暗号化する」. The browser calls it again until nothing remains. */
-export async function sealStoredMail(): Promise<KeyResult<{ sealed: number; remaining: number }>> {
+/**
+ * One batch of 「暗号化する」. The browser calls it again until nothing remains, passing back the
+ * rows that could not be sealed so the next batch moves past them.
+ */
+export async function sealStoredMail(input: SealBatch): Promise<KeyResult<{ sealed: number; failed: string[]; remaining: number }>> {
   const user = await getUser();
   if (!user) return signedOut;
-  const result = await sealPlainBatch(createAdminClient(), user.id);
+  const result = await sealPlainBatch(createAdminClient(), user.id, input);
   revalidatePath("/app", "layout");
   return result;
 }

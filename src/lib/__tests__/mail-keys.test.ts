@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fromBase64, toBase64 } from "@/lib/crypto/bytes";
 import { challengeAad, openBytes, openMail, type PrivateRecipient } from "@/lib/crypto/envelope";
 import { createKeyPair, openStoredKey, wrapPrivateKey, type StoredKey } from "@/lib/crypto/key-wrap";
@@ -230,7 +230,7 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
 
     // Again: nothing to do, nothing rewritten.
     const before = db.callsOn("emails", "update").length;
-    expect(await sealPlainBatch(asAdmin(db), USER)).toEqual({ ok: true, sealed: 0, remaining: 0 });
+    expect(await sealPlainBatch(asAdmin(db), USER)).toEqual({ ok: true, sealed: 0, failed: [], remaining: 0 });
     expect(db.callsOn("emails", "update").length).toBe(before);
   });
 
@@ -246,8 +246,71 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
       }
     });
     const res = await sealPlainBatch(asAdmin(db), USER);
-    expect(res).toEqual({ ok: true, sealed: 2, remaining: 0 });
+    expect(res).toEqual({ ok: true, sealed: 2, failed: [], remaining: 0 });
     expect(db.find("emails", "e-0000")!.body_envelope).toEqual({ other: "tab" });
+  });
+
+  it("a row that cannot be sealed is skipped and counted, and the run still reaches the end", async () => {
+    const db = new FakeDb();
+    await registerAndActivate(db);
+    seedPlain(db, 120);
+    // The oldest row (picked first by every batch) and one in the middle refuse to be written.
+    const broken = new Set(["e-0000", "e-0070"]);
+    db.hooks.push((q) => {
+      if (q.table !== "emails" || q.op !== "update") return;
+      const id = q.filters.find((f) => f.method === "eq" && f.args[0] === "id")?.args[1];
+      if (broken.has(String(id))) return { data: null, error: { message: "new row violates a check" } };
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // What the browser does: pass back what failed, call again until 0 remain.
+    const skip: string[] = [];
+    const steps: Array<{ sealed: number; failed: number; remaining: number }> = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await sealPlainBatch(asAdmin(db), USER, { skip });
+      if (!res.ok) throw new Error(res.error);
+      skip.push(...res.failed);
+      steps.push({ sealed: res.sealed, failed: res.failed.length, remaining: res.remaining });
+      if (res.remaining === 0) break;
+    }
+    expect(steps).toEqual([
+      { sealed: 49, failed: 1, remaining: 70 },
+      { sealed: 49, failed: 1, remaining: 20 },
+      { sealed: 20, failed: 0, remaining: 0 },
+    ]);
+    expect(skip.sort()).toEqual(["e-0000", "e-0070"]);
+    const plain = db.rows("emails").filter((e) => e.body_state === "plain").map((e) => e.id);
+    expect(plain.sort()).toEqual(["e-0000", "e-0070"]);
+    // Logged by id only, never the mail.
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/件名|本文|テスト店/);
+    log.mockRestore();
+  });
+
+  it("negative control: without passing the failed rows back, the run never gets past the oldest one", async () => {
+    const db = new FakeDb();
+    await registerAndActivate(db);
+    seedPlain(db, 60);
+    db.hooks.push((q) => {
+      if (q.table !== "emails" || q.op !== "update") return;
+      if (q.filters.some((f) => f.method === "eq" && f.args[0] === "id" && f.args[1] === "e-0000")) return { data: null, error: { message: "refused" } };
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = await sealPlainBatch(asAdmin(db), USER);
+    const again = await sealPlainBatch(asAdmin(db), USER);
+    log.mockRestore();
+    if (!first.ok || !again.ok) throw new Error("unexpected");
+    expect(first.failed).toEqual(["e-0000"]);
+    // The same row is picked first again: only the skip list moves the run past it.
+    expect(again.failed).toEqual(["e-0000"]);
+  });
+
+  it("refuses skip entries that are not ids (they go into a PostgREST in-list)", async () => {
+    const db = new FakeDb();
+    await registerAndActivate(db);
+    for (const skip of [["a,b"], ["x)"], ['"q"'], Array.from({ length: 201 }, (_, i) => `e-${i}`)]) {
+      expect((await sealPlainBatch(asAdmin(db), USER, { skip })).ok).toBe(false);
+    }
+    expect((await sealPlainBatch(asAdmin(db), USER, { skip: [], other: 1 })).ok).toBe(false);
   });
 
   it("keeps the Gmail approval link of an old confirmation in plaintext", async () => {

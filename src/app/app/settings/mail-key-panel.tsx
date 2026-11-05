@@ -167,22 +167,30 @@ function SealBanner({ count }: { count: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [unsealable, setUnsealable] = useState(0);
 
   async function run() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    // Rows that could not be sealed in this run: skipped from here on, counted for the user.
+    const skip: string[] = [];
     try {
       for (;;) {
-        const res = await sealStoredMail();
+        const res = await sealStoredMail({ skip });
         if (!res.ok) throw new Error(res.error);
-        setRemaining(res.remaining);
+        skip.push(...res.failed);
+        setUnsealable(skip.length);
+        // Still in plaintext: what is left plus what could not be sealed.
+        setRemaining(res.remaining + skip.length);
         if (res.remaining === 0) {
-          setDone(true);
+          if (skip.length === 0) setDone(true);
           break;
         }
-        // Nothing moved: stop instead of looping (another tab may be sealing the same rows).
-        if (res.sealed === 0) throw new Error("stalled");
+        // Nothing moved: stop instead of looping (another tab may be sealing the same rows). Rows
+        // that failed are skipped from now on, so they move the run on; past the server's cap on
+        // skipped rows it answers an error and the run stops.
+        if (res.sealed === 0 && res.failed.length === 0) throw new Error("stalled");
       }
       router.refresh();
     } catch {
@@ -201,6 +209,7 @@ function SealBanner({ count }: { count: number }) {
         {busy ? `暗号化しています…あと ${remaining} 通` : "暗号化する"}
       </button>
       {error ? <p className="mt-2 text-sm text-red-800">{error}</p> : null}
+      {unsealable > 0 && !busy ? <p className="mt-2 text-sm text-red-800">暗号化できなかったメールが {unsealable} 通ありました。もう一度押すと試し直します</p> : null}
     </div>
   );
 }
