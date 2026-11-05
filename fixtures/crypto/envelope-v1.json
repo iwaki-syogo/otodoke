@@ -1,0 +1,53 @@
+{
+  "format": "otodoke envelope v1 / key wrap v1. Made-up keys for tests; they protect nothing.",
+  "envelope": {
+    "recipient": {
+      "private_key_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgZnjNsNv6DA706fBVxR+NhSRHOgDnA2kmscMvMFRIjNehRANCAASAUf1jRtezd7np8pGEJ9o3Xc9G8Lz3dGnKZLR3VI76SUQ75OWNuVMt7zvQT6OXI1UPA+d5+xJdEqFZllTHby3U",
+      "private_key_d": "ZnjNsNv6DA706fBVxR+NhSRHOgDnA2kmscMvMFRIjNc=",
+      "public_key": "BIBR/WNG17N3uenykYQn2jddz0bwvPd0acpktHdUjvpJRDvk5Y25Uy3vO9BPo5cjVQ8D53n7El0SoVmWVMdvLdQ=",
+      "key_id": "01360a5a3fd78d79f6fa52bcee61ef7e"
+    },
+    "ephemeral": {
+      "private_key_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgRvj90xWrft+5iUlnm7PRVi1e8909v0eYGgPDSM0vEauhRANCAAQWxusqKAfFK26jrcMaDkdsCV/nnD57vzs0nJ7kqp2YIfRBLDWem5B2RTNPgw2iQkdYswvQ6ZFOI3TPmxCNeBHC",
+      "private_key_d": "Rvj90xWrft+5iUlnm7PRVi1e8909v0eYGgPDSM0vEas=",
+      "public_key": "BBbG6yooB8UrbqOtwxoOR2wJX+ecPnu/OzScnuSqnZgh9EEsNZ6bkHZFM0+DDaJCR1izC9DpkU4jdM+bEI14EcI="
+    },
+    "user_id": "00000000-0000-4000-8000-0000000000aa",
+    "email_id": "00000000-0000-4000-8000-0000000000ee",
+    "aad": "otodoke/mail/v1|00000000-0000-4000-8000-0000000000aa|00000000-0000-4000-8000-0000000000ee",
+    "iv": "dLMxv7IysvXzFG+W",
+    "hkdf_salt": "otodoke/mail/v1",
+    "plaintext_object": {
+      "subject": "【テスト店】ご注文の商品を発送しました",
+      "from_name": "テスト店",
+      "from_address": "shop@example.test",
+      "text": "テスト 太郎 様\nご注文番号: TEST-0001\nお届け予定: 2026/11/09（月）\n",
+      "html": "<p>テスト 太郎 様</p><p>ご注文番号: TEST-0001</p>"
+    },
+    "plaintext_json": "{\"v\":1,\"subject\":\"【テスト店】ご注文の商品を発送しました\",\"from_name\":\"テスト店\",\"from_address\":\"shop@example.test\",\"text\":\"テスト 太郎 様\\nご注文番号: TEST-0001\\nお届け予定: 2026/11/09（月）\\n\",\"html\":\"<p>テスト 太郎 様</p><p>ご注文番号: TEST-0001</p>\"}",
+    "shared_secret_z": "JwpRHLblmiiVSUhpauPtBCq6Hb2/CLFgSJ61SKpKcv4=",
+    "hkdf_info": "BBbG6yooB8UrbqOtwxoOR2wJX+ecPnu/OzScnuSqnZgh9EEsNZ6bkHZFM0+DDaJCR1izC9DpkU4jdM+bEI14EcIEgFH9Y0bXs3e56fKRhCfaN13PRvC893RpymS0d1SO+klEO+TljblTLe870E+jlyNVDwPnefsSXRKhWZZUx28t1A==",
+    "aes_key": "RukRcksDREL+Kclvzh8LTfBkgLnvX5v3lp/31Uy7+28=",
+    "envelope": {
+      "v": 1,
+      "alg": "P256-HKDF-SHA256-A256GCM",
+      "kid": "01360a5a3fd78d79f6fa52bcee61ef7e",
+      "epk": "BBbG6yooB8UrbqOtwxoOR2wJX+ecPnu/OzScnuSqnZgh9EEsNZ6bkHZFM0+DDaJCR1izC9DpkU4jdM+bEI14EcI=",
+      "iv": "dLMxv7IysvXzFG+W",
+      "ct": "BxA/eane0F/JIfOmLj1YFtMT9wIZUEzjZdG4KlMNgVmMIYbi57eTn0/ROrv5uzu41AzEhveg59yRcdnklH5J8x2+OlNO8k43Zw4UiQUVHWQbyEfx+u3TkwAaWDO7KI4uLb3Jlfc9URDQF/hqzjMNAOYewoP6zRsvF3ZpSv/ho4FWiB+ZnG09n1No0qfrwc2+Wxbh+Ty5rocIBg0CXVU4//x75gWZhkHESSV/WqA+3jmdFFX17oul74QgjnTYcxcl5B6sAQvbeGaT5YPgB4NItZ6giiSa0ocLPSJgAt3j06aUWe/Axw5Qk2/ZJ9a0XxLM4IqaEsOwiBDAuuqFYVNP2OEde1doqo9Upi4Fwl0/jKu+oCmpX3Cien1y/O14xUmPCEdbFsWWEkSmu/XOOffV7dXnVXZi3XxCK6jTv+QOgTs2Nus="
+    }
+  },
+  "key_wrap": {
+    "user_id": "00000000-0000-4000-8000-0000000000aa",
+    "passphrase": "ＯＴＯＤＯＫＥ　テスト合言葉１２３",
+    "passphrase_nfkc": "OTODOKE テスト合言葉123",
+    "passphrase_nfkc_utf8": "T1RPRE9LRSDjg4bjgrnjg4jlkIjoqIDokYkxMjM=",
+    "aad": "otodoke/key/v1|00000000-0000-4000-8000-0000000000aa",
+    "kdf_salt": "dldHLlICPo+tPqWLdXOhdQ==",
+    "kdf_iterations": 600000,
+    "kek": "JZibyqUjDvMDRmfxr09BImZo2OxDd4f6oyLcRIH0ZrY=",
+    "private_key_pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgZnjNsNv6DA706fBVxR+NhSRHOgDnA2kmscMvMFRIjNehRANCAASAUf1jRtezd7np8pGEJ9o3Xc9G8Lz3dGnKZLR3VI76SUQ75OWNuVMt7zvQT6OXI1UPA+d5+xJdEqFZllTHby3U",
+    "wrapped_private_key": "+19SO/77ouxR6IDXiqOQO4tztl80v4RceO0LGjPxp0MTgdKNMH1eq6rrdmp+0TMeu3Yden8Lvy3Bx4qX72XZ0nO03twwJCjek7yV9opP7hjG+Uw3wXXobzigOnq4aAvU7YiZWHBTN13eneGcW/0uowVPsYHI1mUHwgH/VcJNbp3wrBFRWPKG+J+pzMNWqEYrWnmAS5uuSeNUbA==",
+    "wrap_iv": "yANV9/V9CvuX9Y5z"
+  }
+}

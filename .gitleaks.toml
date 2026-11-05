@@ -17,4 +17,6 @@ regex = '''\bre_[A-Za-z0-9]{20,}\b'''
 [allowlist]
 paths = [
   '''package-lock\.json''',
+  # Made-up keys for the envelope test vectors (scripts/crypto-vectors.ts). They protect nothing.
+  '''^fixtures/crypto/envelope-v1\.json$''',
 ]
