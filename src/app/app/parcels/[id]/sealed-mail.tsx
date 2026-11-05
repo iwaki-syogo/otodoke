@@ -14,7 +14,7 @@ type Opened = { kind: "open"; mail: MailPlaintext } | { kind: "old-key" } | { ki
  * tab; then the envelope is fetched with the user's own session and opened here, in the browser.
  * The body is shown as text only: the HTML part is turned into text, never rendered.
  */
-export function SealedMail({ userId, emailId, fromDomain, notes }: { userId: string; emailId: string; fromDomain: string | null; notes: string | null }) {
+export function SealedMail({ userId, emailId, fromDomain, notes, confidence }: { userId: string; emailId: string; fromDomain: string | null; notes: string | null; confidence: React.ReactNode }) {
   const key = useTabKey(userId);
   const [opened, setOpened] = useState<{ keyId: string; result: Opened } | null>(null);
   const current = key && opened?.keyId === key.keyId ? opened.result : null;
@@ -54,6 +54,7 @@ export function SealedMail({ userId, emailId, fromDomain, notes }: { userId: str
           {fromDomain ? <p className="mt-0.5 truncate text-xs text-neutral-500">{fromDomain}</p> : null}
         </>
       )}
+      {confidence}
       <details className="mt-2">
         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}

@@ -178,20 +178,21 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
               const result = x.result as { notes?: string | null } | null;
               const body = email.text_body?.trim() || (email.html_body ? htmlToText(email.html_body) : "");
               const notes = result?.notes ?? null;
+              const confidence = x.confidence !== null ? <p className="mt-1 text-[11px] text-neutral-400">確信度 {Math.round(Number(x.confidence) * 100)}%</p> : null;
               return (
                 <li key={x.id} className="rounded-2xl border border-neutral-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
                     <span className="font-medium text-neutral-800">{RELEVANCE_LABEL[email.classification ?? ""] ?? email.classification ?? "メール"}</span>
                     <span>{formatDateTimeJa(email.sent_at)}</span>
                   </div>
-                  {x.confidence !== null ? <p className="mt-1 text-[11px] text-neutral-400">確信度 {Math.round(Number(x.confidence) * 100)}%</p> : null}
                   {email.body_state === "sealed" ? (
                     // Opened in the browser with the passphrase; the server never sees the content.
-                    <SealedMail userId={userId} emailId={email.id} fromDomain={email.from_domain} notes={notes} />
+                    <SealedMail userId={userId} emailId={email.id} fromDomain={email.from_domain} notes={notes} confidence={confidence} />
                   ) : email.body_state === "dropped" ? (
                     <>
                       <p className="mt-1 text-sm leading-snug text-neutral-500">本文は保存していません</p>
                       {email.from_domain ? <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_domain}</p> : null}
+                      {confidence}
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
@@ -202,6 +203,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                     <>
                       <p className="mt-1 text-sm leading-snug">{email.subject}</p>
                       <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_name ? `${email.from_name} <${email.from_address}>` : email.from_address}</p>
+                      {confidence}
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
