@@ -6,6 +6,8 @@ import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
+import { MailKeyPanel } from "./mail-key-panel";
+import { MailHandling } from "./mail-handling";
 import { readAll } from "@/lib/supabase/read-all";
 import type { Tables } from "@/lib/db/database.types";
 
@@ -27,9 +29,27 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   const supabase = await createClient();
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
+  // The key in use. Not knowing must not look like "no key": the address stays hidden then too.
+  const { data: key, error: keyError } = await supabase
+    .from("user_keys")
+    .select("key_id, created_at")
+    .not("activated_at", "is", null)
+    .is("retired_at", null)
+    .maybeSingle();
+  if (keyError) console.error("settings page (key):", keyError.message);
+  // Read mail still in plaintext: from before encryption, or samples loaded without a key.
+  const { count: plainCount, error: plainError } = await supabase
+    .from("emails")
+    .select("id", { count: "exact", head: true })
+    .eq("processing_status", "processed")
+    .eq("body_state", "plain");
+  if (plainError) console.error("settings page (plain count):", plainError.message);
+  const { count: oldKeyCount } = key
+    ? await supabase.from("emails").select("id", { count: "exact", head: true }).eq("body_state", "sealed").neq("body_envelope->>kid", key.key_id)
+    : { count: 0 };
   const { data: confirmation } = await supabase
     .from("emails")
-    .select("text_body, html_body, sent_at")
+    .select("forwarding_confirm_url, text_body, html_body, sent_at")
     .eq("classification", "forwarding_confirmation")
     .order("sent_at", { ascending: false })
     .limit(1)
@@ -54,20 +74,38 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   }
   // A failed read is told apart from no dropped mail: by the failure, never by the empty list.
   const droppedError = dropped === null;
-  const confirmUrl = confirmation ? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "") : null;
+  // Checked again when shown: only Google's own page is ever linked.
+  const confirmUrl = confirmation
+    ? forwardingConfirmUrl(confirmation.forwarding_confirm_url ?? "") ?? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "")
+    : null;
 
   return (
     <div className="flex flex-col gap-8">
       <h1 className="text-xl font-bold">設定</h1>
 
+      {keyError ? (
+        <section>
+          <h2 className="text-base font-bold">合言葉</h2>
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        </section>
+      ) : (
+        <MailKeyPanel state={{ userId: user.id, keyCreatedAt: key?.created_at ?? null, plainCount: plainError ? null : (plainCount ?? 0), oldKeyCount: oldKeyCount ?? 0 }} />
+      )}
+
       <section>
         <h2 className="text-base font-bold">転送先アドレス</h2>
-        <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
-        <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
-          <code className="min-w-0 flex-1 break-all text-sm">{address ?? `${localPart}@（受信ドメイン設定前）`}</code>
-          {address ? <CopyButton text={address} /> : null}
-        </div>
-        <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
+        {key ? (
+          <>
+            <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
+            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
+              <code className="min-w-0 flex-1 break-all text-sm">{address ?? `${localPart}@（受信ドメイン設定前）`}</code>
+              {address ? <CopyButton text={address} /> : null}
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
+          </>
+        ) : (
+          <p className="mt-1 text-sm leading-6 text-neutral-600">合言葉を決めると、ここに出ます。サンプルは合言葉なしで試せます。</p>
+        )}
       </section>
 
       {waiting ? (
@@ -155,6 +193,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <p className="mt-2 text-sm text-neutral-500">まだありません</p>
         )}
       </section>
+
+      <MailHandling />
 
       <section id="demo" className="scroll-mt-4 rounded-2xl border border-dashed border-neutral-300 p-4">
         <h2 className="text-base font-bold">サンプルで試す</h2>
