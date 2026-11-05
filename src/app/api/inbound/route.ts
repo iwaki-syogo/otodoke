@@ -55,7 +55,9 @@ export async function POST(request: Request) {
     .filter((m): m is RegExpMatchArray => !!m && m[2] === domain)
     .map((m) => m[1].split("+")[0])[0];
   if (!localPart) {
-    console.warn("inbound: no recipient on our domain", recipients);
+    // Addresses are not logged: a count is enough to tell this case apart.
+    const addressCount = recipients.length;
+    console.warn("inbound: no recipient on our domain; addresses:", addressCount);
     return NextResponse.json({ ignored: "no matching recipient" });
   }
 
