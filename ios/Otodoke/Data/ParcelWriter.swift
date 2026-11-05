@@ -5,7 +5,9 @@
 //  1. user_id = me on every write
 //  2. 「届いた」 never from cancelled (status != cancelled), and only on the version the screen showed
 //  3. back only to a RESTORABLE status, and only from delivered (status = delivered, updated_at as read)
-//  4. a category is one of the seven, recorded as the user's (category_source = "user")
+//  4. a category is one of the seven, recorded as the user's (category_source = "user"), and only on
+//     the version the screen showed (updated_at as read): a choice whose answer was lost and that
+//     reaches the server late never overwrites a later choice (CF1)
 // updated_at is sent exactly as it was read (a String; supabase-swift percent-encodes its "+").
 // No automatic retries (PostgREST's retryEnabled is false), and a result that is unknown is never
 // sent again: the caller reads the row again instead.
@@ -139,9 +141,31 @@ struct ParcelWriter: Sendable {
         return await write(id: id, .restore(to: to, deliveredUpdatedAt: row.updatedAt))
     }
 
-    /// category = one of the seven, category_source = "user".
+    /// category = one of the seven, category_source = "user", where updated_at = shown.updatedAt (sent
+    /// verbatim). 0 rows: the parcel changed since it was shown, or is gone (conflict).
+    func setCategory(_ shown: ParcelVersion, category: ParcelCategory) async -> WriteOutcome<ParcelVersion> {
+        await write(id: shown.id, .category(category, updatedAt: shown.updatedAt))
+    }
+
+    /// The same, on the version read now (updated_at, then the write conditioned on it), for a caller
+    /// with no version shown.
     func setCategory(id: String, category: ParcelCategory) async -> WriteOutcome<ParcelVersion> {
-        await write(id: id, .category(category))
+        guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
+        guard let me = await provider.currentUserID() else { return .notUpdated(.failed) }
+        let rows: [Stamp]
+        do {
+            let response = try await provider.database.from("parcels")
+                .select("updated_at")
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+                .execute()
+            rows = try JSONDecoder().decode([Stamp].self, from: response.data)
+        } catch {
+            return .notUpdated(.failed)
+        }
+        guard rows.count <= 1 else { return .notUpdated(.failed) }
+        guard let row = rows.first else { return .notUpdated(.conflict) }
+        return await write(id: id, .category(category, updatedAt: row.updatedAt))
     }
 
     // MARK: the one write
@@ -152,8 +176,8 @@ struct ParcelWriter: Sendable {
         case deliver(ParcelVersion)
         /// status → a RESTORABLE status, only from delivered at the updated_at given.
         case restore(to: String, deliveredUpdatedAt: String)
-        /// category → one of the seven, as the user's choice.
-        case category(ParcelCategory)
+        /// category → one of the seven, as the user's choice, only at the updated_at given.
+        case category(ParcelCategory, updatedAt: String)
     }
 
     /// The columns asked back from a write.
@@ -164,6 +188,15 @@ struct ParcelWriter: Sendable {
 
         enum CodingKeys: String, CodingKey {
             case id, status
+            case updatedAt = "updated_at"
+        }
+    }
+
+    /// updated_at, read before a category is written without a version shown.
+    private struct Stamp: Decodable {
+        let updatedAt: String
+
+        enum CodingKeys: String, CodingKey {
             case updatedAt = "updated_at"
         }
     }
@@ -193,8 +226,8 @@ struct ParcelWriter: Sendable {
         case let .restore(to, deliveredUpdatedAt):
             guard StatusRules.restorable.contains(to), !deliveredUpdatedAt.isEmpty else { return .notUpdated(.invalidInput) }
             values = ["status": to]
-        case let .category(category):
-            guard ParcelCategory.allCases.contains(category) else { return .notUpdated(.invalidInput) }
+        case let .category(category, updatedAt):
+            guard ParcelCategory.allCases.contains(category), !updatedAt.isEmpty else { return .notUpdated(.invalidInput) }
             values = ["category": category.rawValue, "category_source": "user"]
         }
 
@@ -221,8 +254,8 @@ struct ParcelWriter: Sendable {
                 query = query
                     .eq("status", value: "delivered")
                     .eq("updated_at", value: deliveredUpdatedAt)
-            case .category:
-                break
+            case let .category(_, updatedAt):
+                query = query.eq("updated_at", value: updatedAt)
             }
             response = try await query.select("id,status,updated_at").execute()
         } catch {

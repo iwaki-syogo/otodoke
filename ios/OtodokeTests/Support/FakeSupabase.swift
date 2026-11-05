@@ -51,6 +51,9 @@ actor FakeSupabase {
         /// Handled now (the data as it is now), the answer delivered only when the gate opens: a slow
         /// answer that is older than writes made meanwhile.
         case delay(Gate)
+        /// The device gives up now (`code`, e.g. a timeout) while the request is held at the server:
+        /// it is handled only when `gate` opens, on the data as it is then, and `handled` opens after.
+        case lostThenLate(Gate, URLError.Code, handled: Gate)
     }
 
     /// The faults `holdThen` can end in (no nesting).
@@ -209,6 +212,13 @@ actor FakeSupabase {
                 let reply = route(request)
                 await gate.wait()
                 return reply
+            case let .lostThenLate(gate, code, handled):
+                Task { [self] in
+                    await gate.wait()
+                    await self.handleLate(request)
+                    handled.open()
+                }
+                return .failure(code)
             case let .holdThen(gate, fault):
                 await gate.wait()
                 switch fault {
@@ -220,6 +230,10 @@ actor FakeSupabase {
             }
         }
         return route(request)
+    }
+
+    private func handleLate(_ request: StubRequest) {
+        _ = route(request)
     }
 
     private func route(_ request: StubRequest) -> StubReply {

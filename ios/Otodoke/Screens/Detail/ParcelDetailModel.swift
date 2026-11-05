@@ -253,6 +253,8 @@ final class ParcelDetailModel {
     /// The chip shows the choice from the tap; a choice that surely was not saved goes back, with the
     /// Web's words. On success the parcel takes the written values (no read needed). While the last
     /// write is not known, a choice only reads the parcel again. true when the choice was saved.
+    /// The choice is written only on the version shown (CF1): when the parcel changed meanwhile (or a
+    /// lost choice went through late), nothing is written and the parcel is read again.
     @discardableResult
     func setCategory(_ category: ParcelCategory) async -> Bool {
         guard !isSavingCategory, let before = row else { return false }
@@ -279,7 +281,7 @@ final class ParcelDetailModel {
         defer { isSavingCategory = false }
 
         beginWrite()
-        let result = await writer.setCategory(id: id, category: category)
+        let result = await writer.setCategory(ParcelVersion(before), category: category)
         endWrite()
         switch result {
         case let .success(written):
@@ -290,13 +292,24 @@ final class ParcelDetailModel {
             p.updatedAt = written.updatedAt
             parcel = .loaded(p)
             return true
+        case .notUpdated(.conflict):
+            // Changed since it was shown, or gone: show what is there now.
+            if await rereadParcel() == .applied {
+                guard let p = row else {
+                    shownCategory = previous
+                    categoryError = Self.categoryNotFound
+                    return false
+                }
+                shownCategory = Self.category(of: p)
+                if shownCategory != category { categoryError = Self.categoryNotSaved }
+                return shownCategory == category
+            }
+            shownCategory = Self.category(of: row) ?? previous
+            categoryError = Self.categoryFailed
+            return false
         case let .notUpdated(reason):
             shownCategory = previous
-            switch reason {
-            case .conflict: categoryError = Self.categoryNotFound
-            case .invalidInput: categoryError = Self.categoryNotAllowed
-            case .failed: categoryError = Self.categoryFailed
-            }
+            categoryError = reason == .invalidInput ? Self.categoryNotAllowed : Self.categoryFailed
             return false
         case .unknown:
             isUnconfirmed = true
