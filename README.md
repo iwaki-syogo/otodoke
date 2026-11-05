@@ -88,3 +88,7 @@ npm run dev                  # http://localhost:3015
 ## ライセンス
 
 MIT
+
+## Credits
+
+- ロゴの文字は Poppins（SIL Open Font License 1.1）

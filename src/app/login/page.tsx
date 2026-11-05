@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Wordmark } from "@/components/wordmark";
 import { sendMagicLink } from "./actions";
 
 type SearchParams = Promise<{ sent?: string; error?: string; next?: string }>;
@@ -8,7 +9,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
       <Link href="/" className="mb-8 text-sm text-neutral-500">
-        ← Otodoke
+        ← <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">ログイン</h1>
       <p className="mt-2 text-sm text-neutral-600">メールアドレスにログイン用のリンクを送ります。パスワードはありません。</p>

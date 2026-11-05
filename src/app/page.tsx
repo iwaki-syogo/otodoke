@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Wordmark } from "@/components/wordmark";
 import { getUser } from "@/lib/supabase/server";
 
 export default async function Home() {
@@ -6,7 +7,7 @@ export default async function Home() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 py-10">
       <header className="flex items-center justify-between">
-        <span className="text-lg font-bold tracking-tight">Otodoke</span>
+        <Wordmark className="text-2xl" />
         <Link href={user ? "/app" : "/login"} className="text-sm font-medium text-neutral-700 underline-offset-4 hover:underline">
           {user ? "荷物を見る" : "ログイン"}
         </Link>
