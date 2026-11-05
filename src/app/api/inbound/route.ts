@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
   const { data: mail, error } = await resend.emails.receiving.get(emailId);
   if (error || !mail) {
-    console.error("inbound: receiving.get failed", error);
+    console.error("inbound: receiving.get failed", errorSummary(error));
     return NextResponse.json({ error: "fetch failed" }, { status: 502 });
   }
 
@@ -91,10 +91,19 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true, outcome: outcome.kind });
   } catch (err) {
-    console.error("inbound: processing failed", err);
+    // The message and code only: an error object can carry the request or the mail with it.
+    console.error("inbound: processing failed", errorSummary(err));
     // 500 makes Resend retry later, which is what we want for transient failures.
     return NextResponse.json({ error: "processing failed" }, { status: 500 });
   }
+}
+
+/** What is safe to log about an error: its message and code, never the object itself. */
+function errorSummary(err: unknown): string {
+  if (!err || typeof err !== "object") return String(err);
+  const { message, code, name } = err as { message?: unknown; code?: unknown; name?: unknown };
+  const label = typeof code === "string" || typeof code === "number" ? String(code) : typeof name === "string" ? name : "error";
+  return `${label}: ${typeof message === "string" ? message : "(no message)"}`;
 }
 
 function parseDisplayName(fromHeader: string | undefined): string | null {

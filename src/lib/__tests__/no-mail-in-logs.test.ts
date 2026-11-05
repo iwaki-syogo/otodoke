@@ -52,3 +52,23 @@ describe("no mail content or passphrase in logs", () => {
     expect(consoleCalls('console.warn("a", f(b)); // console.log(mail)\nconsole.log(x)').map((c) => c.args)).toEqual(['"a", f(b)', "x"]);
   });
 });
+
+/** console calls that pass a whole error object (`err` / `error` as an argument of its own). */
+function wholeErrorObjects(source: string): number[] {
+  return consoleCalls(source)
+    .filter((c) => codeOnly(c.args).split(",").some((a) => /^\s*(err|error|e)\s*$/.test(a)))
+    .map((c) => c.line);
+}
+
+describe("the inbound webhook logs an error by its message and code only", () => {
+  const route = () => read(path.join(SRC, "app", "api", "inbound", "route.ts"));
+
+  it("logs errors, and none as a whole object", () => {
+    expect(consoleCalls(route()).filter((c) => c.method === "error").length).toBeGreaterThanOrEqual(2);
+    expect(wholeErrorObjects(route())).toEqual([]);
+  });
+
+  it("negative control: a whole error object is caught", () => {
+    expect(wholeErrorObjects('console.error("inbound: processing failed", err);\nconsole.error("x", error)\nconsole.error("ok", err.message)')).toEqual([1, 2]);
+  });
+});
