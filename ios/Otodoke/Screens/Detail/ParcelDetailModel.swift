@@ -301,8 +301,11 @@ final class ParcelDetailModel {
                     return false
                 }
                 shownCategory = Self.category(of: p)
-                if shownCategory != category { categoryError = Self.categoryNotSaved }
-                return shownCategory == category
+                // The same category set by the mail import (not "user") is not the choice: a later
+                // mail may change it, so it is not taken as saved (NtH-C).
+                let saved = shownCategory == category && p.categorySource == "user"
+                if !saved { categoryError = Self.categoryNotSaved }
+                return saved
             }
             shownCategory = Self.category(of: row) ?? previous
             categoryError = Self.categoryFailed
