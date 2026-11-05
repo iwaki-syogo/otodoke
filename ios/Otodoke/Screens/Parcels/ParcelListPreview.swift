@@ -9,6 +9,12 @@ import Foundation
 struct ListPreview {
     enum Scenario: String {
         case list, empty, failed, toast, saving, many, bottom
+        /// As list; a card opens a detail filled with made-up data.
+        case detail
+        /// The login screen: the address, the code with the resend wait, an error.
+        case login
+        case loginCode = "login-code"
+        case loginError = "login-error"
     }
 
     let scenario: Scenario
@@ -20,10 +26,64 @@ struct ListPreview {
         self.scenario = scenario
     }
 
+    private static func provider() -> SupabaseProvider {
+        let config = AppConfig(supabaseURL: URL(string: "https://preview.invalid")!, anonKey: "preview", inboundDomain: "preview.invalid")
+        return SupabaseProvider(config: config, storage: MemoryStorage())
+    }
+
+    /// The login screen's model for the login scenarios, nil for the others.
+    @MainActor
+    func makeLoginModel() -> LoginModel? {
+        let model = LoginModel(auth: AuthService(provider: Self.provider()), launch: LaunchOptions(arguments: []))
+        switch scenario {
+        case .login:
+            model.debugShow(step: .email, email: "qa@example.com")
+        case .loginCode:
+            model.debugShow(step: .code(email: "qa@example.com"), email: "qa@example.com", code: "1234", sentSecondsAgo: 18)
+        case .loginError:
+            model.debugShow(step: .code(email: "qa@example.com"), email: "qa@example.com", code: "12345678", sentSecondsAgo: 75,
+                            error: "コードが違うか、有効期限が切れています")
+        default:
+            return nil
+        }
+        return model
+    }
+
+    /// For the detail scenario: a detail model filled with made-up data (nothing is read).
+    @MainActor
+    func detailModelMaker() -> ((String) -> ParcelDetailModel)? {
+        guard scenario == .detail else { return nil }
+        let provider = Self.provider()
+        let today = Format.todayJst(now: Date())
+        return { id in
+            let model = ParcelDetailModel(id: id, reader: ParcelReader(provider: provider), writer: ParcelWriter(provider: provider), today: { today })
+            var row = Self.rows(today: today).first { $0.id == id } ?? Self.rows(today: today)[0]
+            row.carrier = "ヤマト運輸"
+            row.trackingNumber = "1234-5678-9012"
+            row.orderNumber = "A-0001-TEST"
+            row.orderedAt = CivilDate.addDays(today, -5)
+            row.totalAmount = 4_980
+            row.category = "hobby"
+            row.expectedText = "お届け予定日: 当日 14時〜16時"
+            row.presenceEvidence = "対面でお渡しします"
+            let items = [
+                ParcelItemRow(id: Self.id(101), parcelId: id, name: "架空の本 上巻", quantity: 1, unitPrice: 2_490, createdAt: "2026-11-01T00:00:00+00:00"),
+                ParcelItemRow(id: Self.id(102), parcelId: id, name: "架空の本 下巻", quantity: 1, unitPrice: 2_490, createdAt: "2026-11-01T00:00:01+00:00"),
+            ]
+            let timeline = [
+                TimelineEntry(id: Self.id(201), label: "注文", dateText: "11/1(日) 12:00", subject: "ご注文ありがとうございます",
+                              fromText: "サンプル書店 <shop@example.com>", confidenceText: "確信度 93%", body: "ご注文内容\n架空の本 上下巻セット", notes: nil),
+                TimelineEntry(id: Self.id(202), label: "発送", dateText: "11/3(火) 09:45", subject: "商品を発送しました",
+                              fromText: "shop@example.com", confidenceText: "確信度 88%", body: "伝票番号 1234-5678-9012", notes: "お届け日は発送メールから"),
+            ]
+            model.debugShow(parcel: row, items: items, timeline: timeline)
+            return model
+        }
+    }
+
     @MainActor
     func makeModel() -> ParcelListModel {
-        let config = AppConfig(supabaseURL: URL(string: "https://preview.invalid")!, anonKey: "preview", inboundDomain: "preview.invalid")
-        let provider = SupabaseProvider(config: config, storage: MemoryStorage())
+        let provider = Self.provider()
         let today = Format.todayJst(now: Date())
         let model = ParcelListModel(
             reader: ParcelReader(provider: provider),
@@ -34,7 +94,7 @@ struct ListPreview {
         )
         let counts = ParcelCounts(delivered: .loaded(1234), cancelled: .loaded(2), unread: .loaded(scenario == .list ? 3 : 0))
         switch scenario {
-        case .list:
+        case .list, .detail, .login, .loginCode, .loginError:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
         case .empty:
             model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded)

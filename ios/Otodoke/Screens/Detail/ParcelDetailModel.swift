@@ -460,3 +460,15 @@ private extension Optional where Wrapped == String {
         return self
     }
 }
+
+#if DEBUG
+extension ParcelDetailModel {
+    /// DEBUG only: shows a given parcel without reading, for checking the screen on the simulator.
+    func debugShow(parcel row: ParcelRow, items: [ParcelItemRow], timeline: [TimelineEntry]) {
+        parcel = .loaded(row)
+        shownCategory = ParcelCategory(rawValue: row.category ?? "")
+        self.items = .loaded(items)
+        self.timeline = .loaded(timeline)
+    }
+}
+#endif

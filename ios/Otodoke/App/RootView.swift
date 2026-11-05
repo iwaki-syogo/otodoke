@@ -23,7 +23,11 @@ struct RootView: View {
     var body: some View {
         #if DEBUG
         if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
-            MainTabView(listModel: preview.makeModel())
+            if let login = preview.makeLoginModel() {
+                LoginView(model: login)
+            } else {
+                MainTabView(listModel: preview.makeModel(), detailModel: preview.detailModelMaker())
+            }
         } else {
             signedInOrOut
         }

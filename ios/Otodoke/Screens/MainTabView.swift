@@ -30,14 +30,18 @@ enum MainTab: CaseIterable, Hashable, Sendable {
 struct MainTabView: View {
     @State private var selection: MainTab = .parcels
     @State private var listModel: ParcelListModel
+    /// The detail's model for an id, when made elsewhere (the DEBUG screen check).
+    private let detailModel: ((String) -> ParcelDetailModel)?
 
     init(reader: ParcelReader, writer: ParcelWriter) {
         _listModel = State(initialValue: .live(reader: reader, writer: writer))
+        detailModel = nil
     }
 
-    /// With a model made elsewhere (the DEBUG screen check).
-    init(listModel: ParcelListModel) {
+    /// With models made elsewhere (the DEBUG screen check).
+    init(listModel: ParcelListModel, detailModel: ((String) -> ParcelDetailModel)? = nil) {
         _listModel = State(initialValue: listModel)
+        self.detailModel = detailModel
     }
 
     var body: some View {
@@ -55,7 +59,11 @@ struct MainTabView: View {
         switch tab {
         case .parcels:
             ParcelListView(model: listModel, openSettings: { selection = .settings }) { id in
-                ParcelDetailView(id: id, reader: listModel.reader, writer: listModel.writer)
+                if let detailModel {
+                    ParcelDetailView(model: detailModel(id))
+                } else {
+                    ParcelDetailView(id: id, reader: listModel.reader, writer: listModel.writer)
+                }
             }
         case .calendar, .spend, .settings:
             NavigationStack {

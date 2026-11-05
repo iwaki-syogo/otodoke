@@ -9,6 +9,13 @@ struct LoginView: View {
         _model = State(initialValue: LoginModel(auth: auth))
     }
 
+    #if DEBUG
+    /// DEBUG only: with a model made elsewhere (the screen check).
+    init(model: LoginModel) {
+        _model = State(initialValue: model)
+    }
+    #endif
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {

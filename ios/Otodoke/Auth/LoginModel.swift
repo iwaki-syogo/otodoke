@@ -123,3 +123,17 @@ final class LoginModel {
         }
     }
 }
+
+#if DEBUG
+extension LoginModel {
+    /// DEBUG only: a given step, for checking the screen on the simulator (nothing is sent).
+    func debugShow(step: Step, email: String, code: String = "", sentSecondsAgo: TimeInterval? = nil, error: String? = nil) {
+        self.step = step
+        self.email = email
+        self.code = code
+        lastSentAt = sentSecondsAgo.map { now().addingTimeInterval(-$0) }
+        lastSentTo = sentSecondsAgo == nil ? nil : AuthService.normalizeEmail(email)
+        errorMessage = error
+    }
+}
+#endif
