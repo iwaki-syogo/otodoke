@@ -3,14 +3,14 @@ import { processInboundEmail, type InboundEmail } from "@/lib/pipeline";
 import { toBase64 } from "@/lib/crypto/bytes";
 import { openMail, type PrivateRecipient } from "@/lib/crypto/envelope";
 import { createKeyPair } from "@/lib/crypto/key-wrap";
-import { FakeDb, type Row } from "./fake-db";
+import { FakeDb, type Query, type Row } from "./fake-db";
 import { OTHER, USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const ECDH = { name: "ECDH", namedCurve: "P-256" } as const;
 const PLAINTEXT_COLUMNS = ["subject", "from_name", "from_address", "text_body", "html_body"] as const;
 
 /** A user with a key in use, as user_keys holds it, and the private half for the test to open with. */
-async function keyedUser(db: FakeDb, userId = USER): Promise<PrivateRecipient> {
+async function keyedUser(db: FakeDb, userId = USER, { activated = true } = {}): Promise<PrivateRecipient> {
   const k = await createKeyPair();
   db.rows("user_keys").push({
     user_id: userId,
@@ -21,7 +21,7 @@ async function keyedUser(db: FakeDb, userId = USER): Promise<PrivateRecipient> {
     kdf_salt: "",
     kdf_iterations: 600000,
     challenge_hash: "0".repeat(64),
-    activated_at: "2026-11-01T00:00:00Z",
+    activated_at: activated ? "2026-11-01T00:00:00Z" : null,
     retired_at: null,
   });
   return { keyId: k.keyId, publicKey: k.publicKey, privateKey: await crypto.subtle.importKey("pkcs8", k.pkcs8, ECDH, false, ["deriveBits"]) };
@@ -198,6 +198,93 @@ describe("pipeline: Gmail's forwarding confirmation", () => {
     const db = new FakeDb();
     await processInboundEmail(asAdmin(db), confirmation());
     expect(db.rows("emails")[0]).toMatchObject({ body_state: "dropped", subject: null, text_body: null, forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-%5Babc%5D-xyz" });
+  });
+});
+
+describe("pipeline: a key put in use or replaced while the mail is being read", () => {
+  /** Run `act` once, the first time a query matches `when` (another tab activating a key, say). */
+  function onceWhen(db: FakeDb, when: (q: Query) => boolean, act: () => void) {
+    let done = false;
+    db.hooks.unshift((q) => {
+      if (done || !when(q)) return;
+      done = true;
+      act();
+    });
+  }
+
+  /** What supabase/pending/20261106130000 does: a read mail left plain while a key is in use is refused. */
+  function refusePlainAfterReading(db: FakeDb) {
+    db.hooks.push((q, d) => {
+      if (q.table !== "emails" || q.op !== "update") return;
+      const v = q.values as Row;
+      if (v.processing_status !== "processed") return;
+      const id = (q.filters.find((f) => f.method === "eq" && f.args[0] === "id")?.args[1] ?? "") as string;
+      const row = d.find("emails", id);
+      const state = v.body_state ?? row?.body_state ?? "plain";
+      const keyed = d.rows("user_keys").some((k) => k.user_id === row?.user_id && k.activated_at && !k.retired_at);
+      const sample = String(row?.message_id ?? "").startsWith("demo:");
+      if (state === "plain" && (keyed || !sample)) return { data: null, error: { message: "a read mail must be sealed or dropped", code: "23514" } as { message: string } };
+    });
+  }
+
+  const kidOf = (db: FakeDb) => (db.rows("emails")[0].body_envelope as { kid?: string } | null)?.kid;
+
+  it("a key activated after the mail was stored (while Claude reads) is the one it is sealed to", async () => {
+    const db = new FakeDb();
+    const key = await keyedUser(db, USER, { activated: false });
+    // The parcel is written after Claude answered: the user finished making a key just before.
+    onceWhen(db, (q) => q.table === "parcels" && q.op === "insert", () => {
+      db.rows("user_keys")[0].activated_at = "2026-11-03T00:00:01Z";
+    });
+    await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    expect(db.rows("emails")[0].body_state).toBe("sealed");
+    expect(kidOf(db)).toBe(key.keyId);
+    expect((await openMail(key, USER, String(db.rows("emails")[0].id), db.rows("emails")[0].body_envelope)).subject).toBe(realMail().subject);
+  });
+
+  it("a key replaced mid-reading (forgotten passphrase): sealed to the new key, not the retired one", async () => {
+    const db = new FakeDb();
+    const oldKey = await keyedUser(db);
+    const newKey = await keyedUser(db, USER, { activated: false });
+    onceWhen(db, (q) => q.table === "parcels" && q.op === "insert", () => {
+      for (const k of db.rows("user_keys")) {
+        if (k.key_id === oldKey.keyId) k.retired_at = "2026-11-03T00:00:01Z";
+        if (k.key_id === newKey.keyId) k.activated_at = "2026-11-03T00:00:01Z";
+      }
+    });
+    await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    expect(db.rows("emails")[0].body_state).toBe("sealed");
+    expect(kidOf(db)).toBe(newKey.keyId);
+  });
+
+  it("a sample loaded while the user makes a key is sealed, not refused by the database", async () => {
+    const db = new FakeDb();
+    refusePlainAfterReading(db);
+    const newKey = await keyedUser(db, USER, { activated: false });
+    // The key goes into use after markRead looked (no key yet) and before its write lands.
+    let looks = 0;
+    db.hooks.unshift((q) => {
+      if (q.table === "user_keys" && q.op === "select") looks++;
+      if (q.table === "emails" && q.op === "update" && (q.values as Row).processing_status === "processed" && looks === 2) {
+        db.rows("user_keys").find((k) => k.key_id === newKey.keyId)!.activated_at = "2026-11-03T00:00:01Z";
+      }
+    });
+    const out = await processInboundEmail(asAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
+    expect(out.kind).toBe("processed");
+    expect(db.rows("emails")[0]).toMatchObject({ processing_status: "processed", body_state: "sealed", subject: null });
+    expect(kidOf(db)).toBe(newKey.keyId);
+    // The first write was refused and the second sealed it.
+    const finals = db.callsOn("emails", "update").filter((q) => (q.values as Row).processing_status === "processed");
+    expect(finals.map((q) => (q.values as Row).body_state)).toEqual([undefined, "sealed"]);
+  });
+
+  it("negative control: the database stand-in refuses a plain read mail while a key is in use", async () => {
+    const db = new FakeDb();
+    refusePlainAfterReading(db);
+    await keyedUser(db);
+    db.rows("emails").push({ id: "e1", user_id: USER, message_id: "demo:x", processing_status: "pending", body_state: "plain" });
+    const { error } = await db.from("emails").update({ processing_status: "processed" }).eq("id", "e1");
+    expect(error).toMatchObject({ code: "23514" });
   });
 });
 

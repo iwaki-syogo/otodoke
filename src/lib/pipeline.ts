@@ -21,7 +21,7 @@ import { categoryForTwins, type TwinCategory } from "@/lib/match/category";
 import { env } from "@/lib/env";
 import { forwardingConfirmUrl, isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
-import type { MailPlaintext, PublicRecipient } from "@/lib/crypto/envelope";
+import type { MailPlaintext } from "@/lib/crypto/envelope";
 import { PENDING_GRACE_MS } from "@/lib/unread";
 import { screenMail, type ScreenResult } from "@/lib/screen";
 import { emailBodyText } from "@/lib/text/html-to-text";
@@ -108,7 +108,9 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     }
   }
 
-  // Decided before anything is stored or paid for: a read mail is sealed to this key, or not kept.
+  // Known before anything is stored or paid for: not knowing whether there is a key fails here.
+  // The Gmail confirmation is closed with it as it is stored; a mail that is read is closed with
+  // the key read again right before that write (markRead), so a key put in use meanwhile counts.
   const key = await currentSealKey(db, mail.userId);
   const emailId = crypto.randomUUID();
 
@@ -162,7 +164,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 
   try {
-    return await understandAndFile(db, mail, emailRow.id, key, options);
+    return await understandAndFile(db, mail, emailRow.id, options);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await db.from("emails").update({ processing_status: "failed", error: message }).eq("id", emailRow.id);
@@ -223,7 +225,25 @@ async function logScreenEvent(db: AdminClient, mail: InboundEmail, decision: "dr
   if (cleanupError) console.error("screen_events cleanup failed:", cleanupError.message);
 }
 
-async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: string, key: PublicRecipient | null, options: PipelineOptions): Promise<PipelineOutcome> {
+/**
+ * Mark the mail read and close it (sealed / dropped / a sample kept plain) in one write, with the
+ * key in use right now: reading it at the start would miss a key put in use or replaced while
+ * Claude was reading. If a key still appears between this read and the write, the database
+ * refuses a plain row (23514, supabase/pending/20261106130000); then it is read once more and
+ * written again, so a sample loaded at that moment is sealed instead of failing.
+ */
+async function markRead(db: AdminClient, mail: InboundEmail, emailId: string, classification: string, publicSample: boolean): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    const key = await currentSealKey(db, mail.userId);
+    const closed = await closedBody(key, mail.userId, emailId, plaintextOf(mail), publicSample);
+    const { error } = await db.from("emails").update({ classification, processing_status: "processed", ...closed }).eq("id", emailId);
+    if (!error) return;
+    if (error.code === "23514" && attempt === 0) continue;
+    throw new Error(`emails update failed: ${error.message}`);
+  }
+}
+
+async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: string, options: PipelineOptions): Promise<PipelineOutcome> {
   // 2. Understand it.
   const extraction =
     options.precomputed ??
@@ -263,9 +283,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     });
     if (error) throw new Error(`extractions insert failed: ${error.message}`);
     // Marked read and closed in one write: a read mail never stays in plaintext.
-    const closed = await closedBody(key, mail.userId, emailId, plaintextOf(mail), options.publicSample === true);
-    const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed", ...closed }).eq("id", emailId);
-    if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
+    await markRead(db, mail, emailId, x.relevance, options.publicSample === true);
     return { kind: "noted", emailId };
   }
   // The usage belongs to the one API call, so only the first reading carries it.
@@ -275,9 +293,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
   const parcelId = await absorbTwins(db, mail.userId, filed.parcelId);
 
   // Marked read and closed in one write: a read mail never stays in plaintext.
-  const closed = await closedBody(key, mail.userId, emailId, plaintextOf(mail), options.publicSample === true);
-  const { error: statusError } = await db.from("emails").update({ classification: x.relevance, processing_status: "processed", ...closed }).eq("id", emailId);
-  if (statusError) throw new Error(`emails update failed: ${statusError.message}`);
+  await markRead(db, mail, emailId, x.relevance, options.publicSample === true);
 
   return { kind: "processed", emailId, parcelId, created: filed.created, extraction: x };
 }
