@@ -345,7 +345,9 @@ final class ParcelListModel {
     /// 「すべて受取済にする」 on 要確認: one row at a time, each on its version shown, with
     /// 「保存中… n/N」. The toast counts the rows now delivered by it (an unknown result that the read
     /// shows delivered included), and 「元に戻す」 puts back only the rows whose write was answered.
-    /// Rows being swiped, or not yet confirmed, are not sent.
+    /// Rows being swiped, or not yet confirmed, are not sent. The rows it sends are held as being saved
+    /// from before the first is sent until their results are shown and read again (CF2): a swipe,
+    /// 「確かめる」 or 「元に戻す」 on one of them sends nothing meanwhile.
     func deliverAll() async {
         guard deliverAllEnabled else { return }
         isDeliveringAll = true
@@ -358,6 +360,9 @@ final class ParcelListModel {
         let toCheck = sections.toCheck
         let skipped = toCheck.filter { unconfirmed.contains($0.id) }.map(\.id)
         let shown = toCheck.filter { !unconfirmed.contains($0.id) && !saving.contains($0.id) }
+        let held = Set(shown.map(\.id))
+        saving.formUnion(held)
+        defer { saving.subtract(held) }
         deliverAllProgress = BulkProgress(done: 0, total: shown.count)
         beginWrite()
         let results = await writer.markDelivered(all: shown.map(ParcelVersion.init)) { [weak self] done in
@@ -421,7 +426,9 @@ final class ParcelListModel {
     /// toast it was pressed on is changed: a newer toast (another swipe meanwhile) and its 「元に戻す」
     /// stay as they are.
     func undo() async {
-        guard let toast, toast.canUndo, !undoTokens.isEmpty, !isUndoing else { return }
+        guard let toast, toast.canUndo, !undoTokens.isEmpty, !isUndoing,
+              !undoTokens.contains(where: { saving.contains($0.id) })
+        else { return }
         let generation = toastGeneration
         undoingGenerations.insert(generation)
         defer { undoingGenerations.remove(generation) }
