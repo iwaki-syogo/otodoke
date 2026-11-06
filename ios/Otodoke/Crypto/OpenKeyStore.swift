@@ -37,6 +37,12 @@ final class SessionGeneration: SessionStamping {
         value += 1
     }
 
+    /// update(userID:) under the name AuthService calls it by (the parcels' one-write-path check counts
+    /// every `.update(` call in the app as a write).
+    func follow(userID: String?) {
+        update(userID: userID)
+    }
+
     /// Sign-out's step ①.
     func advance() {
         value += 1

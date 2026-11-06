@@ -84,7 +84,7 @@ final class AuthService {
     func checkSession() async {
         guard provider.auth.currentSession != nil else {
             state = .signedOut
-            session.update(userID: nil)
+            session.follow(userID: nil)
             return
         }
         do {
@@ -133,7 +133,7 @@ final class AuthService {
     /// moves on ② work in flight is cancelled ③ the key and the plaintext in memory go ④ the Keychain item goes.
     func signOut() async {
         session.advance()
-        session.update(userID: nil)
+        session.follow(userID: nil)
         cleanup?.cancelWork()
         cleanup?.dropMemory()
         cleanup?.deleteKeychainKey()
@@ -147,7 +147,7 @@ final class AuthService {
             provider.clearStoredSession()
         }
         state = .signedOut
-        session.update(userID: nil)
+        session.follow(userID: nil)
     }
 
     /// Trimmed and lowercased, as the Web's login does.
@@ -164,10 +164,10 @@ final class AuthService {
         if let session {
             let userID = session.user.id.uuidString.lowercased()
             state = .signedIn(userID: userID)
-            self.session.update(userID: userID)
+            self.session.follow(userID: userID)
         } else {
             state = .signedOut
-            self.session.update(userID: nil)
+            self.session.follow(userID: nil)
         }
     }
 
