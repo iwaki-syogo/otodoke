@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { loginErrorMessage, sentAddress } from "@/lib/login-errors";
+import { readRememberedLogin } from "@/lib/login-email-cookie";
 import { sendMagicLink } from "./actions";
 import { LoginSubmitButton } from "./submit-button";
 import { TurnstileWidget } from "./turnstile-widget";
@@ -12,6 +13,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   // Both come from the URL, which anyone can write: show fixed wording, never the raw text.
   const errorMessage = loginErrorMessage(error);
   const sentTo = sentAddress(sent);
+  // The address this browser last typed (a cookie the send action writes), back in the field.
+  const typed = (await readRememberedLogin())?.email ?? "";
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
       <Link href="/" className="mb-8 text-sm text-neutral-500">
@@ -35,11 +38,15 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
         <label className="text-sm font-medium" htmlFor="email">
           メールアドレス
         </label>
+        {/* Keyed by the address: React 19 resets a form's fields after its action, and a field
+            already on the page does not take a new defaultValue. */}
         <input
+          key={`email:${typed}`}
           id="email"
           name="email"
           type="email"
           required
+          defaultValue={typed}
           autoComplete="email"
           inputMode="email"
           placeholder="you@example.com"

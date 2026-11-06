@@ -7,11 +7,15 @@ import { appUrl } from "@/lib/env";
 import { loginErrorPath, loginSendErrorCode } from "@/lib/login-errors";
 import { turnstileToken } from "@/lib/turnstile";
 import { claimLoginMail, clientIp, releaseLoginMail } from "@/lib/login-mail-limit";
+import { rememberLogin } from "@/lib/login-email-cookie";
 
 /** Send a magic link. The link lands on /auth/confirm with a token_hash (works in any browser). */
 export async function sendMagicLink(formData: FormData): Promise<void> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const next = String(formData.get("next") ?? "/app");
+  // Whatever happens next, the field shows this address again (also one the check below refuses,
+  // so a typo can be fixed in place). In a cookie for this browser, never in the URL.
+  await rememberLogin({ email });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     redirect(loginErrorPath("invalid_email"));
   }
