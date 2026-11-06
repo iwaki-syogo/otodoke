@@ -76,8 +76,8 @@ final class MainScreens {
         return screens
     }
 
-    /// TDD-STUB(task 16, task 17, task 19): the opened key's store (also AuthService.cleanup), the one
-    /// UnlockModel every detail uses, and the settings switch. Set by `live(auth:)`.
+    /// The opened key's store (also AuthService.cleanup), the one UnlockModel every detail uses, and the
+    /// settings switch. Set by `live(auth:)` (attachKeys, MainScreens+Keys.swift).
     var keys: OpenKeyStore?
     var unlock: UnlockModel?
     var faceID: FaceIDSwitch?
