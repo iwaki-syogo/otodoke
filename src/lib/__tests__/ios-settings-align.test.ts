@@ -8,6 +8,9 @@ import { describe, expect, it } from "vitest";
  * iOS constants to the sentences as they stand on dev. WHEN dev IS MERGED into this branch: replace WORDS
  * below by reading each sentence from the Web file named in `web` (and drop the literals), so that iOS and
  * the Web are compared and not just pinned.
+ *
+ * TODO: after dev is merged, switch to a test that reads the sentences from the Web's (list)/page.tsx, forwarding/page.tsx,
+ * dropped/page.tsx and password-panel.tsx and compares them (dev 取り込み後、Web から文を読んで比べるテストに切り替える).
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
@@ -97,6 +100,15 @@ describe("the settings words copied from the Web's dev branch", () => {
     expect(view).toMatch(/section\(SettingsWebText\.mailGroup\)[\s\S]*?\.delivery, \.sample\]/);
     expect(view).toMatch(/section\(SettingsWebText\.accountGroup\)[\s\S]*?\.privacy[\s\S]*?\.deleteAccount[\s\S]*?\.openWeb/);
     expect(view).not.toContain("ログアウトしてください");
+  });
+
+  it("the privacy link on the handling page says it opens Safari and does not cancel the parent's spacing; the deletion row says where it is", () => {
+    const pages = stripComments(read(`${SETTINGS}/SettingsPages.swift`));
+    const handling = pages.match(/struct SettingsHandlingPage[\s\S]*?\n\}\n/)?.[0] ?? "";
+    expect(handling).toContain("SettingsMenuText.webHint");
+    expect(handling).not.toMatch(/padding\(\.top, -/);
+    expect(constant(stripComments(read(`${SETTINGS}/SettingsMenuText.swift`)), "deleteSubtitle")).toBe("Web の設定の一番下にあります");
+    expect(stripComments(read(`${SETTINGS}/SettingsView.swift`))).toContain("SettingsMenuText.deleteSubtitle");
   });
 
   it("the privacy link sits under 「あなたのメールの扱い」, and the deletion goes to /app/settings for now with its future page in a comment", () => {

@@ -68,7 +68,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             webRow(.privacy, symbol: "hand.raised", title: SettingsWebText.privacyTitle)
                             Divider().padding(.leading, 58)
-                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle)
+                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle, subtitle: SettingsMenuText.deleteSubtitle)
                             Divider().padding(.leading, 58)
                             webRow(.openWeb, symbol: "safari", title: SettingsMenuText.webTitle)
                         }
@@ -115,9 +115,9 @@ struct SettingsView: View {
     }
 
     /// A row that leaves the app for a Web page (Safari).
-    private func webRow(_ action: SettingsWebAction, symbol: String, title: String) -> some View {
+    private func webRow(_ action: SettingsWebAction, symbol: String, title: String, subtitle: String? = nil) -> some View {
         Button { SettingsWeb.open(action, openURL) } label: {
-            SettingsRow(symbol: symbol, title: title, subtitle: nil, badge: nil, trailing: "arrow.up.right", hint: SettingsMenuText.webHint)
+            SettingsRow(symbol: symbol, title: title, subtitle: subtitle, badge: nil, trailing: "arrow.up.right", hint: SettingsMenuText.webHint)
         }
         .buttonStyle(.plain)
     }
@@ -157,8 +157,10 @@ struct SettingsView: View {
         page == .key ? Self.keyBadge(for: model) : nil
     }
 
-    /// The key row's badge: the key step failed, no key yet, a count that could not be read (never drawn as
-    /// 0), or mail from before the encryption is still readable by the operator.
+    /// The key row's badge. Mail still readable by the operator (未暗号化 n 通) is the most important
+    /// warning, so it wins over a count that could not be read; otherwise a count that failed shows as
+    /// unknown (never drawn as 0). With no key the badge stays 未設定 even if the unencrypted count failed:
+    /// that is true (there is no key yet), and the key page says the rest.
     static func keyBadge(for model: SettingsModel) -> SettingsRow.Badge? {
         switch model.keyPanel {
         case .none?:
@@ -167,11 +169,11 @@ struct SettingsView: View {
             }
             return .init(text: SettingsMenuText.keyNoneBadge, kind: .sky)
         case let .present(plainCount, oldKeyCount)?:
-            if case .failed = plainCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
-            if case .failed = oldKeyCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
             if case let .loaded(n) = plainCount, n > 0 {
                 return .init(text: SettingsMenuText.plainBadge(n), kind: .amber)
             }
+            if case .failed = plainCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
+            if case .failed = oldKeyCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
             return nil
         case .failed?, nil:
             return nil

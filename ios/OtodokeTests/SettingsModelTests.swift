@@ -544,6 +544,21 @@ struct SettingsModelTests {
         await s.model.pageShown()
         #expect(await s.fake.count("GET", "user_keys") == keys + 2)
     }
+    @Test func aPageShownWhileTheReadWasCutOffReadsAgain() async throws {
+        let s = try await setUp()
+        let gate = Gate()
+        let keys = await s.fake.count("GET", "user_keys")
+        await s.fake.fail("GET", "user_keys", nth: keys + 1, with: .hold(gate))
+        let first = Task { await s.model.pageShown() }
+        #expect(await waitFor { await s.fake.count("GET", "user_keys") == keys + 1 })
+        // The read is still running, but cut off (its answers will be dropped): a page shown starts a new one.
+        first.cancel()
+        await s.model.pageShown()
+        #expect(await s.fake.count("GET", "user_keys") == keys + 2)
+        gate.open()
+        await first.value
+    }
+
     // MARK: the key row's badge (a failed count is never drawn as no badge)
 
     @Test func theKeyBadgeForTheCountsThatCouldNotBeRead() async throws {
@@ -552,6 +567,27 @@ struct SettingsModelTests {
         let oldKeyFails = try await setUp(faults: { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) })
         #expect(SettingsView.keyBadge(for: oldKeyFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
         #expect(SettingsMenuText.keyUnknownBadge == "確認できません")
+    }
+
+    @Test func theAmberWarningIsNotHiddenByAFailedCount() async throws {
+        let sealedFails: (FakeSupabase) async -> Void = { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) }
+        let plainFails: (FakeSupabase) async -> Void = { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) }
+        // Unencrypted mail (loaded 5) with the old-key count failed: the amber warning stays.
+        let amberAndOldFails = try await setUp(mails: (1...5).map { SettingsRows.mail($0) }, faults: sealedFails)
+        #expect(SettingsView.keyBadge(for: amberAndOldFails.model) == .init(text: SettingsMenuText.plainBadge(5), kind: .amber))
+        // The unencrypted count failed, the old-key count loaded as 0: unknown.
+        let plainFailsOnly = try await setUp(faults: plainFails)
+        #expect(SettingsView.keyBadge(for: plainFailsOnly.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        // Both failed: unknown.
+        let bothFail = try await setUp(faults: { await plainFails($0); await sealedFails($0) })
+        #expect(SettingsView.keyBadge(for: bothFail.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        // No key and the unencrypted count failed: still 未設定 (that is true; there is no key to be unsure about).
+        let noKeyPlainFails = try await setUp(keys: [], faults: plainFails)
+        #expect(SettingsView.keyBadge(for: noKeyPlainFails.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .sky))
+    }
+
+    @Test func theDeleteRowSaysWhereTheDeletionIs() {
+        #expect(SettingsMenuText.deleteSubtitle == "Web の設定の一番下にあります")
     }
 
     @Test func theKeyBadgeKeepsItsOtherStates() async throws {

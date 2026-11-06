@@ -16,6 +16,10 @@ enum SettingsMenuText {
     static let sampleTitle = "サンプルで試す"
     static let webTitle = "Web で開く"
 
+    /// The subtitle of the 「アカウントの削除」 row: the deletion is the last section of the Web's /app/settings.
+    /// Remove it when the deletion has its own page (/app/settings/delete) and the row opens that.
+    static let deleteSubtitle = "Web の設定の一番下にあります"
+
     /// The badge on the key row while there is no key.
     static let keyNoneBadge = "未設定"
 

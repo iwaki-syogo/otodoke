@@ -141,19 +141,23 @@ struct SettingsHandlingPage: View {
 
     var body: some View {
         SettingsParts.page(spacing: 12) {
-            MailHandlingView(showsHeading: false)
-            // As the Web's page: the whole policy, right under the summary of how mail is handled.
-            Button { SettingsWeb.open(.privacy, openURL) } label: {
-                Text(SettingsWebText.privacyTitle)
-                    .font(.caption)
-                    .underline()
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .frame(minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+            // One child, so the gap between the summary and the link is this stack's own and does not
+            // depend on the page's spacing.
+            VStack(alignment: .leading, spacing: 0) {
+                MailHandlingView(showsHeading: false)
+                // As the Web's page: the whole policy, right under the summary of how mail is handled.
+                Button { SettingsWeb.open(.privacy, openURL) } label: {
+                    Text(SettingsWebText.privacyTitle)
+                        .font(.caption)
+                        .underline()
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(SettingsMenuText.webHint)
             }
-            .buttonStyle(.plain)
-            .padding(.top, -12)
         }
         .navigationTitle(SettingsMenuText.handlingTitle)
         .navigationBarTitleDisplayMode(.inline)
