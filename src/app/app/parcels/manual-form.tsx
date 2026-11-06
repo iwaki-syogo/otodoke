@@ -91,9 +91,10 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
             お届け予定日
             <input type="date" name="expected_date" defaultValue={values.expected_date} className={dateField} />
           </label>
-          <label className="text-sm font-medium">
-            金額
-            <input name="total_amount" inputMode="numeric" autoComplete="off" placeholder="2480 円" defaultValue={values.total_amount} className={field} />
+          <label className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+            <span className="w-full">金額</span>
+            <input name="total_amount" inputMode="numeric" autoComplete="off" placeholder="2480" defaultValue={values.total_amount} className={`${field} w-auto min-w-0 flex-1`} />
+            <span className="mt-1 text-base">円</span>
           </label>
           <label className="text-sm font-medium">
             分類
@@ -163,9 +164,10 @@ function DeleteForm({ id }: { id: string }) {
       <summary className="cursor-pointer text-neutral-500">この荷物を消す</summary>
       <form action={action} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
         <input type="hidden" name="id" value={id} />
+        <p className="text-sm leading-6">消すと元に戻せません。</p>
         <label className="flex items-center gap-2">
           <input type="checkbox" name="confirm" value="yes" required className="h-4 w-4" />
-          本当に消します。元に戻せません。
+          本当に消す
         </label>
         {state.error ? (
           <p role="alert" className="text-sm text-red-800">

@@ -53,7 +53,7 @@ vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: vi.fn() }))
 vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readSealedMail: vi.fn() }));
 vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
-const { MakeKeyForm, ChangeForm, useDetailsOpen } = await import("@/app/app/settings/password-panel");
+const { MakeKeyForm, ChangeForm, ChangeDetails, useDetailsOpen } = await import("@/app/app/settings/password-panel");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 const EMAIL = "qa@example.com";
@@ -253,5 +253,34 @@ describe("「パスワードを変える」: the bot check is drawn once the det
     const view = mountDetails(false);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(openState(view)).toBe("no");
+  });
+});
+
+describe("「パスワードを変える」: the real ChangeDetails wires the hook to the details and the form", () => {
+  // The harness expands child components with the real hooks, so ChangeForm is swapped for a host
+  // that shows the withCheck it was given; everything else is ChangeDetails's own output.
+  const swapForm = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(swapForm);
+    if (typeof node !== "object" || node === null || !("props" in node)) return node;
+    const el = node as { type: unknown; props: { children?: unknown; withCheck?: boolean } };
+    if (el.type === ChangeForm) return createElement("div", { "data-form": "", "data-check": el.props.withCheck ? "on" : "off" });
+    return createElement(el.type as string, { ...el.props }, ...[swapForm(el.props.children)].flat() as never[]);
+  };
+  const mountReal = (open: boolean) => mount(() => swapForm(ChangeDetails({ userId: USER, email: EMAIL })) as never, () => ({ dataset: {}, open }));
+  const details = (view: Mounted) => view.host((h) => h.type === "details");
+  const check = (view: Mounted) => view.host((h) => "data-form" in h.props).props["data-check"];
+
+  it("the toggle of its details turns the bot check on and off", async () => {
+    const view = mountReal(false);
+    expect(check(view)).toBe("off");
+    (details(view).props.onToggle as (e: unknown) => void)({ currentTarget: { open: true } });
+    await vi.waitFor(() => expect(check(view)).toBe("on"));
+    (details(view).props.onToggle as (e: unknown) => void)({ currentTarget: { open: false } });
+    await vi.waitFor(() => expect(check(view)).toBe("off"));
+  });
+
+  it("its details hand their element to the hook: already open when hydrated, the check is on", async () => {
+    const view = mountReal(true);
+    await vi.waitFor(() => expect(check(view)).toBe("on"));
   });
 });

@@ -217,7 +217,7 @@ describe("/privacy: what it says", () => {
     expect(said.Cloudflare).toContain("ロボットの判定");
     // Turnstile's token goes with signUp, resend, resetPasswordForEmail and signInWithPassword, which
     // 設定's 「鍵を作る」 and 「パスワードを変える」 call too.
-    expect(said.Cloudflare).toContain("Turnstile で、ログイン・アカウント作成・再設定の画面と、設定でパスワードを使う操作が、ロボットでないかを確かめます");
+    expect(said.Cloudflare).toContain("Turnstile で、ログイン・アカウント作成・再設定の画面と、設定で鍵を作る操作とパスワードを変える操作が、ロボットでないかを確かめます");
     // The owner's decision (2026-11-06): no promise about handing data to others on this page.
     expect(textOf(await render())).not.toContain("渡したり売ったり");
   });

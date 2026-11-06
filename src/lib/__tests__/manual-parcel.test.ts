@@ -82,6 +82,12 @@ describe("ManualParcelSchema: what it lets through", () => {
     rejects({ total_amount: "abc" });
   });
 
+  it("takes the amount the way people write it: with 円, with ¥, with spaces", () => {
+    for (const v of ["2480 円", "2480円", "¥2,480", "￥2,480", " 2480 ", "2 480円", "２４８０円"]) expect(ok({ total_amount: v }).total_amount, v).toBe(2480);
+    for (const v of ["円", "¥", "2480ドル", "円2480", "¥円", "2480円円"]) rejects({ total_amount: v });
+    expect(ok({ total_amount: "" }).total_amount).toBeNull();
+  });
+
   it("takes only the listed values for category, carrier, presence and status", () => {
     expect(ok({ category: "electronics" }).category).toBe("electronics");
     rejects({ category: "toys" });

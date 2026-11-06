@@ -143,8 +143,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <>
             <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
             <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
-              <code className="min-w-0 flex-1 break-all text-sm">{address ?? `${localPart}@受信ドメインを設定する前`}</code>
-              {address ? <CopyButton text={address} /> : null}
+              {address ? (
+                <>
+                  <code className="min-w-0 flex-1 break-all text-sm">{address}</code>
+                  <CopyButton text={address} />
+                </>
+              ) : (
+                <p className="min-w-0 flex-1 text-sm">受信ドメインがまだ設定されていません。</p>
+              )}
             </div>
             <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
           </>
@@ -222,7 +228,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
               {dropped.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{d.subject || "件名はありません"}</p>
+                    <p className={d.subject ? "truncate text-sm" : "truncate text-sm text-neutral-500"}>{d.subject || "件名はありません。"}</p>
                     <p className="truncate text-xs text-neutral-500">
                       {d.from_domain} ・ {formatDateTimeJa(d.created_at)}
                     </p>
