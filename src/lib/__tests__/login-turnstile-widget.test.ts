@@ -79,8 +79,9 @@ const nodes: NodeFactory = () => ({ dataset: {} });
 const tokens = new WeakMap<Mounted, { current: TokenField }>();
 /** The props of each mounted widget, which a test may change before rendering again. */
 const propsOf = new WeakMap<Mounted, { round: number; captchaEnforced?: boolean }>();
-// The widget as it will run once Supabase enforces the check (CAPTCHA_ENFORCED = true): the notice
-// shows. While it is off (the default) the notice stays hidden: see "while CAPTCHA is off" below.
+// The widget with Supabase enforcing the check (captchaEnforced true, the value of CAPTCHA_ENFORCED
+// in production): the notice shows. Given here, so these tests do not move with the constant; what
+// the forms get (no prop: the constant) and the widget with the check off are tested at the end.
 function widget(token: TokenField = { value: "", dataset: {} }, props: { round: number; captchaEnforced?: boolean } = { round: 0, captchaEnforced: true }, Widget = TurnstileWidget): Mounted {
   const ref = { current: token };
   const view = mount(() => Widget({ tokenRef: ref, ...props }), nodes);
@@ -376,18 +377,48 @@ describe("when Turnstile asks for a tick (review R2b-1)", () => {
   });
 });
 
-describe("while CAPTCHA is off (review R2b-3)", () => {
-  it("is off today: turning it on in Supabase needs a commit that sets CAPTCHA_ENFORCED", () => {
-    expect(CAPTCHA_ENFORCED).toBe(false);
+/** The widget of a fresh module: the script promise of an earlier test (one that loaded) is not reused. */
+async function freshWidget(): Promise<typeof TurnstileWidget> {
+  vi.resetModules();
+  return (await import("@/app/login/turnstile-widget")).TurnstileWidget;
+}
+
+describe("as the forms draw it: CAPTCHA enforced, released with Supabase's CAPTCHA (review R2b-3)", () => {
+  it("is on: Supabase's CAPTCHA is turned on in the same release, and turning it off needs a commit that sets CAPTCHA_ENFORCED back", () => {
+    expect(CAPTCHA_ENFORCED).toBe(true);
   });
 
+  it("with no captchaEnforced given (the forms give none), shows the notice when the script cannot load, and still lets the button send at once", async () => {
+    vi.stubGlobal("window", {});
+    const { scripts } = fakeDocument();
+    const fresh = await freshWidget();
+    const view = widget(undefined, { round: 0 }, fresh);
+    expect(view.text()).toBe("");
+    scripts[0].onerror!();
+    await settle();
+    expect(view.text()).toBe(TURNSTILE_UNAVAILABLE_MESSAGE);
+    expect(slotOf(view).props.hidden).toBe(true);
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+    expect(tokenSettled(fieldOf(view))).toBe(true);
+  });
+
+  it("with no captchaEnforced given, shows it too on an error Turnstile does not retry", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget(undefined, { round: 0 }, await freshWidget());
+    await settle();
+    t.last().options["error-callback"]("110200");
+    await settle();
+    expect(view.text()).toBe(TURNSTILE_UNAVAILABLE_MESSAGE);
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+});
+
+describe("with CAPTCHA off (captchaEnforced false: CAPTCHA_ENFORCED if Supabase's CAPTCHA is turned off again)", () => {
   it("says nothing when the script cannot load (the mail goes out without a token), and still lets the button send at once", async () => {
     vi.stubGlobal("window", {});
     const { scripts } = fakeDocument();
-    // A fresh module: the script promise of an earlier test (one that loaded) is not reused.
-    vi.resetModules();
-    const fresh = (await import("@/app/login/turnstile-widget")).TurnstileWidget;
-    const view = widget(undefined, { round: 0 }, fresh);
+    const view = widget(undefined, { round: 0, captchaEnforced: false }, await freshWidget());
     scripts[0].onerror!();
     await settle();
     expect(view.text()).toBe("");

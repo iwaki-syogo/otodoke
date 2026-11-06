@@ -9,15 +9,24 @@
 export const TURNSTILE_SITEKEY = "0x4AAAAAAF1bMWXBw0RF-dvv";
 
 /**
- * Whether Supabase refuses a login mail without a Turnstile token (Authentication > Bot and Abuse
- * Protection > CAPTCHA). Off on 2026-11-06: a press without a token still sends the mail.
+ * Whether Supabase Auth refuses a request without a Turnstile token (Authentication > Bot and Abuse
+ * Protection > CAPTCHA, provider Turnstile). The requests the web sends with one: the sign-in with
+ * the password (/login, and 設定's 「鍵を作る」 and 「パスワードを変える」, which signs in with the
+ * current password), the sign-up and its 「送り直す」, and the reset mail.
  *
- * It decides what the login form says and how long it waits when the check gives no token: while
- * it is false, nobody is told to reload or try another browser (the mail goes out anyway), and a
- * press waits at most TURNSTILE_WAIT_MS. Turning CAPTCHA on in the dashboard needs a commit that
- * sets this to true, released with it (not an env var: a code change, reviewed like one).
+ * On in production from the release of the password sign-in on the web and on iOS (decided on
+ * 2026-11-06): Supabase's CAPTCHA is turned on in the same release, once this version is the one
+ * deployed. Until the switch a press without a token still goes through (it only waits longer);
+ * a switch before the deployment would meet forms that give up on the token after 10 seconds.
+ *
+ * It decides what the forms say and how long a press waits when the check gives no token: while it
+ * is true, a press waits as long as Turnstile is still working on a token (at most
+ * TURNSTILE_ENFORCED_WAIT_MS, the clock stopped while the checkbox waits for its tick), and the
+ * notice asks to reload or try another browser when no token will come. Turning CAPTCHA off in the
+ * dashboard again needs a commit that sets this back to false, released with it (not an env var:
+ * a code change, reviewed like one).
  */
-export const CAPTCHA_ENFORCED = false;
+export const CAPTCHA_ENFORCED = true;
 
 /**
  * Cloudflare requires this exact URL (no proxying or caching). `render=explicit`: the widget is
@@ -46,7 +55,7 @@ export const TURNSTILE_WAIT_MS = 10_000;
  * A slow phone can need more than 10 s for the challenge, and a failed send draws the form anew,
  * which starts the challenge over: waiting 10 s from the press sent it round in circles. Counting
  * from the widget's start would not help (it is shorter still). One minute bounds a widget that
- * never answers; then the press is sent and Supabase's answer (captcha_missing) says what to do.
+ * never answers; then the press is sent without one, and the form tells Supabase's refusal.
  */
 export const TURNSTILE_ENFORCED_WAIT_MS = 60_000;
 
