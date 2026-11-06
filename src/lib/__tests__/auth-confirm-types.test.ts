@@ -149,7 +149,9 @@ describe("the words for these codes", () => {
   it("are fixed, one per code, and the URL's text is never shown", () => {
     expect(loginErrorMessage("link_invalid")).toBe(LOGIN_MESSAGES.link_invalid);
     expect(loginErrorMessage("reset_link_invalid")).toBe("再設定のリンクは使えませんでした。もう一度、再設定のメールを送ってください。");
-    expect(loginErrorMessage("link_limited")).toContain("1分ほど待って");
+    expect(loginErrorMessage("link_limited")).toBe("ただいま混み合っています。少し時間をおいてから、もう一度メールのリンクを開いてください。");
+    // The app's own limit can hold a link back for up to 10 minutes: no promise of a minute.
+    expect(loginErrorMessage("link_limited")).not.toContain("1分");
     expect(loginErrorMessage("アカウントが停止されました https://evil.example")).toBe("ログインできませんでした。もう一度お試しください。");
     expect(loginErrorMessage("constructor")).toBe("ログインできませんでした。もう一度お試しください。");
     expect(loginErrorMessage(undefined)).toBeNull();

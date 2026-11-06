@@ -80,8 +80,10 @@ export const LOGIN_MESSAGES = {
   // The mail's links (/auth/confirm).
   link_invalid: "このリンクは使えませんでした。確認が済んでいれば、ログインできます。",
   reset_link_invalid: "再設定のリンクは使えませんでした。もう一度、再設定のメールを送ってください。",
-  // Supabase's limit on verifications (429, per IP, before the token is looked at: the link still works).
-  link_limited: "ただいま混み合っています。1分ほど待ってから、もう一度メールのリンクを開いてください。",
+  // Supabase's limit on verifications (429, per IP, before the token is looked at), or the app's own
+  // before Supabase is asked (login-mail-limit.ts LOGIN_LINK_LIMITS: 10 checks per IP in any 10
+  // minutes, which can mean a wait of up to 10 minutes). Either way the link still works later.
+  link_limited: "ただいま混み合っています。少し時間をおいてから、もう一度メールのリンクを開いてください。",
   // Supabase did not answer, or answered 5xx: nothing says the token was refused.
   link_failed: "いまは確認できませんでした。少し時間をおいて、もう一度メールのリンクを開いてください。",
   link_incomplete: "リンクが不完全です。いちばん新しいメールのリンクを開いてください。",
