@@ -1,5 +1,6 @@
 // The opened key's parts for one sign-in (tasks 16, 17, and the password login): kept apart from
-// MainTabView.swift so the tabs' file only calls attachKeys(auth:).
+// MainTabView.swift so the tabs' file only calls attachKeys(auth:). Made once per signed-in generation
+// (MainScreens.of, AuthService.signedInObject), never by a View's init (B1-1).
 
 import Foundation
 
@@ -32,11 +33,32 @@ extension MainScreens {
         keySetup = setup
         unlock?.keySetup = setup
         unlock?.signOut = { await auth.signOut() }
-        if let signIn = auth.takeSignInSecret() {
-            Task {
-                await setup.run(signIn)
-                signIn.wipe()
+        settings.keySetup = setup
+        // A3-1: the hand-off is taken now, and again whenever a sign-in of this generation decides one later
+        // (whichever comes first, takeSignInSecret answers once: the key step runs once).
+        let takeHandOff: @MainActor () -> Void = { [weak auth, weak setup] in
+            guard let auth, let setup else { return }
+            if let signIn = auth.takeSignInSecret() {
+                Task {
+                    await setup.run(signIn)
+                    signIn.wipe()
+                }
+            } else if auth.takeAddressMismatch() {
+                setup.noteAddressMismatch()
             }
         }
+        auth.setKeyStep(takeHandOff)
+        takeHandOff()
+    }
+
+    /// The main screens of the signed-in generation now (B1-1): the ones AuthService keeps for it (made once by
+    /// makeSignedIn); made here (and kept) when AuthService has no maker yet. A View made again gets the same
+    /// screens, so the opened key's store, AuthService.cleanup and the key step stay one.
+    static func of(_ auth: AuthService) -> MainScreens {
+        if auth.makeSignedIn == nil {
+            auth.makeSignedIn = { MainScreens.live(auth: $0) }
+        }
+        if let screens = auth.signedInObject() as? MainScreens { return screens }
+        return .live(auth: auth)
     }
 }

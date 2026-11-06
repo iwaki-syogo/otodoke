@@ -257,7 +257,9 @@ struct KeySetupTests {
     ])
     func eachResultCodeHasItsWordsAndKeepsNothing(endpoint: String, status: Int, code: String, words: String) async throws {
         let w = try await World()
-        await w.server.force(endpoint, .answer(status: status, code: code))
+        // S3 (approved 0:50): key_not_pending and no answer are tried once more from register; both attempts fail.
+        await w.server.force(endpoint, nth: 1, .answer(status: status, code: code))
+        await w.server.force(endpoint, nth: 2, .answer(status: status, code: code))
         let outcome = await w.setup.run(w.signIn)
         #expect(outcome == .failed(message: words))
         #expect(w.store.key == nil)
@@ -267,10 +269,12 @@ struct KeySetupTests {
 
     @Test func noAnswerIsTheNetworkWords() async throws {
         let w = try await World()
-        await w.server.force("register", .transport(.notConnectedToInternet))
+        // S3 (approved 0:50): once more from register with a new key, never more.
+        await w.server.force("register", nth: 1, .transport(.notConnectedToInternet))
+        await w.server.force("register", nth: 2, .transport(.notConnectedToInternet))
         let outcome = await w.setup.run(w.signIn)
         #expect(outcome == .failed(message: LoginText.network))
-        #expect(await w.server.count("register") == 1)
+        #expect(await w.server.count("register") == 2)
     }
 
     @Test func eachCodeHasTheWebsWords() {

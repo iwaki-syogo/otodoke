@@ -38,7 +38,10 @@ enum AppStart {
             case .clearFailed:
                 launchLog.error("Leftover Keychain items could not be removed; trying again on the next launch")
             }
-            return .ready(AuthService(provider: .live(config: config)))
+            let auth = AuthService(provider: .live(config: config))
+            // B1-1: the main screens (and the opened key's parts) are made once per signed-in generation.
+            auth.makeSignedIn = { MainScreens.live(auth: $0) }
+            return .ready(auth)
         } catch {
             return .misconfigured(error)
         }

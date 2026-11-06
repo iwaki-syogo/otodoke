@@ -2,7 +2,7 @@
 // while it opens, the message under the field, and the help (「Web でログイン」 in Safari, 「ログインし直す」).
 // Every word comes from UnlockModel / FaceIDText / LoginText (no other text
 // is added; a vitest checks there is no Japanese literal here). The passphrase lives only in this view's state
-// and is cleared once the key opened.
+// and is cleared after every submit (opened or not) and when the app goes to the background (SEC-N4).
 
 import SwiftUI
 
@@ -14,6 +14,7 @@ struct UnlockView: View {
     @State private var passphrase = ""
     @FocusState private var focused: Bool
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Face ID / Touch ID when the key will be kept with it; nil when only memory holds it.
     private var keptWith: BiometryKind? {
@@ -84,6 +85,10 @@ struct UnlockView: View {
                 EmptyView()
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            // SEC-N4: the password typed does not stay in the field while the app is in the background.
+            if phase == .background { passphrase = "" }
+        }
     }
 
     private func submit() {
@@ -91,10 +96,9 @@ struct UnlockView: View {
         let typed = passphrase
         Task {
             let opened = await model.submit(password: typed)
-            if opened {
-                passphrase = ""
-                onOpened()
-            }
+            // SEC-N4: cleared whether it opened or not (a failure asks for it again).
+            passphrase = ""
+            if opened { onOpened() }
         }
     }
 }

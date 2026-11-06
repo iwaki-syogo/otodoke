@@ -3,14 +3,16 @@
 //    Face ID unavailable or refused goes back to the password.
 //  - submit(password:email:): reads the key row, makes master with PBKDF2 off the main thread (KeyDeriving,
 //    password-v1), one at a time (a second submit while one runs does nothing), 「開いています…」 meanwhile,
-//    the time taken recorded (never a value or the password). A wrong password is 「パスワードが違います」. The
+//    the time taken recorded (never a value or the password). A wrong password is 「パスワードが違います。」. The
 //    key is put in memory and saved to the Keychain only when the stamps (session + front period) are still
 //    current; the save also takes the policy ticket from the start (CX3). A device that cannot keep it goes on
 //    in memory.
 //  - recipient(forKid:): a sealed mail's kid differs from the key in memory → read the key row again →
 //    not readable: 「読み込めませんでした」 → its kid is the mail's: the device key is old (deleted, as
 //    KeyVault.shouldDelete(.keyRowKidDiffers)), the password opens the new one → still another kid:
-//    「前のパスワードで暗号化したメールです。もう開けません。」 (the device key is kept).
+//    「前の鍵で暗号化したメールです。開けません。」 (the device key is kept). The key compared after the read is the
+//    one in memory then (A2-2): a key opened meanwhile is neither deleted nor asked for again.
+//  - Face ID's ask in flight is shared only within its stamp (A2-1): a key() of a later front period asks again.
 
 import CryptoKit
 import Foundation
@@ -54,7 +56,7 @@ enum RecipientOutcome: Equatable, Sendable {
     case needsPassphrase
     /// 「読み込めませんでした」 (the key row could not be read).
     case readFailed
-    /// 「前のパスワードで暗号化したメールです。もう開けません。」
+    /// 「前の鍵で暗号化したメールです。開けません。」
     case oldKey
 }
 
@@ -75,13 +77,15 @@ final class UnlockModel {
     /// unlock-form.tsx: the field's placeholder and the button.
     static let placeholder = "パスワード"
     static let openText = "開く"
-    static let wrongPassphraseText = "パスワードが違います"
+    /// N5: the Web's wrong_password.
+    static let wrongPassphraseText = "パスワードが違います。"
     static let readFailedText = "読み込めませんでした"
     static let failedText = "開けませんでした"
-    static let oldKeyText = "前のパスワードで暗号化したメールです。もう開けません。"
+    /// S4: the Web's sealed-mail.tsx (integrate/password-v1): password-v1 opens no older key.
+    static let oldKeyText = "前の鍵で暗号化したメールです。開けません。"
 
     private(set) var phase: Phase = .idle
-    /// Under the field: 「パスワードが違います」, 「読み込めませんでした」, 「開けませんでした」.
+    /// Under the field: 「パスワードが違います。」, 「読み込めませんでした」, 「開けませんでした」.
     private(set) var message: String?
     /// The last save's result (.memoryOnly shows the 「保存できないとき」 line).
     private(set) var saveResult: VaultSave?
@@ -96,8 +100,8 @@ final class UnlockModel {
 
     /// The front period (and session) Face ID was last asked in: asked once per period.
     @ObservationIgnored private var askedFaceID: UnlockStamp?
-    /// The Face ID ask in flight, shared by every key() that comes meanwhile.
-    @ObservationIgnored private var faceIDTask: Task<OpenedKey?, Never>?
+    /// The Face ID ask in flight with the stamp it was asked under, shared by every key() of that stamp (A2-1).
+    @ObservationIgnored private var faceIDTask: (task: Task<OpenedKey?, Never>, stamp: UnlockStamp, id: UUID)?
     /// A submit is running (PBKDF2 runs one at a time).
     @ObservationIgnored private var submitting = false
 
@@ -152,18 +156,23 @@ final class UnlockModel {
             if phase != .opening { phase = .idle }
             return key
         }
-        if let faceIDTask { return await faceIDTask.value }
         guard let stamp = store.stamp() else { return nil }
+        // A2-1: an ask of another stamp (a front period that ended) is not shared, and its key is not used.
+        if let shared = faceIDTask, shared.stamp == stamp {
+            let key = await shared.task.value
+            return store.isCurrent(stamp) ? key : nil
+        }
         guard let vault, askedFaceID != stamp, let kind = vault.biometry else {
             if phase != .opening { phase = .needsPassphrase }
             return nil
         }
         askedFaceID = stamp
+        let id = UUID()
         let task = Task { await self.openWithFaceID(vault: vault, kind: kind, stamp: stamp) }
-        faceIDTask = task
+        faceIDTask = (task, stamp, id)
         let key = await task.value
-        faceIDTask = nil
-        return key
+        if faceIDTask?.id == id { faceIDTask = nil }
+        return store.isCurrent(stamp) ? key : nil
     }
 
     private func openWithFaceID(vault: KeyVault, kind: BiometryKind, stamp: UnlockStamp) async -> OpenedKey? {
@@ -217,6 +226,8 @@ final class UnlockModel {
         case let .loaded(found?):
             row = found
         case .loaded(nil):
+            // N4: the sign-in made no key for this address: signing in again would not help.
+            if keySetup?.lastOutcome == .addressMismatch { return finish(stamp, message: LoginText.addressMismatch) }
             // No key row: the key step after the sign-in did not finish; signing in again makes it.
             return finish(stamp, message: LoginText.noKeyYet, help: .signInAgain)
         case .failed:
@@ -279,12 +290,16 @@ final class UnlockModel {
             // Not readable (or no key row): nothing is deleted.
             return .readFailed
         }
-        if row.keyId != key.keyID {
+        // A2-2: the key in memory now, not the one before the read (another read may have dropped it, a submit
+        // may have opened the new one meanwhile).
+        let now = store.key
+        if let now, row.keyId != now.keyID {
             // The key in use is not the device's: the device key is old.
             vault?.remove(.keyRowKidDiffers)
             store.forgetKey()
         }
         if row.keyId == kid {
+            if let now, now.keyID == kid { return .key(now) }
             phase = .needsPassphrase
             return .needsPassphrase
         }

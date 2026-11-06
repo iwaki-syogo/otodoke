@@ -82,6 +82,17 @@ struct SettingsView: View {
                         .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.amberBorder))
                 }
+                if let failure = model.keyStepFailure {
+                    // S3: the key step after the sign-in did not make the key.
+                    errorBox(failure.message)
+                    if failure.signInAgain {
+                        Button {
+                            Task { await model.signOut() }
+                        } label: {
+                            Text(LoginText.signInAgain).font(.subheadline.weight(.medium))
+                        }
+                    }
+                }
                 primaryButton("鍵を作る") { open(.createPassphrase) }
                     .padding(.top, 4)
             }

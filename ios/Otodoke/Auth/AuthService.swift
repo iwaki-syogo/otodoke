@@ -9,7 +9,13 @@
 //  - a new account's address must be printable ASCII;
 //  - Supabase's errors are read by code and status (never by their text): credentials, not_confirmed, rate,
 //    captcha, network, other;
-//  - after a sign-in the key step (KeySetup) gets the sign-in's master once (takeSignInSecret).
+//  - after a sign-in the key step (KeySetup) gets the sign-in's master once (takeSignInSecret). supabase-swift
+//    emits .signedIn before signIn returns (A3-1): while a password sign-in is in flight the client's events
+//    only move the session generation on; .signedIn is published after the generation and the hand-off
+//    (pendingSignIn) are decided. The key step registered for the generation (keyStep) is told then, and
+//    takes the hand-off itself when it is made later: whichever comes first, the key step runs once.
+//  - the main screens live as long as one signed-in generation (B1-1): made once by makeSignedIn when the
+//    generation is published signed in, kept here (signedInObject), dropped when it moves on.
 
 import Auth
 import Foundation
@@ -39,6 +45,24 @@ final class AuthService {
     @ObservationIgnored let deriver: PasswordV1Deriver
     /// What the last password sign-in left for the key step, with the session stamp it belongs to.
     @ObservationIgnored private var pendingSignIn: (signIn: PasswordSignIn, stamp: SessionStamp)?
+    /// N4: the last password sign-in made no master for the session's address (letters outside ASCII), with
+    /// the session stamp it belongs to.
+    @ObservationIgnored private var pendingMismatch: SessionStamp?
+    /// The key step of the generation (MainScreens.attachKeys): called when a hand-off is decided.
+    @ObservationIgnored private var keyStep: (stamp: SessionStamp, start: @MainActor () -> Void)?
+
+    /// A password sign-in is in flight: the client's events only move the generation on (A3-1).
+    @ObservationIgnored private var signingIn = 0
+    /// The last session the client's events said while a sign-in was in flight (published if it fails).
+    @ObservationIgnored private var heldSession: Session??
+
+    /// Makes what lives as long as one signed-in generation (the app's: MainScreens.live). Set at launch.
+    @ObservationIgnored var makeSignedIn: (@MainActor (AuthService) -> AnyObject)?
+    @ObservationIgnored private var signedInPart: (stamp: SessionStamp, value: AnyObject)?
+
+    /// Tests only: runs once supabase-swift answered a password sign-in, before the hand-off is decided (the
+    /// order where the client's .signedIn was handled first).
+    @ObservationIgnored var afterSignInAnswer: (@MainActor () async -> Void)?
 
     init(provider: SupabaseProvider, deriver: PasswordV1Deriver = PasswordV1Deriver()) {
         self.provider = provider
@@ -47,13 +71,13 @@ final class AuthService {
 
     /// Reads the stored session (and follows the client's auth events from then on).
     func start() async {
-        apply(provider.auth.currentSession)
+        receive(provider.auth.currentSession)
         if events == nil {
             let changes = provider.auth.authStateChanges
             events = Task { [weak self] in
                 for await change in changes {
                     guard let self else { return }
-                    self.apply(change.session)
+                    self.receive(change.session)
                 }
             }
         }
@@ -66,15 +90,14 @@ final class AuthService {
     /// server refuses ends in .signedOut (the login screen).
     func checkSession() async {
         guard provider.auth.currentSession != nil else {
-            state = .signedOut
-            session.follow(userID: nil)
+            receive(nil)
             return
         }
         do {
-            apply(try await provider.auth.session)
+            receive(try await provider.auth.session)
         } catch {
             // A refused refresh token makes the client drop the session; no answer keeps it (offline).
-            apply(provider.auth.currentSession)
+            receive(provider.auth.currentSession)
         }
     }
 
@@ -115,17 +138,41 @@ final class AuthService {
         defer { master.resetBytes(in: 0..<master.count) }
         let secret = PasswordV1.authSecret(master: master)
         let signedIn: Session
+        signingIn += 1
         do {
             signedIn = try await provider.auth.signIn(email: address, password: secret, captchaToken: Self.token(captchaToken))
         } catch {
+            releaseEvents(publishHeld: true)
             throw Self.signInFailure(error)
         }
-        clearPendingSignIn()
-        apply(signedIn)
-        let userID = signedIn.user.id.uuidString.lowercased()
-        if let sessionAddress = signedIn.user.email, PasswordV1.emailNorm(sessionAddress) == address, let stamp = session.stamp(), stamp.userID == userID {
-            pendingSignIn = (PasswordSignIn(userID: userID, email: address, master: Data(master)), stamp)
+        if let afterSignInAnswer {
+            self.afterSignInAnswer = nil
+            await afterSignInAnswer()
         }
+        releaseEvents(publishHeld: false)
+        clearPendingSignIn()
+        pendingMismatch = nil
+        // ① the generation, ② the hand-off, ③ then .signedIn is published (the screens come up after it).
+        let userID = signedIn.user.id.uuidString.lowercased()
+        session.follow(userID: userID)
+        if let stamp = session.stamp(), stamp.userID == userID {
+            if let sessionAddress = signedIn.user.email, PasswordV1.emailNorm(sessionAddress) == address {
+                pendingSignIn = (PasswordSignIn(userID: userID, email: address, master: Data(master)), stamp)
+            } else {
+                pendingMismatch = stamp
+            }
+        }
+        publish(signedIn)
+        startKeyStep()
+    }
+
+    /// The end of a sign-in in flight: the client's events are published again; a failed sign-in publishes the
+    /// last session they said meanwhile.
+    private func releaseEvents(publishHeld: Bool) {
+        signingIn -= 1
+        guard signingIn == 0, let held = heldSession else { return }
+        heldSession = nil
+        if publishHeld { publish(held) }
     }
 
     /// resend(email: email_norm, type: .signup, emailRedirectTo: AppConfig.authRedirect, captchaToken:). The same
@@ -139,6 +186,38 @@ final class AuthService {
             if case .sent = Self.mailRefusal(error) { return }
             if case let .failed(failure) = Self.mailRefusal(error) { throw failure }
         }
+    }
+
+    /// N4: true once when the last password sign-in of this generation made no key (the address typed and the
+    /// session's are not the same for password-v1).
+    func takeAddressMismatch() -> Bool {
+        guard let stamp = pendingMismatch else { return false }
+        pendingMismatch = nil
+        return session.isCurrent(stamp)
+    }
+
+    /// The key step of the signed-in generation now (MainScreens.attachKeys): `start` takes the hand-off
+    /// (takeSignInSecret / takeAddressMismatch); it is called again whenever a sign-in of this generation
+    /// decides one. Nothing is registered while signed out.
+    func setKeyStep(_ start: @escaping @MainActor () -> Void) {
+        guard let stamp = session.stamp() else { return }
+        keyStep = (stamp, start)
+    }
+
+    private func startKeyStep() {
+        guard let step = keyStep, session.isCurrent(step.stamp) else { return }
+        step.start()
+    }
+
+    /// What makeSignedIn made for the signed-in generation now (made once per generation); nil when signed out or
+    /// when there is no makeSignedIn.
+    func signedInObject() -> AnyObject? {
+        guard case .signedIn = state, let stamp = session.stamp() else { return nil }
+        if let part = signedInPart, part.stamp == stamp { return part.value }
+        guard let makeSignedIn else { return nil }
+        let value = makeSignedIn(self)
+        signedInPart = (stamp, value)
+        return value
     }
 
     /// The PasswordSignIn of the last password sign-in, once; nil after sign-out, for another user, or when
@@ -182,6 +261,9 @@ final class AuthService {
         session.advance()
         session.follow(userID: nil)
         clearPendingSignIn()
+        pendingMismatch = nil
+        keyStep = nil
+        signedInPart = nil
         cleanup?.cancelWork()
         cleanup?.dropMemory()
         cleanup?.deleteKeychainKey()
@@ -194,8 +276,7 @@ final class AuthService {
         if provider.auth.currentSession != nil {
             provider.clearStoredSession()
         }
-        state = .signedOut
-        session.follow(userID: nil)
+        publish(nil)
     }
 
     /// email_norm (password-v1 step 1): the five ASCII whitespaces off both ends, A-Z made a-z.
@@ -213,15 +294,26 @@ final class AuthService {
         !address.isEmpty && address.unicodeScalars.allSatisfy { (0x21...0x7E).contains($0.value) }
     }
 
-    private func apply(_ session: Session?) {
+    /// A session the client said (its events, the stored one, a refresh). While a password sign-in is in flight
+    /// only the generation follows it; the sign-in publishes (A3-1).
+    private func receive(_ session: Session?) {
+        guard signingIn > 0 else { return publish(session) }
+        heldSession = .some(session)
+        self.session.follow(userID: session.map { $0.user.id.uuidString.lowercased() })
+    }
+
+    private func publish(_ session: Session?) {
         if let session {
             let userID = session.user.id.uuidString.lowercased()
-            state = .signedIn(userID: userID)
             self.session.follow(userID: userID)
+            state = .signedIn(userID: userID)
+            // The generation's main screens, made here once (not by a View's init, B1-1).
+            _ = signedInObject()
         } else {
-            state = .signedOut
             self.session.follow(userID: nil)
+            state = .signedOut
         }
+        if let part = signedInPart, !self.session.isCurrent(part.stamp) { signedInPart = nil }
     }
 
     /// A token worth passing on; nil when there is none (Supabase decides, while its CAPTCHA is off).
@@ -245,6 +337,8 @@ final class AuthService {
             case let .server(status): return .refused(status: status, code: nil)
             }
         }
+        // supabase-swift reads GoTrue's 422 weak_password into its own case (a refusal with a status, not an outage).
+        if case AuthError.weakPassword = error { return .refused(status: 422, code: "weak_password") }
         guard case let AuthError.api(_, code, _, response) = error else { return .unknown }
         let raw = code.rawValue
         return .refused(status: response.statusCode, code: raw.isEmpty || raw == "unknown" ? nil : raw)
@@ -254,7 +348,8 @@ final class AuthService {
     private static func signInFailure(_ error: any Error) -> LoginFailure {
         switch answer(of: error) {
         case .noAnswer: return .network
-        case .unknown: return .other
+        // N1: no status is the Web's isOutage (network).
+        case .unknown: return .network
         case let .refused(status, code):
             if code == "invalid_credentials" { return .credentials }
             if code == "email_not_confirmed" { return .notConfirmed }
@@ -274,7 +369,8 @@ final class AuthService {
     private static func mailRefusal(_ error: any Error) -> MailOutcome {
         switch answer(of: error) {
         case .noAnswer: return .failed(.network)
-        case .unknown: return .failed(.other)
+        // N1: no status is the Web's isOutage (network).
+        case .unknown: return .failed(.network)
         case let .refused(status, code):
             if code == "captcha_failed" { return .failed(.captcha) }
             if code == "over_request_rate_limit" { return .failed(.rate) }

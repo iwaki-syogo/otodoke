@@ -81,8 +81,8 @@ struct PasswordWordsTests {
         #expect(UnlockModel.placeholder == "パスワード")
         #expect(UnlockModel.openText == "開く")
         #expect(UnlockModel.openingText == "開いています…")
-        #expect(UnlockModel.wrongPassphraseText == "パスワードが違います")
-        #expect(UnlockModel.oldKeyText == "前のパスワードで暗号化したメールです。もう開けません。")
+        #expect(UnlockModel.wrongPassphraseText == "パスワードが違います。")
+        #expect(UnlockModel.oldKeyText == "前の鍵で暗号化したメールです。開けません。")
         #expect(UnlockModel.readFailedText == "読み込めませんでした")
         #expect(UnlockModel.failedText == "開けませんでした")
     }

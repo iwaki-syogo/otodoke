@@ -38,9 +38,10 @@ final class SettingsModel {
     /// 「暗号化されていないメールの数を読み込めませんでした」
     static let plainCountFailedText = "暗号化されていないメールの数を読み込めませんでした"
 
-    /// 「前のパスワードで暗号化したメールが N 通あります。…」
+    /// S4: the Web's password-panel.tsx (integrate/password-v1): 「前の鍵で暗号化したメールが N 通あります。開けませんが、
+    /// 荷物は残っています。」 (password-v1 opens no older key: no promise that it opens).
     static func oldKeyText(_ n: Int) -> String {
-        "前のパスワードで暗号化したメールが \(n) 通あります。前のパスワードを覚えていれば、メールの画面から開けます。荷物は残っています。"
+        "前の鍵で暗号化したメールが \(n) 通あります。開けませんが、荷物は残っています。"
     }
 
     /// The page each action opens: https://otodoke.app/… as task.md lists it.
@@ -106,6 +107,19 @@ final class SettingsModel {
 
     /// The 「この端末で Face ID を使う」 switch (set by MainScreens).
     @ObservationIgnored var faceID: FaceIDSwitch?
+    /// The key step after the sign-in (set by MainScreens): its failure shows on the card without a key (S3).
+    @ObservationIgnored var keySetup: KeySetup?
+
+    /// S3: on the card without a key row, why the key step after the sign-in did not make one, and whether
+    /// 「ログインし直す」 is offered (it makes the key again). N4: the address mismatch is shown without it.
+    var keyStepFailure: (message: String, signInAgain: Bool)? {
+        guard case .none? = keyPanel else { return nil }
+        switch keySetup?.lastOutcome {
+        case let .failed(message)?: return (message, true)
+        case .addressMismatch?: return (LoginText.addressMismatch, false)
+        default: return nil
+        }
+    }
 
     /// The switch shows only with a key row in use (not when none, not when the key could not be read)
     /// and a FaceIDSwitch.

@@ -25,7 +25,14 @@ final class LoginModel {
     }
 
     var mode: Mode = .signIn
-    var email = ""
+    /// N6: an address changed after not_confirmed drops the resend offer (it was for the address before).
+    var email = "" {
+        didSet {
+            guard canResendConfirmation, PasswordV1.emailNorm(email) != unconfirmedAddress else { return }
+            canResendConfirmation = false
+            unconfirmedAddress = nil
+        }
+    }
     /// Only in this model's memory; cleared after every press, and when the form changes.
     var password = ""
     /// The sign-up form's second field.

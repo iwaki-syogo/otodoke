@@ -112,8 +112,10 @@ struct MainTabView: View {
     @State private var wasInBackground = false
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The signed-in generation's screens (MainScreens.of): the same ones every time this View is made again
+    /// (RootView reads scenePhase), so nothing here touches AuthService.cleanup or the sign-in's hand-off (B1-1).
     init(auth: AuthService) {
-        self.init(screens: .live(auth: auth))
+        self.init(screens: .of(auth))
     }
 
     /// With models made elsewhere (the DEBUG screen check): the other tabs read through the list's

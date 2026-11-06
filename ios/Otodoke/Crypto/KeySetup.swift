@@ -6,9 +6,16 @@
 //    AAD `otodoke/key-challenge/v1|<user_id>|<key_id>`, POST /api/keys/activate, then memory and Face ID.
 //  - 409 key_in_use_changed at register or activate: another device made it first; the key in use is read and
 //    opened instead.
-//  - One run at a time: a second run while one runs waits for it and answers the same (one key, never two).
-//  - The stamp of the start (session generation + front period): after each await, a stamp that is no longer
-//    current stops the run; nothing is put in memory or the Keychain.
+//  - One run at a time: a second run of the same sign-in (user and session stamp) while one runs waits for it and
+//    answers the same (one key, never two); another sign-in's run waits for it to end, then runs (S5).
+//  - The session stamp of the start (signed out, another account) stops the steps with the server after each
+//    await; the front period stops only the last step, keep (memory and Face ID): a key put in use while the app
+//    was in the background is opened with the password later (S2, CX2).
+//  - key_not_pending or no answer (network, unavailable, an answer that is not the endpoint's): once more from
+//    register, with a new key (keys.md: register may be sent again). Never more than once (S3).
+//  - The run's failure stays in lastOutcome (the unlock and the settings show it, S3).
+//  - Requests go to the endpoint only: a redirect is not followed (it is .network, SEC-N2); `ok` is JSON true
+//    only, and activate's keyId is the one sent (SEC-N1).
 //  - No request carries the password, master, the KEK or auth_secret; nothing is logged.
 
 import Foundation
@@ -91,8 +98,23 @@ struct KeyAPIClient: KeyAPI {
             "challenge": CryptoBytes.toBase64(challenge),
             "expectedCurrentKeyId": expectedCurrentKeyID ?? NSNull(),
         ], accessToken: accessToken)
-        guard let answered = answer["keyId"] as? String, Envelope.isKid(answered) else { throw .network }
+        // SEC-N1: the key the server put in use is the one sent.
+        guard let answered = answer["keyId"] as? String, Envelope.isKid(answered), answered == keyID else { throw .network }
         return answered
+    }
+
+    /// SEC-N2: the key endpoints answer themselves; a redirect is not followed (its answer is not the endpoint's
+    /// JSON: .network).
+    final class NoRedirect: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest) async -> URLRequest? {
+            nil
+        }
+    }
+
+    /// SEC-N1: JSON `true` only (JSONSerialization gives an NSNumber for both `true` and `1`).
+    static func isJSONTrue(_ value: Any?) -> Bool {
+        guard let number = value as? NSNumber else { return false }
+        return CFGetTypeID(number) == CFBooleanGetTypeID() && number.boolValue
     }
 
     /// `{ ok: true, ... }` on 200; the result code of `{ ok: false, code }` otherwise (an unknown one, or an
@@ -108,14 +130,14 @@ struct KeyAPIClient: KeyAPI {
         request.httpBody = data
         let reply: (Data, URLResponse)
         do {
-            reply = try await session.data(for: request)
+            reply = try await session.data(for: request, delegate: NoRedirect())
         } catch {
             throw .network
         }
         guard let http = reply.1 as? HTTPURLResponse,
               let object = (try? JSONSerialization.jsonObject(with: reply.0)) as? [String: Any]
         else { throw .network }
-        if http.statusCode == 200, object["ok"] as? Bool == true { return object }
+        if http.statusCode == 200, Self.isJSONTrue(object["ok"]) { return object }
         if let code = object["code"] as? String, let failure = KeyAPIFailure(rawValue: code), failure != .network { throw failure }
         throw .network
     }
@@ -161,6 +183,9 @@ enum KeySetupOutcome: Equatable, Sendable {
     case created(keyID: String)
     /// Nothing in memory; the words to show.
     case failed(message: String)
+    /// N4: the sign-in made no master for the session's address (letters outside ASCII): no key is made. The
+    /// Web's address_mismatch; signing in again does not help, so it is not offered.
+    case addressMismatch
     /// Signed out, another account, or the background meanwhile: nothing kept, nothing shown.
     case stale
     /// The key in use does not open with the password that signed in (a change on the Web stopped half-way):
@@ -182,8 +207,9 @@ final class KeySetup {
 
     /// The last run's outcome (the unlock and settings screens can show a failure).
     private(set) var lastOutcome: KeySetupOutcome?
-    /// The run in flight, shared by a second run meanwhile.
-    @ObservationIgnored private var running: Task<KeySetupOutcome, Never>?
+    /// The run in flight, with the sign-in's user and the session stamp it started under: shared by a second run
+    /// of the same (S5).
+    @ObservationIgnored private var running: (task: Task<KeySetupOutcome, Never>, userID: String, session: SessionStamp)?
 
     init(
         store: OpenKeyStore,
@@ -205,7 +231,14 @@ final class KeySetup {
 
     @discardableResult
     func run(_ signIn: PasswordSignIn) async -> KeySetupOutcome {
-        if let running { return await running.value }
+        // S5: the same sign-in joins the run in flight; another waits for it to end first.
+        while let current = running {
+            if current.userID == signIn.userID, let now = store.stamp()?.session, now == current.session {
+                return await current.task.value
+            }
+            _ = await current.task.value
+            if running?.task == current.task { running = nil }
+        }
         guard let stamp = store.stamp(), stamp.session.userID == signIn.userID else {
             lastOutcome = .stale
             return .stale
@@ -213,16 +246,26 @@ final class KeySetup {
         // CX3: the save may only use the policy as it was when this started.
         let ticket = policy.ticket()
         let task = Task { await self.perform(signIn, stamp: stamp, ticket: ticket) }
-        running = task
+        running = (task, signIn.userID, stamp.session)
         let outcome = await task.value
-        running = nil
+        if running?.task == task { running = nil }
         lastOutcome = outcome
         return outcome
     }
 
+    /// N4: the sign-in made no key for this address (AuthService.takeAddressMismatch).
+    func noteAddressMismatch() {
+        lastOutcome = .addressMismatch
+    }
+
+    /// S2: the steps with the server stop only for a sign-out or another account (not for the background).
+    private func sessionIsCurrent(_ stamp: UnlockStamp) -> Bool {
+        store.session.isCurrent(stamp.session)
+    }
+
     private func perform(_ signIn: PasswordSignIn, stamp: UnlockStamp, ticket: KeyStorePolicy.Ticket) async -> KeySetupOutcome {
         let read = await keys.currentKey()
-        guard store.isCurrent(stamp) else { return .stale }
+        guard sessionIsCurrent(stamp) else { return .stale }
         switch read {
         case .failed:
             // Not "no key": nothing is made over a key that may be in use.
@@ -250,54 +293,79 @@ final class KeySetup {
     /// Another device made the key first: the key in use, read again and opened.
     private func openInUse(_ signIn: PasswordSignIn, stamp: UnlockStamp, ticket: KeyStorePolicy.Ticket) async -> KeySetupOutcome {
         let read = await keys.currentKey()
-        guard store.isCurrent(stamp) else { return .stale }
+        guard sessionIsCurrent(stamp) else { return .stale }
         guard case let .loaded(row?) = read else { return .failed(message: KeyAPIFailure.keyInUseChanged.message) }
         return open(row, signIn: signIn, stamp: stamp, ticket: ticket)
     }
 
+    /// One attempt, then (S3) once more from register with a new key after key_not_pending or no answer.
     private func create(_ signIn: PasswordSignIn, stamp: UnlockStamp, ticket: KeyStorePolicy.Ticket) async -> KeySetupOutcome {
-        guard let generated = try? KeyGeneration.generate(master: signIn.master, userID: signIn.userID) else {
-            return .failed(message: LoginText.other)
+        switch await attempt(signIn, stamp: stamp, ticket: ticket) {
+        case let .done(outcome):
+            return outcome
+        case .again:
+            guard sessionIsCurrent(stamp) else { return .stale }
+            switch await attempt(signIn, stamp: stamp, ticket: ticket) {
+            case let .done(outcome): return outcome
+            case let .again(failure): return .failed(message: failure.message)
+            }
         }
-        guard let token = await accessToken() else { return store.isCurrent(stamp) ? .failed(message: LoginText.signedOut) : .stale }
-        guard store.isCurrent(stamp) else { return .stale }
+    }
+
+    private enum Attempt {
+        case done(KeySetupOutcome)
+        /// key_not_pending or no answer: worth one more attempt from register.
+        case again(KeyAPIFailure)
+    }
+
+    private static func isWorthAgain(_ failure: KeyAPIFailure) -> Bool {
+        failure == .keyNotPending || failure == .network || failure == .unavailable
+    }
+
+    private func attempt(_ signIn: PasswordSignIn, stamp: UnlockStamp, ticket: KeyStorePolicy.Ticket) async -> Attempt {
+        guard let generated = try? KeyGeneration.generate(master: signIn.master, userID: signIn.userID) else {
+            return .done(.failed(message: LoginText.other))
+        }
+        guard let token = await accessToken() else { return .done(sessionIsCurrent(stamp) ? .failed(message: LoginText.signedOut) : .stale) }
+        guard sessionIsCurrent(stamp) else { return .done(.stale) }
 
         // 4. register (the key in use stays as it is until activation).
         let registered: KeyRegistered
         do {
             registered = try await api.register(generated.row, expectedCurrentKeyID: nil, accessToken: token)
         } catch {
-            guard store.isCurrent(stamp) else { return .stale }
-            if error == .keyInUseChanged { return await openInUse(signIn, stamp: stamp, ticket: ticket) }
-            return .failed(message: error.message)
+            guard sessionIsCurrent(stamp) else { return .done(.stale) }
+            if error == .keyInUseChanged { return .done(await openInUse(signIn, stamp: stamp, ticket: ticket)) }
+            return Self.isWorthAgain(error) ? .again(error) : .done(.failed(message: error.message))
         }
-        guard store.isCurrent(stamp) else { return .stale }
-        guard registered.keyID == generated.row.keyID else { return .failed(message: LoginText.keyChallengeFailed) }
+        guard sessionIsCurrent(stamp) else { return .done(.stale) }
+        guard registered.keyID == generated.row.keyID else { return .done(.failed(message: LoginText.keyChallengeFailed)) }
 
         // 5. The pending row read back opens with this password and is the pair of the stored public key.
         let back = await pending.pendingKey(keyID: registered.keyID)
-        guard store.isCurrent(stamp) else { return .stale }
+        guard sessionIsCurrent(stamp) else { return .done(.stale) }
         guard case let .loaded(row?) = back, row.publicKey == generated.row.publicKey,
               let opened = try? PasswordV1.openStoredKey(row, master: signIn.master, userID: signIn.userID),
               opened.keyID == generated.row.keyID
-        else { return .failed(message: LoginText.keyChallengeFailed) }
+        else { return .done(.failed(message: LoginText.keyChallengeFailed)) }
 
         // 6. The challenge, opened with that private key.
         guard let envelope = try? Envelope.parse(jsonData: registered.challenge),
               let answer = try? EnvelopeCrypto.openBytes(opened, aad: KeyChallenge.aad(userID: signIn.userID, keyID: registered.keyID), envelope: envelope),
               answer.count == 32
-        else { return .failed(message: LoginText.keyChallengeFailed) }
+        else { return .done(.failed(message: LoginText.keyChallengeFailed)) }
 
         // 7. activate.
         do {
             _ = try await api.activate(keyID: registered.keyID, challenge: answer, expectedCurrentKeyID: nil, accessToken: token)
         } catch {
-            guard store.isCurrent(stamp) else { return .stale }
-            if error == .keyInUseChanged { return await openInUse(signIn, stamp: stamp, ticket: ticket) }
-            return .failed(message: error.message)
+            guard sessionIsCurrent(stamp) else { return .done(.stale) }
+            if error == .keyInUseChanged { return .done(await openInUse(signIn, stamp: stamp, ticket: ticket)) }
+            return Self.isWorthAgain(error) ? .again(error) : .done(.failed(message: error.message))
         }
-        guard store.isCurrent(stamp) else { return .stale }
-        return keep(opened, stamp: stamp, ticket: ticket) ? .created(keyID: opened.keyID) : .stale
+        guard sessionIsCurrent(stamp) else { return .done(.stale) }
+        // Only keep looks at the front period (CX2: nothing in memory for a period that ended).
+        return .done(keep(opened, stamp: stamp, ticket: ticket) ? .created(keyID: opened.keyID) : .stale)
     }
 
     /// In memory for the stamp, then kept with Face ID (when allowed and the device can).

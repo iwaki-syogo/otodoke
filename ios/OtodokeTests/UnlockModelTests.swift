@@ -16,10 +16,10 @@ struct UnlockModelTests {
 
     @Test func theWords() {
         #expect(UnlockModel.openingText == "開いています…")
-        #expect(UnlockModel.wrongPassphraseText == "パスワードが違います")
+        #expect(UnlockModel.wrongPassphraseText == "パスワードが違います。")
         #expect(UnlockModel.readFailedText == "読み込めませんでした")
         #expect(UnlockModel.failedText == "開けませんでした")
-        #expect(UnlockModel.oldKeyText == "前のパスワードで暗号化したメールです。もう開けません。")
+        #expect(UnlockModel.oldKeyText == "前の鍵で暗号化したメールです。開けません。")
     }
 
     @Test func aKeyInMemoryIsUsedWithoutAskingAnything() async throws {
