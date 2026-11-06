@@ -108,6 +108,8 @@ struct DeliveredView<Detail: View>: View {
             .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
         }
+        // The chosen value in the text colour, as the Web's select (not the accent).
+        .tint(.primary)
         .accessibilityLabel(all)
     }
 
