@@ -3,7 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { FORWARDING_GUIDES, FORWARDING_PITFALLS, GMAIL_FILTER, PITFALLS_LEAD } from "@/lib/forwarding-guide";
+import { BEFORE_YOU_START_ACTION, BEFORE_YOU_START_HEADING, FORWARDING_GUIDES, FORWARDING_PITFALLS, GMAIL_FILTER, PITFALLS_LEAD } from "@/lib/forwarding-guide";
 import * as guideData from "@/lib/forwarding-guide";
 import { withoutComments } from "./source-scan";
 import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
@@ -23,7 +23,7 @@ vi.mock("next/link", async () => {
 vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
 
 const PAGE_SOURCE = path.join(process.cwd(), "src/app/guide/forwarding/page.tsx");
-const SETTINGS_SOURCE = path.join(process.cwd(), "src/app/app/settings/page.tsx");
+const SETTINGS_SOURCE = path.join(process.cwd(), "src/app/app/settings/forwarding-guide.tsx");
 const HOSTS = ["mail.google.com", "www.icloud.com", "outlook.live.com", "www.kuronekoyamato.co.jp", "faq.kuronekoyamato.co.jp"];
 
 async function render(): Promise<HtmlNode> {
@@ -131,7 +131,21 @@ describe("/guide/forwarding", () => {
     const source = readFileSync(SETTINGS_SOURCE, "utf8");
     const own = /const GMAIL_FILTER = "([^"]*)"/.exec(source);
     if (own) expect(own[1]).toBe(GMAIL_FILTER);
-    else expect(source).toContain("forwarding-guide");
+    // The settings guide imports the words; it has no copy of its own.
+    else expect(source).toContain('from "@/lib/forwarding-guide"');
+  });
+
+  it("sends 「うまく届かないとき」を開く to the trouble page, and the start card to the forwarding page", async () => {
+    const root = await render();
+    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "「うまく届かないとき」を開く").map((a) => a.attrs.href)).toEqual(["/app/settings/trouble"]);
+    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === BEFORE_YOU_START_ACTION).map((a) => a.attrs.href)).toEqual(["/app/settings/forwarding"]);
+  });
+
+  it("gives the 「始める前に」 card exactly one link to the forwarding address page", async () => {
+    const root = await render();
+    const card = findAll(root, (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h).trim() === BEFORE_YOU_START_HEADING).length > 0)[0];
+    const links = findAll(card, (n) => n.tag === "a");
+    expect(links.map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([["/app/settings/forwarding", BEFORE_YOU_START_ACTION]]);
   });
 
   it("reads nothing from the database or the request", () => {

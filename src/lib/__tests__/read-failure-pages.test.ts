@@ -182,7 +182,7 @@ describe("parcel page", () => {
 
 describe("/app/settings: the dropped-mail read", () => {
   const render = async () => {
-    const Page = (await import("@/app/app/settings/page")).default;
+    const Page = (await import("@/app/app/settings/dropped/page")).default;
     return parseHtml(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) })));
   };
 
@@ -190,7 +190,7 @@ describe("/app/settings: the dropped-mail read", () => {
     db.rows("screen_events").push({ id: "55555555-5555-4555-8555-555555555555", user_id: USER, decision: "dropped", subject: "セールのお知らせ", from_domain: "example.com", created_at: "2026-11-01T00:00:00Z", flagged_at: null });
     failOn((q) => q.table === "screen_events");
     const root = await render();
-    const dropped = sectionTitled(root, "読まなかったメール");
+    const dropped = findAll(root, (n) => n.tag === "section");
     expect(dropped).toHaveLength(1);
     expect(failureBoxes(dropped[0])).toHaveLength(1);
     expect(textOf(dropped[0])).not.toContain("まだありません");
@@ -198,7 +198,7 @@ describe("/app/settings: the dropped-mail read", () => {
 
   it("none, read fine, still says 「まだありません」", async () => {
     const root = await render();
-    const dropped = sectionTitled(root, "読まなかったメール");
+    const dropped = findAll(root, (n) => n.tag === "section");
     expect(textOf(dropped[0])).toContain("まだありません");
     expect(textOf(root)).not.toContain(LOAD_FAILED);
   });
@@ -206,7 +206,7 @@ describe("/app/settings: the dropped-mail read", () => {
   it("some, read fine, are listed", async () => {
     db.rows("screen_events").push({ id: "55555555-5555-4555-8555-555555555555", user_id: USER, decision: "dropped", subject: "セールのお知らせ", from_domain: "example.com", created_at: "2026-11-01T00:00:00Z", flagged_at: null });
     const root = await render();
-    expect(textOf(sectionTitled(root, "読まなかったメール")[0])).toContain("セールのお知らせ");
+    expect(textOf(findAll(root, (n) => n.tag === "section")[0])).toContain("セールのお知らせ");
     expect(textOf(root)).not.toContain(LOAD_FAILED);
   });
 });

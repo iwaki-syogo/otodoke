@@ -3,6 +3,7 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
+import { clearLoginHandoff, handOffToLogin, peekLoginHandoff } from "@/lib/login-handoff";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
@@ -157,12 +158,14 @@ describe("the press", () => {
     expect(input(view, "login-password").props.value).toBe("");
   });
 
-  it("moves on after the first key was made as well", async () => {
+  it("moves on to the first-run guide, whatever ?next= says, after the sign-in that made the first key", async () => {
     flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "made" });
     const view = await filled();
     await press(view);
     await drawn();
-    expect(nav.to).toEqual([NEXT]);
+    expect(nav.to).toEqual(["/app/welcome"]);
+    expect(textOfHost(button(view))).toBe("ログインしています…");
+    expect(input(view, "login-password").props.value).toBe("");
   });
 
   it("signed in but the key does not open: says so, offers another password, the reset and a way on", async () => {
@@ -348,6 +351,35 @@ describe("a press before the bot check has its token", () => {
     delete field.dataset.turnstile;
     await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS + 1_000);
     expect(result).toBe(false);
+  });
+});
+
+describe("from /signup's waiting screen after `credentials` (login-handoff.ts)", () => {
+  afterEach(() => {
+    clearLoginHandoff();
+    vi.unstubAllGlobals();
+  });
+
+  it("fills in the address and shows the credentials words, once, and never a password", async () => {
+    // handOffToLogin is the browser's only.
+    vi.stubGlobal("window", {});
+    handOffToLogin({ email: EMAIL, code: "credentials" });
+    const view = mount(() => LoginForm({ next: "/app" }));
+    await drawn();
+    expect(input(view, "login-email").props.value).toBe(EMAIL);
+    expect(input(view, "login-password").props.value).toBe("");
+    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([LOGIN_MESSAGES.credentials]);
+    // Let go once shown: the next visit to /login starts empty.
+    expect(peekLoginHandoff()).toBeNull();
+    const again = mount(() => LoginForm({ next: "/app" }));
+    await drawn();
+    expect(input(again, "login-email").props.value).toBe("");
+    expect(again.hosts((h) => h.props.role === "alert")).toEqual([]);
+  });
+
+  it("is not written on the server (a module's memory there is every visitor's)", () => {
+    handOffToLogin({ email: EMAIL, code: "credentials" });
+    expect(peekLoginHandoff()).toBeNull();
   });
 });
 

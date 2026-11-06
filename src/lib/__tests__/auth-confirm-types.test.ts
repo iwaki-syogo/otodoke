@@ -5,7 +5,9 @@ import { LOGIN_MESSAGES, loginErrorMessage, verifyFailure } from "@/lib/login-er
 /**
  * POST /auth/confirm by the link's type (password-v1):
  * - email, signup, magiclink: verified in a client that writes no cookie, its session ended at
- *   once, then /login?confirmed=1. This browser's session is not touched.
+ *   once. This browser's session is not touched. Then a new account's confirmation (email, signup)
+ *   gets 「確認できました」 (/auth/confirmed, onboarding screen 2), and an old login link (magiclink)
+ *   /login?confirmed=1 as before.
  * - recovery: verified on this browser's cookies, then always /reset-password (RESET_PATH); the
  *   link's next is never read.
  * - anything else: refused, the token unused.
@@ -54,8 +56,12 @@ afterEach(() => {
 });
 
 describe("a confirmation link (email, signup, magiclink)", () => {
-  it.each(["email", "signup", "magiclink"])("type=%s: verified apart from this browser, the session ended, then the login", async (type) => {
-    expect(await post({ token_hash: TOKEN, type, next: "/app/settings" })).toEqual({ status: 303, location: "/login?confirmed=1" });
+  it.each([
+    ["email", "/auth/confirmed"],
+    ["signup", "/auth/confirmed"],
+    ["magiclink", "/login?confirmed=1"],
+  ])("type=%s: verified apart from this browser, the session ended, then %s", async (type, location) => {
+    expect(await post({ token_hash: TOKEN, type, next: "/app/settings" })).toEqual({ status: 303, location });
     expect(mocks.throwawayVerify).toHaveBeenCalledWith({ type, token_hash: TOKEN });
     // This browser's cookies are never asked to hold it.
     expect(mocks.cookieVerify).not.toHaveBeenCalled();
@@ -63,11 +69,11 @@ describe("a confirmation link (email, signup, magiclink)", () => {
     expect(mocks.endSession).toHaveBeenCalledWith("made.session.token", "local");
   });
 
-  it("still leads to the login when the session cannot be ended (the address is confirmed)", async () => {
+  it("still says 「確認できました」 when the session cannot be ended (the address is confirmed)", async () => {
     mocks.endSession.mockResolvedValue({ data: null, error: { status: 500, code: "unexpected_failure" } });
-    expect(await post({ token_hash: TOKEN, type: "email" })).toEqual({ status: 303, location: "/login?confirmed=1" });
+    expect(await post({ token_hash: TOKEN, type: "email" })).toEqual({ status: 303, location: "/auth/confirmed" });
     mocks.endSession.mockRejectedValue(new TypeError("fetch failed"));
-    expect(await post({ token_hash: TOKEN, type: "email" })).toEqual({ status: 303, location: "/login?confirmed=1" });
+    expect(await post({ token_hash: TOKEN, type: "email" })).toEqual({ status: 303, location: "/auth/confirmed" });
   });
 
   it.each([

@@ -149,6 +149,69 @@ const SCREENS: Array<[string, (root: HtmlNode) => void]> = [
       expect(findAll(root, (n) => n.tag === "a")).toHaveLength(0);
     },
   ],
+  [
+    "settings/forwarding",
+    (root) => {
+      expect(h1(root)).toEqual(["メールの転送"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "settings/password",
+    (root) => {
+      expect(h1(root)).toEqual(["パスワードとメールの鍵"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "settings/dropped",
+    (root) => {
+      expect(h1(root)).toEqual(["読まなかったメール"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "settings/mail-handling",
+    (root) => {
+      expect(h1(root)).toEqual(["あなたのメールの扱い"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "settings/trouble",
+    (root) => {
+      expect(h1(root)).toEqual(["うまく届かないとき"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "settings/demo",
+    (root) => {
+      expect(h1(root)).toEqual(["サンプルで試す"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "settings/delete",
+    (root) => {
+      expect(h1(root)).toEqual(["アカウントの削除"]);
+      expect(linksTo(root, "/app/settings")).toHaveLength(1);
+      expect(textOf(root)).toContain("‹ 設定");
+    },
+  ],
+  [
+    "welcome",
+    (root) => {
+      expect(h1(root)).toEqual(["最後に、メールの自動転送を設定しますか？"]);
+      expect(findAll(root, (n) => n.tag === "a")).toHaveLength(0);
+    },
+  ],
 ];
 
 /** Imported one by one: the bundler needs each path whole. */
@@ -161,7 +224,15 @@ const LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   "parcels/[id]": () => import("@/app/app/parcels/[id]/loading"),
   "parcels/[id]/edit": () => import("@/app/app/parcels/[id]/edit/loading"),
   "parcels/new": () => import("@/app/app/parcels/new/loading"),
-  settings: () => import("@/app/app/settings/loading"),
+  settings: () => import("@/app/app/settings/(list)/loading"),
+  "settings/forwarding": () => import("@/app/app/settings/forwarding/loading"),
+  "settings/password": () => import("@/app/app/settings/password/loading"),
+  "settings/dropped": () => import("@/app/app/settings/dropped/loading"),
+  "settings/mail-handling": () => import("@/app/app/settings/mail-handling/loading"),
+  "settings/trouble": () => import("@/app/app/settings/trouble/loading"),
+  "settings/demo": () => import("@/app/app/settings/demo/loading"),
+  "settings/delete": () => import("@/app/app/settings/delete/loading"),
+  welcome: () => import("@/app/app/welcome/loading"),
 };
 
 describe("loading screens under /app", () => {
@@ -170,7 +241,7 @@ describe("loading screens under /app", () => {
   });
 
   it.each(SCREENS)("/app/%s has a loading.tsx drawn with the shared skeleton", (route) => {
-    const file = path.join(appDir, route, "loading.tsx");
+    const file = path.join(appDir, route === "settings" ? "settings/(list)" : route, "loading.tsx");
     expect(existsSync(file), file).toBe(true);
     expect(readFileSync(file, "utf8")).toMatch(/<SkeletonScreen\b/);
   });
@@ -193,10 +264,10 @@ describe("loading screens under /app", () => {
     shape(root);
   });
 
-  it("the shared skeleton scrolls to the URL's #fragment once the page is in (「サンプルで試す」 → /app/settings#demo)", () => {
+  it("the shared skeleton scrolls to the URL's #fragment once the page is in (「サンプルで試す」 → /app/settings/demo)", () => {
     const source = readFileSync(path.resolve(__dirname, "../../components/skeleton.tsx"), "utf8");
     expect(source).toMatch(/<ScrollToHashOnReady \/>/);
-    expect(readFileSync(path.join(appDir, "page.tsx"), "utf8")).toContain('href="/app/settings#demo"');
+    expect(readFileSync(path.join(appDir, "page.tsx"), "utf8")).toContain('href="/app/settings/demo"');
   });
 });
 

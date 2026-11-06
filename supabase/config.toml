@@ -209,10 +209,13 @@ token_verifications = 30
 # Number of Web3 logins that can be made in a 5 minute interval per IP address.
 web3 = 30
 
-# Configure one of the supported captcha providers: `hcaptcha`, `turnstile`.
+# Production CAPTCHA is set in the Supabase dashboard only, and its secret lives only there (see
+# CLAUDE.md, CAPTCHA). This section stays commented out, so local development needs no secret.
+# Do not run `supabase config push`: it applies this file to the production project, and this
+# file does not hold the production CAPTCHA settings.
 # [auth.captcha]
 # enabled = true
-# provider = "hcaptcha"
+# provider = "turnstile"
 # secret = ""
 
 [auth.email]

@@ -81,28 +81,28 @@ const flags = () => db.rows("screen_events").map((e) => [e.from_domain, e.user_i
 
 describe("markWronglyDropped", () => {
   it("remembers a shop's domain and answers ?flagged=remembered", async () => {
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=remembered");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings/dropped?flagged=remembered");
     expect(db.find("screen_events", SHOP_ROW)!.flagged_at).not.toBeNull();
   });
 
   it("remembers nothing for a shared domain and answers ?flagged=shared", async () => {
     // Not a forwarded copy (that one is told as forwarded, below): a friend's mail.
     db.find("screen_events", GMAIL_ROW)!.subject = "週末どう？";
-    expect(await redirectOf(markWronglyDropped(form({ id: GMAIL_ROW })))).toBe("/app/settings?flagged=shared");
+    expect(await redirectOf(markWronglyDropped(form({ id: GMAIL_ROW })))).toBe("/app/settings/dropped?flagged=shared");
     expect(db.find("screen_events", GMAIL_ROW)!.flagged_at).toBeNull();
     expect(db.callsOn("screen_events", "update")).toHaveLength(0);
   });
 
   it("answers ?flagged=failed for an id that is not a uuid, another user's row, or a failed write", async () => {
-    expect(await redirectOf(markWronglyDropped(form({ id: "not-a-uuid" })))).toBe("/app/settings?flagged=failed");
+    expect(await redirectOf(markWronglyDropped(form({ id: "not-a-uuid" })))).toBe("/app/settings/dropped?flagged=failed");
     db.find("screen_events", SHOP_ROW)!.user_id = OTHER;
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=failed");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings/dropped?flagged=failed");
     expect(db.find("screen_events", SHOP_ROW)!.flagged_at).toBeNull();
 
     db.find("screen_events", SHOP_ROW)!.user_id = USER;
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     db.hooks.push((q) => (q.table === "screen_events" && q.op === "update" ? { data: null, error: { message: "boom" } } : undefined));
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=failed");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings/dropped?flagged=failed");
     log.mockRestore();
   });
 });
@@ -110,19 +110,19 @@ describe("markWronglyDropped", () => {
 describe("markWronglyDropped: the person's own mail (review R3-8)", () => {
   it("a hand-forwarded copy remembers nothing and answers ?flagged=forwarded (it may come from the family, R3-31)", async () => {
     Object.assign(db.find("screen_events", SHOP_ROW)!, { subject: "Fwd: ご購入ありがとうございます", from_domain: "corp.example.test" });
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=forwarded");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings/dropped?flagged=forwarded");
     expect(db.find("screen_events", SHOP_ROW)!.flagged_at).toBeNull();
   });
 
   it("a mail from the domain of the login address remembers nothing (qa@example.com signs in here)", async () => {
     db.find("screen_events", SHOP_ROW)!.from_domain = "example.com";
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=own");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings/dropped?flagged=own");
     expect(db.callsOn("screen_events", "update")).toHaveLength(0);
   });
 
   it("a provider's subdomain (sea.plala.or.jp) is shared", async () => {
     db.find("screen_events", SHOP_ROW)!.from_domain = "sea.plala.or.jp";
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=shared");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings/dropped?flagged=shared");
   });
 
   it("the page says why, and offers to register the parcel by hand", async () => {
@@ -148,7 +148,7 @@ describe("forgetSender (「外す」)", () => {
       { id: "44444444-4444-4444-8444-444444444444", user_id: OTHER, decision: "dropped", subject: "他人の", from_domain: "shop.example.test", created_at: "2026-11-04T00:00:00Z", flagged_at: "2026-11-04T01:00:00Z" },
     );
     db.find("screen_events", SHOP_ROW)!.flagged_at = "2026-11-05T02:00:00Z";
-    expect(await redirectOf(forgetSender(form({ domain: "shop.example.test" })))).toBe("/app/settings?unflagged=done");
+    expect(await redirectOf(forgetSender(form({ domain: "shop.example.test" })))).toBe("/app/settings/dropped?unflagged=done");
     expect(flags()).toEqual([
       ["shop.example.test", "me", "-"],
       ["gmail.com", "me", "-"],
@@ -158,21 +158,21 @@ describe("forgetSender (「外す」)", () => {
   });
 
   it("answers ?unflagged=failed for an empty domain or a failed write", async () => {
-    expect(await redirectOf(forgetSender(form({ domain: "" })))).toBe("/app/settings?unflagged=failed");
+    expect(await redirectOf(forgetSender(form({ domain: "" })))).toBe("/app/settings/dropped?unflagged=failed");
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     db.hooks.push((q) => (q.table === "screen_events" && q.op === "update" ? { data: null, error: { message: "boom" } } : undefined));
-    expect(await redirectOf(forgetSender(form({ domain: "shop.example.test" })))).toBe("/app/settings?unflagged=failed");
+    expect(await redirectOf(forgetSender(form({ domain: "shop.example.test" })))).toBe("/app/settings/dropped?unflagged=failed");
     log.mockRestore();
   });
 });
 
 async function render(searchParams: Record<string, string> = {}) {
-  const Page = (await import("@/app/app/settings/page")).default;
+  const Page = (await import("@/app/app/settings/dropped/page")).default;
   return parseHtml(renderToStaticMarkup(await Page({ searchParams: Promise.resolve(searchParams) })));
 }
 
 const droppedSection = (root: HtmlNode) => {
-  const found = findAll(root, (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h) === "読まなかったメール").length > 0);
+  const found = findAll(root, (n) => n.tag === "section");
   expect(found).toHaveLength(1);
   return found[0];
 };

@@ -123,7 +123,7 @@ describe("「暗号化する」 (batches of Server Action calls from the browser
 
 describe("every slow button of 設定 shows its press", () => {
   it("each Server Action form submits with PressButton, not a bare button", () => {
-    for (const file of ["page.tsx", "demo-loader.tsx"]) {
+    for (const file of ["dropped/page.tsx", "trouble/page.tsx", "demo-loader.tsx"]) {
       const forms = [...settings(file).matchAll(/<form action=\{[^}]+\}[\s\S]*?<\/form>/g)].map((m) => m[0]);
       expect(forms.length, file).toBeGreaterThan(0);
       for (const form of forms) {
@@ -132,7 +132,7 @@ describe("every slow button of 設定 shows its press", () => {
       }
     }
     // The ones named in the review, each with its busy words.
-    const all = settings("page.tsx") + settings("demo-loader.tsx");
+    const all = settings("dropped/page.tsx") + settings("trouble/page.tsx") + settings("demo-loader.tsx");
     for (const [label, busy] of [
       ["読み取る", "読み取っています…"],
       ["これは荷物", "記録しています…"],

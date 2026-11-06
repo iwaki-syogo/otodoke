@@ -31,6 +31,7 @@ export const BEFORE_YOU_START: string[] = [
   "Otodoke の設定の「メールの転送」で、あなた専用の転送先アドレスをコピーしておきます。",
   "アドレスは …@in.otodoke.app の形です。知らない人には教えないでください。",
 ];
+export const BEFORE_YOU_START_ACTION = "転送先アドレスを開く";
 
 export interface ForwardingStep {
   text: string;
@@ -200,7 +201,7 @@ export const FORWARDING_PITFALLS: ForwardingPitfall[] = [
   },
 ];
 
-export const FORWARDING_CHECK_ACTION = "設定を開く";
+export const FORWARDING_CHECK_ACTION = "「うまく届かないとき」を開く";
 export const FORWARDING_CHECK: { heading: string; lines: string[] } = {
   heading: "設定できたか確かめる",
   lines: [
