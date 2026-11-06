@@ -25,7 +25,9 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  * - 「これは荷物」: src/lib/screen-senders.ts (domains never remembered), src/lib/pipeline.ts
  *   secondLook (a remembered sender still gets the Haiku check), 設定「外す」 (forgetSender).
  * - The two cookies: Supabase's session (removed by signOut on logout and on account deletion) and
- *   the login screen's address cookie (src/lib/login-email-cookie.ts, one hour, Path=/login).
+ *   the login screen's address cookie (src/lib/login-email-cookie.ts, one hour, Path=/login),
+ *   written again on each press of 「リンクを送る」 (src/app/login/actions.ts sendMagicLink), so
+ *   its hour starts again then.
  * - 11 月 14 日: decision 7 (supabase/pending/20261114090000), told the same way in
  *   mail-handling.tsx and mail-key-panel.tsx. Reword all three once it has run.
  * - What account deletion leaves: the receiving address's local part and when it was given out
@@ -67,7 +69,7 @@ export default function PrivacyPage() {
             ログインのためだけに使います。広告やアクセス解析のための cookie は使いません。
             <Bullets className="mt-1">
               <li>ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます。</li>
-              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます。ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します。</li>
+              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます。ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します。最後に「リンクを送る」を押してから 1 時間たったときも消えます。</li>
             </Bullets>
           </Term>
         </Terms>
