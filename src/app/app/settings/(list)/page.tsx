@@ -1,9 +1,9 @@
 import { Fragment } from "react";
 import { createClient, getUser } from "@/lib/supabase/server";
-import { LogoutForm } from "./logout-form";
-import { readActiveKey, readConfirmUrl, readDroppedCount, readUnreadCount } from "./settings-reads";
-import { SettingsHashRedirect } from "./settings-hash-redirect";
-import { RowCard, RowInfo, RowLink, orderRows, type Badge, type IconName } from "./settings-row";
+import { LogoutForm } from "../logout-form";
+import { readActiveKey, readConfirmUrl, readDroppedCount, readUnreadCount } from "../settings-reads";
+import { SettingsHashRedirect } from "../settings-hash-redirect";
+import { RowCard, RowInfo, RowLink, orderRows, type Badge, type IconName } from "../settings-row";
 
 export const metadata = { title: "設定" };
 

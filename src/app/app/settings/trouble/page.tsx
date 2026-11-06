@@ -10,6 +10,9 @@ import { SubPage } from "../sub-page";
 
 export const metadata = { title: "うまく届かないとき" };
 
+// 「読み取る」 posts readWaitingMail from this page: up to 20 mails read with Claude.
+export const maxDuration = 300;
+
 type SearchParams = Promise<{ error?: string }>;
 
 export default async function TroublePage({ searchParams }: { searchParams: SearchParams }) {

@@ -75,7 +75,7 @@ describe("the key in this tab's memory", () => {
 
 describe("the logout leaves the page", () => {
   it("設定's logout is a native POST to /auth/signout (LogoutForm, on a page drawn by the server)", () => {
-    const page = source("app/app/settings/page.tsx");
+    const page = source("app/app/settings/(list)/page.tsx");
     expect(/^\s*["']use client["']/.test(withoutComments(page))).toBe(false);
     expect(withoutComments(page)).toContain("<LogoutForm />");
     expect(withoutComments(page)).not.toContain("/auth/signout");
