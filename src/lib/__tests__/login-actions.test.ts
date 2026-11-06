@@ -7,8 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * the limit RPCs are mocked here and their SQL has its own tests (login-mail-limit.test.ts).
  */
 
-type AuthError = { status?: number; code?: string; message?: string; name?: string };
-
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   signIn: vi.fn(),
@@ -105,10 +103,31 @@ describe("signInWithAuthSecret", () => {
     expect(await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code: "credentials" });
   });
 
+  it("counts every sign-in per IP, 15 in any 10 minutes (never 30 in 5), and never gives one back", async () => {
+    await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET });
+    const [[, tries]] = calls("claim_login_mail");
+    // The IP's key goes in the address column: the function's 10-minute window then applies to it.
+    expect(tries).toEqual({ p_email_hash: sha(`otodoke:login-try:email:${IP}`), p_ip_hash: null, p_email_10m_limit: 15, p_email_1h_limit: 60, p_ip_1h_limit: 60 });
+    // Any 5 minutes lie in some 10 minutes: one IP's sign-ins, with its sign-ups (the mail limit,
+    // per hour) on top, stay under Supabase's 30 per 5 minutes that every visitor shares.
+    const { LOGIN_MAIL_LIMITS, LOGIN_TRY_LIMITS } = await import("@/lib/login-mail-limit");
+    expect(LOGIN_TRY_LIMITS.ipPer10Minutes + LOGIN_MAIL_LIMITS.ipPerHour).toBeLessThan(30);
+    // Only the address's attempt is given back after a success, never the try.
+    expect(calls("release_login_mail").map(([, args]) => args.p_email_hash)).toEqual([sha(`otodoke:login-attempt:email:${EMAIL}`)]);
+  });
+
+  it("answers rate without asking Supabase when this IP has used its sign-ins", async () => {
+    mocks.rpc.mockImplementation(async (fn: string, args: { p_email_hash: string }) =>
+      fn === "claim_login_mail" && args.p_email_hash === sha(`otodoke:login-try:email:${IP}`) ? { data: [{ verdict: "email_10m", claim_id: null }], error: null } : { data: [{ verdict: "ok", claim_id: 41 }], error: null },
+    );
+    expect(await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code: "rate" });
+    expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+
   it("counts only a wrong address or secret: claims an attempt before asking, keeps it on credentials, gives it back otherwise", async () => {
     mocks.signIn.mockResolvedValue({ data: { user: null, session: null }, error: { status: 400, code: "invalid_credentials" } });
     await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET });
-    const [[, claim]] = calls("claim_login_mail");
+    const claim = calls("claim_login_mail").map(([, args]) => args).find((args) => args.p_email_hash === sha(`otodoke:login-attempt:email:${EMAIL}`));
     // Its own namespace, and the numbers of LOGIN_ATTEMPT_LIMITS; hashes only.
     expect(claim).toEqual({
       p_email_hash: sha(`otodoke:login-attempt:email:${EMAIL}`),
