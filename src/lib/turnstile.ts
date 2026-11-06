@@ -1,6 +1,6 @@
 /**
  * Cloudflare Turnstile on the login form. Supabase Auth checks the token itself when CAPTCHA
- * protection is on (Authentication > Bot and Abuse Protection); this app only passes it along.
+ * protection is on (Authentication > Attack Protection); this app only passes it along.
  *
  * The sitekey is public by design (it is sent to every browser), so it lives here rather than in
  * an env var. Widget "Otodoke", Managed mode, hostnames: otodoke.app, the dev branch Preview URL
@@ -9,10 +9,12 @@
 export const TURNSTILE_SITEKEY = "0x4AAAAAAF1bMWXBw0RF-dvv";
 
 /**
- * Whether Supabase Auth refuses a request without a Turnstile token (Authentication > Bot and Abuse
+ * Whether Supabase Auth refuses a request without a Turnstile token (Authentication > Attack
  * Protection > CAPTCHA, provider Turnstile). The requests the web sends with one: the sign-in with
  * the password (/login, and 設定's 「鍵を作る」 and 「パスワードを変える」, which signs in with the
- * current password), the sign-up and its 「送り直す」, and the reset mail.
+ * current password), the sign-up and its 「送り直す」, the two sign-ins
+ * of the waiting screen after it (the one it tries by itself when its tab is shown again, and
+ * 「確認しました」), and the reset mail.
  *
  * Supabase's CAPTCHA is switched in the dashboard. Its current state, and the order in which to
  * turn it on or off, are written in one place only: the CAPTCHA bullets under 「ログインとパスワード」 in CLAUDE.md.
