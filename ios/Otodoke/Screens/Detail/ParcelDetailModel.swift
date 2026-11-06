@@ -30,7 +30,8 @@ struct TimelineEntry: Equatable, Sendable, Identifiable {
     /// text_body trimmed if not empty, else htmlToText(html_body), else "".
     let body: String
     let notes: String?
-    /// TDD-STUB(task 3): MailBody.display(email) of this mail (what the row shows, by body_state).
+    /// MailBody.display(email) of this mail: what the row shows, by body_state. The fields above are the
+    /// plain mail's (a sealed or dropped mail has them null); the screen goes by this.
     var mail: MailDisplay? = nil
 }
 
@@ -462,8 +463,7 @@ final class ParcelDetailModel {
                 // Math.round: halves go up.
                 return "確信度 \(Int((c * 100 + 0.5).rounded(.down)))%"
             }
-            let text = JSText.trim(email.textBody ?? "")
-            let body = !text.isEmpty ? text : (email.htmlBody.jsTruthy.map(HtmlText.htmlToText) ?? "")
+            let body = MailBody.plainBody(email)
             return TimelineEntry(
                 id: x.id,
                 label: label,
@@ -472,7 +472,8 @@ final class ParcelDetailModel {
                 fromText: from,
                 confidenceText: confidence,
                 body: body,
-                notes: x.notes.jsTruthy
+                notes: x.notes.jsTruthy,
+                mail: MailBody.display(email)
             )
         }
     }

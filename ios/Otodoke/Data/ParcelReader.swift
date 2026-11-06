@@ -15,9 +15,10 @@ struct ParcelReader: Sendable {
     /// Rows per request (PostgREST's cap).
     static let pageSize = 1000
 
-    /// The extraction columns and the embedded mail, as the Web's detail page selects them.
+    /// The extraction columns and the embedded mail, as the Web's detail page selects them. body_envelope
+    /// (a sealed mail's text) is not read here: only when a mail is opened.
     static let extractionColumns =
-        "id, confidence, result, created_at, emails(id, subject, from_address, from_name, sent_at, classification, text_body, html_body)"
+        "id, confidence, result, created_at, emails(id, subject, from_address, from_name, from_domain, sent_at, classification, body_state, text_body, html_body)"
 
     let provider: SupabaseProvider
 
@@ -82,8 +83,8 @@ struct ParcelReader: Sendable {
         return .loaded(rows)
     }
 
-    /// extractions of the parcel with `emails(id, subject, from_address, from_name, sent_at,
-    /// classification, text_body, html_body)` embedded, as the Web's detail page selects.
+    /// extractions of the parcel with `emails(id, subject, from_address, from_name, from_domain, sent_at,
+    /// classification, body_state, text_body, html_body)` embedded, as the Web's detail page selects.
     func extractions(parcelID: String) async -> LoadResult<[ExtractionWithEmail]> {
         guard UUID(uuidString: parcelID) != nil else { return .loaded([]) }
         guard let me = await provider.currentUserID() else { return .failed }

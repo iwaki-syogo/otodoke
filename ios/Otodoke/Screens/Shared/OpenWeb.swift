@@ -15,19 +15,25 @@ enum WebLink {
 
     /// https://otodoke.app/app/parcels/{id}/edit
     static func parcelEdit(id: String) -> URL {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove("/")
-        let segment = id.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-        return page("/app/parcels/\(segment)/edit")
+        page("/app/parcels/\(segment(id))/edit")
     }
 
-    // TDD-STUB(task 3, task 11): the pages of task.md's 「Web で開く」 list.
     /// https://otodoke.app/app/parcels/{id} (a sealed mail, M1)
-    static func parcel(id: String) -> URL { base }
+    static func parcel(id: String) -> URL {
+        page("/app/parcels/\(segment(id))")
+    }
+
     /// https://otodoke.app/app/settings
-    static let settings = base
+    static let settings = page("/app/settings")
     /// https://otodoke.app/app
-    static let app = base
+    static let app = page("/app")
+
+    /// An id as one path segment ("/" and "?" encoded too).
+    private static func segment(_ id: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove("/")
+        return id.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+    }
 
     /// base + path ("/app/..."), as an absolute URL. Falls back to the base for a path that is not a URL.
     private static func page(_ path: String) -> URL {

@@ -299,7 +299,7 @@ struct ParcelDetailView: View {
             case let .loaded(entries)?:
                 VStack(spacing: 8) {
                     ForEach(entries) { entry in
-                        MailCard(entry: entry, startsOpen: initiallyOpen.contains(entry.id))
+                        MailCard(entry: entry, parcelID: model.id, startsOpen: initiallyOpen.contains(entry.id))
                     }
                 }
             case nil:
@@ -327,15 +327,22 @@ struct ErrorBox: View {
     }
 }
 
-/// One mail: its kind and time, subject, sender, confidence, and 「元メールを見る」 with the text.
+/// One mail: its kind and time, subject, sender, confidence, and 「元メールを見る」 with the text, by
+/// body_state (MailBody): a sealed mail is opened on the Web's parcel page (M1), a dropped one says what
+/// was not kept, a state this version does not know is not opened.
 private struct MailCard: View {
     let entry: TimelineEntry
+    let parcelID: String
     @State private var isOpen: Bool
+    @Environment(\.openURL) private var openURL
 
-    init(entry: TimelineEntry, startsOpen: Bool) {
+    init(entry: TimelineEntry, parcelID: String, startsOpen: Bool) {
         self.entry = entry
+        self.parcelID = parcelID
         _isOpen = State(initialValue: startsOpen)
     }
+
+    private var kind: MailDisplay.Kind { entry.mail?.kind ?? .plain }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -348,49 +355,95 @@ private struct MailCard: View {
                     .foregroundStyle(.secondary)
             }
             .font(.caption)
-            if let subject = entry.subject {
-                Text(subject)
-                    .font(.subheadline)
-                    .padding(.top, 4)
-            }
-            if let from = entry.fromText {
-                Text(from)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.top, 2)
-            }
-            if let confidence = entry.confidenceText {
-                Text(confidence)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 4)
-            }
-            Button {
-                isOpen.toggle()
-            } label: {
-                Text("元メールを見る")
-                    .font(.caption)
-                    .foregroundStyle(OtodokeColor.link)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-            if isOpen {
-                if let notes = entry.notes {
-                    Text("読み取りメモ: \(notes)")
+            if kind == .plain {
+                if let subject = entry.subject {
+                    Text(subject)
+                        .font(.subheadline)
+                        .padding(.top, 4)
+                }
+                if let from = entry.fromText {
+                    Text(from)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .padding(.top, 8)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, 2)
                 }
-                MailText(text: entry.body.isEmpty ? "（本文なし）" : entry.body)
-                    .padding(.top, 8)
+            } else if let mail = entry.mail {
+                if let headline = mail.headline {
+                    Text(headline)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+                if let domain = mail.fromDomain {
+                    Text(domain)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, 2)
+                }
+            }
+            if kind != .unopenable {
+                details
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// The confidence and 「元メールを見る」.
+    @ViewBuilder private var details: some View {
+        if let confidence = entry.confidenceText {
+            Text(confidence)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 4)
+        }
+        Button {
+            isOpen.toggle()
+        } label: {
+            Text("元メールを見る")
+                .font(.caption)
+                .foregroundStyle(OtodokeColor.link)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        if isOpen {
+            if let notes = entry.notes {
+                Text("読み取りメモ: \(notes)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            }
+            switch kind {
+            case .plain:
+                MailText(text: entry.mail?.detail ?? (entry.body.isEmpty ? MailBody.noBody : entry.body))
+                    .padding(.top, 8)
+            case .dropped:
+                Text(entry.mail?.detail ?? MailBody.droppedDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            case .sealed:
+                // M1: opened on the Web (the passphrase stays in the browser).
+                Button {
+                    openURL(WebLink.parcel(id: parcelID))
+                } label: {
+                    Text("Web で開く")
+                        .font(.caption)
+                        .foregroundStyle(OtodokeColor.link)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+            case .unopenable:
+                EmptyView()
+            }
+        }
     }
 }
 
