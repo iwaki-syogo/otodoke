@@ -4,12 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import { fromBase64, toBase64 } from "@/lib/crypto/bytes";
 import { challengeAad, openBytes, openMail, type PrivateRecipient } from "@/lib/crypto/envelope";
 import { createKeyPair, openStoredKey, wrapPrivateKey, type StoredKey } from "@/lib/crypto/key-wrap";
-import { activateKey, registerKey, rewrapKey, sealPlainBatch, SEAL_BATCH_SIZE } from "@/lib/mail-keys";
+import { activateKey, countPlainRead, readRetiredKeys, readSealedEnvelope, readStoredKey, registerKey, rewrapKey, sealPlainBatch, SEAL_BATCH_SIZE } from "@/lib/mail-keys";
 import { processInboundEmail } from "@/lib/pipeline";
+import { KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import { FakeDb, type Row } from "./fake-db";
 import { OTHER, USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const PASS = "テスト用の合言葉です1234";
+
+const current = (db: FakeDb, userId = USER) => db.rows("user_keys").filter((k) => k.user_id === userId && k.activated_at && !k.retired_at);
 
 async function newRegistration(passphrase = PASS, userId = USER) {
   const pair = await createKeyPair();
@@ -30,8 +33,6 @@ async function registerAndActivate(db: FakeDb, passphrase = PASS, userId = USER)
   if (!act.ok) throw new Error(act.error);
   return recipient;
 }
-
-const current = (db: FakeDb, userId = USER) => db.rows("user_keys").filter((k) => k.user_id === userId && k.activated_at && !k.retired_at);
 
 describe("key registration", () => {
   it("stores the key as pending, and puts it in use only after the challenge comes back opened", async () => {
@@ -159,7 +160,7 @@ describe("changing the passphrase", () => {
     const row = stored(db, key.keyId);
     const pkcs8 = await import("@/lib/crypto/key-wrap").then((m) => m.unwrapPrivateKeyBytes(row, PASS, USER));
     const w = await wrapPrivateKey(pkcs8, "かえた合言葉ですよ!!", USER);
-    const res = await rewrapKey(asAdmin(db), USER, { keyId: key.keyId, wrappedPrivateKey: w.wrapped_private_key, wrapIv: w.wrap_iv, kdfSalt: w.kdf_salt, kdfIterations: w.kdf_iterations });
+    const res = await rewrapKey(asAdmin(db), USER, { keyId: key.keyId, previousWrappedPrivateKey: row.wrapped_private_key, wrappedPrivateKey: w.wrapped_private_key, wrapIv: w.wrap_iv, kdfSalt: w.kdf_salt, kdfIterations: w.kdf_iterations });
     expect(res.ok).toBe(true);
     const reopened = await openStoredKey(stored(db, key.keyId), "かえた合言葉ですよ!!", USER);
     expect(toBase64(reopened.publicKey)).toBe(toBase64(key.publicKey));
@@ -170,10 +171,63 @@ describe("changing the passphrase", () => {
     const db = new FakeDb();
     const key = await registerAndActivate(db);
     const row = stored(db, key.keyId);
-    const base = { keyId: key.keyId, wrappedPrivateKey: row.wrapped_private_key, wrapIv: row.wrap_iv, kdfSalt: row.kdf_salt, kdfIterations: row.kdf_iterations };
+    const base = { keyId: key.keyId, previousWrappedPrivateKey: row.wrapped_private_key, wrappedPrivateKey: row.wrapped_private_key, wrapIv: row.wrap_iv, kdfSalt: row.kdf_salt, kdfIterations: row.kdf_iterations };
     expect((await rewrapKey(asAdmin(db), USER, { ...base, passphrase: PASS })).ok).toBe(false);
     row.retired_at = "2026-11-05T00:00:00Z";
     expect((await rewrapKey(asAdmin(db), USER, base)).ok).toBe(false);
+  });
+
+  it("stores a new wrap only over the wrap the browser opened (another tab's change is not overwritten)", async () => {
+    const db = new FakeDb();
+    const key = await registerAndActivate(db);
+    const row = stored(db, key.keyId);
+    const opened = row.wrapped_private_key;
+    const pkcs8 = await import("@/lib/crypto/key-wrap").then((m) => m.unwrapPrivateKeyBytes(row, PASS, USER));
+    // Tab A changes the passphrase first.
+    const a = await wrapPrivateKey(pkcs8, "タブAの合言葉ですよ!", USER);
+    expect((await rewrapKey(asAdmin(db), USER, { keyId: key.keyId, previousWrappedPrivateKey: opened, wrappedPrivateKey: a.wrapped_private_key, wrapIv: a.wrap_iv, kdfSalt: a.kdf_salt, kdfIterations: a.kdf_iterations })).ok).toBe(true);
+    // Tab B opened the same old wrap before that: its change is refused, tab A's wrap stays.
+    const b = await wrapPrivateKey(pkcs8, "タブBの合言葉ですよ!", USER);
+    const res = await rewrapKey(asAdmin(db), USER, { keyId: key.keyId, previousWrappedPrivateKey: opened, wrappedPrivateKey: b.wrapped_private_key, wrapIv: b.wrap_iv, kdfSalt: b.kdf_salt, kdfIterations: b.kdf_iterations });
+    expect(res).toEqual({ ok: false, error: KEY_WRAP_CHANGED });
+    expect(stored(db, key.keyId).wrapped_private_key).toBe(a.wrapped_private_key);
+    await expect(openStoredKey(stored(db, key.keyId), "タブAの合言葉ですよ!", USER)).resolves.toBeTruthy();
+  });
+});
+
+describe("what the browser reads through the Server Actions", () => {
+  it("a key: the one in use or one by id, the owner's only, with the columns opening needs and nothing else", async () => {
+    const db = new FakeDb();
+    const first = await registerAndActivate(db);
+    const second = await registerAndActivate(db, "あたらしい合言葉ですよ");
+    await registerAndActivate(db, PASS, OTHER);
+
+    const inUse = await readStoredKey(asAdmin(db), USER, { keyId: null });
+    if (!inUse.ok) throw new Error(inUse.error);
+    expect(inUse.key?.key_id).toBe(second.keyId);
+    // Only the columns opening needs are asked for (no challenge hash, no dates, no user id).
+    expect(db.callsOn("user_keys", "select").at(-1)?.columns).toBe("key_id, public_key, wrapped_private_key, wrap_iv, kdf_salt, kdf_iterations");
+    const retired = await readStoredKey(asAdmin(db), USER, { keyId: first.keyId });
+    expect(retired.ok && retired.key?.key_id).toBe(first.keyId);
+    // Another user's key by id: nothing.
+    const otherKeyId = current(db, OTHER)[0].key_id as string;
+    expect(await readStoredKey(asAdmin(db), USER, { keyId: otherKeyId })).toEqual({ ok: true, key: null });
+    // Refuses anything but a key id, and unknown fields.
+    for (const bad of [{ keyId: "x" }, { keyId: null, passphrase: PASS }, {}]) expect((await readStoredKey(asAdmin(db), USER, bad)).ok).toBe(false);
+
+    const old = await readRetiredKeys(asAdmin(db), USER);
+    expect(old.ok && old.keys.map((k) => k.key_id)).toEqual([first.keyId]);
+  });
+
+  it("a sealed mail: its envelope only, the owner's only", async () => {
+    const db = new FakeDb();
+    await registerAndActivate(db);
+    const id = "11111111-2222-4333-8444-555555555555";
+    db.rows("emails").push({ id, user_id: USER, body_state: "sealed", body_envelope: { kid: "k" }, processing_status: "processed" });
+    expect(await readSealedEnvelope(asAdmin(db), USER, { emailId: id })).toEqual({ ok: true, envelope: { kid: "k" } });
+    expect(db.callsOn("emails", "select").at(-1)?.columns).toBe("body_envelope");
+    expect(await readSealedEnvelope(asAdmin(db), OTHER, { emailId: id })).toEqual({ ok: true, envelope: null });
+    for (const bad of [{ emailId: "e1" }, { emailId: `${id}),or(` }, { emailId: id, x: 1 }]) expect((await readSealedEnvelope(asAdmin(db), USER, bad)).ok).toBe(false);
   });
 });
 
@@ -232,7 +286,7 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
 
     // Again: nothing to do, nothing rewritten.
     const before = db.callsOn("emails", "update").length;
-    expect(await sealPlainBatch(asAdmin(db), USER)).toEqual({ ok: true, sealed: 0, failed: [], remaining: 0 });
+    expect(await sealPlainBatch(asAdmin(db), USER)).toEqual({ ok: true, sealed: 0, failed: [], next: null, remaining: 0 });
     expect(db.callsOn("emails", "update").length).toBe(before);
   });
 
@@ -248,7 +302,7 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
       }
     });
     const res = await sealPlainBatch(asAdmin(db), USER);
-    expect(res).toEqual({ ok: true, sealed: 2, failed: [], remaining: 0 });
+    expect(res).toEqual({ ok: true, sealed: 2, failed: [], next: "e-0002", remaining: 0 });
     expect(db.find("emails", "e-0000")!.body_envelope).toEqual({ other: "tab" });
   });
 
@@ -265,13 +319,15 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
     });
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    // What the browser does: pass back what failed, call again until 0 remain.
-    const skip: string[] = [];
+    // What the browser does: pass back the cursor, call again until 0 remain.
+    let after: string | null = null;
+    const failed: string[] = [];
     const steps: Array<{ sealed: number; failed: number; remaining: number }> = [];
     for (let i = 0; i < 6; i++) {
-      const res = await sealPlainBatch(asAdmin(db), USER, { skip });
+      const res = await sealPlainBatch(asAdmin(db), USER, { after });
       if (!res.ok) throw new Error(res.error);
-      skip.push(...res.failed);
+      failed.push(...res.failed);
+      after = res.next;
       steps.push({ sealed: res.sealed, failed: res.failed.length, remaining: res.remaining });
       if (res.remaining === 0) break;
     }
@@ -280,7 +336,7 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
       { sealed: 49, failed: 1, remaining: 20 },
       { sealed: 20, failed: 0, remaining: 0 },
     ]);
-    expect(skip.sort()).toEqual(["e-0000", "e-0070"]);
+    expect(failed.sort()).toEqual(["e-0000", "e-0070"]);
     const plain = db.rows("emails").filter((e) => e.body_state === "plain").map((e) => e.id);
     expect(plain.sort()).toEqual(["e-0000", "e-0070"]);
     // Logged by id only, never the mail.
@@ -288,7 +344,36 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
     log.mockRestore();
   });
 
-  it("negative control: without passing the failed rows back, the run never gets past the oldest one", async () => {
+  it("more than 200 rows that cannot be sealed do not hold the run back (the cursor moves past them)", async () => {
+    const db = new FakeDb();
+    await registerAndActivate(db);
+    seedPlain(db, 260);
+    // Every row but the last 10 refuses to be written: past the old cap of 200 skipped ids.
+    db.hooks.push((q) => {
+      if (q.table !== "emails" || q.op !== "update") return;
+      const id = String(q.filters.find((f) => f.method === "eq" && f.args[0] === "id")?.args[1]);
+      if (Number(id.slice(2)) < 250) return { data: null, error: { message: "refused" } };
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    let after: string | null = null;
+    let failedCount = 0;
+    let calls = 0;
+    for (;;) {
+      const res = await sealPlainBatch(asAdmin(db), USER, { after });
+      calls++;
+      if (!res.ok) throw new Error(res.error);
+      failedCount += res.failed.length;
+      expect(res.next).not.toBe(after);
+      after = res.next;
+      if (res.remaining === 0 || calls > 10) break;
+    }
+    log.mockRestore();
+    expect(calls).toBe(6);
+    expect(failedCount).toBe(250);
+    expect(db.rows("emails").filter((e) => e.body_state === "sealed").map((e) => e.id).sort()).toEqual(Array.from({ length: 10 }, (_, i) => `e-0${250 + i}`));
+  });
+
+  it("negative control: without passing the cursor back, the run never gets past the oldest one", async () => {
     const db = new FakeDb();
     await registerAndActivate(db);
     seedPlain(db, 60);
@@ -302,17 +387,30 @@ describe("「暗号化する」: sealing mail stored before encryption", () => {
     log.mockRestore();
     if (!first.ok || !again.ok) throw new Error("unexpected");
     expect(first.failed).toEqual(["e-0000"]);
-    // The same row is picked first again: only the skip list moves the run past it.
+    // The same row is picked first again: only the cursor moves the run past it.
     expect(again.failed).toEqual(["e-0000"]);
   });
 
-  it("refuses skip entries that are not ids (they go into a PostgREST in-list)", async () => {
+  it("refuses a cursor that is not an id (it goes into a PostgREST filter), and the old skip list", async () => {
     const db = new FakeDb();
     await registerAndActivate(db);
-    for (const skip of [["a,b"], ["x)"], ['"q"'], Array.from({ length: 201 }, (_, i) => `e-${i}`)]) {
-      expect((await sealPlainBatch(asAdmin(db), USER, { skip })).ok).toBe(false);
+    for (const after of ["a,b", "x)", '"q"', "e".repeat(37), ""]) {
+      expect((await sealPlainBatch(asAdmin(db), USER, { after })).ok).toBe(false);
     }
-    expect((await sealPlainBatch(asAdmin(db), USER, { skip: [], other: 1 })).ok).toBe(false);
+    expect((await sealPlainBatch(asAdmin(db), USER, { after: null, other: 1 })).ok).toBe(false);
+    expect((await sealPlainBatch(asAdmin(db), USER, { skip: [] })).ok).toBe(false);
+  });
+
+  it("does not count the public sample mails as plaintext the operator could read", async () => {
+    const db = new FakeDb();
+    await registerAndActivate(db);
+    seedPlain(db, 4);
+    // Two of them were loaded from the repository's anonymized samples (provider id 'demo:…').
+    Object.assign(db.find("emails", "e-0001")!, { provider_email_id: "demo:amazon-1.eml" });
+    Object.assign(db.find("emails", "e-0003")!, { provider_email_id: "demo:yamato-2.eml" });
+    // A real mail with no provider id is still counted (never dropped by a null).
+    Object.assign(db.find("emails", "e-0002")!, { provider_email_id: null });
+    expect(await countPlainRead(asAdmin(db), USER)).toBe(2);
   });
 
   it("keeps the Gmail approval link of an old confirmation in plaintext", async () => {

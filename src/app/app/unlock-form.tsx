@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { keyErrorText, unlock } from "@/lib/crypto/tab-key";
+import { keyErrorText, unlock, unlockRetired } from "@/lib/crypto/tab-key";
 
-/** Ask for the passphrase once; the key stays open in this tab (memory only). */
-export function UnlockForm({ userId, label = "開く" }: { userId: string; label?: string }) {
+/**
+ * Ask for the passphrase once; the key stays open in this tab (memory only). With `retiredKeyId`,
+ * it opens that retired key instead (mail sealed before the key was made again).
+ */
+export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId: string; label?: string; retiredKeyId?: string }) {
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +18,8 @@ export function UnlockForm({ userId, label = "開く" }: { userId: string; label
     setBusy(true);
     setError(null);
     try {
-      await unlock(userId, passphrase);
+      if (retiredKeyId) await unlockRetired(userId, retiredKeyId, passphrase);
+      else await unlock(userId, passphrase);
       setPassphrase("");
     } catch (err) {
       setError(keyErrorText(err));
@@ -34,8 +38,8 @@ export function UnlockForm({ userId, label = "開く" }: { userId: string; label
         <input
           type="password"
           autoComplete="current-password"
-          aria-label="合言葉"
-          placeholder="合言葉"
+          aria-label={retiredKeyId ? "前の合言葉" : "合言葉"}
+          placeholder={retiredKeyId ? "前の合言葉" : "合言葉"}
           value={passphrase}
           onChange={(e) => setPassphrase(e.target.value)}
           className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"

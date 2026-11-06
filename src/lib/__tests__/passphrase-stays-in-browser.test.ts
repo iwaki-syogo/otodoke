@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { KeyActivationSchema, KeyRegistrationSchema, KeyRewrapSchema, type KeyRegistration, type KeyRewrap } from "@/lib/mail-keys";
+import { KeyActivationSchema, KeyReadSchema, KeyRegistrationSchema, KeyRewrapSchema, SealBatchSchema, SealedMailReadSchema, type KeyRegistration, type KeyRewrap } from "@/lib/mail-keys";
 import { appSourceFiles, read, withoutComments } from "./source-scan";
 
 /**
@@ -56,8 +56,9 @@ describe("the passphrase stays in the browser", () => {
   });
 
   it("the server's input schemas have no passphrase field and refuse one", () => {
-    for (const schema of [KeyRegistrationSchema, KeyRewrapSchema, KeyActivationSchema]) {
+    for (const schema of [KeyRegistrationSchema, KeyRewrapSchema, KeyActivationSchema, KeyReadSchema, SealedMailReadSchema, SealBatchSchema]) {
       expect(Object.keys(schema.shape).filter((k) => PASSPHRASE.test(k))).toEqual([]);
+      expect(schema.safeParse({ passphrase: "x" }).success).toBe(false);
     }
     const input: KeyRegistration = { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 };
     expect(KeyRegistrationSchema.safeParse(input).success).toBe(true);
@@ -66,7 +67,7 @@ describe("the passphrase stays in the browser", () => {
     // @ts-expect-error a registration has no passphrase
     const typed: KeyRegistration = { ...input, passphrase: "x" };
     // @ts-expect-error a rewrap has no passphrase
-    const rewrap: KeyRewrap = { keyId: "0".repeat(32), wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, passphrase: "x" };
+    const rewrap: KeyRewrap = { keyId: "0".repeat(32), previousWrappedPrivateKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, passphrase: "x" };
     expect(KeyRewrapSchema.safeParse(rewrap).success).toBe(false);
     void typed;
   });

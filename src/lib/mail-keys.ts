@@ -7,11 +7,16 @@
  * the stored public key (it opens a challenge sealed to that public key). Only then is the key
  * activated, and only an active key seals mail or replaces plaintext.
  *
+ * The browser reads its wrapped keys and sealed mail through Server Actions that call the readers
+ * here (src/app/app/settings/key-actions.ts): it has no Supabase client of its own.
+ *
  * The inputs are strict: an unknown field (a passphrase, say) is refused, never ignored.
  */
 import { z } from "zod";
 import { fromBase64, randomBytes, sha256, toHex } from "@/lib/crypto/bytes";
 import { challengeAad, importPublicKey, keyIdOf, sealBytes, type EnvelopeV1 } from "@/lib/crypto/envelope";
+import { KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import type { Json } from "@/lib/db/database.types";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -19,10 +24,12 @@ import type { AdminClient } from "@/lib/supabase/admin";
 export const MIN_KDF_ITERATIONS = 600_000;
 const MAX_KDF_ITERATIONS = 10_000_000;
 export const SEAL_BATCH_SIZE = 50;
-/** At most this many unsealable rows are skipped in one run (they travel in the request). */
-export const MAX_SEAL_SKIP = 200;
+/** Retired keys the browser tries the passphrase on when it opens the key (newest first). */
+export const MAX_RETIRED_KEYS_TRIED = 3;
 
 const b64 = z.string().max(4096);
+const keyIdField = z.string().regex(/^[0-9a-f]{32}$/);
+const uuidField = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
 /** What the browser sends to register a key. There is no field for the passphrase. */
 export const KeyRegistrationSchema = z
@@ -37,13 +44,18 @@ export const KeyRegistrationSchema = z
 export type KeyRegistration = z.infer<typeof KeyRegistrationSchema>;
 
 /** The answer to the registration challenge: the bytes the browser opened, base64. */
-export const KeyActivationSchema = z.object({ keyId: z.string().regex(/^[0-9a-f]{32}$/), challenge: b64 }).strict();
+export const KeyActivationSchema = z.object({ keyId: keyIdField, challenge: b64 }).strict();
 export type KeyActivation = z.infer<typeof KeyActivationSchema>;
 
-/** A new wrap of the same private key (the passphrase changed). */
+/**
+ * A new wrap of the same private key (the passphrase changed). `previousWrappedPrivateKey` is the
+ * wrap the browser opened with the old passphrase: the new one is stored only over that one, never
+ * over a wrap it has not seen (another tab's change, say).
+ */
 export const KeyRewrapSchema = z
   .object({
-    keyId: z.string().regex(/^[0-9a-f]{32}$/),
+    keyId: keyIdField,
+    previousWrappedPrivateKey: b64,
     wrappedPrivateKey: b64,
     wrapIv: b64,
     kdfSalt: b64,
@@ -52,7 +64,26 @@ export const KeyRewrapSchema = z
   .strict();
 export type KeyRewrap = z.infer<typeof KeyRewrapSchema>;
 
+/** Which stored key the browser wants to open: the one in use (null), or one by id. */
+export const KeyReadSchema = z.object({ keyId: keyIdField.nullable() }).strict();
+export type KeyRead = z.infer<typeof KeyReadSchema>;
+
+/** Which sealed mail the browser wants to open. */
+export const SealedMailReadSchema = z.object({ emailId: uuidField }).strict();
+export type SealedMailRead = z.infer<typeof SealedMailReadSchema>;
+
 export type KeyResult<T> = ({ ok: true } & T) | { ok: false; error: string };
+
+/** A key as the browser needs it to open it with the passphrase. Nothing else of the row leaves the server. */
+export interface StoredKeyColumns {
+  key_id: string;
+  public_key: string;
+  wrapped_private_key: string;
+  wrap_iv: string;
+  kdf_salt: string;
+  kdf_iterations: number;
+}
+const STORED_KEY_COLUMNS = "key_id, public_key, wrapped_private_key, wrap_iv, kdf_salt, kdf_iterations";
 
 function checkWrap(wrappedPrivateKey: string, wrapIv: string, kdfSalt: string): void {
   // A P-256 PKCS#8 is about 138 bytes; the GCM tag adds 16.
@@ -64,6 +95,13 @@ function checkWrap(wrappedPrivateKey: string, wrapIv: string, kdfSalt: string): 
 
 function fail(err: unknown): { ok: false; error: string } {
   return { ok: false, error: err instanceof Error ? err.message : String(err) };
+}
+
+/** The id of the key in use, or null when there is none. Throws when it cannot tell. */
+async function currentKeyId(db: AdminClient, userId: string): Promise<string | null> {
+  const { data, error } = await db.from("user_keys").select("key_id").eq("user_id", userId).not("activated_at", "is", null).is("retired_at", null).maybeSingle();
+  if (error) throw new Error(`user_keys lookup failed: ${error.message}`);
+  return data?.key_id ?? null;
 }
 
 /**
@@ -134,7 +172,10 @@ export async function activateKey(db: AdminClient, userId: string, input: unknow
   }
 }
 
-/** Store a new wrap of the key in use. The browser checked it opens before sending it. */
+/**
+ * Store a new wrap of the key in use, over the wrap the browser opened and nothing else. The
+ * browser checked the new one opens before sending it.
+ */
 export async function rewrapKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string }>> {
   try {
     const r = KeyRewrapSchema.parse(input);
@@ -144,47 +185,115 @@ export async function rewrapKey(db: AdminClient, userId: string, input: unknown)
       .update({ wrapped_private_key: r.wrappedPrivateKey, wrap_iv: r.wrapIv, kdf_salt: r.kdfSalt, kdf_iterations: r.kdfIterations })
       .eq("user_id", userId)
       .eq("key_id", r.keyId)
+      .eq("wrapped_private_key", r.previousWrappedPrivateKey)
       .not("activated_at", "is", null)
       .is("retired_at", null)
       .select("key_id");
     if (error) throw new Error(`user_keys update failed: ${error.message}`);
-    if (!data || data.length !== 1) throw new Error("no key in use with this id");
+    if (!data || data.length !== 1) {
+      // Tell a wrap changed meanwhile apart from a key that is not in use.
+      const inUse = await currentKeyId(db, userId);
+      throw new Error(inUse === r.keyId ? KEY_WRAP_CHANGED : "no key in use with this id");
+    }
     return { ok: true, keyId: r.keyId };
   } catch (err) {
     return fail(err);
   }
 }
 
-/** Read mail of this user still in plaintext, counted by the database (leaving out `except`). */
-export async function countPlainRead(db: AdminClient, userId: string, except: readonly string[] = []): Promise<number> {
-  let query = db
-    .from("emails")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("processing_status", "processed")
-    .eq("body_state", "plain");
-  if (except.length > 0) query = query.not("id", "in", `(${except.join(",")})`);
-  const { count, error } = await query;
-  if (error) throw new Error(`emails count failed: ${error.message}`);
-  return count ?? 0;
+/**
+ * One stored key of this user, as the browser needs it to open it: the key in use (keyId null),
+ * or a key by id (a pending one being checked, or a retired one for mail sealed before it).
+ */
+export async function readStoredKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ key: StoredKeyColumns | null }>> {
+  try {
+    const { keyId } = KeyReadSchema.parse(input);
+    const query = db.from("user_keys").select(STORED_KEY_COLUMNS).eq("user_id", userId);
+    const { data, error } = await (keyId ? query.eq("key_id", keyId) : query.not("activated_at", "is", null).is("retired_at", null)).maybeSingle();
+    if (error) throw new Error(`user_keys lookup failed: ${error.message}`);
+    return { ok: true, key: data };
+  } catch (err) {
+    return fail(err);
+  }
 }
 
-/** Rows that could not be sealed earlier in this run of 「暗号化する」, so the next batch moves past them. */
-// Ids only (hex and hyphens): they go into a PostgREST in-list, so nothing else may pass.
-export const SealBatchSchema = z.object({ skip: z.array(z.string().regex(/^[0-9a-f-]{1,36}$/i)).max(MAX_SEAL_SKIP) }).strict();
+/** This user's retired keys, newest first, at most MAX_RETIRED_KEYS_TRIED. */
+export async function readRetiredKeys(db: AdminClient, userId: string): Promise<KeyResult<{ keys: StoredKeyColumns[] }>> {
+  try {
+    const { data, error } = await db
+      .from("user_keys")
+      .select(STORED_KEY_COLUMNS)
+      .eq("user_id", userId)
+      .not("retired_at", "is", null)
+      .order("retired_at", { ascending: false })
+      .limit(MAX_RETIRED_KEYS_TRIED);
+    if (error) throw new Error(`user_keys lookup failed: ${error.message}`);
+    return { ok: true, keys: data ?? [] };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * The envelope of one of this user's sealed mails, for the browser to open. Only the envelope:
+ * the server cannot open it, and nothing else of the row is needed there.
+ */
+export async function readSealedEnvelope(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ envelope: Json | null }>> {
+  try {
+    const { emailId } = SealedMailReadSchema.parse(input);
+    const { data, error } = await db.from("emails").select("body_envelope").eq("id", emailId).eq("user_id", userId).eq("body_state", "sealed").maybeSingle();
+    if (error) throw new Error(`emails lookup failed: ${error.message}`);
+    return { ok: true, envelope: data?.body_envelope ?? null };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Marks the anonymized sample mails the demo loader stores (public fixtures, not the user's mail). */
+export const SAMPLE_PROVIDER_ID = "demo:%";
+
+/**
+ * This user's read mail still in plaintext, counted by the database. The public sample mails are
+ * left out: they are anonymized fixtures from the repository, not the user's mail. `after`: only
+ * rows whose id sorts after it (the 「暗号化する」 cursor).
+ *
+ * Counted as all minus samples, so a row with no provider id (null) is never left out.
+ */
+export async function countPlainRead(db: AdminClient, userId: string, after: string | null = null): Promise<number> {
+  const count = async (samplesOnly: boolean) => {
+    let query = db.from("emails").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("processing_status", "processed").eq("body_state", "plain");
+    if (after) query = query.gt("id", after);
+    if (samplesOnly) query = query.like("provider_email_id", SAMPLE_PROVIDER_ID);
+    const { count: n, error } = await query;
+    if (error) throw new Error(`emails count failed: ${error.message}`);
+    return n ?? 0;
+  };
+  return (await count(false)) - (await count(true));
+}
+
+/**
+ * Where a run of 「暗号化する」 is: the id of the last row the previous batch looked at (null to
+ * start). Every row a batch looks at, sealed or not, is behind the cursor afterwards, so rows that
+ * cannot be sealed never hold the run back, however many there are.
+ */
+// An id (hex and hyphens) only: it goes into a PostgREST filter, so nothing else may pass.
+export const SealBatchSchema = z.object({ after: z.string().regex(/^[0-9a-f-]{1,36}$/i).nullable() }).strict();
 export type SealBatch = z.infer<typeof SealBatchSchema>;
+
+export type SealBatchResult = KeyResult<{ sealed: number; failed: string[]; next: string | null; remaining: number }>;
 
 /**
  * Seal up to SEAL_BATCH_SIZE of this user's read mails that are still in plaintext, with the key
- * in use. Safe to run again and side by side: a row is written only while it is still plaintext.
+ * in use, in id order after the cursor. Safe to run again and side by side: a row is written only
+ * while it is still plaintext.
  *
- * A row that cannot be sealed does not stop the run: it is answered in `failed` and the browser
- * passes it back in `skip`, so the next batch moves past it instead of picking it first forever.
- * `remaining` counts what is still plaintext apart from the skipped rows (0: this run is done).
+ * A row that cannot be sealed does not stop the run: it is answered in `failed` and left behind
+ * the cursor (`next`), which the browser passes back. `remaining` counts what is still plaintext
+ * after `next`, samples left out (0: this run is done).
  */
-export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { skip: [] }): Promise<KeyResult<{ sealed: number; failed: string[]; remaining: number }>> {
+export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { after: null }): Promise<SealBatchResult> {
   try {
-    const { skip } = SealBatchSchema.parse(input);
+    const { after } = SealBatchSchema.parse(input);
     const key = await currentSealKey(db, userId);
     if (!key) throw new Error("no key in use");
     let query = db
@@ -193,8 +302,8 @@ export async function sealPlainBatch(db: AdminClient, userId: string, input: unk
       .eq("user_id", userId)
       .eq("processing_status", "processed")
       .eq("body_state", "plain");
-    if (skip.length > 0) query = query.not("id", "in", `(${skip.join(",")})`);
-    const { data: rows, error } = await query.order("created_at", { ascending: true }).order("id", { ascending: true }).limit(SEAL_BATCH_SIZE);
+    if (after) query = query.gt("id", after);
+    const { data: rows, error } = await query.order("id", { ascending: true }).limit(SEAL_BATCH_SIZE);
     if (error) throw new Error(`emails lookup failed: ${error.message}`);
 
     let sealed = 0;
@@ -224,7 +333,8 @@ export async function sealPlainBatch(db: AdminClient, userId: string, input: unk
         failed.push(row.id);
       }
     }
-    return { ok: true, sealed, failed, remaining: await countPlainRead(db, userId, [...skip, ...failed]) };
+    const next = rows.length > 0 ? rows[rows.length - 1].id : after;
+    return { ok: true, sealed, failed, next, remaining: await countPlainRead(db, userId, next) };
   } catch (err) {
     return fail(err);
   }

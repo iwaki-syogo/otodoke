@@ -13,18 +13,26 @@ const OLD = "まえの合言葉ですよ123";
 const NEW = "あたらしい合言葉です456";
 
 const mocks = vi.hoisted(() => ({ db: null as unknown, rewrapOk: true }));
-vi.mock("@/lib/supabase/client", () => ({ createClient: () => mocks.db }));
-vi.mock("@/app/app/settings/key-actions", () => ({
-  registerMailKey: vi.fn(),
-  activateMailKey: vi.fn(),
-  sealStoredMail: vi.fn(),
-  rewrapMailKey: vi.fn(async (input: { keyId: string; wrappedPrivateKey: string; wrapIv: string; kdfSalt: string; kdfIterations: number }) => {
-    if (!mocks.rewrapOk) return { ok: false, error: "user_keys update failed: boom" };
-    const row = (mocks.db as FakeDb).rows("user_keys").find((k) => k.key_id === input.keyId)!;
-    Object.assign(row, { wrapped_private_key: input.wrappedPrivateKey, wrap_iv: input.wrapIv, kdf_salt: input.kdfSalt, kdf_iterations: input.kdfIterations });
-    return { ok: true, keyId: input.keyId };
-  }),
-}));
+// The browser reads its key through the Server Action; here it reads the fake database with the
+// same server-side reader the action calls.
+vi.mock("@/app/app/settings/key-actions", async () => {
+  const { readStoredKey } = await import("@/lib/mail-keys");
+  return {
+    registerMailKey: vi.fn(),
+    activateMailKey: vi.fn(),
+    sealStoredMail: vi.fn(),
+    readRetiredMailKeys: vi.fn(async () => ({ ok: true, keys: [] })),
+    readSealedMail: vi.fn(),
+    readMailKey: vi.fn(async (input: unknown) => readStoredKey(mocks.db as never, USER, input)),
+    rewrapMailKey: vi.fn(async (input: { keyId: string; previousWrappedPrivateKey: string; wrappedPrivateKey: string; wrapIv: string; kdfSalt: string; kdfIterations: number }) => {
+      if (!mocks.rewrapOk) return { ok: false, error: "user_keys update failed: boom" };
+      const row = (mocks.db as FakeDb).rows("user_keys").find((k) => k.key_id === input.keyId)!;
+      if (row.wrapped_private_key !== input.previousWrappedPrivateKey) return { ok: false, error: "the stored wrap changed" };
+      Object.assign(row, { wrapped_private_key: input.wrappedPrivateKey, wrap_iv: input.wrapIv, kdf_salt: input.kdfSalt, kdf_iterations: input.kdfIterations });
+      return { ok: true, keyId: input.keyId };
+    }),
+  };
+});
 
 const { changePassphrase, keyErrorText, PassphraseChangeUnconfirmedError } = await import("@/lib/crypto/tab-key");
 

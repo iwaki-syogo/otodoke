@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { passphraseProblem, PASSPHRASE_MIN_LENGTH } from "@/lib/crypto/key-wrap";
+import { passphraseProblem, PASSPHRASE_MIN_LENGTH, PASSPHRASE_RULE } from "@/lib/crypto/key-wrap";
 import { changePassphrase, createMailKey, keyErrorText, PassphraseChangeUnconfirmedError, useTabKey } from "@/lib/crypto/tab-key";
 import { UnlockForm } from "../unlock-form";
 import { sealStoredMail } from "./key-actions";
@@ -11,7 +11,7 @@ export interface MailKeyState {
   userId: string;
   /** When the key in use was made, or null when there is none. */
   keyCreatedAt: string | null;
-  /** Read mail still stored in plaintext (from before encryption, or samples). null: could not count. */
+  /** Read mail still stored in plaintext (from before encryption; public samples not counted). null: could not count. */
   plainCount: number | null;
   /** Mail sealed to a key that is no longer in use (the passphrase was forgotten). */
   oldKeyCount: number;
@@ -28,7 +28,7 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
     return (
       <section className="rounded-2xl border border-sky-300 bg-sky-50 p-4">
         <h2 className="text-base font-bold">合言葉を決める</h2>
-        <p className="mt-1 text-sm leading-6">届いたメールは、この合言葉でしか開けない形で保存します。運営者にも読めません。</p>
+        <p className="mt-1 text-sm leading-6">読み取った後のメールの件名・差出人・本文は、この合言葉でしか開けない形で保存します。運営者もデータベースからは読めません。</p>
         {plainCount ? (
           <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold leading-6">
             暗号化されていない保存済みのメール {plainCount} 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。
@@ -44,7 +44,7 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
       <h2 className="text-base font-bold">合言葉</h2>
       {plainCount ? <SealBanner count={plainCount} /> : null}
       {plainCount === null ? <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">暗号化されていないメールの数を読み込めませんでした</p> : null}
-      {oldKeyCount > 0 ? <p className="text-sm leading-6 text-neutral-600">前の合言葉のメール {oldKeyCount} 通は、もう開けません。荷物は残っています。</p> : null}
+      {oldKeyCount > 0 ? <p className="text-sm leading-6 text-neutral-600">前の合言葉で暗号化したメールが {oldKeyCount} 通あります。前の合言葉を覚えていれば、メールの画面から開けます。荷物は残っています。</p> : null}
       <div className="rounded-2xl border border-neutral-200 bg-white p-4">
         {opened ? (
           <p className="text-sm">このタブではメールを開けます。タブを閉じると忘れます。</p>
@@ -106,6 +106,7 @@ function NewKeyForm({ userId, button, busyLabel, acknowledge }: { userId: string
       <input type="text" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
       <input type="password" autoComplete="new-password" aria-label="合言葉" placeholder={`合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
       <input type="password" autoComplete="new-password" aria-label="合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
+      <p className="text-xs leading-5 text-neutral-500">{PASSPHRASE_RULE}</p>
       <label className="flex items-start gap-2 text-sm leading-6">
         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" />
         {acknowledge}
@@ -158,6 +159,7 @@ function ChangeForm({ userId }: { userId: string }) {
       <input type="password" autoComplete="current-password" aria-label="今の合言葉" placeholder="今の合言葉" value={old} onChange={(e) => setOld(e.target.value)} className={input} />
       <input type="password" autoComplete="new-password" aria-label="新しい合言葉" placeholder={`新しい合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
       <input type="password" autoComplete="new-password" aria-label="新しい合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
+      <p className="text-xs leading-5 text-neutral-500">{PASSPHRASE_RULE}</p>
       <button type="submit" disabled={busy || !old} className={primary}>
         {busy ? "変えています…" : "変える"}
       </button>
@@ -166,7 +168,7 @@ function ChangeForm({ userId }: { userId: string }) {
   );
 }
 
-/** 「暗号化する」: batches of 50 until none is left, showing what remains. */
+/** 「暗号化する」: batches of 50 until none is left, showing what remains (public samples are not counted). */
 function SealBanner({ count }: { count: number }) {
   const router = useRouter();
   const [remaining, setRemaining] = useState(count);
@@ -179,24 +181,25 @@ function SealBanner({ count }: { count: number }) {
     if (busy) return;
     setBusy(true);
     setError(null);
-    // Rows that could not be sealed in this run: skipped from here on, counted for the user.
-    const skip: string[] = [];
+    // Where this run is (the server's cursor), and how many rows could not be sealed on the way.
+    // Every row a batch looks at ends up behind the cursor, so failed rows never hold the run back.
+    let after: string | null = null;
+    let failedCount = 0;
     try {
       for (;;) {
-        const res = await sealStoredMail({ skip });
+        const res = await sealStoredMail({ after });
         if (!res.ok) throw new Error(res.error);
-        skip.push(...res.failed);
-        setUnsealable(skip.length);
-        // Still in plaintext: what is left plus what could not be sealed.
-        setRemaining(res.remaining + skip.length);
+        failedCount += res.failed.length;
+        setUnsealable(failedCount);
+        // Still in plaintext: what is left after the cursor plus what could not be sealed.
+        setRemaining(res.remaining + failedCount);
         if (res.remaining === 0) {
-          if (skip.length === 0) setDone(true);
+          if (failedCount === 0) setDone(true);
           break;
         }
-        // Nothing moved: stop instead of looping (another tab may be sealing the same rows). Rows
-        // that failed are skipped from now on, so they move the run on; past the server's cap on
-        // skipped rows it answers an error and the run stops.
-        if (res.sealed === 0 && res.failed.length === 0) throw new Error("stalled");
+        // The cursor did not move: stop instead of looping.
+        if (res.next === after) throw new Error("stalled");
+        after = res.next;
       }
       router.refresh();
     } catch {

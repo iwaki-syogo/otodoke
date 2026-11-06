@@ -2,41 +2,58 @@
 
 import { useEffect, useState } from "react";
 import { openMail, WrongKeyError, type MailPlaintext } from "@/lib/crypto/envelope";
-import { useTabKey } from "@/lib/crypto/tab-key";
-import { createClient } from "@/lib/supabase/client";
+import { useRetiredTabKeys, useTabKey } from "@/lib/crypto/tab-key";
 import { htmlToText } from "@/lib/text/html-to-text";
+import { readSealedMail } from "@/app/app/settings/key-actions";
 import { UnlockForm } from "../../unlock-form";
 
-type Opened = { kind: "open"; mail: MailPlaintext } | { kind: "old-key" } | { kind: "failed" };
+type Opened = { kind: "open"; mail: MailPlaintext } | { kind: "old-key"; keyId: string | null } | { kind: "failed" };
+
+/** The key id an envelope was sealed to, or null when it has none readable. */
+function kidOf(envelope: unknown): string | null {
+  const kid = envelope && typeof envelope === "object" ? (envelope as { kid?: unknown }).kid : null;
+  return typeof kid === "string" && /^[0-9a-f]{32}$/.test(kid) ? kid : null;
+}
 
 /**
  * A stored mail sealed to the user's key. Shown as a neutral line until the key is open in this
- * tab; then the envelope is fetched with the user's own session and opened here, in the browser.
- * The body is shown as text only: the HTML part is turned into text, never rendered.
+ * tab; then the envelope is fetched through a Server Action (the browser has no database client)
+ * and opened here, in the browser. The body is shown as text only: the HTML part is turned into
+ * text, never rendered.
+ *
+ * Mail sealed to a retired key (the key was made again) opens with that key: the one opened with
+ * the same passphrase when the tab unlocked, or one opened here with the passphrase it had.
  */
 export function SealedMail({ userId, emailId, fromDomain, notes, confidence }: { userId: string; emailId: string; fromDomain: string | null; notes: string | null; confidence: React.ReactNode }) {
   const key = useTabKey(userId);
-  const [opened, setOpened] = useState<{ keyId: string; result: Opened } | null>(null);
-  const current = key && opened?.keyId === key.keyId ? opened.result : null;
+  const retired = useRetiredTabKeys(userId);
+  const [opened, setOpened] = useState<{ token: string; result: Opened } | null>(null);
+  const token = key ? `${key.keyId}|${Object.keys(retired).sort().join(",")}` : null;
+  const current = token && opened?.token === token ? opened.result : null;
 
   useEffect(() => {
-    if (!key) return;
+    if (!key || !token) return;
     let cancelled = false;
-    (async () => {
-      const { data, error } = await createClient().from("emails").select("body_envelope").eq("id", emailId).maybeSingle();
-      if (error || !data?.body_envelope) return { kind: "failed" } as const;
+    (async (): Promise<Opened> => {
+      const res = await readSealedMail({ emailId });
+      if (!res.ok || !res.envelope) return { kind: "failed" };
+      const kid = kidOf(res.envelope);
+      const recipient = kid === key.keyId ? key : kid ? retired[kid] : undefined;
+      if (!recipient) return { kind: "old-key", keyId: kid };
       try {
-        return { kind: "open", mail: await openMail(key, userId, emailId, data.body_envelope) } as const;
+        return { kind: "open", mail: await openMail(recipient, userId, emailId, res.envelope) };
       } catch (err) {
-        return err instanceof WrongKeyError ? ({ kind: "old-key" } as const) : ({ kind: "failed" } as const);
+        return err instanceof WrongKeyError ? { kind: "old-key", keyId: kid } : { kind: "failed" };
       }
-    })().then((result) => {
-      if (!cancelled) setOpened({ keyId: key.keyId, result });
-    });
+    })()
+      .catch((): Opened => ({ kind: "failed" }))
+      .then((result) => {
+        if (!cancelled) setOpened({ token, result });
+      });
     return () => {
       cancelled = true;
     };
-  }, [key, userId, emailId]);
+  }, [key, retired, token, userId, emailId]);
 
   const mail = current?.kind === "open" ? current.mail : null;
   const body = mail ? mail.text?.trim() || (mail.html ? htmlToText(mail.html) : "") : "";
@@ -67,7 +84,14 @@ export function SealedMail({ userId, emailId, fromDomain, notes, confidence }: {
           ) : !current ? (
             <p className="text-xs text-neutral-500">開いています…</p>
           ) : current.kind === "old-key" ? (
-            <p className="text-xs text-neutral-600">前の合言葉で暗号化したメールです。もう開けません。</p>
+            current.keyId ? (
+              <>
+                <p className="mb-2 text-xs text-neutral-600">前の合言葉で暗号化したメールです。前の合言葉で開けます。</p>
+                <UnlockForm userId={userId} retiredKeyId={current.keyId} label="前の合言葉で開く" />
+              </>
+            ) : (
+              <p className="text-xs text-neutral-600">前の合言葉で暗号化したメールです。開けませんでした。</p>
+            )
           ) : current.kind === "failed" ? (
             <p className="text-xs text-red-800">開けませんでした</p>
           ) : (

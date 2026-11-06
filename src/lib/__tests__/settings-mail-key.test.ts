@@ -93,7 +93,8 @@ describe("/app/settings: passphrase first", () => {
     activeKey();
     db.hooks.push((q) => (q.table === "emails" && q.filters.some((f) => f.args[0] === "body_envelope->>kid") ? { data: null, error: null, count: 4 } : undefined));
     const root = await render();
-    expect(textOf(sectionTitled(root, "合言葉")[0])).toContain("前の合言葉のメール 4 通は、もう開けません");
+    // Retired keys stay, and the parcel page opens such mail with the passphrase it had.
+    expect(textOf(sectionTitled(root, "合言葉")[0])).toContain("前の合言葉で暗号化したメールが 4 通あります。前の合言葉を覚えていれば、メールの画面から開けます");
   });
 
   it("a failed key read hides the address too (never shown as 'no key')", async () => {

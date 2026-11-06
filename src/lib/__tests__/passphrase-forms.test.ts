@@ -23,8 +23,15 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/app/settings",
   useSearchParams: () => new URLSearchParams(),
 }));
-vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn() }));
-vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
+vi.mock("@/app/app/settings/key-actions", () => ({
+  registerMailKey: vi.fn(),
+  activateMailKey: vi.fn(),
+  rewrapMailKey: vi.fn(),
+  sealStoredMail: vi.fn(),
+  readMailKey: vi.fn(),
+  readRetiredMailKeys: vi.fn(),
+  readSealedMail: vi.fn(),
+}));
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 

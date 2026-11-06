@@ -1,23 +1,34 @@
 "use client";
 
 /**
- * The opened key, kept for this tab only: a module variable in memory. Never written to
+ * The opened keys, kept for this tab only: a module variable in memory. Never written to
  * localStorage, sessionStorage or IndexedDB, never sent anywhere. Closing or reloading the tab
- * forgets it; the passphrase is asked again then.
+ * forgets them; the passphrase is asked again then.
+ *
+ * The wrapped keys come from Server Actions (src/app/app/settings/key-actions.ts). This module has
+ * no Supabase client: none is shipped to the browser (src/lib/__tests__/no-browser-supabase.test.ts).
+ *
+ * Besides the key in use, the tab keeps any retired key the user opened, so mail sealed before a
+ * key was made again still opens (a key replaced by mistake from a stale screen loses nothing).
  */
 import { useSyncExternalStore } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { equalBytes, toBase64 } from "./bytes";
 import { challengeAad, openBytes, type PrivateRecipient } from "./envelope";
+import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "./key-messages";
 import { createKeyPair, openStoredKey, unwrapPrivateKeyBytes, wrapPrivateKey, type StoredKey } from "./key-wrap";
-import { activateMailKey, registerMailKey, rewrapMailKey } from "@/app/app/settings/key-actions";
+import { activateMailKey, readMailKey, readRetiredMailKeys, registerMailKey, rewrapMailKey } from "@/app/app/settings/key-actions";
 
-interface TabKey {
+interface TabKeys {
   userId: string;
-  recipient: PrivateRecipient;
+  /** The key in use, opened. */
+  current: PrivateRecipient | null;
+  /** Retired keys opened in this tab, by key id. */
+  retired: Readonly<Record<string, PrivateRecipient>>;
 }
 
-let current: TabKey | null = null;
+const NO_RETIRED: Readonly<Record<string, PrivateRecipient>> = Object.freeze({});
+
+let state: TabKeys | null = null;
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void) {
@@ -25,38 +36,50 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-function setTabKey(next: TabKey | null) {
-  current = next;
+function setState(next: TabKeys | null) {
+  state = next;
   for (const l of listeners) l();
 }
 
-/** The key opened in this tab for this user, or null. */
-export function useTabKey(userId: string): PrivateRecipient | null {
-  const k = useSyncExternalStore(
+function useTabKeys(): TabKeys | null {
+  return useSyncExternalStore(
     subscribe,
-    () => current,
+    () => state,
     () => null,
   );
-  return k && k.userId === userId ? k.recipient : null;
+}
+
+/** The key in use, opened in this tab for this user, or null. */
+export function useTabKey(userId: string): PrivateRecipient | null {
+  const k = useTabKeys();
+  return k && k.userId === userId ? k.current : null;
+}
+
+/** Retired keys opened in this tab for this user, by key id. */
+export function useRetiredTabKeys(userId: string): Readonly<Record<string, PrivateRecipient>> {
+  const k = useTabKeys();
+  return k && k.userId === userId ? k.retired : NO_RETIRED;
 }
 
 export function forgetTabKey() {
-  setTabKey(null);
+  setState(null);
 }
 
-const KEY_COLUMNS = "key_id, public_key, wrapped_private_key, wrap_iv, kdf_salt, kdf_iterations";
-
-/** The key in use, read with the user's own session (RLS: owner only). */
-async function readCurrentKey(): Promise<StoredKey | null> {
-  const { data, error } = await createClient().from("user_keys").select(KEY_COLUMNS).not("activated_at", "is", null).is("retired_at", null).maybeSingle();
-  if (error) throw new Error("read failed");
-  return data;
+function setCurrent(userId: string, current: PrivateRecipient, retired: Readonly<Record<string, PrivateRecipient>> = state?.userId === userId ? state.retired : NO_RETIRED) {
+  setState({ userId, current, retired });
 }
 
-async function readKey(keyId: string): Promise<StoredKey | null> {
-  const { data, error } = await createClient().from("user_keys").select(KEY_COLUMNS).eq("key_id", keyId).maybeSingle();
-  if (error) throw new Error("read failed");
-  return data;
+function addRetired(userId: string, recipients: PrivateRecipient[]) {
+  if (recipients.length === 0) return;
+  const base = state && state.userId === userId ? state : { userId, current: null, retired: NO_RETIRED };
+  setState({ ...base, retired: { ...base.retired, ...Object.fromEntries(recipients.map((r) => [r.keyId, r])) } });
+}
+
+/** The key in use (keyId null) or one by id, through the Server Action. */
+async function readKey(keyId: string | null): Promise<StoredKey | null> {
+  const res = await readMailKey({ keyId });
+  if (!res.ok) throw new Error("read failed");
+  return res.key;
 }
 
 /**
@@ -75,14 +98,41 @@ export function keyErrorText(err: unknown): string {
   if (err instanceof PassphraseChangeUnconfirmedError) return "変わったはずですが、確かめられませんでした。ページを読み込み直して、新しい合言葉で開けるか確かめてください";
   if (err instanceof Error && err.name === "OperationError") return "合言葉が違います";
   if (err instanceof Error && err.message === "no key") return "合言葉がまだありません。設定で決めてください";
+  if (err instanceof Error && err.message === KEY_IN_USE_CHANGED) return "ほかの画面で合言葉が決まっていました。何も変えていません。ページを読み込み直してください";
+  if (err instanceof Error && err.message === KEY_WRAP_CHANGED) return "ほかの画面で合言葉が変わっていました。何も変えていません。ページを読み込み直してください";
   return "うまくいきませんでした。もう一度試してください";
 }
 
-/** Open the key in use with the passphrase, for this tab. */
+/**
+ * Open the key in use with the passphrase, for this tab. The same passphrase is then tried on the
+ * newest retired keys too (quietly: a passphrase that does not open them is the normal case).
+ */
 export async function unlock(userId: string, passphrase: string): Promise<void> {
-  const stored = await readCurrentKey();
+  const stored = await readKey(null);
   if (!stored) throw new Error("no key");
-  setTabKey({ userId, recipient: await openStoredKey(stored, passphrase, userId) });
+  setCurrent(userId, await openStoredKey(stored, passphrase, userId));
+  try {
+    const res = await readRetiredMailKeys();
+    if (!res.ok) return;
+    const opened: PrivateRecipient[] = [];
+    for (const k of res.keys) {
+      try {
+        opened.push(await openStoredKey(k, passphrase, userId));
+      } catch {
+        // Another passphrase: it can still be opened from the mail itself (unlockRetired).
+      }
+    }
+    addRetired(userId, opened);
+  } catch {
+    // The key in use is open; old mail can still be opened one by one.
+  }
+}
+
+/** Open one retired key (mail sealed before the key was made again) with the passphrase it had. */
+export async function unlockRetired(userId: string, keyId: string, passphrase: string): Promise<void> {
+  const stored = await readKey(keyId);
+  if (!stored || stored.key_id !== keyId) throw new Error("read failed");
+  addRetired(userId, [await openStoredKey(stored, passphrase, userId)]);
 }
 
 /**
@@ -110,12 +160,14 @@ export async function createMailKey(userId: string, passphrase: string): Promise
   const challenge = await openBytes(recipient, challengeAad(userId, reg.keyId), reg.challenge);
   const done = await activateMailKey({ keyId: reg.keyId, challenge: toBase64(challenge) });
   if (!done.ok) throw new Error(done.error);
-  setTabKey({ userId, recipient });
+  // The key that was in use (if this tab had it open) now opens the mail sealed before.
+  const previous = state?.userId === userId ? state.current : null;
+  setCurrent(userId, recipient, { ...(state?.userId === userId ? state.retired : NO_RETIRED), ...(previous ? { [previous.keyId]: previous } : {}) });
 }
 
 /** Wrap the same private key with a new passphrase. Old mail stays readable. */
 export async function changePassphrase(userId: string, oldPassphrase: string, newPassphrase: string): Promise<void> {
-  const stored = await readCurrentKey();
+  const stored = await readKey(null);
   if (!stored) throw new Error("no key");
   await openStoredKey(stored, oldPassphrase, userId); // the old passphrase, and the pair, are right
   const pkcs8 = await unwrapPrivateKeyBytes(stored, oldPassphrase, userId);
@@ -125,13 +177,20 @@ export async function changePassphrase(userId: string, oldPassphrase: string, ne
   pkcs8.fill(0);
   check.fill(0);
   if (!same) throw new Error("rewrap check failed");
-  const res = await rewrapMailKey({ keyId: stored.key_id, wrappedPrivateKey: wrapped.wrapped_private_key, wrapIv: wrapped.wrap_iv, kdfSalt: wrapped.kdf_salt, kdfIterations: wrapped.kdf_iterations });
+  const res = await rewrapMailKey({
+    keyId: stored.key_id,
+    previousWrappedPrivateKey: stored.wrapped_private_key,
+    wrappedPrivateKey: wrapped.wrapped_private_key,
+    wrapIv: wrapped.wrap_iv,
+    kdfSalt: wrapped.kdf_salt,
+    kdfIterations: wrapped.kdf_iterations,
+  });
   if (!res.ok) throw new Error(res.error);
   // Saved. What follows only confirms it: a failure from here on is not "nothing changed".
   try {
-    const back = await readCurrentKey();
+    const back = await readKey(null);
     if (!back || back.key_id !== stored.key_id || back.wrapped_private_key !== wrapped.wrapped_private_key) throw new Error("stored key differs");
-    setTabKey({ userId, recipient: await openStoredKey(back, newPassphrase, userId) });
+    setCurrent(userId, await openStoredKey(back, newPassphrase, userId));
   } catch {
     throw new PassphraseChangeUnconfirmedError();
   }
