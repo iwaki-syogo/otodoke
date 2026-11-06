@@ -25,6 +25,9 @@ enum CryptoError: Error, Equatable, Sendable {
     case badKeyRow
     /// The wrapped key did not open with this passphrase.
     case wrongPassphrase
+    /// password-v1: the wrapped key did not open with the KEK of this password (and address).
+    /// TDD-STUB(password-v1): the case only; nothing throws it yet.
+    case wrongPassword
     /// The unwrapped key is not the pair of the stored public key, or the key id does not match it.
     case keyMismatch
 }

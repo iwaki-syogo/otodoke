@@ -147,3 +147,42 @@ enum KeyWrap {
         return PrivateRecipient(keyID: row.keyId, publicKey: publicKey, privateKey: key)
     }
 }
+
+// password-v1 (docs/crypto/password-v1.md, step 7): the same wrap and open, taking the KEK itself.
+// AES-256-GCM(key = KEK, iv = 12 bytes, aad = UTF-8("otodoke/key/v1|" + user_id), plaintext = PKCS#8),
+// stored as base64(ciphertext || 16-byte tag), the IV on its own. A refusal of AES-GCM is .wrongPassword.
+// The row's kdf_iterations is never read on this path.
+// TDD-STUB(password-v1): names and signatures only. Every body answers a wrong value (never fatalError).
+
+/// What a wrap gives: the IV (12 bytes) and ciphertext || tag.
+struct WrappedPrivateKey: Equatable, Sendable {
+    let iv: Data
+    let sealed: Data
+}
+
+extension KeyWrap {
+    /// A new random 12-byte IV for every call. .badID unless userID is a lowercase UUID; .badKeyRow unless the
+    /// KEK is 32 bytes. TDD-STUB(password-v1)
+    static func wrap(pkcs8: Data, kek: Data, userID: String) throws(CryptoError) -> WrappedPrivateKey {
+        WrappedPrivateKey(iv: Data(), sealed: Data())
+    }
+
+    /// The same with a given IV (the vectors; wrap(pkcs8:kek:userID:) is the only caller in the app).
+    /// .badKeyRow unless the IV is 12 bytes. TDD-STUB(password-v1)
+    static func wrap(pkcs8: Data, kek: Data, userID: String, iv: Data) throws(CryptoError) -> WrappedPrivateKey {
+        WrappedPrivateKey(iv: Data(), sealed: Data())
+    }
+
+    /// The PKCS#8 bytes: .badKeyRow / .badBase64 for a bad row (iv 12, salt 16, wrapped ≥ 16 bytes),
+    /// .badID for an AAD id that is not a lowercase UUID, .wrongPassword when AES-GCM refuses.
+    /// TDD-STUB(password-v1)
+    static func unwrapPrivateKeyBytes(_ row: StoredKeyRow, kek: Data, userID: String) throws(CryptoError) -> Data {
+        Data()
+    }
+
+    /// Unwrap, read the key, prove it is the stored public key's pair and that key_id is its id (.keyMismatch).
+    /// TDD-STUB(password-v1)
+    static func openStoredKey(_ row: StoredKeyRow, kek: Data, userID: String) throws(CryptoError) -> PrivateRecipient {
+        PrivateRecipient(keyID: "", publicKey: Data(), privateKey: AgreementPrivate())
+    }
+}
