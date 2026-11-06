@@ -58,6 +58,12 @@ export interface PipelineOptions {
    * stays readable after it is read; a real mail is dropped instead. With a key it is sealed too.
    */
   publicSample?: boolean;
+  /**
+   * A stored row this mail replaces (re-reading a stored mail that has no Message-ID, so it cannot
+   * be found again by it). Removed only after everything that can fail before the new row is
+   * stored has passed, so a failure never loses the only copy.
+   */
+  replacesEmailId?: string;
 }
 
 /**
@@ -82,12 +88,17 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
           const { error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("message_id", mail.messageId);
           if (error) throw new Error(`emails cleanup failed: ${error.message}`);
         }
+        if (options.replacesEmailId) {
+          const { error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("id", options.replacesEmailId);
+          if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+        }
         return { kind: "screened_out", reason: screen.reason };
       }
     }
   }
 
   // 1. Store the raw mail (dedupe by Message-ID).
+  let replaced: string | null = options.replacesEmailId ?? null;
   if (mail.messageId) {
     const { data: existing, error } = await db
       .from("emails")
@@ -102,16 +113,20 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     if (existing?.processing_status === "pending" && Date.now() - new Date(existing.created_at).getTime() < PENDING_GRACE_MS) {
       throw new Error("this mail is still being read");
     }
-    if (existing) {
-      const { error: deleteError } = await db.from("emails").delete().eq("id", existing.id);
-      if (deleteError) throw new Error(`emails cleanup failed: ${deleteError.message}`);
-    }
+    if (existing) replaced = existing.id;
   }
 
-  // Known before anything is stored or paid for: not knowing whether there is a key fails here.
-  // The Gmail confirmation is closed with it as it is stored; a mail that is read is closed with
-  // the key read again right before that write (markRead), so a key put in use meanwhile counts.
+  // Known before anything is stored, removed or paid for: not knowing whether there is a key fails
+  // here, while the stored row (a mail read again from 設定, say) is still there. The Gmail
+  // confirmation is closed with it as it is stored; a mail that is read is closed with the key read
+  // again right before that write (markRead), so a key put in use meanwhile counts.
   const key = await currentSealKey(db, mail.userId);
+
+  if (replaced) {
+    const { error: deleteError } = await db.from("emails").delete().eq("id", replaced).eq("user_id", mail.userId);
+    if (deleteError) throw new Error(`emails cleanup failed: ${deleteError.message}`);
+  }
+
   const emailId = crypto.randomUUID();
 
   const { data: emailRow, error: insertError } = await db
