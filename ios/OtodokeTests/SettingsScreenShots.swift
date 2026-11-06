@@ -27,9 +27,31 @@ struct SettingsScreenShots {
         let model = try await Self.model(scenario)
         for style in [UIUserInterfaceStyle.light, .dark] {
             let name = "settings-\(scenario.rawValue)-\(style == .dark ? "dark" : "light").png"
-            let height: CGFloat = scenario == .guideOpen ? 3900 : 2900
+            let height: CGFloat = 1100
             let image = try await Self.render(SettingsView(model: model, expanded: scenario == .guideOpen), style: style, height: height)
             let url = URL(fileURLWithPath: try #require(Self.dir)).appendingPathComponent(name)
+            try #require(image.pngData()).write(to: url)
+        }
+    }
+
+    /// Each page of the list, drawn with the key in use (the guide and the not-read list open), and the key page
+    /// in its other two states.
+    @Test(.enabled(if: dir != nil), arguments: SettingsPage.allCases)
+    func shootPage(_ page: SettingsPage) async throws {
+        let model = try await Self.model(.keyPresent)
+        try await shootBoth(SettingsView(model: model, expanded: true, page: page), "page-\(page)", height: page == .handling ? 2400 : 1500)
+    }
+
+    @Test(.enabled(if: dir != nil), arguments: [Scenario.keyFailed, .keyNone])
+    func shootKeyPage(_ scenario: Scenario) async throws {
+        let model = try await Self.model(scenario)
+        try await shootBoth(SettingsView(model: model, page: .key), "page-key-\(scenario.rawValue)", height: 900)
+    }
+
+    private func shootBoth(_ view: SettingsView, _ name: String, height: CGFloat) async throws {
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let image = try await Self.render(view, style: style, height: height)
+            let url = URL(fileURLWithPath: try #require(Self.dir)).appendingPathComponent("settings-\(name)-\(style == .dark ? "dark" : "light").png")
             try #require(image.pngData()).write(to: url)
         }
     }

@@ -22,7 +22,8 @@ function viewProperty(src: string, name: string): string {
 }
 
 describe("M1 = SEC-M1: the approval page", () => {
-  const view = stripComments(read("ios/Otodoke/Screens/Settings/SettingsView.swift"));
+  // The settings screen was split into a list and pages: the approval card lives in SettingsStatusRows.
+  const view = stripComments(read("ios/Otodoke/Screens/Settings/SettingsStatusRows.swift"));
 
   it("the approval section checks the URL with SettingsModel.isApprovalPage before it opens", () => {
     const section = viewProperty(view, "approvalSection");
@@ -39,10 +40,13 @@ describe("M1 = SEC-M1: the approval page", () => {
 });
 
 describe("S2: the two failures are shown", () => {
-  const view = stripComments(read("ios/Otodoke/Screens/Settings/SettingsView.swift"));
+  // The settings screen was split into a list and pages: the passphrase card lives in SettingsKeyPage,
+  // the approval card in SettingsStatusRows.
+  const view = stripComments(read("ios/Otodoke/Screens/Settings/SettingsStatusRows.swift"));
+  const keyPage = stripComments(read("ios/Otodoke/Screens/Settings/SettingsKeyPage.swift"));
 
   it("the passphrase card shows model.oldKeyNote", () => {
-    expect(viewProperty(view, "keyPanel")).toMatch(/model\.oldKeyNote/);
+    expect(viewProperty(keyPage, "keyPanel")).toMatch(/model\.oldKeyNote/);
   });
 
   it("the approval section shows model.approvalNote", () => {

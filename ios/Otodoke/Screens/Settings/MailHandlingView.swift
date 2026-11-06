@@ -28,10 +28,15 @@ enum MailHandlingText {
 
 /// The section, as the Web draws it: a heading and a bulleted list in a card.
 struct MailHandlingView: View {
+    /// False on its own settings page, whose title already says it.
+    var showsHeading = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(MailHandlingText.heading)
-                .font(.headline)
+            if showsHeading {
+                Text(MailHandlingText.heading)
+                    .font(.headline)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(MailHandlingText.items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
