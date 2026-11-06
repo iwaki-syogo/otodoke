@@ -348,7 +348,17 @@ describe("task 13: the delivered cases the plan asks for are there", () => {
 describe("task 13: the sections from before M2 come out as they did at the end of M1", () => {
   it(`every key of web-expected.json at ${M1_COMMIT} is unchanged`, () => {
     const before = JSON.parse(execFileSync("git", ["show", `${M1_COMMIT}:ios/OtodokeTests/Fixtures/web-expected.json`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
-    for (const key of Object.keys(before)) expect(fx[key], key).toEqual(before[key]);
+    for (const key of Object.keys(before)) {
+      if (key === "carriers") continue;
+      expect(fx[key], key).toEqual(before[key]);
+    }
+    // carriers: the Web's ded1789 (review R2-3, "No." labels and signs such as № ①) appended cases to each of
+    // its lists. Every case from M1 still comes out the same, in the same place; only new ones follow.
+    expect(Object.keys(fx.carriers)).toEqual(Object.keys(before.carriers));
+    for (const [list, cases] of Object.entries(before.carriers as Record<string, unknown[]>)) {
+      expect(fx.carriers[list].length, `carriers.${list}`).toBeGreaterThanOrEqual(cases.length);
+      expect(fx.carriers[list].slice(0, cases.length), `carriers.${list}`).toEqual(cases);
+    }
     expect(Object.keys(fx).filter((k) => !(k in before))).toEqual(["delivered"]);
   });
 
