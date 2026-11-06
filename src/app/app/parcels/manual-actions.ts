@@ -103,7 +103,8 @@ export async function deleteManualParcel(_prev: ManualFormState, formData: FormD
   if (!session) return { error: NOT_SIGNED_IN, values };
   const id = Id.safeParse(values.id);
   if (!id.success) return { error: NOT_FOUND, values };
-  // The browser's required is not enough: a request made by hand must not delete without the check.
+  // Refuse a delete sent without the check (a slip, or a request made by hand). This guards against
+  // mistakes, not against the owner: RLS lets a signed-in user delete their own rows directly.
   if (values.confirm !== "yes") return { error: MANUAL_DELETE_UNCHECKED, values };
 
   const { data, error } = await session.supabase.from("parcels").delete().eq("id", id.data).eq("user_id", session.userId).eq("source", "manual").select("id");

@@ -15,14 +15,13 @@ export const TURNSTILE_SITEKEY = "0x4AAAAAAF1bMWXBw0RF-dvv";
  * current password), the sign-up and its 「送り直す」, and the reset mail.
  *
  * Supabase's CAPTCHA is switched in the dashboard. Its current state, and the order in which to
- * turn it on or off, are written in one place only: the CAPTCHA section of CLAUDE.md.
+ * turn it on or off, are written in one place only: the CAPTCHA bullets under 「ログインとパスワード」 in CLAUDE.md.
  *
  * It decides what the forms say and how long a press waits when the check gives no token: while it
  * is true, a press waits as long as Turnstile is still working on a token (at most
  * TURNSTILE_ENFORCED_WAIT_MS, the clock stopped while the checkbox waits for its tick), and the
- * notice asks to reload or try another browser when no token will come. Turning CAPTCHA off in the
- * dashboard again needs a commit that sets this back to false, released with it (not an env var:
- * a code change, reviewed like one).
+ * notice asks to reload or try another browser when no token will come. It is a constant in the
+ * code, not an env var, so changing it is a code change, reviewed like one.
  */
 export const CAPTCHA_ENFORCED = true;
 
