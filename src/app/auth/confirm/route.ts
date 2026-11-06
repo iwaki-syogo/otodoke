@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-next";
 import { loginErrorPath, loginLinkErrorCode } from "@/lib/login-errors";
 import { fromThisSite } from "@/lib/request-origin";
+import { forgetLogin } from "@/lib/login-email-cookie";
 
 /** A relative Location keeps the visitor on the host they opened, whatever host the server thinks it has. */
 function go(path: string, status: number) {
@@ -41,7 +42,11 @@ export async function POST(request: NextRequest) {
       console.warn("[auth] verifyOtp threw:", thrown instanceof Error ? thrown.message : String(thrown));
       return go(loginErrorPath(loginLinkErrorCode(null)), 303);
     }
-    if (!error) return go(safeNextPath(typeof next === "string" ? next : null), 303);
+    if (!error) {
+      // Signed in: the address the login form kept for this browser (if it sent from here) is done.
+      await forgetLogin();
+      return go(safeNextPath(typeof next === "string" ? next : null), 303);
+    }
     // The reason goes to the log only: the login page shows fixed wording for the code. A limit
     // or an outage is told apart from a refused token (the same link works again later).
     console.warn("[auth] verifyOtp failed:", error.status, error.code, error.message);
