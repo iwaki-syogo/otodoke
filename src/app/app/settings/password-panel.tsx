@@ -117,8 +117,11 @@ function LogInAgain() {
   );
 }
 
-/** For a user with no key: the password, checked by signing in with it, then the first key. */
-function MakeKeyForm({ email }: { email: string }) {
+/**
+ * For a user with no key: the password, checked by signing in with it, then the first key.
+ * Exported for its tests (captcha-enforced-forms.test.ts), like ChangeForm.
+ */
+export function MakeKeyForm({ email }: { email: string }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -139,7 +142,6 @@ function MakeKeyForm({ email }: { email: string }) {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await signInAndOpenKey({ email, password, captchaToken }, { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey });
-      setRound((r) => r + 1);
       if (!result.ok) {
         // The address is the session's: a refused sign-in can only be the password.
         const code = result.code === "credentials" ? "wrong_password" : result.code;
@@ -156,6 +158,8 @@ function MakeKeyForm({ email }: { email: string }) {
         setError({ text: RESET_LOSES_MAIL, logIn: false, reset: true });
       } else setError({ text: flowMessage(result.code), logIn: LOG_IN_AGAIN.has(result.code), reset: false });
     } finally {
+      // The token went with the press (each is checked once): the next press waits for a new one.
+      setRound((r) => r + 1);
       running.current = false;
       setBusy(false);
     }
@@ -186,7 +190,11 @@ function MakeKeyForm({ email }: { email: string }) {
   );
 }
 
-/** 「パスワードを変える」: the bot check is drawn only once it is opened. */
+/**
+ * 「パスワードを変える」: the bot check is drawn only once it is opened. Its token goes with the
+ * change: changeLoginSecret checks the current password with a sign-in, which Supabase refuses
+ * without one once CAPTCHA is enforced.
+ */
 function ChangeDetails({ userId, email }: { userId: string; email: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -199,7 +207,7 @@ function ChangeDetails({ userId, email }: { userId: string; email: string }) {
   );
 }
 
-function ChangeForm({ userId, email, withCheck }: { userId: string; email: string; withCheck: boolean }) {
+export function ChangeForm({ userId, email, withCheck }: { userId: string; email: string; withCheck: boolean }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
@@ -225,7 +233,6 @@ function ChangeForm({ userId, email, withCheck }: { userId: string; email: strin
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await changePassword({ email, userId, current, next, captchaToken }, { readMailKey, changeLoginSecret });
-      setRound((r) => r + 1);
       if (result.ok || result.code === "secret_change_unknown") {
         // Changed, or most likely: the current password may no longer be the one, so it goes too.
         setCurrent("");
@@ -234,6 +241,8 @@ function ChangeForm({ userId, email, withCheck }: { userId: string; email: strin
       }
       setMessage(result.ok ? { ok: true, text: "変えました。前のメールも新しいパスワードで開けます。", logIn: false } : { ok: false, text: flowMessage(result.code), logIn: LOG_IN_AGAIN.has(result.code) });
     } finally {
+      // The token went with the press (each is checked once): the next press waits for a new one.
+      setRound((r) => r + 1);
       running.current = false;
       setBusy(false);
     }

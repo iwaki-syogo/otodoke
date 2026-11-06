@@ -57,7 +57,6 @@ export function SignupForm() {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await signUpWithPassword({ email, password, captchaToken }, { signUpWithAuthSecret });
-      setRound((r) => r + 1);
       if (!result.ok) {
         setError(flowMessage(result.code));
         return;
@@ -66,6 +65,8 @@ export function SignupForm() {
       setAgain("");
       setSentTo(email);
     } finally {
+      // The token went with the press (each is checked once): the next press waits for a new one.
+      setRound((r) => r + 1);
       running.current = false;
       setBusy(false);
     }
@@ -80,9 +81,10 @@ export function SignupForm() {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await resendConfirmation({ email: sentTo, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
-      setRound((r) => r + 1);
       setResent({ ok: result.ok, text: loginMessage(result.code) });
     } finally {
+      // The token went with the press (each is checked once): the next press waits for a new one.
+      setRound((r) => r + 1);
       running.current = false;
       setBusy(false);
     }

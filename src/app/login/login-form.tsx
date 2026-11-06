@@ -61,8 +61,6 @@ export function LoginForm({ next }: { next: string }) {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await signInAndOpenKey({ email, password, captchaToken }, ports());
-      // The token went with the press: the next press gets a new one.
-      setRound((r) => r + 1);
       if (!result.ok) {
         setNotice({ kind: "error", text: flowMessage(result.code) });
         return;
@@ -78,6 +76,8 @@ export function LoginForm({ next }: { next: string }) {
         setNotice({ kind: "not_opened" });
       } else setNotice({ kind: "key_failed", text: flowMessage(result.code) });
     } finally {
+      // The token went with the press (each is checked once): the next press waits for a new one.
+      setRound((r) => r + 1);
       // After a sign-in that leaves the page, the press stays shown until the next page is drawn.
       if (!leaving) {
         running.current = false;

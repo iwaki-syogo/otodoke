@@ -36,9 +36,10 @@ export function ForgotForm() {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await sendResetMail({ email, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
-      setRound((r) => r + 1);
       setAnswer({ ok: result.ok, text: loginMessage(result.code) });
     } finally {
+      // The token went with the press (each is checked once): the next press waits for a new one.
+      setRound((r) => r + 1);
       running.current = false;
       setBusy(false);
     }
