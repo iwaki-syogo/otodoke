@@ -180,7 +180,7 @@ struct SettingsView: View {
             if model.keyStepFailure != nil {
                 return .init(text: SettingsMenuText.keyStepFailedBadge, kind: .red)
             }
-            return .init(text: SettingsMenuText.keyNoneBadge, kind: .sky)
+            return .init(text: SettingsMenuText.keyNoneBadge, kind: .amber)
         case let .present(plainCount, oldKeyCount)?:
             if case let .loaded(n) = plainCount, n > 0 {
                 return .init(text: SettingsMenuText.plainBadge(n), kind: .amber)

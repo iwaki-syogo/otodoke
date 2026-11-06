@@ -35,11 +35,16 @@ function swiftConstants(src: string): Map<string, string> {
   return out;
 }
 
+/** The sentence of the waiting screen's body. A copy, because src/lib/onboarding.ts still has the earlier one. */
+const WAITING_BODY = "メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。";
+
 /** The Web's constants (src/lib/onboarding.ts), by OnboardingText name. */
 const WORDING: Record<string, string> = {
   // screen 1
   waitingTitle: CONFIRM_WAIT.title,
-  waitingLead: CONFIRM_WAIT.body,
+  // The new sentence (two sentences, full-width 「」). The Web's CONFIRM_WAIT.body is to carry it too; until it does
+  // the copy below is what iOS is compared with (WAITING_BODY).
+  waitingLead: WAITING_BODY,
   confirmedButton: CONFIRM_WAIT.done,
   resendButton: CONFIRM_WAIT.resend,
   notConfirmedYet: CONFIRM_WAIT.notYet,

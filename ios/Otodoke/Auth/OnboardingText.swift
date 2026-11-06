@@ -9,7 +9,7 @@ enum OnboardingText {
     // MARK: screen 1: waiting for the confirmation (after making an account)
 
     static let waitingTitle = "確認のメールを送りました"
-    static let waitingLead = "メールのリンクを押してこの画面に戻ると、自動で次へ進みます。"
+    static let waitingLead = "メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。"
     static let confirmedButton = "確認しました"
     /// The secondary button: the confirmation mail again.
     static let resendButton = "メールを送り直す"

@@ -346,6 +346,8 @@ final class LoginModel {
     /// it (each token is sent once). nil without a widget.
     private func takeToken() async -> String? {
         guard let turnstile else { return nil }
+        // A token past Turnstile.tokenStaleMs is not used (a press too): dropped, the widget moved on (a new tap).
+        if turnstile.dropIfStale() { turnstile.reset() }
         if !turnstile.isSettled {
             _ = await turnstile.waitUntilSettled(timeout: tokenWait)
         }

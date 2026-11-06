@@ -33,7 +33,7 @@ final class OnboardingUITests: XCTestCase {
     func testTheWaitingScreenSaysWhatToDo() {
         let app = launch("login-waiting")
         XCTAssertTrue(app.staticTexts["確認のメールを送りました"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["メールのリンクを押してこの画面に戻ると、自動で次へ進みます。"].exists)
+        XCTAssertTrue(app.staticTexts["メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。"].exists)
         XCTAssertTrue(app.staticTexts["qa@example.com"].exists)
         // The preview launch brings the app to the front: no token, so nothing is sent and the button stays pressable.
         XCTAssertTrue(app.buttons["確認しました"].waitForExistence(timeout: 5))

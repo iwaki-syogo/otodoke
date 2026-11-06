@@ -443,8 +443,8 @@ struct SettingsModelTests {
 
     @Test func theMailHandlingItemsOfM1() {
         #expect(MailHandlingText.heading == "あなたのメールの扱い")
-        // M2 task 19 adds the item about keeping the key in the Keychain with Face ID (12 → 13).
-        #expect(MailHandlingText.items.count == 13)
+        // M2 task 19 adds the item about keeping the key in the Keychain with Face ID (12 → 13); the Web later added an item about mail that is read and found not to be about shopping (13 → 14).
+        #expect(MailHandlingText.items.count == 14)
         #expect(MailHandlingText.items.first == "届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。")
         #expect(MailHandlingText.items.last == "運営者が正しいプログラムを動かしていることが前提です。コードはすべて公開しています。")
         #expect(MailHandlingText.repositoryURL.absoluteString == "https://github.com/iwaki-syogo/otodoke")
@@ -583,7 +583,7 @@ struct SettingsModelTests {
         #expect(SettingsView.keyBadge(for: bothFail.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
         // No key and the unencrypted count failed: still 未設定 (that is true; there is no key to be unsure about).
         let noKeyPlainFails = try await setUp(keys: [], faults: plainFails)
-        #expect(SettingsView.keyBadge(for: noKeyPlainFails.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .sky))
+        #expect(SettingsView.keyBadge(for: noKeyPlainFails.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .amber))
     }
 
     @Test func theDeleteRowSaysWhereTheDeletionIs() {
@@ -596,7 +596,7 @@ struct SettingsModelTests {
         let plain = try await setUp(mails: [SettingsRows.mail(1), SettingsRows.mail(2)])
         #expect(SettingsView.keyBadge(for: plain.model) == .init(text: SettingsMenuText.plainBadge(2), kind: .amber))
         let noKey = try await setUp(keys: [])
-        #expect(SettingsView.keyBadge(for: noKey.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .sky))
+        #expect(SettingsView.keyBadge(for: noKey.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .amber))
     }
 
     @Test func aKeyStepThatFailedShowsOnTheKeyRow() async throws {

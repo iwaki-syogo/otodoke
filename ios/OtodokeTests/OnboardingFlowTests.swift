@@ -368,6 +368,20 @@ struct OnboardingFlowTests {
         #expect(PW.captcha(await fake.requests("POST", "token").first) == "fresh")
     }
 
+    @Test func aPressDoesNotUseATokenOlderThanTwoHundredEightySecondsEither() async {
+        let fake = FakeSupabase.make()
+        let (model, token) = await waitingWithWidget(fake)
+        token.receive(.token("old"), generation: token.generation)
+        clock.advance(seconds: 281)
+        let generation = token.generation
+        await model.checkConfirmation(pressed: true)
+        // The old token was dropped and the widget moved on; the press waited a moment for a new one and sent without.
+        #expect(token.generation == generation + 2)
+        let sent = await fake.requests("POST", "token")
+        #expect(sent.count == 1)
+        #expect(PW.captcha(sent.first) == nil)
+    }
+
     @Test func theStaleLimitIsTheWebs() {
         #expect(Turnstile.tokenStaleMs == 280_000)
     }
@@ -476,6 +490,7 @@ struct OnboardingFlowTests {
         #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
         #expect(sleeper.requested == [.milliseconds(15_000)])
         // More returns meanwhile keep no more than that one.
+        #expect(sleeper.requested.count == 1)
         clock.advance(seconds: 3)
         await model.checkConfirmation()
         await model.checkConfirmation()
@@ -489,6 +504,55 @@ struct OnboardingFlowTests {
         #expect(await fake.count("POST", "token") == 2)
         #expect(sleeper.pendingCount == 0)
         #expect(sleeper.requested.count == 1)
+    }
+
+    @Test func theSecondNoticeOfTheSameReturnKeepsNothing() async {
+        let fake = FakeSupabase.make()
+        let sleeper = ControlledSleeper()
+        let (model, _) = make(fake, sleep: sleeper.sleep)
+        await signUp(model)
+        await model.checkConfirmation()
+        // Active again a second later (inactive, active: a system sheet): the same return.
+        clock.advance(seconds: 1)
+        await model.checkConfirmation()
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(sleeper.requested.isEmpty)
+        #expect(AutoSignIn.sameReturnMs == 2_000)
+        // A return after more than two seconds, still inside the gap, keeps one.
+        clock.advance(seconds: 2)
+        await model.checkConfirmation()
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+    }
+
+    @Test func theKeptTryCountsLikeAnyTryByItself() async {
+        let fake = FakeSupabase.make()
+        let sleeper = ControlledSleeper()
+        let (model, _) = make(fake, sleep: sleeper.sleep)
+        await signUp(model)
+        // Four tries by themselves use four of the five.
+        for _ in 0..<4 {
+            clock.advance(seconds: 21)
+            await model.checkConfirmation()
+        }
+        #expect(await fake.count("POST", "token") == 4)
+        clock.advance(seconds: 21)
+        await model.checkConfirmation()
+        #expect(await fake.count("POST", "token") == 5)
+        // The fifth was the last: a return inside the gap keeps nothing now.
+        clock.advance(seconds: 5)
+        await model.checkConfirmation()
+        #expect(sleeper.requested.isEmpty)
+        // The kept try is the one that counts: with three sent, a kept try is the fourth and the screen can still go on.
+        let fake2 = FakeSupabase.make()
+        let (second, _) = make(fake2, sleep: sleeper.sleep)
+        await signUp(second)
+        await second.checkConfirmation()
+        clock.advance(seconds: 5)
+        await second.checkConfirmation()
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+        clock.advance(seconds: 20)
+        sleeper.fireAll()
+        #expect(await waitFor(.seconds(3)) { await fake2.count("POST", "token") == 2 })
     }
 
     @Test func theKeptTryDoesNotGoWhenTheAppIsNotInFrontOrTheWaitIsOver() async {

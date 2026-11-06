@@ -37,7 +37,7 @@ struct FaceIDSettingsTests {
     }
 
     @Test func theMailHandlingGainsTheKeychainItem() {
-        #expect(MailHandlingText.items.count == 13)
+        #expect(MailHandlingText.items.count == 14)
         let added = MailHandlingText.items.filter { $0.contains("キーチェーン") }
         #expect(added.count == 1)
         let item = added.first ?? ""
