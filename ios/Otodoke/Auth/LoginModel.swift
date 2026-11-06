@@ -72,7 +72,8 @@ final class LoginModel {
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     /// The app is in front (set by the screen from the scene phase): the timer runs only then (the Web's visible tab).
     @ObservationIgnored var isInFront = true {
-        didSet { if !isInFront { cancelTimer() } }
+        // Back in front there is always one timer (the Web: shown again, the timer starts anew); in the background none.
+        didSet { if isInFront { scheduleAuto() } else { cancelTimer() } }
     }
     /// The one timer that tries at the next point of the backoff while the app is in front: never two.
     @ObservationIgnored private var timerTask: Task<Void, Never>?
@@ -305,7 +306,11 @@ final class LoginModel {
             cancelTimer()
             autoGate.pressed(now: now())
         } else {
-            if trigger == .returned, !autoGate.noteReturn(now: now()) { return }
+            if trigger == .returned, !autoGate.noteReturn(now: now()) {
+                // The second notice of one return: the first set the timer (or its try will), unless it was lost.
+                if timerTask == nil { scheduleAuto() }
+                return
+            }
             guard autoGate.allows(now: now()) else {
                 scheduleAuto()
                 return
@@ -354,6 +359,8 @@ final class LoginModel {
             mode = .signIn
             canResendConfirmation = false
             unconfirmedAddress = nil
+            // The sign-up's 「確認のメールを送りました…」 does not belong on the form it leaves for.
+            notice = nil
             errorMessage = failure.message
             return
         case .captcha where !pressed:
@@ -394,7 +401,10 @@ final class LoginModel {
         defer { isWorking = false }
         errorMessage = nil
         notice = nil
+        let epoch = waitEpoch
         let captchaToken = await takeToken()
+        // The screen was left (or started over) while the token was waited for: nothing is sent, nothing is said.
+        guard epoch == waitEpoch else { return }
         do {
             try await auth.resendConfirmation(email: address, captchaToken: captchaToken)
             if isWaitingForConfirmation {

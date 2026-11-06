@@ -28,8 +28,11 @@ enum Landing: Equatable {
 
     /// `fromConfirmation`: the key step was the waiting screen's sign-in. `boxClosed`: the box was left by one of its
     /// two links (it is shown once per signed-in generation, as the guide is).
-    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool, fromConfirmation: Bool = false, boxClosed: Bool = false) -> Landing {
+    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool, fromConfirmation: Bool = false, boxClosed: Bool = false, gaveUp: Bool = false) -> Landing {
         if deciding { return .waiting }
+        // The limit let the landing go before the key step ended: the person is in the tabs already, and nothing comes
+        // over them later.
+        if gaveUp { return .tabs }
         if fromConfirmation, !boxClosed, KeyBox.text(for: outcome) != nil { return .keyBox }
         return !guideClosed && OnboardingGate.shouldShow(after: outcome) ? .guide : .tabs
     }

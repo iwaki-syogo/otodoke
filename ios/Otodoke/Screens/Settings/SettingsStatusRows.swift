@@ -35,7 +35,7 @@ struct SettingsStatusRows: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
         case .failed?:
             // iOS-9: not the look of 0 mails.
-            SettingsParts.errorBox(model.unreadHeading ?? SettingsModel.failedText)
+            SettingsParts.errorBox(model.unreadHeading ?? SettingsWebText.unreadCountFailed)
         default:
             EmptyView()
         }
@@ -62,10 +62,7 @@ struct SettingsStatusRows: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
         } else if let note = model.approvalNote {
             // [S2] The forwarding confirmation could not be read (not the look of "none").
-            Text(note)
-                .font(.subheadline)
-                .foregroundStyle(OtodokeColor.errorText)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsParts.errorBox(note)
         }
     }
 }

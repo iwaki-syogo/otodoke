@@ -39,14 +39,23 @@ extension MainScreens {
         settings.keySetup = setup
         // A3-1: the hand-off is taken now, and again whenever a sign-in of this generation decides one later
         // (whichever comes first, takeSignInSecret answers once: the key step runs once).
+        let landingSleep = parts.landingSleep
         let takeHandOff: @MainActor () -> Void = { [weak auth, weak setup] in
             guard let auth, let setup else { return }
             if let signIn = auth.takeSignInSecret() {
-                // The landing waits for this key step (Landing): held now, let go when its outcome is set.
-                setup.holdLanding()
+                // The landing waits for this key step (Landing): held now, let go when its outcome is set, or when the
+                // time limit passes first (a stalled network must not keep the waiting display for good: the tabs
+                // show and the key step carries on).
+                let hold = KeySetup.LandingHold(setup)
+                let limit = Task {
+                    try? await landingSleep(KeySetup.landingLimit)
+                    guard !Task.isCancelled else { return }
+                    hold.timeOut()
+                }
                 Task {
                     await setup.run(signIn)
-                    setup.releaseLanding()
+                    limit.cancel()
+                    hold.release()
                     signIn.wipe()
                 }
             } else if auth.takeAddressMismatch() {
@@ -66,6 +75,8 @@ extension MainScreens {
         let biometrics: any Biometrics
         let service: String
         let api: any KeyAPI
+        /// The sleep the landing's time limit waits with (tests inject one).
+        var landingSleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
         static func system(provider: SupabaseProvider) -> KeyParts {
             KeyParts(

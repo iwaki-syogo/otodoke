@@ -220,10 +220,53 @@ final class KeySetup {
     /// behind the waiting display (Landing): where the login lands (the guide or the 荷物 tab) is not known yet.
     /// A launch with a stored session has no hand-off, so it is 0 from the start.
     private(set) var pendingRuns = 0
+    /// The landing was let go by its time limit (KeySetup.landingLimit) before the key step ended: the tabs are
+    /// shown, and an outcome that comes later shows neither the guide nor the box over what the person is doing.
+    private(set) var landingGaveUp = false
+    /// How long the landing waits for the key step (a stalled network must not keep the waiting display for good).
+    static let landingLimit = Duration.seconds(30)
     var isDeciding: Bool { pendingRuns > 0 }
 
     /// Taken at the hand-off, in the same step as the main screens are made (before any frame is drawn).
-    func holdLanding() { pendingRuns += 1 }
+    func holdLanding() {
+        pendingRuns += 1
+        landingGaveUp = false
+    }
+
+    /// The landing's time limit passed before the key step ended: the hold is let go and the tabs show. The key step
+    /// carries on; what it comes to later shows neither the guide nor the box (landingGaveUp). Only the screen of
+    /// that hold ends it (a limit of an earlier hold never lets a later one go: LandingHold).
+    fileprivate func giveUpLanding() {
+        landingGaveUp = true
+        pendingRuns = max(0, pendingRuns - 1)
+    }
+
+    /// One hold of the landing, with the time limit: let go once, by the end of the key step or by the limit,
+    /// whichever comes first (the other finds it let go already).
+    @MainActor
+    final class LandingHold {
+        private weak var setup: KeySetup?
+        private var done = false
+
+        init(_ setup: KeySetup) {
+            self.setup = setup
+            setup.holdLanding()
+        }
+
+        /// The key step ended.
+        func release() {
+            guard !done else { return }
+            done = true
+            setup?.releaseLanding()
+        }
+
+        /// The time limit passed.
+        func timeOut() {
+            guard !done else { return }
+            done = true
+            setup?.giveUpLanding()
+        }
+    }
 
     /// The key step of that hand-off ended (its outcome is in lastOutcome by now).
     func releaseLanding() { pendingRuns = max(0, pendingRuns - 1) }

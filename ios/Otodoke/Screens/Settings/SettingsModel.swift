@@ -51,11 +51,13 @@ final class SettingsModel {
     /// The page each action opens: https://otodoke.app/… as task.md lists it.
     static func webLink(_ action: SettingsWebAction) -> URL {
         switch action {
-        case .createPassphrase, .changePassphrase, .readWaiting, .markAsParcel, .clearAll: WebLink.settings
-        case .sample: WebLink.settingsDemo
+        case .createPassphrase, .changePassphrase: WebLink.settingsPassword
+        case .readWaiting: WebLink.settingsTrouble
+        case .markAsParcel: WebLink.settingsDropped
+        case .sample, .clearAll: WebLink.settingsDemo
         case .openWeb: WebLink.app
         case .privacy: WebLink.privacy
-        case .deleteAccount: WebLink.accountDeletion
+        case .deleteAccount: WebLink.settingsDelete
         }
     }
 
@@ -68,6 +70,12 @@ final class SettingsModel {
     private(set) var confirmURL: URL?
     /// The forwarding confirmation could not be read (told apart from "none").
     private(set) var confirmationFailed = false
+    /// The 「承認待ち」 badge of the list (the Web's readApprovalBadge): the confirmation with Google's link exists and
+    /// nothing arrived after it (by created_at). The card itself does not use this: it shows whenever such a
+    /// confirmation exists.
+    private(set) var approvalWaiting = false
+    /// The confirmation, or what the badge needs after it, could not be read (the badge says it cannot be checked).
+    private(set) var approvalBadgeFailed = false
     private(set) var unread: LoadResult<Int>?
     private(set) var dropped: LoadResult<[DroppedMailRow]>?
     private(set) var isSigningOut = false
@@ -142,11 +150,11 @@ final class SettingsModel {
         return false
     }
 
-    /// 「未読のメールが N 通あります」 when N > 0; failedText when it could not be read; nil for 0.
+    /// 「未読のメールが N 通あります」 when N > 0; unreadCountFailed when it could not be read; nil for 0.
     var unreadHeading: String? {
         switch unread {
         case let .loaded(n)?: n > 0 ? "未読のメールが \(n) 通あります" : nil
-        case .failed?: Self.failedText
+        case .failed?: SettingsWebText.unreadCountFailed
         case nil: nil
         }
     }
@@ -169,7 +177,7 @@ final class SettingsModel {
         let reader = self.reader
         let at = now()
 
-        let (panel, readAddress, readConfirmation, readWaiting, readDropped) = await withTaskCancellationHandler {
+        let (panel, readAddress, readConfirmation, readLater, readWaiting, readDropped) = await withTaskCancellationHandler {
             await readAll(reader, at: at)
         } onCancel: {
             signal.raise()
@@ -185,19 +193,27 @@ final class SettingsModel {
         }
         keyPanel = panel
         address = readAddress
-        confirmURL = readConfirmation.value.flatMap { $0 }.flatMap(Self.approvalURL)
+        let pick = readConfirmation.value.flatMap(Self.pickApproval)
+        confirmURL = pick?.url
         if case .failed = readConfirmation { confirmationFailed = true } else { confirmationFailed = false }
+        if let later = readLater {
+            approvalWaiting = (later.value ?? 1) <= 0
+            approvalBadgeFailed = later == .failed
+        } else {
+            approvalWaiting = false
+            approvalBadgeFailed = confirmationFailed
+        }
         unread = readWaiting
         dropped = readDropped
     }
 
     /// The reads of load(): each fails on its own.
     private func readAll(_ reader: SettingsReader, at: Date) async -> (
-        KeyPanel, LoadResult<String>?, LoadResult<ForwardingConfirmationRow?>, LoadResult<Int>, LoadResult<[DroppedMailRow]>
+        KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>
     ) {
         async let key = reader.currentKey()
         async let plain = reader.plainCount()
-        async let confirmation = reader.forwardingConfirmation()
+        async let confirmation = reader.forwardingConfirmations()
         async let waiting = reader.unreadCount(now: at)
         async let droppedRows = reader.dropped()
 
@@ -214,7 +230,13 @@ final class SettingsModel {
             readAddress = await readAddressOfKey()
             panel = .present(plainCount: await plain, oldKeyCount: await old)
         }
-        return (panel, readAddress, await confirmation, await waiting, await droppedRows)
+        // What arrived after the confirmation the card shows (the badge's time rule).
+        let confirmationRows = await confirmation
+        var later: LoadResult<Int>?
+        if let pick = confirmationRows.value.flatMap(Self.pickApproval), let at = pick.at {
+            later = await reader.arrivedAfter(at)
+        }
+        return (panel, readAddress, confirmationRows, later, await waiting, await droppedRows)
     }
 
     /// signOut of AuthService (the key's four steps are task 16). The spinner shows while it runs.
@@ -267,7 +289,16 @@ final class SettingsModel {
     /// [M1] The stored value first, then the body, as Forwarding.confirmURL (the Web's WHATWG reading),
     /// each also read by Foundation (what Safari opens): handed out only when both readers say Google's
     /// page. A stored value that only WHATWG passes goes on to the body.
-    private static func approvalURL(_ row: ForwardingConfirmationRow) -> URL? {
+    /// The Web's readConfirmUrl: of the newest few confirmations (created_at ↓) the first whose link is Google's
+    /// own; a look-alike newer than the real one (no link, or another host) is passed over. `at` is its created_at.
+    static func pickApproval(_ rows: [ForwardingConfirmationRow]) -> (url: URL, at: String?)? {
+        for row in rows {
+            if let url = approvalURL(row) { return (url, row.createdAt) }
+        }
+        return nil
+    }
+
+    static func approvalURL(_ row: ForwardingConfirmationRow) -> URL? {
         let texts = [
             Forwarding.confirmURL(stored: row.forwardingConfirmUrl, textBody: nil, htmlBody: nil),
             Forwarding.confirmURL(stored: nil, textBody: row.textBody, htmlBody: row.htmlBody),
@@ -297,18 +328,18 @@ extension SettingsModel {
     }
 
     /// [S2] The line under the passphrase card about mail sealed with an earlier key:
-    /// oldKeyText(n) for n > 0, failedText when the count could not be read, nil for 0 or no key row.
+    /// oldKeyText(n) for n > 0, oldKeyCountFailed when the count could not be read, nil for 0 or no key row.
     var oldKeyNote: String? {
         guard case let .present(_, oldKeyCount)? = keyPanel else { return nil }
         switch oldKeyCount {
         case let .loaded(n): return n > 0 ? Self.oldKeyText(n) : nil
-        case .failed: return Self.failedText
+        case .failed: return SettingsWebText.oldKeyCountFailed
         }
     }
 
-    /// [S2] failedText when the forwarding confirmation could not be read (told apart from "none");
+    /// [S2] approvalReadFailed when the forwarding confirmation could not be read (told apart from "none");
     /// nil when it was read (whether or not there is one).
     var approvalNote: String? {
-        confirmationFailed ? Self.failedText : nil
+        confirmationFailed ? SettingsWebText.approvalReadFailed : nil
     }
 }

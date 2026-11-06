@@ -23,7 +23,7 @@ struct SettingsKeyPage: View {
         case .failed?, nil:
             VStack(alignment: .leading, spacing: 8) {
                 SettingsParts.heading("パスワード")
-                SettingsParts.errorBox(SettingsModel.failedText)
+                SettingsParts.errorBox(SettingsWebText.passwordKeyReadFailed)
             }
         case let .none(plainCount)?:
             VStack(alignment: .leading, spacing: 8) {
@@ -71,7 +71,7 @@ struct SettingsKeyPage: View {
                         Text("暗号化を始める前に読み取ったメールなどです。押すまでは、運営者が読める形で残ります。")
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
-                        SettingsParts.primaryButton("暗号化する") { SettingsWeb.openPage(WebLink.settings, openURL) }
+                        SettingsParts.primaryButton("暗号化する") { SettingsWeb.openPage(WebLink.settingsPassword, openURL) }
                             .padding(.top, 8)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -84,10 +84,10 @@ struct SettingsKeyPage: View {
                     EmptyView()
                 }
                 if let note = model.oldKeyNote {
-                    // [S2] A failed count shows failedText (not the look of 0).
+                    // [S2] A failed count shows oldKeyCountFailed (not the look of 0).
                     Text(note)
                         .font(.subheadline)
-                        .foregroundStyle(note == SettingsModel.failedText ? OtodokeColor.errorText : Color.secondary)
+                        .foregroundStyle(note == SettingsWebText.oldKeyCountFailed ? OtodokeColor.errorText : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 SettingsParts.linkCard("パスワードを変える") { SettingsWeb.open(.changePassphrase, openURL) }

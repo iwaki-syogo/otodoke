@@ -18,22 +18,31 @@ const WORDS = `${SETTINGS}/SettingsWebText.swift`;
 
 const WEB = "src/app/app/settings";
 
-/** The iOS constant and the Web file whose source holds the same sentence. */
-const WEB_SOURCES: { name: string; file: string }[] = [
-  { name: "mailGroup", file: `${WEB}/(list)/page.tsx` },
-  { name: "accountGroup", file: `${WEB}/(list)/page.tsx` },
-  { name: "privacyTitle", file: `${WEB}/(list)/page.tsx` },
-  { name: "deleteTitle", file: `${WEB}/(list)/page.tsx` },
+/**
+ * The iOS constant and the Web file whose source holds the same sentence. `around` is for a short word that a bare
+ * substring search would find anywhere (「メール」 is in half the file): it is looked for in its own place, between the
+ * pieces the Web writes around it, so a changed iOS word is caught.
+ */
+const WEB_SOURCES: { name: string; file: string; around?: [string, string] }[] = [
+  { name: "mailGroup", file: `${WEB}/(list)/page.tsx`, around: ['label: "', '", rows: orderRows(mailRows)'] },
+  { name: "accountGroup", file: `${WEB}/(list)/page.tsx`, around: ['label: "', '", rows: accountRows'] },
+  { name: "privacyTitle", file: `${WEB}/(list)/page.tsx`, around: ['id: "privacy", href: "/privacy", icon: "privacy", title: "', '"'] },
+  { name: "deleteTitle", file: `${WEB}/(list)/page.tsx`, around: ['id: "delete", href: "/app/settings/delete", icon: "delete", title: "', '"'] },
   { name: "keyReadFailed", file: `${WEB}/forwarding/page.tsx` },
   { name: "keyNotMade", file: `${WEB}/forwarding/page.tsx` },
   { name: "noInboundDomain", file: `${WEB}/forwarding/page.tsx` },
+  // The failures that say what could not be read (L3).
+  { name: "approvalReadFailed", file: `${WEB}/forwarding/page.tsx` },
+  { name: "passwordKeyReadFailed", file: `${WEB}/password/page.tsx` },
+  { name: "oldKeyCountFailed", file: `${WEB}/password/page.tsx` },
+  { name: "unreadCountFailed", file: `${WEB}/trouble/page.tsx` },
   { name: "droppedLead", file: `${WEB}/dropped/page.tsx` },
   // The Web moved it to NO_SUBJECT_TEXT of src/lib/mail-notices.ts (dev bbea688).
   { name: "noSubject", file: "src/lib/mail-notices.ts" },
   { name: "makeKeyHeading", file: `${WEB}/password-panel.tsx` },
   { name: "makeKeyLead", file: `${WEB}/password-panel.tsx` },
   { name: "plainDropNotice", file: "src/lib/mail-notices.ts" },
-  { name: "timePrefix", file: `${WEB}/forwarding-guide.tsx` },
+  { name: "timePrefix", file: `${WEB}/forwarding-guide.tsx`, around: ['<p className="mt-1 text-xs text-neutral-500">', "{guide.time}</p>"] },
 ];
 
 /** A TSX / TS source without its comments (a sentence that only stands in a comment is not the Web's). */
@@ -65,7 +74,8 @@ describe("the settings words copied from the Web's dev branch", () => {
       expect(ios, `SettingsWebText.${w.name}`).toBeTruthy();
       const web = stripTsx(read(w.file));
       expect(web, w.file).not.toBe("");
-      expect(web.includes(ios!), `${w.name} in ${w.file}`).toBe(true);
+      const wanted = w.around ? w.around[0] + ios! + w.around[1] : ios!;
+      expect(web.includes(wanted), `${w.name} in ${w.file}`).toBe(true);
     }
   });
 
@@ -132,23 +142,32 @@ describe("the settings words copied from the Web's dev branch", () => {
     expect(view).not.toContain("ログアウトしてください");
   });
 
-  it("the privacy link on the handling page says it opens Safari and does not cancel the parent's spacing; the deletion row says where it is", () => {
+  it("the privacy link on the handling page says it opens Safari and does not cancel the parent's spacing; the deletion row has no note", () => {
     const pages = stripComments(read(`${SETTINGS}/SettingsPages.swift`));
     const handling = pages.match(/struct SettingsHandlingPage[\s\S]*?\n\}\n/)?.[0] ?? "";
     expect(handling).toContain("SettingsMenuText.webHint");
     expect(handling).not.toMatch(/padding\(\.top, -/);
-    expect(constant(stripComments(read(`${SETTINGS}/SettingsMenuText.swift`)), "deleteSubtitle")).toBe("Web の設定の一番下にあります");
-    expect(stripComments(read(`${SETTINGS}/SettingsView.swift`))).toContain("SettingsMenuText.deleteSubtitle");
+    // The deletion has its own page now (/app/settings/delete): the row says nothing about where it is.
+    expect(stripComments(read(`${SETTINGS}/SettingsMenuText.swift`))).not.toContain("deleteSubtitle");
+    expect(stripComments(read(`${SETTINGS}/SettingsView.swift`))).not.toContain("deleteSubtitle");
   });
 
-  it("the privacy link sits under 「あなたのメールの扱い」, and the deletion goes to /app/settings for now with its future page in a comment", () => {
+  it("the privacy link sits under 「あなたのメールの扱い」", () => {
     expect(stripComments(read(`${SETTINGS}/SettingsPages.swift`))).toMatch(/SettingsHandlingPage[\s\S]*?SettingsWeb\.open\(\.privacy/);
-    const web = read("ios/Otodoke/Screens/Shared/OpenWeb.swift");
-    expect(stripComments(web)).toContain('static let accountDeletion = page("/app/settings")');
-    expect(stripComments(web)).toContain('static let privacy = page("/privacy")');
-    for (const dest of ["/app/settings/password", "/app/settings/trouble", "/app/settings/dropped", "/app/settings/demo", "/app/settings/delete"]) {
-      expect(web, dest).toContain(dest);
-    }
+  });
+
+  it("the badge on the forwarding row is the Web's 「承認待ち」, and the rows draw the new failure sentences through the constants", () => {
+    expect(constant(stripComments(read(`${SETTINGS}/SettingsMenuText.swift`)), "approvalBadge")).toBe("承認待ち");
+    expect(stripTsx(read(`${WEB}/(list)/page.tsx`))).toContain('text: "承認待ち"');
+    const model = stripComments(read(`${SETTINGS}/SettingsModel.swift`));
+    for (const n of ["unreadCountFailed", "oldKeyCountFailed", "approvalReadFailed"]) expect(model, n).toContain(`SettingsWebText.${n}`);
+    expect(stripComments(read(`${SETTINGS}/SettingsKeyPage.swift`))).toContain("SettingsWebText.passwordKeyReadFailed");
+    expect(stripComments(read(`${SETTINGS}/SettingsStatusRows.swift`))).toContain("SettingsWebText.unreadCountFailed");
+  });
+
+  it("negative control: the earlier bare 「読み込めませんでした」 is not what these rows say", () => {
+    expect(constant(src, "unreadCountFailed")).not.toBe("読み込めませんでした");
+    expect(constant(src.replace("未読のメールの数を", "未読の数を"), "unreadCountFailed")).not.toBe(constant(src, "unreadCountFailed"));
   });
 
   it("negative control: a changed iOS sentence, a sentence only in a Web comment, and a swapped piece order are all caught", () => {
@@ -161,6 +180,15 @@ describe("the settings words copied from the Web's dev branch", () => {
     expect(stripTsx(`// ${lead}\nconst a = 1;`).includes(lead)).toBe(false);
     expect(stripTsx(`{/* ${lead} */}\n<p/>`).includes(lead)).toBe(false);
     expect(stripTsx(`<p>${lead}</p>`).includes(lead)).toBe(true);
+    // A short word is looked for in its place: a changed iOS word is caught where a bare search would pass.
+    const listWeb = stripTsx(read(`${WEB}/(list)/page.tsx`));
+    const group = WEB_SOURCES.find((w) => w.name === "mailGroup")!;
+    const word = constant(src, "mailGroup")!;
+    expect(listWeb.includes(word)).toBe(true);
+    expect(listWeb.includes(group.around![0] + word + group.around![1])).toBe(true);
+    // The word 「メ」 is found by a bare search (it is in 「メールの転送」), but not between the Web's own pieces.
+    expect(listWeb.includes("メ")).toBe(true);
+    for (const changed of ["メ", "ール", "メールX"]) expect(listWeb.includes(group.around![0] + changed + group.around![1]), `placed search for ${changed}`).toBe(false);
     // Pieces out of order are not found.
     expect(hasInOrder("<s>前{n}後</s>", ["前", "後"])).toBe(true);
     expect(hasInOrder("<s>後{n}前</s>", ["前", "後"])).toBe(false);

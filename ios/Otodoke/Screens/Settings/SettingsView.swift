@@ -81,7 +81,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             webRow(.privacy, symbol: "hand.raised", title: SettingsWebText.privacyTitle)
                             Divider().padding(.leading, 58)
-                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle, subtitle: SettingsMenuText.deleteSubtitle)
+                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle)
                             Divider().padding(.leading, 58)
                             webRow(.openWeb, symbol: "safari", title: SettingsMenuText.webTitle)
                         }
@@ -167,7 +167,19 @@ struct SettingsView: View {
     }
 
     private func badge(_ page: SettingsPage) -> SettingsRow.Badge? {
-        page == .key ? Self.keyBadge(for: model) : nil
+        switch page {
+        case .key: Self.keyBadge(for: model)
+        case .forward: Self.forwardBadge(for: model)
+        default: nil
+        }
+    }
+
+    /// The 「メールの転送」 row's badge ((list)/page.tsx): 確認できません when the confirmation or what the time rule
+    /// needs could not be read, 承認待ち while the newest valid confirmation has nothing after it.
+    static func forwardBadge(for model: SettingsModel) -> SettingsRow.Badge? {
+        if model.approvalBadgeFailed { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
+        if model.approvalWaiting { return .init(text: SettingsMenuText.approvalBadge, kind: .amber) }
+        return nil
     }
 
     /// The key row's badge. Mail still readable by the operator (未暗号化 n 通) is the most important

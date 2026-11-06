@@ -536,8 +536,10 @@ struct OnboardingFlowTests {
         #expect(sleeper.pendingCount == 0)
         model.isInFront = true
         await model.checkConfirmation()
+        // Exactly one again, never zero and never two.
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
         try? await Task.sleep(for: .milliseconds(200))
-        #expect(sleeper.pendingCount <= 1)
+        #expect(sleeper.pendingCount == 1)
     }
 
     @Test func aRefusalOtherThanNotConfirmedHoldsTheTimerForSixtySeconds() async {
@@ -637,7 +639,7 @@ struct OnboardingFlowTests {
         clock.advance(seconds: 5)
         await model.tokenArrived()
         #expect(await fake.count("POST", "token") == 0)
-        #expect(sleeper.pendingCount == 1)
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
         // The timer's point: it takes the token that is held.
         clock.advance(seconds: 15)
         #expect(sleeper.fireOldest())
@@ -690,7 +692,8 @@ struct OnboardingFlowTests {
         let token = TurnstileToken(now: clock.function)
         let (model, _) = await waitingWithTimer(fake, token: token, confirmed: true)
         let press = Task { await model.checkConfirmation(pressed: true) }
-        await Task.yield()
+        // In its wait for the token (the widget has not been tapped), not before it.
+        #expect(await waitFor(.seconds(3)) { await MainActor.run { model.isWorking } })
         model.leaveWait()
         await press.value
         #expect(await fake.count("POST", "token") == 0)
@@ -828,6 +831,137 @@ struct OnboardingFlowTests {
         await account(fake, confirmed: true)
         await model.checkConfirmation()
         #expect(await fake.count("POST", "token") == 0)
+    }
+
+    // MARK: review fixes (S1 to S4)
+
+    @Test func anAutoTryRefusedForCredentialsLeavesNoSentNoticeOnTheSignInForm() async {
+        let fake = FakeSupabase.make()
+        let (model, _) = make(fake)
+        await signUp(model)
+        // The sign-up's own sentence is the notice now (it was kept behind the waiting screen).
+        #expect(model.notice == LoginText.signupExistsOrSent)
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: "someone-elses", confirmed: true)
+        await model.checkConfirmation()
+        #expect(!model.isWaitingForConfirmation)
+        #expect(model.mode == .signIn)
+        #expect(model.errorMessage == LoginText.credentials)
+        // The form says only that: not 「確認のメールを送りました…」.
+        #expect(model.notice == nil)
+        #expect(model.shownNotice == nil)
+    }
+
+    @Test func aResendWaitingForItsTokenSendsNothingWhenTheScreenIsLeft() async {
+        let fake = FakeSupabase.make()
+        let token = TurnstileToken(now: clock.function)
+        let (model, _) = await waitingWithTimer(fake, token: token, confirmed: nil)
+        let resend = Task { await model.resendConfirmation() }
+        // In its wait for the token (the widget has not been tapped).
+        #expect(await waitFor(.seconds(3)) { await MainActor.run { model.isWorking } })
+        model.leaveWait()
+        await resend.value
+        #expect(await fake.count("POST", "resend") == 0)
+        #expect(model.toast == nil)
+        #expect(model.notice == nil)
+        #expect(!model.isWorking)
+    }
+
+    @Test func comingBackToTheFrontWithATokenHeldAlwaysLeavesOneTimer() async {
+        let fake = FakeSupabase.make()
+        let token = TurnstileToken(now: clock.function)
+        let (model, sleeper) = await waitingWithTimer(fake, token: token)
+        token.receive(.token("tok-held"), generation: token.generation)
+        model.isInFront = false
+        #expect(sleeper.pendingCount == 0)
+        model.isInFront = true
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+        // The token was not used up by it.
+        #expect(token.hasToken)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(sleeper.pendingCount == 1)
+    }
+
+    @Test func aReturnWhileATryIsOnItsWayStillLeavesTheTimerAfterIt() async {
+        let fake = FakeSupabase.make()
+        let (model, sleeper) = await waitingWithTimer(fake, confirmed: true)
+        let gate = Gate()
+        await fake.fail("POST", "token", with: .hold(gate))
+        let first = Task { await model.checkConfirmation() }
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        // Background and front again meanwhile: a timer is there (it will see the try on its way and wait its turn).
+        model.isInFront = false
+        model.isInFront = true
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+        gate.open()
+        await first.value
+    }
+
+    /// The key step of a password sign-in held on the user_keys read (a stalled network), with the landing's sleep injected.
+    private func stalledSignIn(sleeper: ControlledSleeper, gate: Gate, fromConfirmation: Bool = true) async throws -> (screens: MainScreens, fake: FakeSupabase) {
+        let fake = FakeSupabase.make()
+        let server = FakeKeysServer.make(supabase: fake)
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
+        await fake.fail("GET", "user_keys", with: .hold(gate))
+        let auth = PW.auth(fake)
+        let parts = MainScreens.KeyParts(
+            policy: KeyStorePolicy(defaults: scratchDefaults()),
+            keychain: FakeKeychain(),
+            biometrics: FakeBiometrics(.available(.faceID)),
+            service: "com.iwakisyogo.otodoke.auth",
+            api: KeyAPIClient(baseURL: server.baseURL, session: server.urlSession),
+            landingSleep: sleeper.sleep
+        )
+        let made = Box<MainScreens>()
+        auth.makeSignedIn = { a in
+            let screens = MainScreens.live(auth: a, keyParts: parts)
+            made.value = screens
+            return screens
+        }
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil, fromConfirmation: fromConfirmation)
+        return (try #require(made.value), fake)
+    }
+
+    @Test func aStalledKeyStepLetsTheLandingGoAfterThirtySeconds() async throws {
+        let sleeper = ControlledSleeper()
+        let gate = Gate()
+        let w = try await stalledSignIn(sleeper: sleeper, gate: gate)
+        let setup = try #require(w.screens.keySetup)
+        #expect(setup.isDeciding)
+        #expect(await waitFor(.seconds(5)) { sleeper.pendingCount == 1 })
+        #expect(sleeper.requested == [.seconds(30)])
+        #expect(KeySetup.landingLimit == .seconds(30))
+        // The time limit passes: the waiting display goes, the tabs show, the key step carries on.
+        #expect(sleeper.fireOldest())
+        #expect(await waitFor(.seconds(5)) { await MainActor.run { !setup.isDeciding } })
+        #expect(setup.landingGaveUp)
+        #expect(Landing.of(deciding: setup.isDeciding, outcome: setup.lastOutcome, guideClosed: false, fromConfirmation: true, gaveUp: setup.landingGaveUp) == .tabs)
+        // The key step ends later (the first key is made): neither the guide nor the box comes over the tabs.
+        gate.open()
+        #expect(await waitFor(.seconds(10)) { await MainActor.run { setup.lastOutcome != nil } })
+        #expect(Landing.of(deciding: setup.isDeciding, outcome: setup.lastOutcome, guideClosed: false, fromConfirmation: true, gaveUp: setup.landingGaveUp) == .tabs)
+        // The hold was let go once: it did not go below none when the step ended.
+        #expect(!setup.isDeciding)
+        setup.holdLanding()
+        #expect(setup.isDeciding)
+    }
+
+    @Test func aKeyStepThatEndsInTimeCancelsTheLimitAndNeverGivesUpAndItsOutcomeIsStillTold() async throws {
+        let sleeper = ControlledSleeper()
+        let gate = Gate()
+        let w = try await stalledSignIn(sleeper: sleeper, gate: gate)
+        let setup = try #require(w.screens.keySetup)
+        #expect(await waitFor(.seconds(5)) { sleeper.pendingCount == 1 })
+        gate.open()
+        #expect(await waitFor(.seconds(10)) { await MainActor.run { !setup.isDeciding } })
+        #expect(!setup.landingGaveUp)
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 0 })
+        // What the key step came to (the held read failed with no answer) is still told, since it ended in time: the box.
+        #expect(Landing.of(deciding: setup.isDeciding, outcome: setup.lastOutcome, guideClosed: false, fromConfirmation: true, gaveUp: setup.landingGaveUp) == .keyBox)
+        // A later hold is not let go by the earlier one's limit.
+        setup.holdLanding()
+        #expect(!sleeper.fireOldest())
+        #expect(setup.isDeciding)
     }
 
     // MARK: the guide screen only for the login that made the key

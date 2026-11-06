@@ -36,13 +36,6 @@ function swiftConstants(src: string): Map<string, string> {
   return out;
 }
 
-/**
- * The sentence after 「確認しました」 when the address is not confirmed yet, as decided on 2026-11-07. src/lib/onboarding.ts
- * (CONFIRM_WAIT.notYet) still has the earlier one, so iOS is compared with this copy until the Web has it. When the
- * Web has it, compare with CONFIRM_WAIT.notYet and delete the copy (the test below then fails to remind of it).
- */
-const NOT_YET = "まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？";
-
 /** The Web's constants (src/lib/onboarding.ts), by OnboardingText name. */
 const WORDING: Record<string, string> = {
   // screen 1
@@ -50,7 +43,7 @@ const WORDING: Record<string, string> = {
   waitingLead: CONFIRM_WAIT.body,
   confirmedButton: CONFIRM_WAIT.done,
   resendButton: CONFIRM_WAIT.resend,
-  notConfirmedYet: NOT_YET,
+  notConfirmedYet: CONFIRM_WAIT.notYet,
   resent: CONFIRM_WAIT.resent,
   startOver: CONFIRM_WAIT.restart,
   // screen 3
@@ -137,7 +130,7 @@ describe("the tries by itself are rationed with the Web's numbers", () => {
     expect(model).toMatch(/guard autoGate\.allows\(now: now\(\)\) else \{\s*scheduleAuto\(\)\s*return\s*\}/);
     expect(model).toMatch(/autoGate\.countSend\(\)/);
     expect(model).toMatch(/autoGate\.refused\(now: now\(\)\)/);
-    expect(model).toMatch(/if trigger == \.returned, !autoGate\.noteReturn\(now: now\(\)\) \{ return \}/);
+    expect(model).toMatch(/if trigger == \.returned, !autoGate\.noteReturn\(now: now\(\)\) \{\s*if timerTask == nil \{ scheduleAuto\(\) \}\s*return\s*\}/);
     // A press: cancels the timer, notes the time; it does not count a send or a refusal as "not confirmed yet".
     const press = model.match(/if pressed \{\s*isWorking = true[\s\S]*?autoGate\.pressed\(now: now\(\)\)/)?.[0] ?? "";
     expect(press).toContain("cancelTimer()");
@@ -197,7 +190,7 @@ describe("the password is in memory only", () => {
   it("LoginModel and the waiting screen touch no Keychain, UserDefaults, file or log", () => {
     for (const file of ["ios/Otodoke/Auth/LoginModel.swift", "ios/Otodoke/Auth/LoginView.swift", "ios/Otodoke/Auth/OnboardingText.swift"]) {
       const src = stripComments(read(file));
-      expect(src, file).not.toMatch(/Keychain|UserDefaults|AppStorage|SceneStorage|FileManager|\.write\(|SecItem|Logger|print\(/);
+      expect(src, file).not.toMatch(/Keychain|UserDefaults|AppStorage|SceneStorage|FileManager|\.write\(|SecItem|Logger|print\(|NSLog|os_log|debugPrint|dump\(/);
     }
   });
 
@@ -209,6 +202,7 @@ describe("the password is in memory only", () => {
 
   it("negative control: a planted Keychain use is caught", () => {
     expect("let q = SecItemAdd(x)").toMatch(/Keychain|UserDefaults|SecItem/);
+    for (const bad of ["NSLog(x)", "os_log(.default, x)", "debugPrint(x)", "dump(x)"]) expect(bad).toMatch(/Logger|print\(|NSLog|os_log|debugPrint|dump\(/);
   });
 });
 
@@ -226,7 +220,10 @@ describe("the wiring", () => {
     // The tabs are not built conditionally (their lists read while the landing is held).
     expect(tabs).not.toMatch(/if landing[^\n]*\{\s*TabView/);
     const keys = stripComments(read("ios/Otodoke/Screens/MainScreens+Keys.swift"));
-    expect(keys).toMatch(/setup\.holdLanding\(\)[\s\S]*await setup\.run\(signIn\)\s*setup\.releaseLanding\(\)/);
+    // The hold is taken with the hand-off, let go once when the key step ends, or by the time limit (30 s) when it stalls.
+    expect(keys).toMatch(/KeySetup\.LandingHold\(setup\)[\s\S]*await setup\.run\(signIn\)\s*limit\.cancel\(\)\s*hold\.release\(\)/);
+    expect(keys).toMatch(/landingSleep\(KeySetup\.landingLimit\)[\s\S]*hold\.timeOut\(\)/);
+    expect(stripComments(read("ios/Otodoke/Crypto/KeySetup.swift"))).toMatch(/static let landingLimit = Duration\.seconds\(30\)/);
   });
 
   it("the sign-in after the mail's link is the existing one (AuthService.signIn), not a new route", () => {
@@ -245,7 +242,8 @@ describe("the wiring", () => {
     }
     const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
     expect(model).toMatch(/private func scheduleAuto\(\)\s*\{\s*cancelTimer\(\)/);
-    expect(model).toMatch(/didSet \{ if !isInFront \{ cancelTimer\(\) \} \}/);
+    // Back in front there is always a timer; in the background none.
+    expect(model).toMatch(/didSet \{ if isInFront \{ scheduleAuto\(\) \} else \{ cancelTimer\(\) \} \}/);
   });
 
   it("leaving the screen stops the timer, the wait for a token and the held password (the Web's waiting screen leaves them running)", () => {
@@ -312,10 +310,11 @@ describe("the amber box after a sign-in whose key did not open or could not be m
   });
 });
 
-describe("the sentence after 「確認しました」 when not confirmed yet", () => {
-  it("is the new one, with 「確認する」 in full-width brackets; the Web still has the earlier one until its change lands", () => {
-    expect(NOT_YET).toBe("まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？");
-    // When the Web has it, this fails: compare iOS with CONFIRM_WAIT.notYet in WORDING and delete NOT_YET.
-    expect((CONFIRM_WAIT.notYet as string) === NOT_YET || (CONFIRM_WAIT.notYet as string) === "まだ確認できていません。メールのリンクを押しましたか？").toBe(true);
+describe("the not-yet box is amber as on the Web", () => {
+  it("signup-form.tsx has border-amber-200 bg-amber-50 text-amber-900 for it; LoginView draws it with Palette's amber", () => {
+    expect(read("src/app/signup/signup-form.tsx")).toMatch(/border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">\s*\{CONFIRM_WAIT\.notYet\}/);
+    const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
+    expect(view).toContain("text == OnboardingText.notConfirmedYet");
+    for (const c of ["amberText", "amberBackground", "amberBorder"]) expect(view).toContain(`Palette.${c}`);
   });
 });

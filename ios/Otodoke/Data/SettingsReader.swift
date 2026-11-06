@@ -15,18 +15,19 @@ struct UserKeyRow: Decodable, Equatable, Sendable {
     }
 }
 
-/// The newest mail with classification = forwarding_confirmation.
+/// A mail with classification = forwarding_confirmation (the newest few are read: CONFIRMATION_LOOKBACK).
 struct ForwardingConfirmationRow: Decodable, Equatable, Sendable {
     let forwardingConfirmUrl: String?
     let textBody: String?
     let htmlBody: String?
-    let sentAt: String?
+    /// The clock the after-check uses (the Web's readConfirmUrl `at`).
+    let createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case forwardingConfirmUrl = "forwarding_confirm_url"
         case textBody = "text_body"
         case htmlBody = "html_body"
-        case sentAt = "sent_at"
+        case createdAt = "created_at"
     }
 }
 
@@ -49,6 +50,9 @@ struct DroppedMailRow: Decodable, Equatable, Identifiable, Sendable {
 struct SettingsReader: Sendable {
     /// Rows per request (PostgREST's cap).
     static let pageSize = 1000
+    /// CONFIRMATION_LOOKBACK of src/app/app/settings/settings-reads.ts: how many confirmation mails are looked
+    /// through (a look-alike without Google's link must not hide the real one).
+    static let confirmationLookback = 10
     /// SAMPLE_PROVIDER_ID of src/lib/mail-keys.ts: the public sample mails.
     static let sampleProviderID = "demo:%"
 
@@ -97,17 +101,39 @@ struct SettingsReader: Sendable {
         )
     }
 
-    /// forwarding_confirm_url, text_body, html_body, sent_at of the newest confirmation (sent_at ↓, 1).
-    /// sent_at.desc with nulls first, as Postgres orders the Web's `.order("sent_at", { ascending: false })`.
-    func forwardingConfirmation() async -> LoadResult<ForwardingConfirmationRow?> {
+    /// The newest confirmation mails (the Web's readConfirmUrl): created_at ↓ (a row without it last, so it can
+    /// never win), at most `confirmationLookback`. The caller takes the first whose link is Google's own
+    /// (SettingsModel.pickApproval); the newest mail alone is not enough.
+    func forwardingConfirmations() async -> LoadResult<[ForwardingConfirmationRow]> {
         guard let me = await provider.currentUserID() else { return .failed }
-        let request = provider.database.from("emails").select("forwarding_confirm_url, text_body, html_body, sent_at")
+        let request = provider.database.from("emails").select("forwarding_confirm_url, text_body, html_body, created_at")
             .eq("user_id", value: me)
             .eq("classification", value: "forwarding_confirmation")
-            .order("sent_at", ascending: false, nullsFirst: true)
-            .limit(1)
+            .order("created_at", ascending: false, nullsFirst: false)
+            .limit(Self.confirmationLookback)
         guard let rows: [ForwardingConfirmationRow] = await Self.decoded(request) else { return .failed }
-        return .loaded(rows.first)
+        return .loaded(rows)
+    }
+
+    /// countArrivedAfter: the ordinary mails (not samples, not confirmations) and screen_events rows that arrived
+    /// after `at` (a created_at). Any failed read fails the whole count.
+    func arrivedAfter(_ at: String) async -> LoadResult<Int> {
+        guard let me = await provider.currentUserID() else { return .failed }
+        func emails() -> PostgrestFilterBuilder {
+            provider.database.from("emails").select("id", head: true, count: .exact)
+                .eq("user_id", value: me)
+                .gt("created_at", value: at)
+        }
+        guard case let .loaded(all) = await Self.count(emails()),
+              case let .loaded(samples) = await Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID)),
+              case let .loaded(confirmations) = await Self.count(emails().eq("classification", value: "forwarding_confirmation")),
+              case let .loaded(screened) = await Self.count(
+                  provider.database.from("screen_events").select("id", head: true, count: .exact)
+                      .eq("user_id", value: me)
+                      .gt("created_at", value: at)
+              )
+        else { return .failed }
+        return .loaded(all - samples - confirmations + screened)
     }
 
     /// Count of emails with StatusRules.unreadFilter(now:).

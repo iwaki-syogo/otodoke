@@ -16,9 +16,8 @@ enum SettingsMenuText {
     static let sampleTitle = "サンプルで試す"
     static let webTitle = "Web で開く"
 
-    /// The subtitle of the 「アカウントの削除」 row: the deletion is the last section of the Web's /app/settings.
-    /// Remove it when the deletion has its own page (/app/settings/delete) and the row opens that.
-    static let deleteSubtitle = "Web の設定の一番下にあります"
+    /// The badge on the 「メールの転送」 row while a Gmail confirmation waits for its approval ((list)/page.tsx).
+    static let approvalBadge = "承認待ち"
 
     /// The badge on the key row while there is no key.
     static let keyNoneBadge = "未設定"
@@ -31,6 +30,9 @@ enum SettingsMenuText {
 
     /// The hint of the 「Web で開く」 row (it leaves the app).
     static let webHint = "Safari で開きます"
+
+    /// The label of the waiting display while the key step of a sign-in runs (VoiceOver).
+    static let loadingLabel = "読み込み中"
 
     /// The value of an opening and closing card (VoiceOver).
     static let disclosureOpen = "開いています"

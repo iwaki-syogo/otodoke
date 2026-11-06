@@ -183,30 +183,32 @@ struct SettingsReaderTests {
     @Test func theNewestConfirmation() async throws {
         let fake = FakeSupabase.make()
         await fake.insert("emails", [
-            SettingsRows.mail(1, ["classification": "forwarding_confirmation", "sent_at": "2026-11-01T00:00:00+00:00", "forwarding_confirm_url": "https://mail-settings.google.com/mail/old"]),
-            SettingsRows.mail(2, ["classification": "forwarding_confirmation", "sent_at": "2026-11-03T00:00:00+00:00", "forwarding_confirm_url": .string(SettingsRows.google)]),
-            SettingsRows.mail(3, ["classification": "shipped", "sent_at": "2026-11-04T00:00:00+00:00"]),
+            SettingsRows.mail(1, ["classification": "forwarding_confirmation", "created_at": "2026-11-01T00:00:00+00:00", "forwarding_confirm_url": "https://mail-settings.google.com/mail/old"]),
+            SettingsRows.mail(2, ["classification": "forwarding_confirmation", "created_at": "2026-11-03T00:00:00+00:00", "forwarding_confirm_url": .string(SettingsRows.google)]),
+            SettingsRows.mail(3, ["classification": "shipped", "created_at": "2026-11-04T00:00:00+00:00"]),
         ])
         let r = try await reader(fake)
-        let got = await r.forwardingConfirmation()
-        #expect(got.value??.forwardingConfirmUrl == SettingsRows.google)
+        let got = await r.forwardingConfirmations()
+        // The newest few, newest created_at first (the Web's readConfirmUrl): the picked one is the newer.
+        #expect(got.value?.first?.forwardingConfirmUrl == SettingsRows.google)
         let q = await fake.requests("GET", "emails").first
         #expect(q?.query("classification") == ["eq.forwarding_confirmation"])
-        #expect((q?.query("order").first ?? "").hasPrefix("sent_at.desc"))
+        #expect((q?.query("order").first ?? "").hasPrefix("created_at.desc"))
+        #expect(q?.query("limit") == ["10"])
         await onlyMine(fake, "emails")
     }
 
     @Test func noConfirmationIsLoadedNil() async throws {
         let fake = FakeSupabase.make()
         let r = try await reader(fake)
-        #expect(await r.forwardingConfirmation() == .loaded(nil))
+        #expect(await r.forwardingConfirmations() == .loaded([]))
     }
 
     @Test func aFailedConfirmationReadIsAFailure() async throws {
         let fake = FakeSupabase.make()
         await fake.fail("GET", "emails", with: .http(500))
         let r = try await reader(fake)
-        #expect(await r.forwardingConfirmation() == .failed)
+        #expect(await r.forwardingConfirmations() == .failed)
     }
 
     @Test func everyDroppedMailNewestFirst() async throws {
@@ -354,7 +356,8 @@ struct SettingsModelTests {
     @Test func anUnreadCountThatCannotBeReadIsNotZero() async throws {
         let s = try await setUp(unread: 0, faults: { await $0.fail(where: { !$0.query("or").isEmpty }, with: .http(500)) })
         #expect(s.model.unread == .failed)
-        #expect(s.model.unreadHeading == "読み込めませんでした")
+        #expect(s.model.unreadHeading == SettingsWebText.unreadCountFailed)
+        #expect(s.model.unreadHeading == "未読のメールの数を読み込めませんでした")
     }
 
     // MARK: each read fails on its own
@@ -419,26 +422,25 @@ struct SettingsModelTests {
     // MARK: task 11: the pages opened on the Web
 
     @Test func theWebPagesAreTheListOfTaskMd() {
-        let settings = "https://otodoke.app/app/settings"
-        #expect(SettingsModel.webLink(.createPassphrase).absoluteString == settings)
-        #expect(SettingsModel.webLink(.changePassphrase).absoluteString == settings)
-        #expect(SettingsModel.webLink(.readWaiting).absoluteString == settings)
-        #expect(SettingsModel.webLink(.markAsParcel).absoluteString == settings)
-        #expect(SettingsModel.webLink(.clearAll).absoluteString == settings)
-        #expect(SettingsModel.webLink(.sample).absoluteString == "https://otodoke.app/app/settings#demo")
+        // One page per item (the Web's dev 84255fc): the button opens the page that holds it.
+        #expect(SettingsModel.webLink(.createPassphrase).absoluteString == "https://otodoke.app/app/settings/password")
+        #expect(SettingsModel.webLink(.changePassphrase).absoluteString == "https://otodoke.app/app/settings/password")
+        #expect(SettingsModel.webLink(.readWaiting).absoluteString == "https://otodoke.app/app/settings/trouble")
+        #expect(SettingsModel.webLink(.markAsParcel).absoluteString == "https://otodoke.app/app/settings/dropped")
+        #expect(SettingsModel.webLink(.clearAll).absoluteString == "https://otodoke.app/app/settings/demo")
+        #expect(SettingsModel.webLink(.sample).absoluteString == "https://otodoke.app/app/settings/demo")
         #expect(SettingsModel.webLink(.openWeb).absoluteString == "https://otodoke.app/app")
         for action in SettingsWebAction.allCases {
             #expect(SettingsModel.webLink(action).scheme == "https", "\(action)")
             #expect(SettingsModel.webLink(action).host() == "otodoke.app", "\(action)")
         }
-        #expect(WebLink.settings.absoluteString == settings)
+        #expect(WebLink.settingsPassword.absoluteString == "https://otodoke.app/app/settings/password")
         #expect(WebLink.app.absoluteString == "https://otodoke.app/app")
     }
 
     @Test func thePrivacyAndDeletionRows() {
         #expect(SettingsModel.webLink(.privacy).absoluteString == "https://otodoke.app/privacy")
-        // The deletion is a section of /app/settings until the Web's split reaches main.
-        #expect(SettingsModel.webLink(.deleteAccount).absoluteString == "https://otodoke.app/app/settings")
+        #expect(SettingsModel.webLink(.deleteAccount).absoluteString == "https://otodoke.app/app/settings/delete")
     }
 
     @Test func theMailHandlingItemsOfM1() {
@@ -586,8 +588,8 @@ struct SettingsModelTests {
         #expect(SettingsView.keyBadge(for: noKeyPlainFails.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .amber))
     }
 
-    @Test func theDeleteRowSaysWhereTheDeletionIs() {
-        #expect(SettingsMenuText.deleteSubtitle == "Web の設定の一番下にあります")
+    @Test func theApprovalBadgeIsTheWebs() {
+        #expect(SettingsMenuText.approvalBadge == "承認待ち")
     }
 
     @Test func theKeyBadgeKeepsItsOtherStates() async throws {

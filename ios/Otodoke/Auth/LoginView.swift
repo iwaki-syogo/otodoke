@@ -231,13 +231,24 @@ struct LoginView: View {
         Task { await model.submit() }
     }
 
+    /// 「まだ確認できていません…」 is amber as on the Web (border-amber-200 bg-amber-50 text-amber-900).
+    private func boxFill(error: Bool, amber: Bool) -> Color {
+        if amber { return Palette.amberBackground }
+        return (error ? Color.red : Color.green).opacity(0.08)
+    }
+
+    @ViewBuilder
     private func messageBox(_ text: String, error: Bool) -> some View {
+        let amber = !error && text == OnboardingText.notConfirmedYet
         Text(text)
             .font(.subheadline)
-            .foregroundStyle(error ? OtodokeColor.errorText : Color.primary)
+            .foregroundStyle(error ? OtodokeColor.errorText : (amber ? Palette.amberText : Color.primary))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
-            .background((error ? Color.red : Color.green).opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(boxFill(error: error, amber: amber), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                if amber { RoundedRectangle(cornerRadius: 8).stroke(Palette.amberBorder) }
+            }
     }
 
     private func primaryButton(_ title: String, enabled: Bool, action: @escaping @MainActor () async -> Void) -> some View {

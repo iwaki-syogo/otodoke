@@ -10,8 +10,24 @@ enum WebLink {
     /// https://otodoke.app/app/parcels/new
     static let newParcel = page("/app/parcels/new")
 
-    /// https://otodoke.app/app/settings#demo
-    static let settingsDemo = page("/app/settings#demo")
+    // The Web's settings are one page per item (origin/dev 84255fc, src/app/app/settings/): each button opens the page
+    // that holds it. The old section hashes (#demo, #gmail-approval) are not used. A vitest checks each path against
+    // the page that exists in src/app/app/settings/.
+
+    /// https://otodoke.app/app/settings/demo (the samples and 「すべての荷物を消す」)
+    static let settingsDemo = page("/app/settings/demo")
+
+    /// https://otodoke.app/app/settings/password (鍵を作る・パスワードを変える・暗号化する)
+    static let settingsPassword = page("/app/settings/password")
+
+    /// https://otodoke.app/app/settings/trouble (未読の「読み取る」)
+    static let settingsTrouble = page("/app/settings/trouble")
+
+    /// https://otodoke.app/app/settings/dropped (「これは荷物」)
+    static let settingsDropped = page("/app/settings/dropped")
+
+    /// https://otodoke.app/app/settings/delete (アカウントの削除)
+    static let settingsDelete = page("/app/settings/delete")
 
     /// https://otodoke.app/app/parcels/{id}/edit
     static func parcelEdit(id: String) -> URL {
@@ -23,19 +39,9 @@ enum WebLink {
         page("/app/parcels/\(segment(id))")
     }
 
-    /// https://otodoke.app/app/settings
-    /// Until the Web's split of the settings reaches main, every Web page the settings buttons open is a section
-    /// of this one. When it does, each button goes to its own page (SettingsModel.webLink):
-    ///   鍵を作る・パスワードを変える・暗号化する -> /app/settings/password
-    ///   読み取る -> /app/settings/trouble,  これは荷物 -> /app/settings/dropped,  すべての荷物を消す -> /app/settings/demo
-    static let settings = page("/app/settings")
-
     /// https://otodoke.app/privacy
     static let privacy = page("/privacy")
 
-    /// https://otodoke.app/app/settings (the deletion sits inside this page for now).
-    /// When the Web's split reaches main, change this to page("/app/settings/delete").
-    static let accountDeletion = page("/app/settings")
     /// https://otodoke.app/app
     static let app = page("/app")
 

@@ -209,6 +209,7 @@ struct MainTabView: View {
             switch landing {
             case .waiting:
                 ProgressView()
+                    .accessibilityLabel(SettingsMenuText.loadingLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(.systemBackground).ignoresSafeArea())
                     .ignoresSafeArea()
@@ -243,7 +244,8 @@ struct MainTabView: View {
             outcome: screens.keySetup?.lastOutcome,
             guideClosed: guideClosed,
             fromConfirmation: screens.keySetup?.lastRunFromConfirmation == true,
-            boxClosed: boxClosed
+            boxClosed: boxClosed,
+            gaveUp: screens.keySetup?.landingGaveUp == true
         )
     }
 

@@ -274,7 +274,7 @@ struct ReviewFix1QuietFailureTests {
             Issue.record("expected a key in use with a failed old-key count, got \(String(describing: m.keyPanel))")
             return
         }
-        #expect(m.oldKeyNote == SettingsModel.failedText)
+        #expect(m.oldKeyNote == SettingsWebText.oldKeyCountFailed)
     }
 
     @Test func noOldKeyMailShowsNothing() async throws {
@@ -306,7 +306,7 @@ struct ReviewFix1QuietFailureTests {
             faults: { await $0.fail(where: { $0.url.lastPathComponent == "emails" && $0.query("classification") == ["eq.forwarding_confirmation"] }, with: .http(500)) }
         )
         #expect(m.confirmURL == nil)
-        #expect(m.approvalNote == SettingsModel.failedText)
+        #expect(m.approvalNote == SettingsWebText.approvalReadFailed)
         // The other reads are not dragged down with it (the confirmation mail is a plain one).
         #expect(m.keyPanel == .present(plainCount: .loaded(1), oldKeyCount: .loaded(0)))
         #expect(m.unread == .loaded(0))

@@ -16,14 +16,15 @@ struct OnboardingScreenshots {
 
     @Test(arguments: Waiting.allCases)
     func waiting(_ scenario: Waiting) async throws {
-        let model = LoginModel(auth: PW.auth(FakeSupabase.make()), launch: LaunchOptions(arguments: []))
-        switch scenario {
-        case .plain: model.debugShowWaiting(email: "qa@example.com")
-        case .notYet: model.debugShowWaiting(email: "qa@example.com", notice: OnboardingText.notConfirmedYet)
-        case .resent: model.debugShowWaiting(email: "qa@example.com", notice: OnboardingText.resent)
-        case .error: model.debugShowWaiting(email: "qa@example.com", error: LoginText.network)
-        }
         for style in [UIUserInterfaceStyle.light, .dark] {
+            // A model for each picture: leaving the screen (the first picture's window closing) lets the wait go.
+            let model = LoginModel(auth: PW.auth(FakeSupabase.make()), launch: LaunchOptions(arguments: []))
+            switch scenario {
+            case .plain: model.debugShowWaiting(email: "qa@example.com")
+            case .notYet: model.debugShowWaiting(email: "qa@example.com", notice: OnboardingText.notConfirmedYet)
+            case .resent: model.debugShowWaiting(email: "qa@example.com", notice: OnboardingText.resent)
+            case .error: model.debugShowWaiting(email: "qa@example.com", error: LoginText.network)
+            }
             try await Self.shoot(LoginView(model: model, withWidget: false), name: "waiting-\(scenario.rawValue)-\(style == .dark ? "dark" : "light")", style: style, height: 900)
         }
     }
