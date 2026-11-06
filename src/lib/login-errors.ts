@@ -54,6 +54,9 @@ export type LoginErrorCode = keyof typeof LOGIN_ERROR_MESSAGES;
 /** Shown for a code this version does not know (an old link, or one somebody typed). */
 export const UNKNOWN_LOGIN_ERROR = "ログインできませんでした。もう一度リンクを送ってください。";
 
+/** The held login button, while the bot check shows its checkbox and waits for the tick. */
+export const TURNSTILE_TICK_PROMPT = "確認のチェックを押してください";
+
 /** Shown in the bot check's place when its script cannot load (blocked, offline, Cloudflare down). */
 export const TURNSTILE_UNAVAILABLE_MESSAGE = "確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。";
 

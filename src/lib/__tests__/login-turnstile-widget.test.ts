@@ -319,6 +319,74 @@ describe("when Turnstile itself answers with an error (review R2b-2)", () => {
   });
 });
 
+describe("when Turnstile asks for a tick (review R2b-1)", () => {
+  type Interactive = { "before-interactive-callback": () => void; "after-interactive-callback": () => void };
+  const opts = (t: ReturnType<typeof fakeTurnstile>) => t.last().options as unknown as Options & Interactive;
+
+  it("marks the field while the checkbox waits, and clears it when it is left, ticked or timed out", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("interactive");
+    expect(tokenSettled(fieldOf(view))).toBe(false);
+    opts(t)["after-interactive-callback"]();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t).callback(TOKEN);
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    expect(fieldOf(view).value).toBe(TOKEN);
+
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t)["timeout-callback"]();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    expect(fieldOf(view).value).toBe("");
+  });
+
+  it("clears it on a retried error, and turns it into unavailable on one Turnstile does not retry", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t)["error-callback"]("600010");
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t)["error-callback"]("110200");
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
+  it("starts the next press without a tick to wait for, after a send that stayed on the page", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    status.pending = true;
+    view.rerender();
+    status.pending = false;
+    view.rerender();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    expect(t.api.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("while CAPTCHA is off (review R2b-3)", () => {
   it("is off today: turning it on in Supabase needs a commit that sets CAPTCHA_ENFORCED", () => {
     expect(CAPTCHA_ENFORCED).toBe(false);

@@ -2,7 +2,8 @@
 
 import { useRef, useState, type MouseEvent } from "react";
 import { useFormStatus } from "react-dom";
-import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, tokenSettled, tokenWaitMs, waitUntil } from "@/lib/turnstile";
+import { TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
+import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, tokenSettled, tokenWaitMs, waitForToken } from "@/lib/turnstile";
 
 /**
  * 「リンクを送る」 with a visible press: a spinner and 「送信中…」 from the press until the form
@@ -15,6 +16,10 @@ import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, tokenSettled, tokenWaitMs, 
  * the token is already there, the check could not load, or the address is not valid yet (the
  * browser says so, and nothing is sent).
  *
+ * When the check shows its checkbox (Managed mode asks some visitors to tick it), the held button
+ * says so instead of spinning (TURNSTILE_TICK_PROMPT). Once CAPTCHA is enforced the wait does not
+ * run out meanwhile (no token comes without the tick); the tick's token sends the form.
+ *
  * Not `disabled` (a pressed button should look pressed, not greyed out). A second press while
  * holding or sending is ignored instead: cancelling the click also cancels Enter in the address
  * field, which the browser turns into a click on this button. Without JavaScript this is a plain
@@ -23,10 +28,12 @@ import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, tokenSettled, tokenWaitMs, 
 export function LoginSubmitButton({ captchaEnforced = CAPTCHA_ENFORCED }: { captchaEnforced?: boolean } = {}) {
   const { pending } = useFormStatus();
   const [holding, setHolding] = useState(false);
+  const [needsTick, setNeedsTick] = useState(false);
   // Refs, not state: a second press can come before React has drawn the first one.
   const held = useRef(false);
   const release = useRef(false);
   const busy = pending || holding;
+  const askForTick = holding && needsTick && !pending;
   return (
     <button
       type="submit"
@@ -48,9 +55,10 @@ export function LoginSubmitButton({ captchaEnforced = CAPTCHA_ENFORCED }: { capt
         event.preventDefault();
         held.current = true;
         setHolding(true);
-        void waitUntil(() => tokenSettled(field), tokenWaitMs(captchaEnforced)).then(() => {
+        void waitForToken(field, { limitMs: tokenWaitMs(captchaEnforced), pauseForTick: captchaEnforced, onNeedsTick: setNeedsTick }).then(() => {
           held.current = false;
           setHolding(false);
+          setNeedsTick(false);
           if (!button.isConnected) return;
           release.current = true;
           button.click();
@@ -58,7 +66,9 @@ export function LoginSubmitButton({ captchaEnforced = CAPTCHA_ENFORCED }: { capt
       }}
       className="flex items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 py-3 text-base font-medium text-white active:opacity-80"
     >
-      {busy ? (
+      {askForTick ? (
+        TURNSTILE_TICK_PROMPT
+      ) : busy ? (
         <>
           <span aria-hidden className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
           送信中…

@@ -76,6 +76,13 @@ export function turnstileErrorIsFatal(code: unknown): boolean {
   return (typeof code === "string" || typeof code === "number") && TURNSTILE_FATAL_ERRORS.includes(String(code));
 }
 
+/**
+ * The token field's `data-turnstile` while Turnstile waits for the visitor to tick its checkbox:
+ * Managed mode shows one to some visitors, between before-interactive-callback and
+ * after-interactive-callback. No token comes until it is ticked.
+ */
+export const TURNSTILE_INTERACTIVE = "interactive";
+
 /** The token field as the login button reads it. */
 type TokenField = { value: string; dataset: Record<string, string | undefined> };
 
@@ -84,25 +91,46 @@ export function tokenSettled(field: TokenField): boolean {
   return field.value !== "" || field.dataset.turnstile === TURNSTILE_UNAVAILABLE;
 }
 
+/** Turnstile is waiting for the visitor to tick its checkbox. */
+export function tokenNeedsTick(field: TokenField): boolean {
+  return field.dataset.turnstile === TURNSTILE_INTERACTIVE;
+}
+
 /**
- * Resolves true as soon as `done()` holds, or false once `timeoutMs` has passed without it.
- * The login button holds a press on this until the token field is settled.
+ * Holds a press until the token field is settled: resolves true when it is, false once `limitMs`
+ * of waiting have passed. `onNeedsTick` hears whenever the checkbox appears or goes, so the button
+ * can ask for the tick. With `pauseForTick` (CAPTCHA enforced) the clock stops while the checkbox
+ * waits: no token comes without the tick, and a send without one would fail. Without it (CAPTCHA
+ * off) the press is sent at the limit anyway, and the mail goes out.
  */
-export function waitUntil(done: () => boolean, timeoutMs = TURNSTILE_WAIT_MS, intervalMs = 100): Promise<boolean> {
+export function waitForToken(
+  field: TokenField,
+  { limitMs, pauseForTick, onNeedsTick, intervalMs = 100 }: { limitMs: number; pauseForTick: boolean; onNeedsTick?: (needsTick: boolean) => void; intervalMs?: number },
+): Promise<boolean> {
   return new Promise((resolve) => {
-    if (done()) {
+    if (tokenSettled(field)) {
       resolve(true);
       return;
     }
-    const finish = (ok: boolean) => {
-      clearInterval(poll);
-      clearTimeout(limit);
-      resolve(ok);
-    };
+    let needsTick = tokenNeedsTick(field);
+    onNeedsTick?.(needsTick);
+    let waited = 0;
     const poll = setInterval(() => {
-      if (done()) finish(true);
+      if (tokenSettled(field)) {
+        clearInterval(poll);
+        resolve(true);
+        return;
+      }
+      if (tokenNeedsTick(field) !== needsTick) {
+        needsTick = !needsTick;
+        onNeedsTick?.(needsTick);
+      }
+      if (!(pauseForTick && needsTick)) waited += intervalMs;
+      if (waited >= limitMs) {
+        clearInterval(poll);
+        resolve(false);
+      }
     }, intervalMs);
-    const limit = setTimeout(() => finish(done()), timeoutMs);
   });
 }
 
