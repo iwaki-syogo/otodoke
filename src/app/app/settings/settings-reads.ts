@@ -32,22 +32,33 @@ export async function readUnreadCount(supabase: Supabase, where: string): Promis
   return count;
 }
 
-/** Gmail's approval link from the newest forwarding confirmation; `failed` when it could not be read. */
+/** How many confirmation mails are looked through: a forged one without Google's link must not hide the real one. */
+const CONFIRMATION_LOOKBACK = 10;
+
+/**
+ * Gmail's approval link: from the newest forwarding confirmation (by created_at, the clock the
+ * after-check uses) whose link is Google's own. Anyone who knows the inbound address can send a
+ * look-alike confirmation without a valid link, so the newest mail alone is not enough: the last
+ * few are looked through. `at` is that mail's created_at. `failed` when it could not be read.
+ */
 export async function readConfirmUrl(supabase: Supabase, where: string): Promise<{ url: string | null; failed: boolean; at: string | null }> {
   const { data, error } = await supabase
     .from("emails")
-    .select("forwarding_confirm_url, text_body, html_body, sent_at, created_at")
+    .select("forwarding_confirm_url, text_body, html_body, created_at")
     .eq("classification", "forwarding_confirmation")
-    .order("sent_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    // created_at is always set; nulls last anyway, so a row without it can never win.
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(CONFIRMATION_LOOKBACK);
   if (error) {
     console.error(`${where} (confirmation):`, error.message);
     return { url: null, failed: true, at: null };
   }
   // Checked again when shown: only Google's own page is ever linked.
-  const url = data ? (forwardingConfirmUrl(data.forwarding_confirm_url ?? "") ?? forwardingConfirmUrl(data.text_body ?? data.html_body ?? "")) : null;
-  return { url, failed: false, at: url && data ? (data.created_at as string | null) : null };
+  for (const row of data ?? []) {
+    const url = forwardingConfirmUrl(row.forwarding_confirm_url ?? "") ?? forwardingConfirmUrl(row.text_body ?? row.html_body ?? "");
+    if (url) return { url, failed: false, at: (row.created_at as string | null) ?? null };
+  }
+  return { url: null, failed: false, at: null };
 }
 
 /** How many mails were dropped, counted by the database (no rows are read); null when it failed. */
