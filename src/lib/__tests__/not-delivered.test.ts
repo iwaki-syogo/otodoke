@@ -257,13 +257,13 @@ describe("NotDeliveredButton", () => {
     expect(textOf(root)).not.toContain(FAILED);
   });
 
-  it("is a client component that calls markNotDelivered in a transition, shows a spinner and cannot be pressed twice", () => {
+  it("is a client component that calls markNotDelivered through the shared pending button (spinner and 「戻しています…」, one press at a time: press-feedback.test.ts)", () => {
     const source = readFileSync(sourcePath, "utf8");
     expect(source.startsWith('"use client";')).toBe(true);
     expect(source).toContain("markNotDelivered");
-    expect(source).toContain("useTransition");
-    expect(source).toMatch(/disabled=\{/);
-    expect(source).toMatch(/animate-spin|<Spinner\b/);
+    expect(source).toMatch(/import\s*\{[^}]*\bPendingButton\b[^}]*\busePendingAction\b[^}]*\}\s*from\s*["']@\/components\/pending-button["']/);
+    expect(source).toMatch(/<PendingButton\b[^>]*\bpending=\{pending\}[^>]*\bpendingLabel="戻しています…"/);
+    expect(source).toMatch(/\brun\(async\b/);
   });
 
   it("says 「更新できませんでした。開き直してください」 when it fails", () => {
@@ -285,5 +285,21 @@ describe("parcel page", () => {
   it.each(["ordered", "shipped", "out_for_delivery", "attempted", "cancelled", "unknown"])("does not offer it on a %s parcel", async (status) => {
     db.find("parcels", TRACKED)!.status = status;
     expect(notDeliveredButtons(await render(TRACKED))).toHaveLength(0);
+  });
+
+  // [Review D2-1] The swipe's button shows only while swiping: the page offers 「届いた」 to everyone.
+  const deliveredButtons = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "button" && textOf(n).trim() === "届いた");
+
+  it.each(["ordered", "shipped", "out_for_delivery", "attempted", "unknown"])("offers 「届いた」 on a %s parcel, styled like 編集", async (status) => {
+    db.find("parcels", TRACKED)!.status = status;
+    const found = deliveredButtons(await render(TRACKED));
+    expect(found).toHaveLength(1);
+    expect(hasClasses(found[0], "rounded-full", "border", "text-sm"), found[0].attrs.class).toBe(true);
+    expect(found[0].attrs.disabled).toBeUndefined();
+  });
+
+  it.each(["delivered", "cancelled"])("does not offer 「届いた」 on a %s parcel", async (status) => {
+    db.find("parcels", TRACKED)!.status = status;
+    expect(deliveredButtons(await render(TRACKED))).toHaveLength(0);
   });
 });

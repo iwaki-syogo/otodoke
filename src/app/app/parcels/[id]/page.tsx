@@ -9,6 +9,7 @@ import { isHttpsUrl } from "@/lib/safe-url";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../../parcel-card";
+import { MarkDeliveredButton } from "./mark-delivered-button";
 import { NotDeliveredButton } from "./not-delivered-button";
 import { TrackingButton } from "./tracking-button";
 import { SealedMail } from "./sealed-mail";
@@ -85,6 +86,10 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
         {parcel.status === "delivered" ? (
           <div className="mt-3">
             <NotDeliveredButton id={parcel.id} />
+          </div>
+        ) : parcel.status !== "cancelled" ? (
+          <div className="mt-3">
+            <MarkDeliveredButton id={parcel.id} />
           </div>
         ) : null}
       </header>

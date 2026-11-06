@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Spinner } from "@/components/spinner";
 import { keyErrorText, unlock, unlockRetired } from "@/lib/crypto/tab-key";
 
 /**
@@ -11,10 +12,13 @@ export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId:
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set before anything is awaited: a second press (or Enter) meanwhile opens nothing more.
+  const opening = useRef(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || !passphrase) return;
+    if (opening.current || !passphrase) return;
+    opening.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -24,6 +28,7 @@ export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId:
     } catch (err) {
       setError(keyErrorText(err));
     } finally {
+      opening.current = false;
       setBusy(false);
     }
   }
@@ -44,8 +49,20 @@ export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId:
           onChange={(e) => setPassphrase(e.target.value)}
           className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
         />
-        <button type="submit" disabled={busy || !passphrase} className="shrink-0 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-          {busy ? "開いています…" : label}
+        <button
+          type="submit"
+          disabled={busy || !passphrase}
+          aria-busy={busy || undefined}
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        >
+          {busy ? (
+            <>
+              <Spinner tone="light" />
+              開いています…
+            </>
+          ) : (
+            label
+          )}
         </button>
       </div>
       {error ? <p className="text-sm text-red-800">{error}</p> : null}

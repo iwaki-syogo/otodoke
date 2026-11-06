@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/spinner";
 import { CATEGORIES, categoryColor, categoryLabel, isCategory, type Category } from "@/lib/category";
 import { setCategory } from "./category-actions";
 
@@ -19,6 +20,8 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const firstRef = useRef<HTMLButtonElement>(null);
+  // Set before anything is awaited: a second tap (iPhone Safari can fire one tap twice) saves nothing more.
+  const saving = useRef(false);
 
   // Once the props move on, the choice has done its job; a later change elsewhere shows as is.
   if (picked && picked.from !== current) setPicked(null);
@@ -35,6 +38,8 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
   }, [open]);
 
   function choose(c: Category) {
+    if (saving.current) return;
+    saving.current = true;
     setPicked({ value: c, from: current });
     setError(null);
     startTransition(async () => {
@@ -50,6 +55,8 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
       } catch {
         setPicked(null);
         setError("保存できませんでした");
+      } finally {
+        saving.current = false;
       }
     });
   }
@@ -103,7 +110,12 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
                 </li>
               ))}
             </ul>
-            {error ? (
+            {pending ? (
+              <p role="status" className="mt-2 flex items-center gap-2 text-sm text-neutral-600">
+                <Spinner />
+                保存しています…
+              </p>
+            ) : error ? (
               <p role="alert" className="mt-2 text-sm text-red-800">
                 {error}
               </p>
@@ -113,8 +125,4 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
       ) : null}
     </>
   );
-}
-
-function Spinner() {
-  return <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" />;
 }

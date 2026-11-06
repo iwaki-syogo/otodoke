@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { SubmitButton } from "@/components/pending-button";
 import { CARRIERS } from "@/lib/carriers";
 import { CATEGORIES, categoryLabel, isCategory } from "@/lib/category";
 import { STATUS_LABEL } from "@/lib/format";
@@ -146,7 +146,9 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
             {state.error}
           </p>
         ) : null}
-        <SubmitButton label={parcel ? "保存" : "登録"} />
+        <SubmitButton pendingLabel="保存しています…" tone="light" className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white">
+          {parcel ? "保存" : "登録"}
+        </SubmitButton>
       </form>
 
       {parcel ? <DeleteForm id={parcel.id} /> : null}
@@ -170,58 +172,11 @@ function DeleteForm({ id }: { id: string }) {
             {state.error}
           </p>
         ) : null}
-        <DeleteButton />
+        {/* Not disabled while sending (a disabled button drops out of the POST): see SubmitButton. */}
+        <SubmitButton pendingLabel="消しています…" className="flex items-center gap-2 self-start rounded-lg border border-red-300 px-3 py-2 text-sm text-red-800">
+          消す
+        </SubmitButton>
       </form>
     </details>
-  );
-}
-
-// While sending, the buttons are marked busy rather than disabled: a disabled button drops out of the POST.
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      aria-disabled={pending}
-      className={`flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white ${pending ? "pointer-events-none opacity-60" : ""}`}
-    >
-      {pending ? (
-        <>
-          <Spinner light />
-          保存しています…
-        </>
-      ) : (
-        label
-      )}
-    </button>
-  );
-}
-
-function DeleteButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      aria-disabled={pending}
-      className={`flex items-center gap-2 self-start rounded-lg border border-red-300 px-3 py-2 text-sm text-red-800 ${pending ? "pointer-events-none opacity-60" : ""}`}
-    >
-      {pending ? (
-        <>
-          <Spinner />
-          消しています…
-        </>
-      ) : (
-        "消す"
-      )}
-    </button>
-  );
-}
-
-function Spinner({ light = false }: { light?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 ${light ? "border-white/40 border-t-white" : "border-neutral-300 border-t-neutral-700"}`}
-    />
   );
 }
