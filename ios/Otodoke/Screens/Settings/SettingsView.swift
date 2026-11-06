@@ -1,32 +1,52 @@
-// The 設定 tab (src/app/app/settings/page.tsx, 2541793), in the Web's order and words: the passphrase card
-// (three states), who is signed in, the forwarding address, unread mail, the Gmail approval, the
-// forwarding guide, the mail that was not read, 「あなたのメールの扱い」, the samples, and signing out.
-// Making or changing the passphrase, 「暗号化する」, 「読み取る」, 「これは荷物」, the samples and
-// clearing everything open the Web (SettingsModel.webLink). Only https pages are opened.
+// The 設定 tab: a list of items, each opening its own page (メールの転送 / パスワードとメールの鍵 / 読まなかった
+// メール / あなたのメールの扱い / うまく届かないとき / サンプルで試す), then 「Web で開く」, who is signed in and
+// signing out. What needs an answer now (the mail waiting to be read, the Gmail approval, a key that could
+// not be read) is drawn at the top; the key row carries a small badge while there is no key or mail is
+// still unencrypted. The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
+// Making or changing the passphrase, 「暗号化する」, 「読み取る」, 「これは荷物」, the samples and clearing
+// everything open the Web (SettingsModel.webLink). Only https pages are opened.
 
 import SwiftUI
 
+/// The pages the list opens.
+enum SettingsPage: Hashable, CaseIterable {
+    case forward, key, dropped, handling, delivery, sample
+}
+
 struct SettingsView: View {
-    @Bindable var model: SettingsModel
+    let model: SettingsModel
     @Environment(\.openURL) private var openURL
-    @State private var showsDropped: Bool
-    /// The guide's Gmail and other cards open from the start (the screen check).
-    private let expandsGuide: Bool
+    @State private var path: [SettingsPage]
+    private let expands: Bool
 
     /// `expanded`: the closed cards (the guide, the mail that was not read) start open.
-    init(model: SettingsModel, expanded: Bool = false) {
-        _model = Bindable(model)
-        _showsDropped = State(initialValue: expanded)
-        expandsGuide = expanded
+    /// `page`: opens that page at once (the screen check).
+    init(model: SettingsModel, expanded: Bool = false, page: SettingsPage? = nil) {
+        self.model = model
+        expands = expanded
+        _path = State(initialValue: page.map { [$0] } ?? [])
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             content
                 .navigationTitle("設定")
                 .navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: SettingsPage.self) { destination($0) }
         }
         .task { await model.onAppear() }
+    }
+
+    @ViewBuilder
+    private func destination(_ page: SettingsPage) -> some View {
+        switch page {
+        case .forward: SettingsForwardPage(model: model, expandsGuide: expands)
+        case .key: SettingsKeyPage(model: model)
+        case .dropped: SettingsDroppedPage(model: model, expanded: expands)
+        case .handling: SettingsHandlingPage()
+        case .delivery: SettingsDeliveryHelpPage()
+        case .sample: SettingsSamplePage()
+        }
     }
 
     @ViewBuilder
@@ -36,18 +56,18 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        keyPanel
-                        signedInNote
+                VStack(alignment: .leading, spacing: 24) {
+                    if case .failed? = model.keyPanel {
+                        SettingsParts.errorBox(SettingsModel.failedText)
                     }
-                    addressSection
-                    unreadSection
-                    approvalSection
-                    ForwardingGuideView(expanded: expandsGuide)
-                    droppedSection
-                    MailHandlingView()
-                    sampleSection
+                    SettingsStatusRows(model: model)
+                    group([.forward, .key, .dropped, .handling, .delivery])
+                    VStack(alignment: .leading, spacing: 0) {
+                        row(.sample)
+                        Divider().padding(.leading, 58)
+                        webRow
+                    }
+                    .modifier(SettingsCard())
                     footer
                 }
                 .padding(.horizontal, 16)
@@ -57,271 +77,88 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: the password card
+    // MARK: the rows
 
-    @ViewBuilder
-    private var keyPanel: some View {
+    private func group(_ pages: [SettingsPage]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(pages.enumerated()), id: \.element) { index, page in
+                if index > 0 { Divider().padding(.leading, 58) }
+                row(page)
+            }
+        }
+        .modifier(SettingsCard())
+    }
+
+    private func row(_ page: SettingsPage) -> some View {
+        NavigationLink(value: page) {
+            SettingsRow(symbol: Self.symbol(page), title: Self.title(page), subtitle: Self.subtitle(page), badge: badge(page), trailing: "chevron.right")
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var webRow: some View {
+        Button { SettingsWeb.open(.openWeb, openURL) } label: {
+            SettingsRow(symbol: "safari", title: SettingsMenuText.webTitle, subtitle: nil, badge: nil, trailing: "arrow.up.right")
+        }
+        .buttonStyle(.plain)
+    }
+
+    static func title(_ page: SettingsPage) -> String {
+        switch page {
+        case .forward: SettingsMenuText.forwardTitle
+        case .key: SettingsMenuText.keyTitle
+        case .dropped: SettingsMenuText.droppedTitle
+        case .handling: SettingsMenuText.handlingTitle
+        case .delivery: SettingsMenuText.deliveryTitle
+        case .sample: SettingsMenuText.sampleTitle
+        }
+    }
+
+    static func subtitle(_ page: SettingsPage) -> String? {
+        switch page {
+        case .forward: SettingsMenuText.forwardSubtitle
+        case .key: SettingsMenuText.keySubtitle
+        case .delivery: SettingsMenuText.deliverySubtitle
+        case .dropped, .handling, .sample: nil
+        }
+    }
+
+    static func symbol(_ page: SettingsPage) -> String {
+        switch page {
+        case .forward: "envelope"
+        case .key: "key"
+        case .dropped: "eye.slash"
+        case .handling: "lock.shield"
+        case .delivery: "questionmark.circle"
+        case .sample: "tray.and.arrow.down"
+        }
+    }
+
+    /// The key row's badge: no key yet, or mail from before the encryption is still readable by the operator.
+    private func badge(_ page: SettingsPage) -> SettingsRow.Badge? {
+        guard page == .key else { return nil }
         switch model.keyPanel {
-        case .failed?, nil:
-            VStack(alignment: .leading, spacing: 8) {
-                heading("パスワード")
-                errorBox(SettingsModel.failedText)
-            }
-        case let .none(plainCount)?:
-            VStack(alignment: .leading, spacing: 8) {
-                heading("パスワード")
-                Text("読み取った後のメールの件名・差出人・本文は、パスワードでしか開けない形で保存します。運営者もデータベースからは読めません。")
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
-                if case let .loaded(n) = plainCount, n > 0 {
-                    Text(verbatim: "暗号化されていない保存済みのメール \(n) 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。")
-                        .font(.subheadline.bold())
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.amberBorder))
-                }
-                if let failure = model.keyStepFailure {
-                    // S3: the key step after the sign-in did not make the key.
-                    errorBox(failure.message)
-                    if failure.signInAgain {
-                        Button {
-                            Task { await model.signOut() }
-                        } label: {
-                            Text(LoginText.signInAgain).font(.subheadline.weight(.medium))
-                        }
-                    }
-                }
-                primaryButton("鍵を作る") { open(.createPassphrase) }
-                    .padding(.top, 4)
-            }
-            .padding(16)
-            .background(SettingsPalette.skyBackground, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(SettingsPalette.skyBorder))
+        case .none?:
+            return .init(text: SettingsMenuText.keyNoneBadge, kind: .sky)
         case let .present(plainCount, _)?:
-            VStack(alignment: .leading, spacing: 12) {
-                heading("パスワード")
-                switch plainCount {
-                case let .loaded(n) where n > 0:
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: "暗号化されていないメールが \(n) 通あります")
-                            .font(.subheadline.bold())
-                        Text("暗号化を始める前に読み取ったメールなどです。押すまでは、運営者が読める形で残ります。")
-                            .font(.subheadline)
-                            .fixedSize(horizontal: false, vertical: true)
-                        primaryButton("暗号化する") { openPage(WebLink.settings) }
-                            .padding(.top, 8)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
-                case .failed:
-                    errorBox(SettingsModel.plainCountFailedText)
-                default:
-                    EmptyView()
-                }
-                if let note = model.oldKeyNote {
-                    // [S2] A failed count shows failedText (not the look of 0).
-                    Text(note)
-                        .font(.subheadline)
-                        .foregroundStyle(note == SettingsModel.failedText ? OtodokeColor.errorText : Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                linkCard("パスワードを変える") { open(.changePassphrase) }
-                FaceIDToggleRow(model: model)
+            if case let .loaded(n) = plainCount, n > 0 {
+                return .init(text: SettingsMenuText.plainBadge(n), kind: .amber)
             }
+            return nil
+        case .failed?, nil:
+            return nil
         }
     }
 
-    @ViewBuilder
-    private var signedInNote: some View {
-        if let email = model.signedInEmail {
-            Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))（自分のアドレスでなければ、何も設定せずにログアウトしてください）")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    // MARK: the address
-
-    private var addressSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            heading("転送先アドレス")
-            switch model.keyPanel {
-            case .failed?, nil:
-                errorBox("鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。")
-            case .none?:
-                secondaryText("鍵ができると、ここに出ます。サンプルは鍵なしで試せます。")
-            case .present?:
-                secondaryText("注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。")
-                switch model.address {
-                case let .loaded(address)?:
-                    HStack(spacing: 8) {
-                        Text(address)
-                            .font(.subheadline.monospaced())
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if model.addressCanBeCopied {
-                            CopyButton(text: address)
-                        }
-                    }
-                    .padding(12)
-                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator)))
-                    Text("あなた専用のアドレスです。知らない人に教えないでください。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .failed?, nil:
-                    errorBox(SettingsModel.failedText)
-                }
-            }
-        }
-    }
-
-    // MARK: unread, approval
-
-    @ViewBuilder
-    private var unreadSection: some View {
-        switch model.unread {
-        case let .loaded(n)? where n > 0:
-            VStack(alignment: .leading, spacing: 4) {
-                heading(model.unreadHeading ?? "")
-                Text("1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。")
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
-                primaryButton("読み取る") { open(.readWaiting) }
-                    .padding(.top, 8)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
-        case .failed?:
-            // iOS-9: not the look of 0 mails.
-            errorBox(model.unreadHeading ?? SettingsModel.failedText)
-        default:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
-    private var approvalSection: some View {
-        if let url = model.confirmURL, SettingsModel.isApprovalPage(url) {
-            VStack(alignment: .leading, spacing: 4) {
-                heading("Gmail の転送を承認してください")
-                Text("Gmail から転送の確認が届いています。承認済みなら、この案内は無視して大丈夫です。")
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
-                primaryButton("承認ページを開く") {
-                    // [M1] Checked again right before it opens: only Google's page, by Foundation's reading.
-                    guard SettingsModel.isApprovalPage(url) else { return }
-                    openPage(url)
-                }
-                .padding(.top, 8)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
-        } else if let note = model.approvalNote {
-            // [S2] The forwarding confirmation could not be read (not the look of "none").
-            Text(note)
-                .font(.subheadline)
-                .foregroundStyle(OtodokeColor.errorText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    // MARK: the mail that was not read
-
-    private var droppedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            heading("読まなかったメール")
-            secondaryText("広告など、買い物に関係なさそうなメールです。本文は保存せず、件名だけ 14 日間残します。")
-            switch model.dropped {
-            case let .loaded(rows)? where !rows.isEmpty:
-                SettingsDisclosure(title: "荷物のメールが混ざっていないか見る（\(rows.count) 通）", isExpanded: $showsDropped) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                            if index > 0 { Divider() }
-                            droppedRow(row)
-                        }
-                    }
-                    .padding(.vertical, -12)
-                }
-            case .loaded?:
-                Text("まだありません")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            case .failed?, nil:
-                errorBox(SettingsModel.failedText)
-            }
-        }
-    }
-
-    private func droppedRow(_ row: DroppedMailRow) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.subject.flatMap { $0.isEmpty ? nil : $0 } ?? "（件名なし）")
-                    .font(.subheadline)
-                    .lineLimit(1)
-                Text(verbatim: "\(row.fromDomain ?? "") ・ \(Format.formatDateTimeJa(row.createdAt, today: Format.todayJst(now: Date())))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if row.flaggedAt != nil {
-                Text("荷物として記録済み")
-                    .font(.caption)
-                    .foregroundStyle(Palette.emeraldText)
-            } else {
-                Button { open(.markAsParcel) } label: {
-                    Text("これは荷物")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-            }
-        }
-        .padding(.vertical, 12)
-    }
-
-    // MARK: samples, the Web, signing out
-
-    private var sampleSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            heading("サンプルで試す")
-            secondaryText("匿名化した実際の注文・発送メールを読み込みます。日付は今日に合わせてずらしてあります。")
-            primaryButton("サンプルのメールを読み込む", fullWidth: true) { open(.sample) }
-                .padding(.top, 4)
-            Button { open(.clearAll) } label: {
-                Text("すべての荷物を消す")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-        }
-        .padding(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
-    }
+    // MARK: who is signed in, signing out
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
-            linkCard("Web で開く") { open(.openWeb) }
             if let email = model.signedInEmail {
-                Text(verbatim: "ログイン中: \(email)")
+                Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))（自分のアドレスでなければ、何も設定せずにログアウトしてください）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Button {
                 Task { await model.signOut() }
@@ -342,84 +179,72 @@ struct SettingsView: View {
             .disabled(model.isSigningOut)
         }
     }
+}
 
-    // MARK: parts
-
-    private func open(_ action: SettingsWebAction) {
-        openPage(SettingsModel.webLink(action))
-    }
-
-    /// Safari, https only.
-    private func openPage(_ url: URL) {
-        guard url.scheme?.lowercased() == "https" else { return }
-        openURL(url)
-    }
-
-    private func heading(_ text: String) -> some View {
-        Text(text)
-            .font(.headline)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func secondaryText(_ text: String) -> some View {
-        Text(text)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineSpacing(3)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func errorBox(_ text: String) -> some View {
-        Text(text)
-            .font(.subheadline)
-            .foregroundStyle(OtodokeColor.errorText)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Palette.errorBackground, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.errorBorder))
-    }
-
-    /// The Web's black button (white in dark mode).
-    private func primaryButton(_ title: String, fullWidth: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color(.systemBackground))
-                .frame(maxWidth: fullWidth ? .infinity : nil)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color.primary, in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// A card row that opens a Web page (the Web's <details> summary row, here a link out).
-    private func linkCard(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+/// White card with the thin line (no shadow), as the parcel cards.
+struct SettingsCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator)))
-            .contentShape(RoundedRectangle(cornerRadius: 16))
-        }
-        .buttonStyle(.plain)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
-/// The Web's sky card (the key to make), with a dark-mode pair.
-private enum SettingsPalette {
-    /// sky-50 / border sky-300
-    static let skyBackground = OtodokeColor.adaptive(light: "#f0f9ff", dark: "#082f49")
-    static let skyBorder = OtodokeColor.adaptive(light: "#7dd3fc", dark: "#0369a1")
+/// One row of the list: a gray rounded square with the symbol, a title, an optional subtitle and badge.
+struct SettingsRow: View {
+    struct Badge {
+        enum Kind { case sky, amber }
+        let text: String
+        let kind: Kind
+    }
+
+    let symbol: String
+    let title: String
+    let subtitle: String?
+    let badge: Badge?
+    let trailing: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 30, height: 30)
+                .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let badge {
+                Text(badge.text)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(badge.kind == .sky ? OtodokeColor.link : Palette.amberText)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(badge.kind == .sky ? SettingsPalette.skyBackground : Palette.amberBackground, in: Capsule())
+                    .overlay(Capsule().stroke(badge.kind == .sky ? SettingsPalette.skyBorder : Palette.amberBorder))
+            }
+            Image(systemName: trailing)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+    }
 }
