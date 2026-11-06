@@ -1,11 +1,15 @@
 import { Fragment } from "react";
+import { countPlainRead } from "@/lib/mail-keys";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { LogoutForm } from "../logout-form";
-import { readActiveKey, readConfirmUrl, readDroppedCount, readUnreadCount } from "../settings-reads";
+import { readActiveKey, readDroppedCount, readApprovalBadge, readUnreadCount } from "../settings-reads";
 import { SettingsHashRedirect } from "../settings-hash-redirect";
 import { RowCard, RowInfo, RowLink, orderRows, type Badge, type IconName } from "../settings-row";
 
 export const metadata = { title: "設定" };
+
+/** A read that failed is not "nothing to do": the row says it could not be checked (iOS's word for the key row). */
+const UNKNOWN: Badge = { text: "確認できません", tone: "red" };
 
 type LinkRow = { kind: "link"; id: string; href: string; icon: IconName; title: string; badge?: Badge | null; action?: boolean };
 type Row = LinkRow | { kind: "info"; id: string; icon: IconName; title: string; value: string } | { kind: "logout"; id: string };
@@ -13,12 +17,28 @@ type Row = LinkRow | { kind: "info"; id: string; icon: IconName; title: string; 
 export default async function SettingsPage() {
   const user = (await getUser())!;
   const supabase = await createClient();
-  const [{ key, failed: keyFailed }, waiting, confirmation, dropped] = await Promise.all([
+  const [{ key, failed: keyFailed }, waiting, confirmation, dropped, plainCount] = await Promise.all([
     readActiveKey(supabase, "settings list"),
     readUnreadCount(supabase, "settings list"),
-    readConfirmUrl(supabase, "settings list"),
+    readApprovalBadge(supabase, user.id, "settings list"),
     readDroppedCount(supabase, "settings list"),
+    // Mail still readable by the operator, from before the encryption; null when it could not be counted.
+    countPlainRead(supabase, user.id).catch((err: unknown) => {
+      console.error("settings list (plain count):", err instanceof Error ? err.message : "unknown error");
+      return null;
+    }),
   ]);
+  // The key row: no key (未設定); with a key, mail not encrypted yet is the most important badge
+  // (as on iOS), and a count that failed is shown as unknown, never as none.
+  const keyBadge: Badge | null = keyFailed
+    ? UNKNOWN
+    : !key
+      ? { text: "未設定", tone: "amber" }
+      : plainCount === null
+        ? UNKNOWN
+        : plainCount > 0
+          ? { text: `未暗号化 ${plainCount.toLocaleString("ja-JP")} 通`, tone: "amber" }
+          : null;
 
   const mailRows: LinkRow[] = [
     {
@@ -27,8 +47,8 @@ export default async function SettingsPage() {
       href: "/app/settings/forwarding",
       icon: "forwarding",
       title: "メールの転送",
-      badge: confirmation.url ? { text: "承認待ち", tone: "amber" } : null,
-      action: Boolean(confirmation.url),
+      badge: confirmation.failed ? UNKNOWN : confirmation.waiting ? { text: "承認待ち", tone: "amber" } : null,
+      action: confirmation.waiting,
     },
     {
       kind: "link",
@@ -36,9 +56,8 @@ export default async function SettingsPage() {
       href: "/app/settings/password",
       icon: "password",
       title: "パスワードとメールの鍵",
-      // Not knowing is not "no key": a failed read shows no badge.
-      badge: !keyFailed && !key ? { text: "未設定", tone: "amber" } : null,
-      action: !keyFailed && !key,
+      badge: keyBadge,
+      action: keyBadge !== null && keyBadge !== UNKNOWN,
     },
     {
       kind: "link",
@@ -46,8 +65,8 @@ export default async function SettingsPage() {
       href: "/app/settings/dropped",
       icon: "dropped",
       title: "読まなかったメール",
-      // A count that failed is shown as no count, never as 0.
-      badge: dropped === null ? null : { text: dropped.toLocaleString("ja-JP"), tone: "neutral" },
+      // A count that failed is shown as unknown, never as 0.
+      badge: dropped === null ? UNKNOWN : { text: dropped.toLocaleString("ja-JP"), tone: "neutral" },
     },
     { kind: "link", id: "mail-handling", href: "/app/settings/mail-handling", icon: "handling", title: "あなたのメールの扱い" },
     {
@@ -56,7 +75,7 @@ export default async function SettingsPage() {
       href: "/app/settings/trouble",
       icon: "trouble",
       title: "うまく届かないとき",
-      badge: waiting ? { text: `未読 ${waiting}`, tone: "amber" } : null,
+      badge: waiting === null ? UNKNOWN : waiting ? { text: `未読 ${waiting}`, tone: "amber" } : null,
       action: Boolean(waiting),
     },
     { kind: "link", id: "demo", href: "/app/settings/demo", icon: "demo", title: "サンプルで試す" },

@@ -14,7 +14,7 @@ import { CONFIRMED_PATH } from "@/lib/login-errors";
 /** Screen 1: the sign-up's own tab, waiting for the confirmation. */
 export const CONFIRM_WAIT = {
   title: "確認のメールを送りました",
-  body: "メールのリンクを押してこの画面に戻ると、自動で次へ進みます。",
+  body: "メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。",
   done: "確認しました",
   resend: "メールを送り直す",
   /** Under 「メールを送り直す」, smaller: the address and the password are let go, and the form is back. */
@@ -28,7 +28,7 @@ export const CONFIRM_WAIT = {
 /** Screen 2: the browser that opened the confirmation link. */
 export const CONFIRMED = {
   title: "確認できました",
-  body: "登録した画面に戻ると、自動で次へ進みます。",
+  body: "登録した画面に戻ってください。",
   logIn: "この画面でログインする",
 } as const;
 
@@ -68,17 +68,28 @@ export function landingAfterSignIn(key: "opened" | "made", next: string): string
 }
 
 /**
- * How often the waiting screen tries a sign-in by itself (the tab shown again): every try counts
- * against the sign-in limits per IP (LOGIN_TRY_LIMITS, 15 in 10 minutes) and Supabase's own, which a
- * person who switches tabs often would use up. A press of 「確認しました」 always tries.
+ * How often the waiting screen tries a sign-in by itself: every try counts against the sign-in
+ * limits per IP (LOGIN_TRY_LIMITS, 15 in 10 minutes) and Supabase's own. A press of 「確認しました」
+ * always tries, and changes none of this unless it signs in.
  *
- * - At most one try every AUTO_SIGN_IN_GAP_MS (this also makes one try of the `visibilitychange`
- *   and the `focus` that one return fires).
- * - After a refusal other than "not confirmed yet", the next try waits AUTO_SIGN_IN_AFTER_FAILURE_MS.
- * - At most AUTO_SIGN_IN_MAX sends per waiting screen; after them only the button tries.
- * No repeating timer: only a return tries, and a return the gap held back gets one try when the gap
- * ends (a single timeout, not a loop).
+ * - The tab shown again (`visibilitychange` to visible, `focus`) tries at once. The two events of
+ *   one return, within AUTO_SIGN_IN_SAME_RETURN_MS of each other, are one try.
+ * - While the tab is shown, one timer tries at the next point of the backoff (the link may have been
+ *   opened on another device, with this tab in sight all the time): AUTO_SIGN_IN_BACKOFF_MS[0]
+ *   after the screen appears, then after each try refused as "not confirmed yet" the next gap of
+ *   the list, its last one again after that. Hidden, the timer is cancelled; shown again, the
+ *   return tries and the timer starts anew.
+ * - After a refusal other than "not confirmed yet", the next try waits at least
+ *   AUTO_SIGN_IN_AFTER_FAILURE_MS.
+ * - At most AUTO_SIGN_IN_MAX sends per waiting screen (returns and the timer together); after them
+ *   only the button tries.
  */
-export const AUTO_SIGN_IN_GAP_MS = 20_000;
+export const AUTO_SIGN_IN_BACKOFF_MS = [20_000, 60_000, 180_000] as const;
+export const AUTO_SIGN_IN_SAME_RETURN_MS = 2_000;
 export const AUTO_SIGN_IN_AFTER_FAILURE_MS = 60_000;
 export const AUTO_SIGN_IN_MAX = 5;
+
+/** The gap before the next timed try, after `refusals` tries by themselves refused as "not confirmed yet". */
+export function autoSignInGapMs(refusals: number): number {
+  return AUTO_SIGN_IN_BACKOFF_MS[Math.min(Math.max(refusals - 1, 0), AUTO_SIGN_IN_BACKOFF_MS.length - 1)];
+}

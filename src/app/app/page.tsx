@@ -3,12 +3,12 @@ import { redirect } from "next/navigation";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
-import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
 import { PageLink } from "./page-link";
+import { readMailSoFar, type MailSoFar } from "./settings/settings-reads";
 import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
@@ -182,25 +182,9 @@ function Section({ title, count, items, empty, swipe = false }: { title: string;
  *   clearing them (「すべての荷物を消す」 takes their mails too) brings the setup question back.
  * Read only for the empty list. A failed read answers "none": the setup question shows, as before.
  */
-type MailSoFar = "none" | "approval" | "received";
-
 async function mailSoFar(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<MailSoFar> {
-  const head = { count: "exact", head: true } as const;
-  const [all, samples, confirmations, screened] = await Promise.all([
-    supabase.from("emails").select("id", head).eq("user_id", userId),
-    supabase.from("emails").select("id", head).eq("user_id", userId).like("provider_email_id", SAMPLE_PROVIDER_ID),
-    supabase.from("emails").select("id", head).eq("user_id", userId).eq("classification", "forwarding_confirmation"),
-    supabase.from("screen_events").select("id", head).eq("user_id", userId),
-  ]);
-  for (const [what, r] of [["emails", all], ["samples", samples], ["confirmations", confirmations], ["screen_events", screened]] as const) {
-    if (r.error) {
-      console.error(`parcels page (${what}):`, r.error.message);
-      return "none";
-    }
-  }
-  const forwarded = (all.count ?? 0) - (samples.count ?? 0) - (confirmations.count ?? 0);
-  if (forwarded > 0 || (screened.count ?? 0) > 0) return "received";
-  return (confirmations.count ?? 0) > 0 ? "approval" : "none";
+  // Shared with the approval cards in 設定 (settings-reads.ts). A failed read answers "none".
+  return (await readMailSoFar(supabase, userId, "parcels page")) ?? "none";
 }
 
 /** The empty list's words and its first button, by what has come in so far. */
@@ -208,7 +192,7 @@ const EMPTY_GUIDE: Record<MailSoFar, { lines: [string, string]; button: string; 
   // Setting up is once, never a mail at a time; the button does not promise the address at once.
   none: { lines: ["メールの自動転送を設定しますか？", "設定は最初の 1 回だけです。"], button: "設定する", href: "/app/settings/forwarding" },
   // Forwarding is there: asking again would send them to set it up twice.
-  received: { lines: ["メールは届いています。", "荷物のメールが届くまで、お待ちください。"], button: "設定を見る", href: "/app/settings" },
+  received: { lines: ["メールは届いています。", "荷物のメールが届くまで、お待ちください。"], button: "設定を見る", href: "/app/settings/trouble" },
   // Worded for both: not approved yet, or approved and no mail since. The button goes to the
   // approval in 設定 (its section is id="gmail-approval"; the loading screen scrolls there once
   // the page is in). Without that id the hash is ignored and it is 設定 as before.

@@ -9,7 +9,7 @@ import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { handOffToLogin } from "@/lib/login-handoff";
-import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX, CONFIRM_WAIT, landingAfterSignIn } from "@/lib/onboarding";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, autoSignInGapMs, landingAfterSignIn } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { pressText, tokenForAutoAttempt, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { inputClass, submitClass } from "@/app/login/form-style";
@@ -18,9 +18,6 @@ import { signInPorts } from "@/app/login/sign-in-ports";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 
 /** The waiting screen's main button: black and full width, as on the other onboarding screens. */
-/** The `focus` that follows a `visibilitychange` of one return comes within this long: not a return of its own. */
-const SAME_RETURN_MS = 2_000;
-
 const primaryClass = "flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 py-4 text-base font-medium text-white active:opacity-80";
 
 /** How long the 「送り直しました」 toast stays. */
@@ -28,7 +25,8 @@ const TOAST_MS = 4_000;
 
 /**
  * What the waiting screen says. `not_yet`: 「確認しました」 was pressed before the link. `key`: signed
- * in, but the key did not open or could not be made (the app can still be used).
+ * in, but the key did not open or could not be made: the waiting is over (the app can still be
+ * used, and the key is made in 設定 › パスワードとメールの鍵).
  */
 type WaitNotice = { kind: "not_yet" } | { kind: "error"; text: string } | { kind: "key"; text: string };
 
@@ -48,14 +46,17 @@ type SignInAnswer = Awaited<ReturnType<typeof signInAndOpenKey>>;
  * Once the mail is sent, the same tab waits for the confirmation (onboarding screen 1): it keeps the
  * address and the password in a ref of this component, nowhere else (no storage, no URL, no
  * cookie), and signs in with them as /login does when the tab is shown again (`visibilitychange`
- * to visible, `focus`) or 「確認しました」 is pressed. No repeating timer: a return the 20 s gap held
- * back gets one try when the gap ends (a single setTimeout, cleared on restart, success and unmount). A sign-in tried by itself says
+ * to visible, `focus`) or 「確認しました」 is pressed, and, while the tab is shown, at the points of
+ * the backoff (AUTO_SIGN_IN_BACKOFF_MS: one timer at a time, cancelled when hidden, and on restart,
+ * success and unmount; the link may have been opened on another device). A sign-in tried by itself says
  * nothing while the address is not confirmed; a press says so. The sign-in that makes the first key
  * goes straight on to the first-run guide (the press stays shown until it is there). A reload
  * forgets the password: /login is the way on then.
  *
- * - The tries by themselves are few (AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_AFTER_FAILURE_MS,
+ * - The tries by themselves are few (AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_AFTER_FAILURE_MS,
  *   AUTO_SIGN_IN_MAX): each one counts against the sign-in limits per IP. A press always tries.
+ * - Signed in, but the key did not open or could not be made: the waiting screen goes, and the
+ *   key's words stay with 「このまま進む」 and the way to 設定 › パスワードとメールの鍵.
  * - `credentials` (an account with another password has the address): it stops waiting and goes to
  *   /login with the address filled in and those words (src/lib/login-handoff.ts; never the password).
  *   Any other refusal stays here with LOGIN_MESSAGES' words, and the next return or press tries again.
@@ -108,8 +109,12 @@ export function SignupForm() {
   const account = useRef<{ email: string; password: string } | null>(null);
   /** Moves on at 「別のアドレスでやり直す」: an answer of an earlier screen is not read. */
   const epoch = useRef(0);
-  /** The tries by themselves: when the last one was, the earliest the next may be, how many were sent. */
-  const auto = useRef({ lastAt: 0, notBefore: 0, sends: 0 });
+  /**
+   * The tries by themselves: when the last one began (or the screen appeared), how many were refused
+   * as "not confirmed yet" (the backoff), the earliest the next may be after another refusal, how
+   * many were sent, when the tab was last shown again, and when 「確認しました」 last sent a sign-in.
+   */
+  const auto = useRef({ lastAt: 0, refusals: 0, notBefore: 0, sends: 0, lastReturnAt: 0, pressedAt: 0 });
   /** 「確認しました」 was pressed while a sign-in tried by itself was on its way: its answer is told. */
   const pressedMeanwhile = useRef(false);
   /** A sign-in is on its way to the server (sent, no answer yet). */
@@ -117,16 +122,33 @@ export function SignupForm() {
   /** 「別のアドレスでやり直す」 was pressed while a sign-in was in flight: it acts on the answer. */
   const restartAfter = useRef(false);
   const [restartPending, setRestartPending] = useState(false);
-  /** The one timer that tries once when the gap after a try ends, for a return the gap held back. */
   /** A request has sent the token in the field (it is used up until spendToken). */
   const tokenSent = useRef(false);
-  const gapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** What the gap timer does (set below, once trySignIn is made): one try by itself, if the tab is shown. */
-  const gapTry = useRef<(() => void) | null>(null);
-  const clearGapTimer = useCallback(() => {
-    if (gapTimer.current !== null) clearTimeout(gapTimer.current);
-    gapTimer.current = null;
+  /** The one timer that tries at the next point of the backoff, while the tab is shown. */
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** What the timer does (set below, once trySignIn is made): one try by itself. */
+  const timedTry = useRef<(() => void) | null>(null);
+  const clearAutoTimer = useCallback(() => {
+    if (autoTimer.current !== null) clearTimeout(autoTimer.current);
+    autoTimer.current = null;
   }, []);
+  /**
+   * The timer set anew for the next point of the backoff: only while waiting, below the maximum,
+   * and with the tab shown. Never two.
+   */
+  const scheduleAuto = useCallback(() => {
+    clearAutoTimer();
+    const a = auto.current;
+    if (!account.current || a.sends >= AUTO_SIGN_IN_MAX) return;
+    if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+    // A press counts as a try for the timing (not for the backoff): no timed try right after its answer.
+    const gap = autoSignInGapMs(a.refusals);
+    const at = Math.max(a.lastAt + gap, a.pressedAt + gap, a.notBefore);
+    autoTimer.current = setTimeout(() => {
+      autoTimer.current = null;
+      timedTry.current?.();
+    }, Math.max(0, at - Date.now()));
+  }, [clearAutoTimer]);
   /** A press of 「確認しました」 that waited for its turn (set below, once trySignIn is made). */
   const queuedPress = useRef<(() => void) | null>(null);
 
@@ -143,7 +165,9 @@ export function SignupForm() {
     running.current = null;
     setActive(null);
     waiters.current.shift()?.run();
-  }, []);
+    // A timed try that met a request on its way was dropped: the next point is set again.
+    scheduleAuto();
+  }, [scheduleAuto]);
 
   /** A press of `task` that is on its way or waiting already: the new press is that one. */
   const pressedAlready = (task: Task) => running.current === task || waiters.current.some((w) => w.task === task);
@@ -206,7 +230,8 @@ export function SignupForm() {
       }
       account.current = { email: typed.email, password: typed.password };
       waitingShown.current = true;
-      auto.current = { lastAt: 0, notBefore: 0, sends: 0 };
+      // The backoff counts from the moment the waiting screen appears.
+      auto.current = { lastAt: Date.now(), refusals: 0, notBefore: 0, sends: 0, lastReturnAt: 0, pressedAt: 0 };
       setPassword("");
       setAgain("");
       setSentTo(typed.email);
@@ -259,7 +284,7 @@ export function SignupForm() {
     restartAfter.current = false;
     setRestartPending(false);
     epoch.current += 1;
-    clearGapTimer();
+    clearAutoTimer();
     account.current = null;
     waitingShown.current = false;
     waiters.current = [];
@@ -279,7 +304,7 @@ export function SignupForm() {
     setError(null);
     // A token a request has already sent is used up (the old request no longer spends it): the new form gets a fresh one.
     if (tokenSent.current) spendToken();
-  }, [clearGapTimer, spendToken]);
+  }, [clearAutoTimer, spendToken]);
 
   /**
    * The sign-in of the waiting screen, as /login's (signInAndOpenKey with the same Actions). Only
@@ -309,23 +334,19 @@ export function SignupForm() {
         const a = auto.current;
         const now = Date.now();
         if (a.sends >= AUTO_SIGN_IN_MAX) return;
-        if (now - a.lastAt < AUTO_SIGN_IN_GAP_MS) {
-          // A return inside the gap: one try when the gap ends (never repeating; it counts like any try by itself).
-          // Not for the second event of the return that made the try (visibilitychange, then focus).
-          if (gapTimer.current === null && now - a.lastAt > SAME_RETURN_MS) {
-            gapTimer.current = setTimeout(() => {
-              gapTimer.current = null;
-              gapTry.current?.();
-            }, a.lastAt + AUTO_SIGN_IN_GAP_MS - now + 1);
-          }
+        // After a refusal other than "not confirmed yet": the timer tries when the wait is over.
+        if (now < a.notBefore) {
+          scheduleAuto();
           return;
         }
-        if (now < a.notBefore) return;
-        clearGapTimer();
+        clearAutoTimer();
         a.lastAt = now;
-        // No token without a tick: nothing is sent, and the next trigger tries again.
+        // No token without a tick: nothing is sent, and the next point (or return) tries again.
         const got = await tokenForAutoAttempt(token.current, { onStale: spendToken });
-        if (!got.send || running.current || epoch.current !== mine || !account.current) return;
+        if (!got.send || running.current || epoch.current !== mine || !account.current) {
+          if (epoch.current === mine && !running.current) scheduleAuto();
+          return;
+        }
         captchaToken = got.token;
       }
       const creds = account.current;
@@ -333,7 +354,12 @@ export function SignupForm() {
       setActive("signin");
       pressedMeanwhile.current = false;
       setSigningIn(true);
-      if (trigger === "press") setNotice(null);
+      if (trigger === "press") {
+        setNotice(null);
+        // The press is the try now: the timed one waiting is cancelled (set again from here when it is over).
+        clearAutoTimer();
+        auto.current.pressedAt = Date.now();
+      }
       let leaving = false;
       const signIn = async (withToken: string | undefined): Promise<SignInAnswer> => {
         if (trigger === "auto") auto.current.sends += 1;
@@ -377,12 +403,15 @@ export function SignupForm() {
         const told = trigger === "press" || pressedMeanwhile.current;
         if (!result.ok) {
           if (result.code === "not_confirmed") {
+            // The backoff grows with each try by itself refused so; a press changes nothing of it.
+            if (trigger === "auto") auto.current.refusals += 1;
             if (told) setNotice({ kind: "not_yet" });
             return;
           }
           if (result.code === "credentials") {
             // Another password has this address: the login, with the address filled in.
             account.current = null;
+            clearAutoTimer();
             handOffToLogin({ email: creds.email, code: "credentials" });
             leaving = true;
             setLeaveFor("/login");
@@ -395,7 +424,7 @@ export function SignupForm() {
         }
         // Signed in: the password is not needed again.
         account.current = null;
-        clearGapTimer();
+        clearAutoTimer();
         if (result.key === "opened" || result.key === "made") {
           leaving = true;
           setLeaveFor(landingAfterSignIn(result.key, safeNextPath(null)));
@@ -414,18 +443,18 @@ export function SignupForm() {
         }
       }
     },
-    [release, spendToken, pressToken, clearGapTimer, startOver],
+    [release, spendToken, pressToken, clearAutoTimer, scheduleAuto, startOver],
   );
 
   useEffect(() => {
     queuedPress.current = () => void trySignIn("press", true);
-    gapTry.current = () => {
+    timedTry.current = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") void trySignIn("auto");
     };
   }, [trySignIn]);
 
-  // No try waits past the screen: leaving it (or the form coming back) cancels the gap's one.
-  useEffect(() => clearGapTimer, [clearGapTimer]);
+  // No try waits past the screen: leaving it cancels the timer.
+  useEffect(() => clearAutoTimer, [clearAutoTimer]);
 
   /**
    * 「別のアドレスでやり直す」: the address and the password let go, the form back, empty. While a
@@ -440,19 +469,34 @@ export function SignupForm() {
     startOver();
   }
 
-  // The tab shown again: the person may have opened the link meanwhile.
+  // The tab shown again: the person may have opened the link meanwhile. Hidden: no timer runs.
+  // Shown all the time: the timer tries at the points of the backoff.
   useEffect(() => {
     if (!sentTo || typeof document === "undefined") return;
-    const onShown = () => {
-      if (document.visibilityState === "visible") void trySignIn("auto");
+    const onReturn = () => {
+      const a = auto.current;
+      const now = Date.now();
+      // The visibilitychange and the focus of one return are one try.
+      if (now - a.lastReturnAt < AUTO_SIGN_IN_SAME_RETURN_MS) return;
+      a.lastReturnAt = now;
+      void trySignIn("auto");
     };
-    document.addEventListener("visibilitychange", onShown);
-    window.addEventListener("focus", onShown);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onReturn();
+      else clearAutoTimer();
+    };
+    const onFocus = () => {
+      if (document.visibilityState === "visible") onReturn();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    scheduleAuto();
     return () => {
-      document.removeEventListener("visibilitychange", onShown);
-      window.removeEventListener("focus", onShown);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+      clearAutoTimer();
     };
-  }, [sentTo, trySignIn]);
+  }, [sentTo, trySignIn, scheduleAuto, clearAutoTimer]);
 
   // The toast goes after a while.
   useEffect(() => {
@@ -462,6 +506,24 @@ export function SignupForm() {
   }, [resent]);
 
   const ticking = (task: Task) => needsTick && active === task;
+
+  if (sentTo && notice?.kind === "key") {
+    // Signed in, the key not opened or not made: the waiting is over. The key's words, the way on,
+    // and where the key is made (設定's row of that name).
+    return (
+      <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+        <p>{notice.text}</p>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <Link href={safeNextPath(null)} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
+            このまま進む
+          </Link>
+          <Link href="/app/settings/password" className="rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
+            パスワードとメールの鍵
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (sentTo) {
     return (
@@ -483,14 +545,6 @@ export function SignupForm() {
             <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
               {notice.text}
             </p>
-          ) : null}
-          {notice?.kind === "key" ? (
-            <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-              <p>{notice.text}</p>
-              <Link href={safeNextPath(null)} className="mt-3 inline-block rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
-                このまま進む
-              </Link>
-            </div>
           ) : null}
           <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
             {resending && ticking("resend") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
