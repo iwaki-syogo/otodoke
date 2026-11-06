@@ -71,12 +71,14 @@ const formsWithPassphrase = (html: string) => findAll(parseHtml(html), (n) => n.
 
 async function screens(): Promise<Record<string, string>> {
   const { LoginForm } = await import("@/app/login/login-form");
+  const { SignupForm } = await import("@/app/signup/signup-form");
   const { UnlockForm } = await import("@/app/app/unlock-form");
   const { MailKeyPanel } = await import("@/app/app/settings/mail-key-panel");
   const { SealedMail } = await import("@/app/app/parcels/[id]/sealed-mail");
   const html = (el: ReactElement) => renderToStaticMarkup(el);
   return {
     login: html(createElement(LoginForm, { next: "/app" })),
+    signup: html(createElement(SignupForm)),
     unlock: html(createElement(UnlockForm, { userId: USER })),
     "settings without a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: null, currentKeyId: null, plainCount: 2, oldKeyCount: 0 } })),
     "settings with a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: "2026-11-06T00:00:00Z", currentKeyId: "a".repeat(32), plainCount: 2, oldKeyCount: 1 } })),
@@ -88,6 +90,7 @@ describe("passphrase forms: nothing is sent when submitted before the script run
   it("finds the forms it is about (login, unlock, new key, change, forgotten)", async () => {
     const s = await screens();
     expect(formsWithPassphrase(s.login)).toHaveLength(1);
+    expect(formsWithPassphrase(s.signup)).toHaveLength(1);
     expect(formsWithPassphrase(s.unlock)).toHaveLength(1);
     expect(formsWithPassphrase(s["settings without a key"])).toHaveLength(1);
     // Unlock, change, make a new one (forgotten).
@@ -163,7 +166,7 @@ describe("passphrase forms: the source", () => {
     const withInputs = files()
       .filter((f) => jsxInputs(f.source).some((i) => PASSPHRASE_INPUT.test(i)))
       .map((f) => path.relative(process.cwd(), f.file));
-    expect(withInputs.sort()).toEqual(["src/app/app/settings/mail-key-panel.tsx", "src/app/app/unlock-form.tsx", "src/app/login/login-form.tsx"]);
+    expect(withInputs.sort()).toEqual(["src/app/app/settings/mail-key-panel.tsx", "src/app/app/unlock-form.tsx", "src/app/login/login-form.tsx", "src/app/signup/signup-form.tsx"]);
   });
 
   it("no passphrase input has a name; their forms are method=post without an action", () => {

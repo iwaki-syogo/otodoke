@@ -4,6 +4,7 @@
  * The key steps of password-v1 in the browser (docs/crypto/password-v1.md): one password signs in
  * and opens the key that opens the stored mail.
  *
+ *   signUpWithPassword    /signup: the account, with the login secret (the key comes at the first sign-in)
  *   signInAndOpenKey      /login, and 設定 for a user with no key: sign in, then open the key in use
  *                         or, when there is none, make the first one
  *   openKeyAgain          a reloaded or new tab: open the key in use again (Supabase Auth is not asked)
@@ -30,8 +31,8 @@ import { challengeAad, openBytes, type EnvelopeV1, type PrivateRecipient } from 
 import { createWrappedKey, openStoredKeyWithKek, rewrapStoredKey, type StoredKey } from "./key-wrap";
 import { authSecretHex, deriveMaster, emailNorm, kekFor, newKdfSalt, normalizePassword } from "./password-v1";
 import { forgetTabKey, setTabKey } from "./tab-key";
-import { KEY_SESSION_STALE, keyStepCode, loginMessage, type ChangeSecretResult, type FinishResetResult, type LoginCode, type SignInResult } from "@/lib/login-errors";
-import type { ChangeSecretInput, FinishResetInput, SignInInput } from "@/lib/login-input";
+import { KEY_SESSION_STALE, keyStepCode, loginMessage, type ChangeSecretResult, type FinishResetResult, type LoginCode, type SignInResult, type SignUpResult } from "@/lib/login-errors";
+import type { ChangeSecretInput, FinishResetInput, SignInInput, SignUpInput } from "@/lib/login-input";
 import type { KeyActivation, KeyRead, KeyRegistration, KeyResult, KeyRewrap, StoredKeyColumns } from "@/lib/mail-keys";
 
 // ---- The Server Actions the steps call ----------------------------------------------------------
@@ -71,26 +72,15 @@ export interface ResetPorts {
 // ---- What the steps come to -----------------------------------------------------------------------
 
 /**
- * The codes of src/lib/login-errors.ts (the words are LOGIN_MESSAGES'), and the browser's own:
- * - `wrong_password`: the key in use does not open with this password (opening it again).
- * - `wrong_current_password`: the key in use opens with neither password given to a change, or
- *   Supabase refused the current one.
- * - `no_key`: there is no key in use to open.
- * - `address_mismatch`: the address typed on /login and the session's are not the same for
- *   password-v1, so no key is made (a later step would make another master).
+ * Every answer is a code of src/lib/login-errors.ts, with its words in LOGIN_MESSAGES: the server's,
+ * and four the browser finds itself (wrong_password, wrong_current_password, no_key,
+ * address_mismatch).
  */
-export type FlowCode = LoginCode | "wrong_password" | "wrong_current_password" | "no_key" | "address_mismatch";
+export type FlowCode = LoginCode;
 
-const FLOW_MESSAGES: Record<Exclude<FlowCode, LoginCode>, string> = {
-  wrong_password: "パスワードが違います。",
-  wrong_current_password: "今のパスワードが違います。",
-  no_key: "メールの鍵がまだありません。設定で作れます。",
-  address_mismatch: "このアカウントでは、メールの鍵を作れませんでした。",
-};
-
-/** The words for a code. */
+/** The words for a code (LOGIN_MESSAGES; the unknown-code words for anything else). */
 export function flowMessage(code: FlowCode): string {
-  return Object.hasOwn(FLOW_MESSAGES, code) ? FLOW_MESSAGES[code as keyof typeof FLOW_MESSAGES] : loginMessage(code);
+  return loginMessage(code);
 }
 
 export type Failed = { ok: false; code: FlowCode };
@@ -237,6 +227,19 @@ export async function signInAndOpenKey(input: { email: string; password: string;
     } catch {
       return { ok: true, userId: signIn.userId, key: "failed", code: "other" };
     }
+  } catch {
+    return { ok: false, code: "other" };
+  }
+}
+
+/**
+ * Make an account with the address and the password: only the login secret is sent. No key yet:
+ * the confirmation link comes first, and the key is made at the first sign-in (decision 6).
+ */
+export async function signUpWithPassword(input: { email: string; password: string; captchaToken?: string }, ports: { signUpWithAuthSecret: (input: SignUpInput) => Promise<SignUpResult> }): Promise<SignUpResult | Failed> {
+  try {
+    const master = await deriveMaster(input.email, input.password);
+    return await ports.signUpWithAuthSecret({ email: input.email, authSecret: await authSecretHex(master), captchaToken: input.captchaToken });
   } catch {
     return { ok: false, code: "other" };
   }
