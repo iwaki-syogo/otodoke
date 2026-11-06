@@ -133,6 +133,19 @@ describe("a sealed mail", () => {
     expect(String(subjectLine(real).props.className)).not.toContain("text-neutral");
   });
 
+  it("an opened mail whose subject is null, or only invisible characters, says NO_SUBJECT_TEXT", async () => {
+    mocks.key = KEY;
+    mocks.readSealedMail.mockResolvedValue({ ok: true, envelope: envelope(KEY.keyId) });
+    const subjectLine = (view: Mounted) => view.host((h) => h.type === "p" && String(h.props.className).includes("leading-snug"));
+    for (const subject of [null, "\u200b", "\u200b \ufeff\u200e"]) {
+      mocks.openMail.mockResolvedValue({ subject, from_name: null, from_address: "shop@example.test", text: "本文", html: null });
+      const view = sealed();
+      await vi.waitFor(() => expect(view.hosts((h) => h.type === "pre")).toHaveLength(1));
+      expect(textOfHost(subjectLine(view))).toBe(NO_SUBJECT_TEXT);
+      expect(String(subjectLine(view).props.className)).toContain("text-neutral-500");
+    }
+  });
+
   it("before it is opened (no key in this tab, or still opening) it never says it has no subject", async () => {
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { createElement } = await import("react");

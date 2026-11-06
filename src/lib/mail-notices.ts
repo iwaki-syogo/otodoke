@@ -1,3 +1,5 @@
+import { stripInvisible } from "@/lib/text/html-to-text";
+
 /**
  * Sentences that more than one place tells in the same words, kept here once so that the screens,
  * the mails and the documents cannot drift apart unseen. Each constant names where it is used; the
@@ -16,6 +18,15 @@ export const NO_BODY_TEXT = "本文はありません。";
  * open yet: its subject is in the envelope, not unknown.
  */
 export const NO_SUBJECT_TEXT = "件名はありません。";
+
+/**
+ * Whether a subject counts as none: empty, blank, or only characters that draw nothing (U+200B and
+ * the like, which trim() keeps). The one test behind NO_SUBJECT_TEXT; the subject shown is still
+ * the string as it came.
+ */
+export function isBlankSubject(subject: string | null | undefined): boolean {
+  return stripInvisible(subject ?? "").trim() === "";
+}
 
 /**
  * What a reset costs (decision 3). The key that opens the stored mail is wrapped with a key made

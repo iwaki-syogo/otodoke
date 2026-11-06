@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isRememberableDomain } from "@/lib/screen-senders";
 import { formatDateTimeJa } from "@/lib/format";
-import { NO_SUBJECT_TEXT } from "@/lib/mail-notices";
+import { NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
 import { readAll } from "@/lib/supabase/read-all";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import type { Tables } from "@/lib/db/database.types";
@@ -87,7 +87,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
               {dropped.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className={d.subject?.trim() ? "truncate text-sm" : "truncate text-sm text-neutral-500"}>{d.subject?.trim() ? d.subject : NO_SUBJECT_TEXT}</p>
+                    <p className={!isBlankSubject(d.subject) ? "truncate text-sm" : "truncate text-sm text-neutral-500"}>{!isBlankSubject(d.subject) ? d.subject : NO_SUBJECT_TEXT}</p>
                     <p className="truncate text-xs text-neutral-500">
                       {d.from_domain} ・ {formatDateTimeJa(d.created_at)}
                     </p>

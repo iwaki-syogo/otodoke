@@ -6,7 +6,7 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
 import { faceToFace, faceToFaceAssumed } from "@/lib/match";
 import { isHttpsUrl } from "@/lib/safe-url";
-import { NO_BODY_TEXT, NO_SUBJECT_TEXT } from "@/lib/mail-notices";
+import { NO_BODY_TEXT, NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../../parcel-card";
@@ -220,7 +220,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                     </>
                   ) : (
                     <>
-                      {email.subject?.trim() ? (
+                      {!isBlankSubject(email.subject) ? (
                         <p className="mt-1 text-sm leading-snug">{email.subject}</p>
                       ) : (
                         <p className="mt-1 text-sm leading-snug text-neutral-500">{NO_SUBJECT_TEXT}</p>
