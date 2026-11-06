@@ -58,12 +58,30 @@ struct KeyHelpTests {
 
     // MARK: the unlock
 
+    /// Negative control (the orchestrator's decision 11/6): a typed password that does not open is a typo as far as
+    /// the unlock can tell: 「パスワードが違います」 only, never the Web's login.
     @Test func aPasswordThatDoesNotOpenOffersTheWebsLogin() async throws {
         let w = try UnlockWorld()
         _ = await w.model.key()
         #expect(await w.model.submit(password: "ちがうパスワードです", email: UnlockWorld.email) == false)
         #expect(w.model.message == UnlockModel.wrongPassphraseText)
-        #expect(w.model.help == .webLogin)
+        #expect(w.model.help == nil)
+        #expect(w.model.shownHelp == nil)
+    }
+
+    /// The Web's login is offered only from the key step: the password that signed in was checked by the server,
+    /// so a key it does not open is wrapped for another password. A typo afterwards does not take it away.
+    @Test func onlyTheKeyStepOffersTheWebsLogin() async throws {
+        let k = try await KeySetupTests.World()
+        _ = try await k.plantKeyInUse(master: Data(repeating: 9, count: 32))
+        #expect(await k.setup.run(k.signIn) == .needsWebLogin)
+        let w = try UnlockWorld()
+        w.model.keySetup = k.setup
+        _ = await w.model.key()
+        #expect(w.model.shownHelp == .webLogin)
+        _ = await w.model.submit(password: "ちがうパスワードです", email: UnlockWorld.email)
+        #expect(w.model.message == UnlockModel.wrongPassphraseText)
+        #expect(w.model.shownHelp == .webLogin)
     }
 
     @Test func theRightPasswordClearsTheHelp() async throws {

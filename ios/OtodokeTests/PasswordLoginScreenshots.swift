@@ -52,6 +52,19 @@ struct PasswordLoginScreenshots {
         }
     }
 
+    @Test func unlockAfterTheKeyStepAskedForTheWebsLogin() async throws {
+        let k = try await KeySetupTests.World()
+        _ = try await k.plantKeyInUse(master: Data(repeating: 9, count: 32))
+        await k.setup.run(k.signIn)
+        let w = try UnlockWorld()
+        w.model.keySetup = k.setup
+        _ = await w.model.key()
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let view = VStack { UnlockView(model: w.model) }.padding(16).frame(maxHeight: .infinity, alignment: .top)
+            try await Self.shoot(view, name: "pw-unlock-weblogin-\(style == .dark ? "dark" : "light")", style: style, height: 400)
+        }
+    }
+
     @Test func unlockWithoutAKeyRow() async throws {
         let w = try UnlockWorld(key: .loaded(nil))
         _ = await w.model.key()
