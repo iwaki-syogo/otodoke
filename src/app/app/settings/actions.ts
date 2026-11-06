@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { loadDemoEntries } from "@/lib/demo";
 import { processInboundEmail } from "@/lib/pipeline";
+import { isRememberableDomain } from "@/lib/screen-senders";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
 import { settingsErrorPath } from "@/lib/settings-errors";
@@ -95,8 +96,8 @@ export async function readWaitingMail(): Promise<void> {
           text: m.text_body,
           html: m.html_body,
         },
-        // Without a Message-ID the pipeline cannot find this row again, so it would be duplicated:
-        // it replaces this row instead, removed only once nothing can fail before the new one is stored.
+        // Without a Message-ID the pipeline cannot find this row again, so it is named: the mail is
+        // read again in this row, in place (never removed and stored anew, so it cannot be lost).
         m.message_id ? {} : { replacesEmailId: m.id },
       );
       if (outcome.kind === "over_limit") break;
@@ -114,22 +115,51 @@ export async function readWaitingMail(): Promise<void> {
   redirect("/app/settings");
 }
 
-/** The user says a dropped mail was a parcel notice. Later mail from the same sender is read. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The user says a dropped mail was a parcel notice. Later mail from the same sender's domain is
+ * no longer dropped by the free rules alone: the cheap Claude check decides (src/lib/pipeline.ts).
+ * A domain many people have their own address on (gmail.com, ...) is not remembered at all
+ * (src/lib/screen-senders.ts); the page says so. The mail itself was not kept either way, so the
+ * page offers to register the parcel by hand.
+ */
 export async function markWronglyDropped(formData: FormData): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
   const id = String(formData.get("id") ?? "");
-  const { error } = await createAdminClient()
-    .from("screen_events")
-    .update({ flagged_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("user_id", user.id);
-  revalidatePath("/app/settings");
-  if (error) {
-    console.error("markWronglyDropped:", error.message);
-    redirect(settingsErrorPath("flag_failed"));
+  let outcome: "remembered" | "shared" | "failed" = "failed";
+  if (UUID.test(id)) {
+    const db = createAdminClient();
+    const { data: row, error: readError } = await db.from("screen_events").select("from_domain").eq("id", id).eq("user_id", user.id).eq("decision", "dropped").maybeSingle();
+    if (readError) console.error("markWronglyDropped (lookup):", readError.message);
+    else if (row && !isRememberableDomain(row.from_domain)) outcome = "shared";
+    else if (row) {
+      const { error } = await db.from("screen_events").update({ flagged_at: new Date().toISOString() }).eq("id", id).eq("user_id", user.id);
+      if (error) console.error("markWronglyDropped:", error.message);
+      else outcome = "remembered";
+    }
   }
-  redirect("/app/settings?flagged=1");
+  revalidatePath("/app/settings");
+  redirect(`/app/settings?flagged=${outcome}`);
+}
+
+/**
+ * 「外す」 on a remembered sender: its mail goes through the free rules again, and its marked rows
+ * fall back to the 14-day rule like any dropped mail (they are removed once that old).
+ */
+export async function forgetSender(formData: FormData): Promise<void> {
+  const user = await getUser();
+  if (!user) redirect("/login");
+  const domain = String(formData.get("domain") ?? "");
+  let ok = false;
+  if (domain && domain.length <= 255) {
+    const { error } = await createAdminClient().from("screen_events").update({ flagged_at: null }).eq("user_id", user.id).eq("from_domain", domain).not("flagged_at", "is", null);
+    if (error) console.error("forgetSender:", error.message);
+    else ok = true;
+  }
+  revalidatePath("/app/settings");
+  redirect(`/app/settings?unflagged=${ok ? "done" : "failed"}`);
 }
 
 /** Remove everything this user has (used to reset a demo account). */

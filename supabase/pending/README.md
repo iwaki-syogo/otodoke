@@ -15,5 +15,7 @@ Now waiting:
 - `20261106130000_mail_sealed_after_processing.sql` — refuses a read mail left in plaintext. Apply only
   after the sealing code is in production and its verify file says so (see the file's header).
 - `20261114090000_drop_unsealed_plaintext.sql` — decision 7: on 2026-11-14, drop the plaintext subject,
-  sender and body that users without a key left behind (one data change, no schema). Run its verify
-  file's part "before" first and only with the owner's YES on the day; nothing it removes comes back.
+  sender and body that users without a key left behind (one data change, no schema). Only with the
+  owner's YES on the day; nothing it removes comes back. Its verify files each return one verdict
+  row: `supabase/verify/20261114090000_drop_unsealed_plaintext.before.sql` and `.count-control.sql`
+  first, `.after.sql` right after.

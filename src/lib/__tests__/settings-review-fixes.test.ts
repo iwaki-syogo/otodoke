@@ -35,7 +35,7 @@ vi.mock("@/lib/supabase/server", () => ({
   getUser: async () => ({ id: USER, email: "qa@example.com" }),
 }));
 vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => ADDRESS }));
-vi.mock("@/app/app/settings/actions", () => ({ loadDemo: vi.fn(), readWaitingMail: vi.fn(), markWronglyDropped: vi.fn(), clearAllParcels: vi.fn() }));
+vi.mock("@/app/app/settings/actions", () => ({ loadDemo: vi.fn(), readWaitingMail: vi.fn(), markWronglyDropped: vi.fn(), forgetSender: vi.fn(), clearAllParcels: vi.fn() }));
 vi.mock("@/app/app/settings/key-actions", () => ({
   registerMailKey: vi.fn(),
   activateMailKey: vi.fn(),
@@ -127,11 +127,12 @@ describe("/app/settings: the sample mails are not counted as readable by the ope
 });
 
 describe("/app/settings: the signed-in address and the Gmail note", () => {
-  it("shows which account is signed in right below the passphrase panel", async () => {
+  it("shows which account is signed in right below the passphrase panel, without a standing note in brackets (R2-7)", async () => {
     const root = await render();
     const lines = findAll(root, (n) => n.tag === "p" && textOf(n).startsWith("ログイン中: qa@example.com"));
     expect(lines.length).toBeGreaterThanOrEqual(1);
-    expect(textOf(lines[0])).toContain("自分のアドレスでなければ");
+    expect(textOf(lines[0]).trim()).toBe("ログイン中: qa@example.com");
+    expect(textOf(root)).not.toContain("自分のアドレスでなければ");
   });
 
   it("does not promise that private mail never arrives", async () => {
