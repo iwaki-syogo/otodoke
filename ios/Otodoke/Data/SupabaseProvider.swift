@@ -177,13 +177,21 @@ final class SupabaseProvider: Sendable {
         ))
     }
 
-    /// TDD-STUB(task 6) iOS-10: the session the app's provider uses for PostgREST and Auth. Mail bodies
-    /// come back in its answers, so nothing of them may stay in a disk cache (ephemeral, or no urlCache).
-    static func liveURLSession() -> URLSession { .shared }
+    /// iOS-10: the session the app's provider uses for PostgREST and Auth. Mail bodies come back in its
+    /// answers, so nothing of them may stay in a disk cache: ephemeral (memory only), with no cache at
+    /// all on top. Made once, so every provider shares one connection pool.
+    static func liveURLSession() -> URLSession { liveSession }
 
-    /// The app's provider: URLSession.shared and the Keychain.
+    private static let liveSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration)
+    }()
+
+    /// The app's provider: the session without a disk cache and the Keychain.
     static func live(config: AppConfig) -> SupabaseProvider {
-        SupabaseProvider(config: config, storage: KeychainSessionStorage())
+        SupabaseProvider(config: config, urlSession: liveURLSession(), storage: KeychainSessionStorage())
     }
 
     /// The signed-in user's id (lowercase UUID text), or nil when signed out.

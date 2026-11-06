@@ -1,4 +1,5 @@
 import Foundation
+import ObjectiveC
 @testable import Otodoke
 
 /// A small stand-in for Supabase that keeps database state, reached through StubURLProtocol.
@@ -664,8 +665,13 @@ final class InMemorySessionStorage: SessionStorage, @unchecked Sendable {
 /// Signs in through the app's own AuthService against the fake (verify with the good code).
 @MainActor
 enum TestSession {
+    private nonisolated(unsafe) static let keptFakeKey = UnsafeRawPointer(UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1))
+
     static func signedIn(_ fake: FakeSupabase, storage: InMemorySessionStorage = InMemorySessionStorage()) async throws -> (provider: SupabaseProvider, auth: AuthService) {
         let provider = SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage)
+        // The provider keeps its fake alive: a test that lets go of the fake but keeps a writer or a
+        // model made from this provider still reaches it (the fake's deinit unregisters its host).
+        objc_setAssociatedObject(provider, keptFakeKey, fake, .OBJC_ASSOCIATION_RETAIN)
         let auth = AuthService(provider: provider)
         try await auth.verifyCode(email: FakeSupabase.email, code: FakeSupabase.goodCode)
         return (provider, auth)
