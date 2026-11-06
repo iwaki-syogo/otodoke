@@ -10,7 +10,8 @@ import { inputClass, submitClass } from "@/app/login/form-style";
 import { readMailKey, registerMailKey } from "@/app/app/settings/key-actions";
 import { finishReset } from "./actions";
 
-const PORTS: ResetPorts = { readMailKey, registerMailKey, finishReset };
+/** The Actions a reset calls, read when a press needs them. */
+const ports = (): ResetPorts => ({ readMailKey, registerMailKey, finishReset });
 
 /** A reset that cannot go on from this page: the mail's link has to be opened again. */
 const NEEDS_NEW_LINK: ReadonlySet<FlowCode> = new Set(["reset_expired", "stale_session", "signed_out"]);
@@ -45,7 +46,7 @@ export function ResetForm({ email, userId }: { email: string; userId: string }) 
     setError(null);
     let leaving = false;
     try {
-      const result = await finishPasswordReset({ email, userId, password }, PORTS);
+      const result = await finishPasswordReset({ email, userId, password }, ports());
       if (result.ok) {
         leaving = true;
         setPassword("");

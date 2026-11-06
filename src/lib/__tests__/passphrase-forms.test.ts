@@ -81,10 +81,10 @@ async function screens(): Promise<Record<string, string>> {
     login: html(createElement(LoginForm, { next: "/app" })),
     signup: html(createElement(SignupForm)),
     reset: html(createElement(ResetForm, { email: "someone@example.test", userId: USER })),
-    unlock: html(createElement(UnlockForm, { userId: USER })),
-    "settings without a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: null, currentKeyId: null, plainCount: 2, oldKeyCount: 0 } })),
-    "settings with a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: "2026-11-06T00:00:00Z", currentKeyId: "a".repeat(32), plainCount: 2, oldKeyCount: 1 } })),
-    "sealed mail": html(createElement(SealedMail, { userId: USER, emailId: "e1", fromDomain: "example.test", notes: null, confidence: null })),
+    unlock: html(createElement(UnlockForm, { userId: USER, email: "qa@example.com" })),
+    "settings without a key": html(createElement(MailKeyPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: null, currentKeyId: null, plainCount: 2, oldKeyCount: 0 } })),
+    "settings with a key": html(createElement(MailKeyPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: "2026-11-06T00:00:00Z", currentKeyId: "a".repeat(32), plainCount: 2, oldKeyCount: 1 } })),
+    "sealed mail": html(createElement(SealedMail, { userId: USER, email: "qa@example.com", emailId: "e1", fromDomain: "example.test", notes: null, confidence: null })),
   };
 }
 

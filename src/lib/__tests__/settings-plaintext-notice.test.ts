@@ -26,7 +26,7 @@ const NOTICE = "11 月 14 日に件名・差出人・本文を消します。荷
 const COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
 
 const panel = (over: { keyCreatedAt?: string | null; plainCount: number | null }) =>
-  parseHtml(renderToStaticMarkup(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: over.keyCreatedAt ?? null, currentKeyId: over.keyCreatedAt ? "a".repeat(32) : null, plainCount: over.plainCount, oldKeyCount: 0 } })));
+  parseHtml(renderToStaticMarkup(createElement(MailKeyPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: over.keyCreatedAt ?? null, currentKeyId: over.keyCreatedAt ? "a".repeat(32) : null, plainCount: over.plainCount, oldKeyCount: 0 } })));
 
 const redBoxes = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "p" && textOf(n) === COUNT_FAILED && (n.attrs.class ?? "").includes("bg-red-50"));
 

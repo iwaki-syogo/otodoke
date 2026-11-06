@@ -15,7 +15,8 @@ import { inputClass, submitClass } from "./form-style";
 import { readSignedInAddress } from "./session-actions";
 import { TurnstileWidget } from "./turnstile-widget";
 
-const PORTS: SignInPorts = { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey };
+/** The Actions a sign-in calls, read when a press needs them. */
+const ports = (): SignInPorts => ({ signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey });
 
 /**
  * What the form says after a press. `signed_in_*`: the sign-in went through but the key did not
@@ -59,7 +60,7 @@ export function LoginForm({ next }: { next: string }) {
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
-      const result = await signInAndOpenKey({ email, password, captchaToken }, PORTS);
+      const result = await signInAndOpenKey({ email, password, captchaToken }, ports());
       // The token went with the press: the next press gets a new one.
       setRound((r) => r + 1);
       if (!result.ok) {

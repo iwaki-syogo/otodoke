@@ -10,6 +10,8 @@ import { BUSY, pressLabel } from "./press";
 
 export interface MailKeyState {
   userId: string;
+  /** The session's address (opening the key again needs it). */
+  email: string;
   /** When the key in use was made, or null when there is none. */
   keyCreatedAt: string | null;
   /** The id of the key in use (null: none). Sent back when a key is made, so a stale screen is refused. */
@@ -67,7 +69,7 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
         ) : (
           <>
             <p className="mb-2 text-sm text-neutral-600">元メールを見るときに使います。</p>
-            <UnlockForm userId={userId} />
+            <UnlockForm userId={userId} email={state.email} />
           </>
         )}
       </div>

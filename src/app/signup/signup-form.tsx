@@ -12,8 +12,6 @@ import { inputClass, submitClass } from "@/app/login/form-style";
 import { resendConfirmation, signUpWithAuthSecret } from "@/app/login/actions";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 
-const PORTS = { signUpWithAuthSecret };
-
 /**
  * /signup: the address and the password, twice. Only the login secret is sent; the key is made at
  * the first sign-in, after the confirmation link (decision 6). An address with characters outside
@@ -58,7 +56,7 @@ export function SignupForm() {
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
-      const result = await signUpWithPassword({ email, password, captchaToken }, PORTS);
+      const result = await signUpWithPassword({ email, password, captchaToken }, { signUpWithAuthSecret });
       setRound((r) => r + 1);
       if (!result.ok) {
         setError(flowMessage(result.code));
