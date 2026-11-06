@@ -64,7 +64,12 @@ export default function PrivacyPage() {
             送りすぎを防ぐために使います。メールアドレスと接続元の IP アドレスをハッシュ値に変えて、送った時刻と一緒に記録します。どちらのアドレスも、そのままでは記録しません。1 時間を過ぎた記録は、次に送るときに消します。
           </Term>
           <Term name="Claude を使った回数">1 日の上限を守るために、あなたのメールに Claude を使った回数を日ごとに記録します。</Term>
-          <Term name="接続の記録">Supabase と Vercel に、IP アドレスやブラウザの種類などの記録が残ります。障害や不正を調べるときに使うことがあります。</Term>
+          {/* The plans set these periods: Supabase Pro log retention (API & Database) 7 days, Vercel Pro
+              runtime logs 1 day (supabase.com/pricing, vercel.com/docs/logs/runtime, checked 2026-11-06).
+              Change this and 「最大 7 日間」 under 保存の期間と消し方 when either plan changes. */}
+          <Term name="接続の記録">
+            Supabase と Vercel に、IP アドレスやブラウザの種類などの記録が残ります。Supabase の記録には、ログインに使ったメールアドレスも入ります。Supabase は 7 日、Vercel は 1 日で消えます。障害や不正を調べるときに使うことがあります。
+          </Term>
           <Term name="cookie">
             ログインのためだけに使います。広告やアクセス解析のための cookie は使いません。
             <Bullets className="mt-1">
@@ -127,7 +132,8 @@ export default function PrivacyPage() {
             設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します。
           </li>
           <li>アカウントを削除したら、メールの自動転送の設定も外してください。外さないと、転送されたメールは Otodoke では読みませんが、Resend には届き続けます。</li>
-          <li>消したデータも、データベースのバックアップに最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。</li>
+          {/* 最大 7 日間: the longest of the database backups and the logs of 接続の記録 (see the note there). */}
+          <li>消したデータも、データベースのバックアップと接続の記録に、最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。</li>
         </Bullets>
       </Section>
 
