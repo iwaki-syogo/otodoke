@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, waitForToken } from "@/lib/turnstile";
+import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -15,7 +15,8 @@ import { mount, type Mounted } from "./hook-harness";
  * The press is shown at once (master takes about a second on a phone): the spinner and
  * 「ログインしています…」 from the press, the button never `disabled`, one press at a time. A press
  * before the bot check has its token is held, with the same spinner, until the token is there (at
- * most TURNSTILE_WAIT_MS while CAPTCHA is off), or asks for the tick while the checkbox waits.
+ * most TURNSTILE_ENFORCED_WAIT_MS with CAPTCHA enforced, as in production; TURNSTILE_WAIT_MS with it
+ * off), or asks for the tick while the checkbox waits.
  * After the sign-in the tab moves on to ?next= inside the tab (the opened key lives in its memory),
  * and the press stays shown until then.
  */
@@ -267,15 +268,40 @@ describe("a press before the bot check has its token", () => {
     expect(flows.signIn.mock.calls[0][0].captchaToken).toBe(TOKEN);
   });
 
-  it("signs in without a token once 10 seconds have passed while CAPTCHA is off (Supabase decides)", async () => {
-    flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
+  it("with CAPTCHA enforced, is held past 10 seconds while Turnstile works on the token, and goes without one only after TURNSTILE_ENFORCED_WAIT_MS, its refusal told", async () => {
+    // Supabase refuses a sign-in without a token once CAPTCHA is on (src/lib/login-auth.ts: captcha).
+    flows.signIn.mockResolvedValue({ ok: false, code: "captcha" });
     const view = await filled({ token: null });
     const done = press(view);
-    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS - 100);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 1_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(textOfHost(button(view))).toBe("ログインしています…");
+    await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS - TURNSTILE_WAIT_MS - 1_100);
     expect(flows.signIn).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(200);
     await done;
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
     expect(flows.signIn.mock.calls[0][0].captchaToken).toBeUndefined();
+    await drawn();
+    // Not a press that ends in nothing: the words, the button back, and a new token for the next press.
+    expect(view.text()).toContain(LOGIN_MESSAGES.captcha);
+    expect(textOfHost(button(view))).toBe("ログイン");
+    expect(widget.round).toBe(1);
+  });
+
+  it("with CAPTCHA off (CAPTCHA_ENFORCED false, if Supabase's CAPTCHA is turned off again), a press waits at most 10 seconds and goes without a token (Supabase decides)", async () => {
+    const field: TokenField = { value: "", dataset: {} };
+    let sent: string | undefined | null = null;
+    void tokenForPress(field, { captchaEnforced: false }).then((token) => (sent = token));
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS - 100);
+    expect(sent).toBeNull();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sent).toBeUndefined();
+    // The checkbox does not stop the clock then: the press goes at the limit without the tick.
+    sent = null;
+    void tokenForPress({ value: "", dataset: { turnstile: "interactive" } }, { captchaEnforced: false }).then((token) => (sent = token));
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 100);
+    expect(sent).toBeUndefined();
   });
 
   it("goes at once when no token will come (the check could not load)", async () => {

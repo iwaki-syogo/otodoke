@@ -54,8 +54,9 @@ function loadTurnstile(): Promise<TurnstileApi> {
  * - Each token can be checked once. The form moves `round` on after a press has used one: the
  *   widget is reset and the token emptied, so the next press gets a new one. A new mount starts
  *   without a token, and a removed widget's late answer is written nowhere.
- * - The notice is shown only while Supabase enforces the check (CAPTCHA_ENFORCED): until then a
- *   press without a token goes through, and "reload or try another browser" would be wrong.
+ * - The notice is shown while Supabase enforces the check (CAPTCHA_ENFORCED, on in production):
+ *   with the check off, a press without a token goes through, and "reload or try another browser"
+ *   would be wrong.
  */
 export function TurnstileWidget({ tokenRef, round = 0, captchaEnforced = CAPTCHA_ENFORCED }: { tokenRef: RefObject<TokenField>; round?: number; captchaEnforced?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
