@@ -86,7 +86,7 @@ describe("markWronglyDropped", () => {
   });
 
   it("remembers nothing for a shared domain and answers ?flagged=shared", async () => {
-    // Not a forwarded copy (that one is told as the person's own mail, below): a friend's mail.
+    // Not a forwarded copy (that one is told as forwarded, below): a friend's mail.
     db.find("screen_events", GMAIL_ROW)!.subject = "週末どう？";
     expect(await redirectOf(markWronglyDropped(form({ id: GMAIL_ROW })))).toBe("/app/settings?flagged=shared");
     expect(db.find("screen_events", GMAIL_ROW)!.flagged_at).toBeNull();
@@ -108,9 +108,9 @@ describe("markWronglyDropped", () => {
 });
 
 describe("markWronglyDropped: the person's own mail (review R3-8)", () => {
-  it("a hand-forwarded copy remembers nothing and answers ?flagged=own", async () => {
+  it("a hand-forwarded copy remembers nothing and answers ?flagged=forwarded (it may come from the family, R3-31)", async () => {
     Object.assign(db.find("screen_events", SHOP_ROW)!, { subject: "Fwd: ご購入ありがとうございます", from_domain: "corp.example.test" });
-    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=own");
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=forwarded");
     expect(db.find("screen_events", SHOP_ROW)!.flagged_at).toBeNull();
   });
 
@@ -128,6 +128,13 @@ describe("markWronglyDropped: the person's own mail (review R3-8)", () => {
   it("the page says why, and offers to register the parcel by hand", async () => {
     const section = droppedSection(await render({ flagged: "own" }));
     expect(textOf(section)).toContain("ご自身のアドレスから届いたメールは、差出人として覚えられません。今回の荷物は手で登録できます。");
+    expect(findAll(section, (n) => n.tag === "a" && n.attrs.href === "/app/parcels/new")).toHaveLength(1);
+  });
+
+  it("a forwarded copy is not called the person's own mail (R3-31)", async () => {
+    const section = droppedSection(await render({ flagged: "forwarded" }));
+    expect(textOf(section)).toContain("転送されたメールは、差出人として覚えられません。今回の荷物は手で登録できます。");
+    expect(textOf(section)).not.toContain("ご自身のアドレス");
     expect(findAll(section, (n) => n.tag === "a" && n.attrs.href === "/app/parcels/new")).toHaveLength(1);
   });
 });

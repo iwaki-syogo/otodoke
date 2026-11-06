@@ -53,7 +53,8 @@ as $$
     'me.com', 'mac.com', 'outlook.com', 'outlook.jp', 'hotmail.com', 'hotmail.co.jp', 'live.com',
     'live.jp', 'msn.com', 'aol.com', 'proton.me', 'protonmail.com', 'docomo.ne.jp', 'ezweb.ne.jp',
     'au.com', 'softbank.ne.jp', 'i.softbank.jp', 'yahoo.ne.jp', 'ymobile.ne.jp', 'uqmobile.jp',
-    'rakumail.jp', 'nifty.com', 'ybb.ne.jp', 'excite.co.jp'
+    'rakumail.jp', 'nifty.com', 'ybb.ne.jp', 'excite.co.jp', 'auone.jp', 'mineo.jp', 'disney.ne.jp',
+    'pdx.ne.jp', 'duck.com'
     -- shared-mail-domains:end
   )
   or exists (

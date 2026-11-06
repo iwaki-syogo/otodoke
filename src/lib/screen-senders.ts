@@ -46,10 +46,17 @@ export const SHARED_MAIL_DOMAINS: readonly string[] = [
   "ymobile.ne.jp",
   "uqmobile.jp",
   "rakumail.jp",
+  "auone.jp",
+  "mineo.jp",
+  "disney.ne.jp",
+  "pdx.ne.jp",
   // Internet providers whose addresses are on the domain itself
   "nifty.com",
   "ybb.ne.jp",
   "excite.co.jp",
+  // A forwarding service writes its own domain in From (DuckDuckGo Email Protection): one mark
+  // would match every mail that passes through it.
+  "duck.com",
 ];
 
 /**
@@ -97,14 +104,17 @@ export function isRememberableDomain(domain: string | null | undefined): domain 
 const FORWARDED_SUBJECT = /^\s*(?:fwd?|fw|転送)\s*[:：]/i;
 
 /**
- * A dropped mail that came from the person themselves: a copy they forwarded by hand (its sender is
- * them, not the shop), or a mail from the domain of their own login address. Its sender is never
- * remembered: the person's own domain would let their own (and, on a company domain, their
- * colleagues') mail past the free rules.
+ * Why a dropped mail's sender is not the shop, told apart because the person is told differently:
+ *  - "forwarded": a copy forwarded by hand, by its subject. Its sender is whoever forwarded it (the
+ *    person, or someone in the family), not the shop.
+ *  - "own": a mail from the domain of the person's own login address.
+ *  - null: neither.
+ * Such a sender is never remembered: the person's own domain would let their own (and, on a company
+ * domain, their colleagues') mail past the free rules.
  */
-export function cameFromThemselves(row: { from_domain: string | null; subject: string | null }, ownEmail: string | null | undefined): boolean {
-  if (FORWARDED_SUBJECT.test(row.subject ?? "")) return true;
+export function personalMailReason(row: { from_domain: string | null; subject: string | null }, ownEmail: string | null | undefined): "forwarded" | "own" | null {
+  if (FORWARDED_SUBJECT.test(row.subject ?? "")) return "forwarded";
   const own = normalized(ownEmail?.split("@")[1]);
   // On a shared domain (gmail.com) the same domain is anybody's: that is said as shared instead.
-  return own !== "" && normalized(row.from_domain) === own && !isSharedMailDomain(own);
+  return own !== "" && normalized(row.from_domain) === own && !isSharedMailDomain(own) ? "own" : null;
 }

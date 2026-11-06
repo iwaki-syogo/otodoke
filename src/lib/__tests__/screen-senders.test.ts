@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboundEmail } from "@/lib/pipeline";
-import { SHARED_MAIL_DOMAINS, SHARED_MAIL_DOMAIN_SUFFIXES, cameFromThemselves, isRememberableDomain, isSharedMailDomain } from "@/lib/screen-senders";
+import { SHARED_MAIL_DOMAINS, SHARED_MAIL_DOMAIN_SUFFIXES, isRememberableDomain, isSharedMailDomain, personalMailReason } from "@/lib/screen-senders";
 import { FakeDb } from "./fake-db";
 import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
@@ -150,17 +150,27 @@ describe("review R3-8: providers whose people have addresses on subdomains, and 
     expect(SHARED_MAIL_DOMAINS.filter((d) => SHARED_MAIL_DOMAIN_SUFFIXES.includes(d))).toEqual([]);
   });
 
-  it("a mark that came from the person themselves is told apart: a hand-forwarded copy, or their own login domain", () => {
-    // A copy forwarded by hand: its sender is the person, whatever the domain.
+  it("a mark that is not the shop's is told apart by why: a hand-forwarded copy, or the person's own login domain (R3-31)", () => {
+    // A copy forwarded by hand, by the person or their family: told by its subject, whatever the domain.
     for (const subject of ["Fwd: ご注文ありがとうございます", "FW: 発送のお知らせ", "転送: ご注文", "  fwd：test"]) {
-      expect(cameFromThemselves({ from_domain: "corp.example.test", subject }, "taro@other.example.test"), subject).toBe(true);
+      expect(personalMailReason({ from_domain: "corp.example.test", subject }, "taro@other.example.test"), subject).toBe("forwarded");
     }
+    // The subject decides first, also on the login domain.
+    expect(personalMailReason({ from_domain: "corp.example.test", subject: "Fwd: ご注文" }, "taro@corp.example.test")).toBe("forwarded");
     // The person's own (custom) domain.
-    expect(cameFromThemselves({ from_domain: "corp.example.test", subject: "ご注文" }, "taro@CORP.example.test")).toBe(true);
+    expect(personalMailReason({ from_domain: "corp.example.test", subject: "ご注文" }, "taro@CORP.example.test")).toBe("own");
     // A shared domain is anybody's: a friend's gmail.com mail is not "their own" (it is said as shared).
-    expect(cameFromThemselves({ from_domain: "gmail.com", subject: "週末どう？" }, "taro@gmail.com")).toBe(false);
+    expect(personalMailReason({ from_domain: "gmail.com", subject: "週末どう？" }, "taro@gmail.com")).toBeNull();
     // A shop's mail.
-    expect(cameFromThemselves({ from_domain: "shop.example.test", subject: "ご注文ありがとうございます" }, "taro@gmail.com")).toBe(false);
-    expect(cameFromThemselves({ from_domain: "shop.example.test", subject: null }, null)).toBe(false);
+    expect(personalMailReason({ from_domain: "shop.example.test", subject: "ご注文ありがとうございます" }, "taro@gmail.com")).toBeNull();
+    expect(personalMailReason({ from_domain: "shop.example.test", subject: null }, null)).toBeNull();
+  });
+
+  it("phone carriers' mail and a forwarding service are shared too (R3-31)", () => {
+    for (const d of ["auone.jp", "mineo.jp", "disney.ne.jp", "pdx.ne.jp", "duck.com", " DUCK.com. "]) {
+      expect(isRememberableDomain(d), d).toBe(false);
+    }
+    // Exact for these: a look-alike stays markable.
+    expect(isRememberableDomain("notduck.com")).toBe(true);
   });
 });
