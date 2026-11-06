@@ -118,6 +118,7 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 linkCard("合言葉を変える") { open(.changePassphrase) }
+                FaceIDToggleRow(model: model)
             }
         }
     }

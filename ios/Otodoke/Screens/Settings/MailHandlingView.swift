@@ -1,6 +1,6 @@
-// 「あなたのメールの扱い」: in M1 the same items as src/app/app/settings/mail-handling.tsx (2541793), one
-// string literal per item, word for word (a vitest compares them). The last item's 「公開」 links to the
-// repository. The item about keeping the key with Face ID comes with task 19.
+// 「あなたのメールの扱い」: the same items as src/app/app/settings/mail-handling.tsx, one string literal per
+// item, word for word (a vitest compares them). The last item's 「公開」 links to the repository. Task 19
+// added the item about keeping the key in the Keychain with Face ID (also on the Web and in the README).
 
 import SwiftUI
 
@@ -18,6 +18,7 @@ enum MailHandlingText {
         "受信を受け持つ Resend にも、メールの写しが一定期間残ります。",
         "暗号化していない状態のメール（読み取る前のもの、暗号化する前のもの）は、データベースのバックアップにも最大 7 日間残ります。",
         "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します。「これは荷物」と押したものは、次から読むために消さずに残します。",
+        "iOS アプリでは、合言葉で開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます（Touch ID の端末では Touch ID）。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。",
         "運営者が正しいプログラムを動かしていることが前提です。コードはすべて公開しています。"
     ]
     static let repositoryURL = URL(string: "https://github.com/iwaki-syogo/otodoke")!

@@ -13,6 +13,7 @@ extension MainScreens {
         keys = store
         unlock = UnlockModel(store: store, keys: MailKeyReader(provider: auth.provider), vault: vault, policy: policy)
         faceID = FaceIDSwitch(policy: policy, vault: vault)
+        settings.faceID = faceID
         auth.cleanup = store
     }
 }
