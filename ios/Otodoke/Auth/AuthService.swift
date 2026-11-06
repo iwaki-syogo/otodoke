@@ -59,8 +59,14 @@ final class AuthService {
     /// cleanup's cancelWork, dropMemory, deleteKeychainKey, in this order.
     @ObservationIgnored var cleanup: (any SignOutCleanup)?
 
-    init(provider: SupabaseProvider) {
+    /// password-v1's master (PBKDF2 off the main thread, one at a time). Tests pass a fast KDF.
+    @ObservationIgnored let deriver: PasswordV1Deriver
+    /// What the last password sign-in left for the key step; taken once (takeSignInSecret).
+    @ObservationIgnored private var pendingSignIn: PasswordSignIn?
+
+    init(provider: SupabaseProvider, deriver: PasswordV1Deriver = PasswordV1Deriver()) {
         self.provider = provider
+        self.deriver = deriver
     }
 
     /// Reads the stored session (and follows the client's auth events from then on).
@@ -193,5 +199,56 @@ final class AuthService {
             return .codeRejected
         }
         return .other
+    }
+}
+
+/// What a password sign-in leaves for the key step (KeySetup): the user, the address master was made with
+/// (email_norm of the typed address) and master itself. Kept in memory only, taken once.
+struct PasswordSignIn: Sendable {
+    let userID: String
+    /// email_norm of the address master was made with.
+    let email: String
+    let master: Data
+}
+
+// MARK: password-v1 (TDD-STUB(password-login): every body below is a placeholder; the tests hold the behaviour)
+
+extension AuthService {
+    /// Make an account: email_norm of the address (ASCII only: .emailNotAscii otherwise, nothing sent; the
+    /// password's rule is LoginModel's, on the password as typed), master off the main thread, then
+    /// signUp(email: email_norm, password: authSecret, redirectTo: AppConfig.authRedirect, captchaToken:).
+    /// user_already_exists, email_exists, over_email_send_rate_limit and a 429 without a code answer as sent.
+    func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
+        throw .other
+    }
+
+    /// signIn(email: email_norm, password: authSecret, captchaToken:). On success the session is applied and a
+    /// PasswordSignIn is kept for takeSignInSecret() (only when email_norm of the session's address is the one
+    /// master was made with).
+    func signIn(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
+        throw .other
+    }
+
+    /// resend(email: email_norm, type: .signup, emailRedirectTo: AppConfig.authRedirect, captchaToken:). The same
+    /// answer whether the address has an account or not.
+    func resendConfirmation(email: String, captchaToken: String?) async throws(LoginFailure) {
+        throw .other
+    }
+
+    /// The PasswordSignIn of the last password sign-in, once; nil after sign-out, for another user, or when
+    /// there is none.
+    func takeSignInSecret() -> PasswordSignIn? {
+        nil
+    }
+
+    /// The address the password opens the key with (UnlockModel.signInEmail): the signed-in session's
+    /// user.email; nil when signed out.
+    var signedInEmail: String? {
+        nil
+    }
+
+    /// Only printable ASCII (login-form.ts isAsciiAddress: /^[\x21-\x7e]+$/).
+    nonisolated static func isASCIIAddress(_ address: String) -> Bool {
+        true
     }
 }

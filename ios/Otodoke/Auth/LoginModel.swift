@@ -53,6 +53,25 @@ final class LoginModel {
     /// The address the last code went to (normalized).
     private var lastSentTo: String?
 
+    // MARK: password-v1 (TDD-STUB(password-login): the starting values below are placeholders)
+
+    /// The form shown: sign in with the password, or make an account.
+    enum Mode: Equatable, Sendable {
+        case signIn
+        case signUp
+    }
+
+    /// Starts at .signIn.
+    var mode: Mode = .signUp
+    /// Only in this model's memory; cleared after every press, and when the form changes.
+    var password = ""
+    /// The sign-up form's second field.
+    var passwordAgain = ""
+    /// 「確認のメールを送りました。…」 (not an error).
+    private(set) var notice: String?
+    /// true after a not_confirmed sign-in: the confirmation mail can be sent again.
+    private(set) var canResendConfirmation = false
+
     init(
         auth: AuthService,
         launch: LaunchOptions = .current,
@@ -195,4 +214,28 @@ extension LoginModel {
         case .code: resendWaitSeconds() == 0
         }
     }
+}
+
+// MARK: password-v1 (TDD-STUB(password-login): placeholders; the tests hold the behaviour)
+
+extension LoginModel {
+    /// Switches the form: the error, the notice, both password fields and the resend offer are cleared, the
+    /// address is kept, the widget is reset.
+    func setMode(_ mode: Mode) {}
+
+    /// The new password's problem on the sign-up form (PasswordRule on the password as typed); nil on the
+    /// sign-in form.
+    var passwordProblem: String? { nil }
+
+    /// The button can be pressed: an address and a password (and on the sign-up form, no passwordProblem).
+    var canSubmit: Bool { false }
+
+    /// Signs in or makes the account, one press at a time, with the Turnstile token of this press.
+    func submit() async {}
+
+    /// After not_confirmed: the confirmation mail again (the same answer for every address).
+    func resendConfirmation() async {}
+
+    /// https://otodoke.app/login/forgot, opened in Safari.
+    var forgotPasswordURL: URL { LoginText.forgotPasswordURL }
 }
