@@ -31,15 +31,18 @@ const button = (view: Mounted) => view.host((h) => h.type === "button");
 
 const opener = vi.fn();
 const onOpened = vi.fn();
+const onLogInAgain = vi.fn();
+const props = { email: EMAIL, openWithAnother: opener, onOpened, onLogInAgain };
 
 beforeEach(() => {
   opener.mockReset();
   onOpened.mockReset();
+  onLogInAgain.mockReset();
 });
 
 /** The field shown, and the other password typed in. */
 async function typed() {
-  const view = mount(() => OtherPasswordForm({ email: EMAIL, openWithAnother: opener, onOpened }));
+  const view = mount(() => OtherPasswordForm(props));
   (button(view).props.onClick as () => void)();
   await drawn();
   (field(view).props.onChange as (e: unknown) => void)({ target: { value: OTHER } });
@@ -50,7 +53,7 @@ const press = (view: Mounted) => (view.host((h) => h.type === "form").props.onSu
 
 describe("ほかのパスワードで開く", () => {
   it("is a button first, with no field", () => {
-    const view = mount(() => OtherPasswordForm({ email: EMAIL, openWithAnother: opener, onOpened }));
+    const view = mount(() => OtherPasswordForm(props));
     expect(textOfHost(button(view))).toBe(OPEN_WITH_ANOTHER_PASSWORD);
     expect(OPEN_WITH_ANOTHER_PASSWORD).toBe("ほかのパスワードで開く");
     expect(view.hosts((h) => h.type === "input" || h.type === "form")).toEqual([]);
@@ -92,17 +95,28 @@ describe("ほかのパスワードで開く", () => {
     expect(onOpened).not.toHaveBeenCalled();
   });
 
-  it.each(["stale_session", "key_wrap_changed", "network"] as const)("%s is told with its fixed words", async (code) => {
+  it.each(["key_wrap_changed", "network", "key_failed"] as const)("%s is told with its fixed words, and can be tried again", async (code) => {
     opener.mockResolvedValue({ ok: false, code });
     const view = await typed();
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
     expect(onOpened).not.toHaveBeenCalled();
+    expect(onLogInAgain).not.toHaveBeenCalled();
+    expect(textOfHost(button(view))).toBe("開く");
+  });
+
+  it.each(["stale_session", "signed_out"] as const)("%s (too late for the wrap, or signed out meanwhile) goes to the screen's way to log in", async (code) => {
+    opener.mockResolvedValue({ ok: false, code });
+    const view = await typed();
+    await press(view);
+    await drawn();
+    expect(onLogInAgain).toHaveBeenCalledWith(code);
+    expect(onOpened).not.toHaveBeenCalled();
   });
 
   it("an empty field sends nothing", async () => {
-    const view = mount(() => OtherPasswordForm({ email: EMAIL, openWithAnother: opener, onOpened }));
+    const view = mount(() => OtherPasswordForm(props));
     (button(view).props.onClick as () => void)();
     await drawn();
     await press(view);
@@ -118,6 +132,6 @@ describe("ほかのパスワードで開く", () => {
     expect(view.host((h) => h.type === "input" && h.props.autoComplete === "username").props).toMatchObject({ value: EMAIL, readOnly: true, hidden: true });
     expect(field(view).props.autoComplete).toBe("current-password");
     // Drawn by the server, it is the button alone (the field comes with the press, after the script).
-    expect(renderToStaticMarkup(createElement(OtherPasswordForm, { email: EMAIL, openWithAnother: opener, onOpened }))).not.toContain("<input");
+    expect(renderToStaticMarkup(createElement(OtherPasswordForm, props))).not.toContain("<input");
   });
 });

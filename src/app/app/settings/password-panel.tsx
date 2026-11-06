@@ -187,7 +187,7 @@ export function MakeKeyForm({ email }: { email: string }) {
           {error.openWithAnother ? (
             <>
               <div className="mt-2">
-                <OtherPasswordForm email={email} openWithAnother={error.openWithAnother} onOpened={() => router.refresh()} />
+                <OtherPasswordForm email={email} openWithAnother={error.openWithAnother} onOpened={() => router.refresh()} onLogInAgain={(code) => setError({ text: flowMessage(code), logIn: true })} />
               </div>
               <Link href="/login/forgot" className="mt-1 inline-block font-medium underline underline-offset-4">
                 再設定する

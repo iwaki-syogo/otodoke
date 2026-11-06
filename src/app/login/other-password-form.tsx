@@ -14,8 +14,21 @@ import { OPEN_WITH_ANOTHER_PASSWORD } from "@/lib/login-errors";
  * 「ほかのパスワードで開く」 shows the field. Like every form that takes a password, no field has a
  * `name` and the form is POST without an action (password-forms.test.ts); the field is emptied
  * after each press. `email` names the account for a password manager.
+ *
+ * The wrap is stored only within 15 minutes of the password sign-in, by the session that made it:
+ * stale_session and signed_out go to `onLogInAgain`, where the screen offers the login.
  */
-export function OtherPasswordForm({ email, openWithAnother, onOpened }: { email: string; openWithAnother: OpenWithAnother; onOpened: () => void }) {
+export function OtherPasswordForm({
+  email,
+  openWithAnother,
+  onOpened,
+  onLogInAgain,
+}: {
+  email: string;
+  openWithAnother: OpenWithAnother;
+  onOpened: () => void;
+  onLogInAgain: (code: "stale_session" | "signed_out") => void;
+}) {
   const [shown, setShown] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,7 +49,8 @@ export function OtherPasswordForm({ email, openWithAnother, onOpened }: { email:
       if (result.ok) {
         opened = true;
         onOpened();
-      } else setError(flowMessage(result.code));
+      } else if (result.code === "stale_session" || result.code === "signed_out") onLogInAgain(result.code);
+      else setError(flowMessage(result.code));
     } finally {
       // Opened: the press stays shown until the next page is drawn, as the login's does.
       if (!opened) {
