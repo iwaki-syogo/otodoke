@@ -19,7 +19,7 @@ export function MailHandling() {
         <li>受信を受け持つ Resend にも、メールの写しが一定期間残ります。</li>
         <li>暗号化していない状態のメールは、読み取る前のものも暗号化する前のものも、データベースのバックアップに最大 7 日間残ります。</li>
         <li>広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します。「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します。</li>
-        <li>iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます（Touch ID の端末では Touch ID）。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。</li>
+        <li>iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。</li>
         <li>
           運営者が正しいプログラムを動かしていることが前提です。コードはすべて
           <a href="https://github.com/iwaki-syogo/otodoke" target="_blank" rel="noopener noreferrer" className="text-sky-700 underline underline-offset-4">
