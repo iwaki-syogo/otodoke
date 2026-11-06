@@ -5,7 +5,7 @@ import { FORWARDING_GUIDES, FORWARDING_TITLE, type ForwardingGuide } from "@/lib
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { AFTER_WELCOME_PATH, WELCOME } from "@/lib/onboarding";
 import { createClient, getUser } from "@/lib/supabase/server";
-import { readActiveKey, readPendingApproval } from "../settings/settings-reads";
+import { readActiveKey, readConfirmUrl } from "../settings/settings-reads";
 
 export const metadata = { title: FORWARDING_TITLE };
 
@@ -47,7 +47,7 @@ export default async function WelcomePage() {
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.
-  const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "welcome"), readPendingApproval(supabase, user.id, "welcome")]);
+  const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "welcome"), readConfirmUrl(supabase, "welcome")]);
   const confirmUrl = confirmation.url;
 
   return (

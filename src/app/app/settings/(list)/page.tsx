@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { countPlainRead } from "@/lib/mail-keys";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { LogoutForm } from "../logout-form";
-import { readActiveKey, readDroppedCount, readPendingApproval, readUnreadCount } from "../settings-reads";
+import { readActiveKey, readDroppedCount, readApprovalBadge, readUnreadCount } from "../settings-reads";
 import { SettingsHashRedirect } from "../settings-hash-redirect";
 import { RowCard, RowInfo, RowLink, orderRows, type Badge, type IconName } from "../settings-row";
 
@@ -20,7 +20,7 @@ export default async function SettingsPage() {
   const [{ key, failed: keyFailed }, waiting, confirmation, dropped, plainCount] = await Promise.all([
     readActiveKey(supabase, "settings list"),
     readUnreadCount(supabase, "settings list"),
-    readPendingApproval(supabase, user.id, "settings list"),
+    readApprovalBadge(supabase, user.id, "settings list"),
     readDroppedCount(supabase, "settings list"),
     // Mail still readable by the operator, from before the encryption; null when it could not be counted.
     countPlainRead(supabase, user.id).catch((err: unknown) => {
@@ -47,8 +47,8 @@ export default async function SettingsPage() {
       href: "/app/settings/forwarding",
       icon: "forwarding",
       title: "メールの転送",
-      badge: confirmation.failed ? UNKNOWN : confirmation.url ? { text: "承認待ち", tone: "amber" } : null,
-      action: Boolean(confirmation.url),
+      badge: confirmation.failed ? UNKNOWN : confirmation.waiting ? { text: "承認待ち", tone: "amber" } : null,
+      action: confirmation.waiting,
     },
     {
       kind: "link",

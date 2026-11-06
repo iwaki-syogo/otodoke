@@ -5,7 +5,7 @@ import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
 
 /**
  * Review fixes for the 設定 split:
- * - B-M1: 「承認待ち」 / the approval card go away once other mail has come in (the empty list's rule).
+ * - B-M1: the approval card is shown whenever a confirmation exists; the list's 「承認待ち」 clears once other mail arrives AFTER it.
  * - B-M2: the key row shows 「未暗号化 N 通」 and goes first.
  * - L3: the "could not read" boxes say what could not be read.
  * - L5: one heading for 「あなたのメールの扱い」. L8: a failed read leaves a marker. L9: 削除 shows the address.
@@ -50,13 +50,11 @@ beforeEach(() => {
 const FAIL = { data: null, error: { message: "boom" }, count: null };
 const activeKey = () =>
   db.rows("user_keys").push({ user_id: USER, key_id: "a".repeat(32), public_key: "x", wrapped_private_key: "x", wrap_iv: "x", kdf_salt: "x", kdf_iterations: 600000, challenge_hash: "0".repeat(64), created_at: "2026-11-06T00:00:00Z", activated_at: "2026-11-06T00:00:00Z", retired_at: null });
-const confirmation = () =>
-  db.rows("emails").push({ id: "g", user_id: USER, classification: "forwarding_confirmation", processing_status: "processed", body_state: "plain", forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-xyz", sent_at: "2026-11-06T00:00:00Z", provider_email_id: "re_conf" });
+const confirmation = (day = 6) =>
+  db.rows("emails").push({ id: `g${day}`, user_id: USER, classification: "forwarding_confirmation", processing_status: "processed", body_state: "plain", forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-xyz", sent_at: `2026-11-0${day}T00:00:00Z`, created_at: `2026-11-0${day}T00:00:00Z`, provider_email_id: "re_conf" });
 const ordinaryMail = (over: Record<string, unknown> = {}) =>
   db.rows("emails").push({ id: `m-${Math.random()}`, user_id: USER, classification: "order", processing_status: "processed", body_state: "sealed", provider_email_id: "re_123", ...over });
 
-/** Fails the sample count of the "what has come in" read only (the one with a like filter and no processing_status). */
-const failMailSoFar = () => db.hooks.unshift((q) => (q.table === "emails" && q.head && q.filters.some((f) => f.method === "like") && !q.filters.some((f) => f.args[0] === "body_state") ? FAIL : undefined));
 
 const list = async () => parseHtml(renderToStaticMarkup(await (await import("@/app/app/settings/(list)/page")).default()));
 const forwarding = async () => parseHtml(renderToStaticMarkup(await (await import("@/app/app/settings/forwarding/page")).default()));
@@ -75,41 +73,69 @@ const mailRows = (root: HtmlNode) => {
 const badgeOf = (root: HtmlNode, title: string) => mailRows(root).find((r) => r[0] === title)?.[1];
 const APPROVAL_CARD = "Gmail の転送を承認してください";
 
-describe("[B-M1] the approval is not asked for once other mail has come in", () => {
+describe("[B-M1] the approval card is shown whenever Gmail's confirmation exists; only the list badge goes by time", () => {
+  const T = (day: number) => `2026-11-0${day}T00:00:00Z`;
+  const screenEvent = (day: number) => db.rows("screen_events").push({ id: `s${day}`, user_id: USER, decision: "dropped", created_at: T(day) });
+  const hasCard = async () => [await forwarding(), await welcome()].map((r) => textOf(r).includes(APPROVAL_CARD));
+  const badge = async () => badgeOf(await list(), "メールの転送");
+
   it("positive control: only Gmail's confirmation -> 承認待ち on the list, the card on both pages", async () => {
-    confirmation();
-    expect(badgeOf(await list(), "メールの転送")).toBe("承認待ち");
-    expect(textOf(await forwarding())).toContain(APPROVAL_CARD);
-    expect(textOf(await welcome())).toContain(APPROVAL_CARD);
+    confirmation(6);
+    expect(await badge()).toBe("承認待ち");
+    expect(await hasCard()).toEqual([true, true]);
+  });
+
+  it("the card keeps its sentence about an approval already done", async () => {
+    confirmation(6);
+    expect(textOf(await forwarding())).toContain("承認済みなら、この案内は無視して大丈夫です。");
+    expect(textOf(await welcome())).toContain("承認済みなら、この案内は無視して大丈夫です。");
+  });
+
+  it("a mail BEFORE the confirmation (forwarded by hand): badge and card", async () => {
+    ordinaryMail({ created_at: T(5), sent_at: T(5) });
+    confirmation(6);
+    expect(await badge()).toBe("承認待ち");
+    expect(await hasCard()).toEqual([true, true]);
+  });
+
+  it("a second confirmation after an earlier mail (two Gmail accounts): badge and card", async () => {
+    confirmation(5);
+    ordinaryMail({ created_at: T(6), sent_at: T(6) });
+    db.rows("emails").push({ id: "g2", user_id: USER, classification: "forwarding_confirmation", processing_status: "processed", body_state: "plain", forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-second", sent_at: T(7), created_at: T(7), provider_email_id: "re_conf2" });
+    expect(await badge()).toBe("承認待ち");
+    expect(await hasCard()).toEqual([true, true]);
+  });
+
+  it("a screen_events row BEFORE the confirmation: badge and card", async () => {
+    screenEvent(5);
+    confirmation(6);
+    expect(await badge()).toBe("承認待ち");
+    expect(await hasCard()).toEqual([true, true]);
   });
 
   it.each([
-    ["an ordinary mail", () => ordinaryMail()],
-    ["a mail the screen dropped", () => db.rows("screen_events").push({ id: "s1", user_id: USER, decision: "dropped" })],
-  ])("%s after the confirmation: no badge, no card", async (_what, arrive) => {
-    confirmation();
+    ["an ordinary mail", () => ordinaryMail({ created_at: T(7), sent_at: T(7) })],
+    ["a mail the screen dropped", () => screenEvent(7)],
+  ])("%s AFTER the confirmation: no badge, but the card stays on both pages", async (_what, arrive) => {
+    confirmation(6);
     arrive();
-    expect(badgeOf(await list(), "メールの転送")).toBeNull();
-    expect(textOf(await forwarding())).not.toContain(APPROVAL_CARD);
-    expect(textOf(await welcome())).not.toContain(APPROVAL_CARD);
+    expect(await badge()).toBeNull();
+    expect(await hasCard()).toEqual([true, true]);
   });
 
-  it("a public sample does not count as mail that came in: still waiting", async () => {
-    confirmation();
-    ordinaryMail({ provider_email_id: "demo:1" });
-    expect(badgeOf(await list(), "メールの転送")).toBe("承認待ち");
+  it("a public sample or another confirmation after it does not clear the badge", async () => {
+    confirmation(6);
+    ordinaryMail({ provider_email_id: "demo:1", created_at: T(7) });
+    expect(await badge()).toBe("承認待ち");
   });
 
-  it("a failed read of what came in is neither 承認待ち nor done: the marker on the list, the could-not-read box on the pages", async () => {
-    confirmation();
-    ordinaryMail();
+  it("a failed supporting read: the card stays, the list says 確認できません (never 承認待ち, never blank)", async () => {
+    confirmation(6);
+    ordinaryMail({ created_at: T(5) });
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    failMailSoFar();
-    expect(badgeOf(await list(), "メールの転送")).toBe("確認できません");
-    for (const root of [await forwarding(), await welcome()]) {
-      expect(textOf(root)).not.toContain(APPROVAL_CARD);
-      expect(textOf(root)).toContain("Gmail の承認の案内を読み込めませんでした");
-    }
+    db.hooks.unshift((q) => (q.table === "screen_events" && q.head ? FAIL : undefined));
+    expect(await badge()).toBe("確認できません");
+    expect(await hasCard()).toEqual([true, true]);
     log.mockRestore();
   });
 });

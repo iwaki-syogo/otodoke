@@ -2,7 +2,7 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "@/components/copy-button";
 import { ForwardingGuides } from "../forwarding-guide";
-import { readActiveKey, readPendingApproval } from "../settings-reads";
+import { readActiveKey, readConfirmUrl } from "../settings-reads";
 import { LoggedInAs, SubPage } from "../sub-page";
 
 export const metadata = { title: "メールの転送" };
@@ -13,7 +13,7 @@ export default async function ForwardingPage() {
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.
-  const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "settings forwarding"), readPendingApproval(supabase, user.id, "settings forwarding")]);
+  const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "settings forwarding"), readConfirmUrl(supabase, "settings forwarding")]);
   const confirmUrl = confirmation.url;
 
   return (

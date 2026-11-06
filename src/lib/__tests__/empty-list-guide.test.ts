@@ -141,6 +141,31 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
     }
   });
 
+  describe("dated: the approval is offered while nothing arrived after the newest valid confirmation", () => {
+    const at = (day: number) => `2026-11-0${day}T00:00:00Z`;
+    const dated = (id: string, day: number, over: Record<string, unknown> = {}) => mail({ id, created_at: at(day), sent_at: at(day), ...over });
+    const dConfirmation = (day: number) => dated(`c${day}`, day, { classification: "forwarding_confirmation", provider_email_id: `re_c${day}`, forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-xyz" });
+    const APPROVAL = "Gmail の転送は承認しましたか？承認すると、荷物のメールが届きはじめます。";
+
+    it("an old ordinary mail and a newer confirmation -> approval (also with an old dropped mail)", async () => {
+      expect(guide(await render({ emails: [dated("m1", 5), dConfirmation(6)] }))).toEqual([APPROVAL]);
+      expect(guide(await render({ emails: [dConfirmation(6)], screen_events: [{ id: "s1", user_id: USER, decision: "dropped", created_at: at(5) }] }))).toEqual([APPROVAL]);
+    });
+
+    it("a confirmation and a newer mail or dropped mail -> received", async () => {
+      expect(guide(await render({ emails: [dConfirmation(6), dated("m1", 7)] }))).toEqual([RECEIVED]);
+      expect(guide(await render({ emails: [dConfirmation(6)], screen_events: [{ id: "s1", user_id: USER, decision: "dropped", created_at: at(7) }] }))).toEqual([RECEIVED]);
+    });
+
+    it("a failed after-check does not hide the approval", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const db = withMail({ emails: [dated("m1", 5), dConfirmation(6)] });
+      db.hooks.unshift((q) => (q.table === "screen_events" ? { data: null, error: { message: "boom" }, count: null } : undefined));
+      expect(guide(emptyState(await renderEmpty()))).toEqual([APPROVAL]);
+      log.mockRestore();
+    });
+  });
+
   it("no public sample is a Gmail confirmation (the samples are left out of the count once, not twice)", () => {
     const dir = path.resolve(__dirname, "../../../fixtures/demo/mails");
     const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
