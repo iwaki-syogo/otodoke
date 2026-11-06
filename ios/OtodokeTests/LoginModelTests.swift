@@ -26,7 +26,7 @@ struct LoginModelTests {
         #expect(model.isWorking == false)
     }
 
-    @Test func sendingMovesToTheCode() async {
+    @Test func signingUpSendsTheConfirmationMailAndSaysSo() async {
         // password-v1: making an account sends the confirmation mail and says so.
         let fake = FakeSupabase.make()
         let model = make(fake)
@@ -78,7 +78,7 @@ struct LoginModelTests {
         #expect(model.mode == .signIn)
     }
 
-    @Test func aWrongCodeIsShownAndStaysOnTheCode() async {
+    @Test func aWrongPasswordIsShownAndTheFormStays() async {
         // password-v1: a wrong password is told, and the form stays (the address kept).
         let fake = FakeSupabase.make()
         await account(fake)
@@ -92,7 +92,7 @@ struct LoginModelTests {
         #expect(model.auth.state != .signedIn(userID: FakeSupabase.me))
     }
 
-    @Test func theRightCodeSignsIn() async {
+    @Test func theRightPasswordSignsIn() async {
         // password-v1: the right password signs in.
         let fake = FakeSupabase.make()
         await account(fake)

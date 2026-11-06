@@ -12,7 +12,7 @@ struct AuthFlowTests {
         AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
     }
 
-    @Test func sendsTheCodeInTheImplicitFlow() async throws {
+    @Test func signUpAndResendUseTheImplicitFlow() async throws {
         // PKCE would add a code challenge, and a confirmation link opened in another browser would then fail.
         let fake = FakeSupabase.make()
         let auth = make(fake)

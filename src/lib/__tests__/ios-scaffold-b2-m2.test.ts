@@ -380,10 +380,17 @@ describe("tasks 21 and 22: the delivered and cancelled pages are wired", () => {
 
 // ---- task 14: the Release .app holds no vector ----------------------------------------------------
 
-/** Marks of the vectors, read from the canonical file (never typed here). */
+/** Marks of the password-v1 vectors (long hex), read from the canonical file (never typed here). */
+function passwordVectorMarks(): string[] {
+  const p = JSON.parse(read("fixtures/crypto/password-v1.json"));
+  const first = p.cases[0];
+  return [p.private_key.d_hex, first.master_hex, first.auth_secret, first.kek_hex, first.wrap_ciphertext_hex.slice(0, 40)];
+}
+
+/** Marks of the vectors, read from the canonical files (never typed here). */
 function vectorMarks(): string[] {
   const v = JSON.parse(read("fixtures/crypto/envelope-v1.json"));
-  return [v.envelope.recipient.key_id, v.envelope.recipient.private_key_d, v.envelope.envelope.ct.slice(0, 40), v.key_wrap.wrapped_private_key.slice(0, 40), "otodoke envelope v1 / key wrap v1", "negative-v1"];
+  return [v.envelope.recipient.key_id, v.envelope.recipient.private_key_d, v.envelope.envelope.ct.slice(0, 40), v.key_wrap.wrapped_private_key.slice(0, 40), "otodoke envelope v1 / key wrap v1", "negative-v1", ...passwordVectorMarks()];
 }
 
 /** Every file under `dir` (an .app or .xctest bundle) through `strings -a`, with the marks found. */
@@ -409,6 +416,37 @@ describe("task 14: the Release .app carries no vector (strings)", () => {
       mkdirSync(planted, { recursive: true });
       writeFileSync(path.join(planted, "envelope-v1.json"), readFileSync(path.join(ROOT, "fixtures/crypto/envelope-v1.json")));
       expect(vectorHits(path.join(tmp, "Planted.xctest")).length).toBeGreaterThan(0);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("the password-v1 vectors are marks too: a bundle with only password-v1.json is found, a look-alike is not", () => {
+    const pw = readFileSync(path.join(ROOT, "fixtures/crypto/password-v1.json"), "utf8");
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "otodoke-strings-pw-"));
+    try {
+      const planted = path.join(tmp, "Planted.xctest", "Fixtures", "crypto");
+      mkdirSync(planted, { recursive: true });
+      writeFileSync(path.join(planted, "password-v1.json"), pw);
+      // The marks are real values of the file: long lowercase hex, each in password-v1.json, none in the
+      // envelope vector (so the envelope's marks cannot stand in for them).
+      const marks = passwordVectorMarks();
+      const envelope = readFileSync(path.join(ROOT, "fixtures/crypto/envelope-v1.json"), "utf8");
+      expect(marks).toHaveLength(5);
+      for (const mark of marks) {
+        expect(mark).toMatch(/^[0-9a-f]{32,}$/);
+        expect(pw.includes(mark), mark.slice(0, 16)).toBe(true);
+        expect(envelope.includes(mark), mark.slice(0, 16)).toBe(false);
+        expect(vectorMarks()).toContain(mark);
+      }
+      // Each password-v1 mark is found on its own.
+      const hits = vectorHits(path.join(tmp, "Planted.xctest"));
+      for (const mark of marks) expect(hits, mark.slice(0, 16)).toContain(`${path.join("Fixtures", "crypto", "password-v1.json")}: ${mark.slice(0, 16)}`);
+      // A clean bundle holding hex of the same shape (64 lowercase hex, not a vector) is not found.
+      const lookAlike = path.join(tmp, "LookAlike.app");
+      mkdirSync(lookAlike, { recursive: true });
+      writeFileSync(path.join(lookAlike, "LookAlike"), Buffer.from(`\u0000${"0123456789abcdef".repeat(4)}\u0000${"f".repeat(64)}\u0000`));
+      expect(vectorHits(lookAlike)).toEqual([]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

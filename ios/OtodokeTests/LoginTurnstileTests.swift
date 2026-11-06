@@ -171,7 +171,7 @@ struct LoginTurnstileTests {
         #expect(await fake.count("POST", "token") == 1)
     }
 
-    @Test func aSecondPressWhileTheCodeIsOnTheWaySendsNothing() async {
+    @Test func aSecondPressWhileTheSignInIsOnTheWaySendsNothing() async {
         let fake = FakeSupabase.make()
         let gate = Gate()
         await fake.fail("POST", "token", with: .hold(gate))

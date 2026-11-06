@@ -88,7 +88,7 @@ struct AuthServiceTests {
 
     // MARK: making an account (password-v1; was: sending the code)
 
-    @Test func sendsTheCodeWithTheWebsConfirmPageAsRedirect() async throws {
+    @Test func signUpCarriesTheWebsConfirmPageAsRedirect() async throws {
         // password-v1: making an account carries the Web's confirm page as redirect (the confirmation link).
         let fake = FakeSupabase.make()
         let auth = make(fake)
@@ -130,7 +130,7 @@ struct AuthServiceTests {
 
     // MARK: signing in (password-v1; was: verifying the code)
 
-    @Test func verifiesTheEightDigitsAsAnEmailOTPAndSignsIn() async throws {
+    @Test func signsInWithThePasswordSecretAndKeepsTheSession() async throws {
         // password-v1: the password sign-in (the code is gone) signs in and keeps the session.
         let fake = FakeSupabase.make()
         await account(fake)
@@ -146,7 +146,7 @@ struct AuthServiceTests {
         #expect(await auth.provider.currentUserID() == FakeSupabase.me)
     }
 
-    @Test func aWrongCodeIsRejected() async {
+    @Test func aWrongPasswordIsRejected() async {
         // password-v1: a wrong password.
         let fake = FakeSupabase.make()
         await account(fake)

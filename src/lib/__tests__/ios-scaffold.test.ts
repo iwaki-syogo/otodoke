@@ -214,6 +214,52 @@ describe("task 3: the launch argument that starts at code entry is DEBUG only", 
     return inside;
   }
 
+  /**
+   * The line up to its // comment: a // inside a string literal ("https://…") is code. Strings are Swift's
+   * "…" with backslash escapes and raw #"…"# (n #s, no escapes). A line is read alone, so a line inside a
+   * multi-line """ string is read as code, as before.
+   */
+  function codeOfLine(line: string): string {
+    let i = 0;
+    while (i < line.length) {
+      if (line.startsWith("//", i)) return line.slice(0, i);
+      const open = /^#*"/.exec(line.slice(i));
+      if (!open) {
+        i += 1;
+        continue;
+      }
+      const hashes = open[0].length - 1;
+      const close = '"' + "#".repeat(hashes);
+      i += open[0].length;
+      while (i < line.length) {
+        if (hashes === 0 && line[i] === "\\") {
+          i += 2;
+        } else if (line.startsWith(close, i)) {
+          i += close.length;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+    }
+    return line;
+  }
+
+  it("the comment cut keeps a // inside a string literal and drops a real comment (controls)", () => {
+    // Kept: the // of "https://" (and of an escaped quote's string) is not a comment.
+    expect(codeOfLine(`let u = "https://example.test" + "${ARG}"`)).toContain(ARG);
+    expect(codeOfLine(`let u = "a\\"//b" + "${ARG}"`)).toContain(ARG);
+    expect(codeOfLine(`let u = #"a"//b"# + "${ARG}"`)).toContain(ARG);
+    expect(codeOfLine(`let u = "a\\\\" + "${ARG}" // note`)).toContain(ARG);
+    // Dropped: a comment, after code or alone, and after a closed string.
+    expect(codeOfLine(`// ${ARG}`)).not.toContain(ARG);
+    expect(codeOfLine(`let a = 1 // ${ARG}`)).not.toContain(ARG);
+    expect(codeOfLine(`let s = "x" // "${ARG}"`)).not.toContain(ARG);
+    expect(codeOfLine(`let s = "https://x" // ${ARG}`)).not.toContain(ARG);
+    expect(codeOfLine(`let s = #"a"# // ${ARG}`)).not.toContain(ARG);
+    expect(codeOfLine(`let s = "a\\\\" // ${ARG}`)).not.toContain(ARG);
+  });
+
   it("appears in the app's sources only inside #if DEBUG", () => {
     const files = swiftFiles(APP);
     let seen = 0;
@@ -223,7 +269,7 @@ describe("task 3: the launch argument that starts at code entry is DEBUG only", 
       src.split("\n").forEach((line, i) => {
         expect(line.includes(GONE), `${rel(f)}:${i + 1} still has ${GONE}`).toBe(false);
         // Code only: a comment may name the argument.
-        if (line.replace(/\/\/.*$/, "").includes(ARG)) {
+        if (codeOfLine(line).includes(ARG)) {
           seen += 1;
           expect(inside.has(i), `${rel(f)}:${i + 1} uses ${ARG} outside #if DEBUG`).toBe(true);
         }
