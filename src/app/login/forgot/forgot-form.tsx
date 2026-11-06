@@ -5,7 +5,7 @@ import { PendingSubmitButton } from "@/components/pending-button";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { tokenForPress, type TokenField } from "@/lib/turnstile";
-import { inputClass, submitClass } from "../login-form";
+import { inputClass, submitClass } from "../form-style";
 import { sendResetMail } from "../actions";
 import { TurnstileWidget } from "../turnstile-widget";
 

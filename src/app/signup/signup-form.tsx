@@ -8,7 +8,7 @@ import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { tokenForPress, type TokenField } from "@/lib/turnstile";
-import { inputClass, submitClass } from "@/app/login/login-form";
+import { inputClass, submitClass } from "@/app/login/form-style";
 import { resendConfirmation, signUpWithAuthSecret } from "@/app/login/actions";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 

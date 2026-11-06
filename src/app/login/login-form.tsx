@@ -11,13 +11,11 @@ import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { tokenForPress, type TokenField } from "@/lib/turnstile";
 import { readMailKey, registerMailKey, activateMailKey } from "@/app/app/settings/key-actions";
 import { signInWithAuthSecret } from "./actions";
+import { inputClass, submitClass } from "./form-style";
 import { readSignedInAddress } from "./session-actions";
 import { TurnstileWidget } from "./turnstile-widget";
 
 const PORTS: SignInPorts = { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey };
-
-export const inputClass = "rounded-lg border border-neutral-300 px-3 py-3 text-base outline-none focus:border-neutral-900";
-export const submitClass = "flex items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 py-3 text-base font-medium text-white active:opacity-80";
 
 /**
  * What the form says after a press. `signed_in_*`: the sign-in went through but the key did not
