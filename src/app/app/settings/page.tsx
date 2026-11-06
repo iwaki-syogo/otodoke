@@ -200,7 +200,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
       <section>
         <h2 className="text-base font-bold">読まなかったメール</h2>
-        <p className="mt-1 text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名だけ 14 日間残します。</p>
+        <p className="mt-1 text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名と差出人のドメインだけ 14 日間残します。</p>
         {note ? (
           <div className={`mt-2 text-sm leading-6 ${note.ok ? "text-emerald-800" : "text-red-800"}`}>
             <p>{note.text}</p>
