@@ -91,6 +91,7 @@ final class SpendModel {
 
     /// The results are shown faded while a move is on the way.
     var isDimmed: Bool { pendingMove != nil }
+    var categoryLocked: Bool { false } // TDD-STUB [S-new1]
     var bounds: MonthBounds { MonthBounds(today: today()) }
     /// Today's month (the 「月」 of the period switch).
     var thisMonth: String { Format.monthOf(today()) }

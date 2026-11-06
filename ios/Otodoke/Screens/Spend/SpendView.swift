@@ -321,3 +321,7 @@ struct SpendView<Detail: View>: View {
         .accessibilityLabel("\(label)（外す）")
     }
 }
+
+enum SpendSpinner {
+    static func shows(pressed: String?, key: String, isMoving: Bool) -> Bool { isMoving && pressed == key } // TDD-STUB [N-new1]
+}
