@@ -212,3 +212,15 @@ describe("[Feedback 1] date fields on a phone", () => {
     expect(hits.map((h) => h.split(":")[0])).toEqual(["app/app/parcels/manual-form.tsx", "app/app/parcels/manual-form.tsx"]);
   });
 });
+
+describe("delete form: the warning describes the confirm box", () => {
+  it("the 本当に消す checkbox's aria-describedby is the id of the 「消すと元に戻せません。」 paragraph", () => {
+    const root = parseHtml(renderToStaticMarkup(createElement(ManualForm, { parcel: typedIn(), today: TODAY })));
+    const warning = findAll(root, (n) => n.tag === "p" && n.children.join("") === "消すと元に戻せません。");
+    expect(warning).toHaveLength(1);
+    expect(warning[0].attrs.id).toBeTruthy();
+    const box = findAll(root, (n) => n.tag === "input" && n.attrs.type === "checkbox" && n.attrs.name === "confirm");
+    expect(box).toHaveLength(1);
+    expect(box[0].attrs["aria-describedby"]).toBe(warning[0].attrs.id);
+  });
+});
