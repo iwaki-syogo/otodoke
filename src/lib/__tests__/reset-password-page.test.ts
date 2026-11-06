@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LOGIN_MESSAGES } from "@/lib/login-errors";
+import { KEY_SESSION_STALE, LOGIN_MESSAGES } from "@/lib/login-errors";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -17,7 +17,8 @@ const USER = "00000000-0000-4000-8000-00000000000a";
 const EMAIL = "someone@example.test";
 const PASSWORD = "あたらしいパスワードです";
 
-const mocks = vi.hoisted(() => ({ fresh: vi.fn(), finish: vi.fn(), to: [] as string[] }));
+const mocks = vi.hoisted(() => ({ fresh: vi.fn(), finish: vi.fn(), to: [] as string[], real: null as unknown as (...args: unknown[]) => unknown }));
+const keys = vi.hoisted(() => ({ read: vi.fn(), register: vi.fn() }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -38,9 +39,18 @@ vi.mock("@/components/leave-for", () => ({
   },
 }));
 vi.mock("@/lib/auth-session", () => ({ freshCookieSession: mocks.fresh }));
-vi.mock("@/lib/crypto/password-flows", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/crypto/password-flows")>()), finishPasswordReset: mocks.finish }));
+vi.mock("@/lib/crypto/password-flows", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crypto/password-flows")>();
+  mocks.real = actual.finishPasswordReset as never;
+  return { ...actual, finishPasswordReset: mocks.finish };
+});
 vi.mock("@/app/reset-password/actions", () => ({ finishReset: vi.fn() }));
-vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: keys.read, registerMailKey: keys.register }));
+// The seam test runs the real reset steps: master is made quickly there.
+vi.mock("@/lib/crypto/password-v1", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crypto/password-v1")>();
+  return { ...actual, deriveMaster: async () => crypto.subtle.importKey("raw", new Uint8Array(32), "HKDF", false, ["deriveBits", "deriveKey"]) };
+});
 
 const ResetPasswordPage = (await import("@/app/reset-password/page")).default;
 const { ResetForm } = await import("@/app/reset-password/reset-form");
@@ -130,7 +140,7 @@ describe("the form", () => {
     expect(mocks.to).toEqual(["/app"]);
   });
 
-  it.each(["reset_expired", "stale_session", "signed_out"] as const)("%s: the words and the way to a new mail, no retry", async (code) => {
+  it.each(["reset_expired", "signed_out"] as const)("%s: the words and the way to a new mail, no retry", async (code) => {
     mocks.finish.mockResolvedValue({ ok: false, code });
     const view = await filled();
     await press(view);
@@ -150,6 +160,19 @@ describe("the form", () => {
     await drawn();
     expect(view.text()).toContain("2 回の入力が違います");
     expect(mocks.finish).not.toHaveBeenCalled();
+  });
+
+  it("seam: a reset link older than 15 minutes, as the key Action answers it, shows the expired reset and the way to a new mail", async () => {
+    mocks.finish.mockImplementation(mocks.real);
+    keys.read.mockResolvedValue({ ok: true, key: null });
+    keys.register.mockResolvedValue({ ok: false, error: KEY_SESSION_STALE });
+    const view = await filled();
+    await press(view);
+    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.reset_expired));
+    expect(view.text()).not.toContain(LOGIN_MESSAGES.stale_session);
+    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login/forgot", "再設定のメールを送る"]]);
+    expect(view.hosts((h) => h.type === "button")).toHaveLength(0);
+    expect(mocks.to).toEqual([]);
   });
 
   it("keeps the session's address for a password manager, in a field without a name", async () => {

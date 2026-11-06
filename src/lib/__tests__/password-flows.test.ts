@@ -551,12 +551,26 @@ describe("finishing a reset", () => {
     expect(await login(NEW_PASSWORD)).toEqual({ ok: true, userId: USER, key: "opened" });
   });
 
-  it("a stale session (more than 15 minutes) is refused at registration and told with the fixed words", async () => {
+  it("a reset link older than 15 minutes: refused at registration, and told as an expired reset (a new mail), never as a login", async () => {
     await forgotten();
     server.before.registerMailKey = () => ({ ok: false, error: KEY_SESSION_STALE });
-    expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "stale_session" });
+    expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "reset_expired" });
     expect(server.finishReset).not.toHaveBeenCalled();
-    expect(flowMessage("stale_session")).toBe(LOGIN_MESSAGES.stale_session);
+    expect(tab.setTabKey).not.toHaveBeenCalled();
+    expect(flowMessage("reset_expired")).toBe("再設定の期限が切れました。もう一度、再設定のメールを送ってください。");
+    // Whoever resets cannot log in: the login's words are not the way on here.
+    expect(flowMessage("reset_expired")).not.toBe(LOGIN_MESSAGES.stale_session);
+  });
+
+  it("any stale answer on the way is an expired reset too (the key read, finishReset)", async () => {
+    await forgotten();
+    server.before["readMailKey(in use)"] = () => ({ ok: false, error: KEY_SESSION_STALE });
+    expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "reset_expired" });
+    server.before.finishReset = () => ({ ok: false, code: "stale_session" });
+    expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "reset_expired" });
+    // Other refusals keep their own codes.
+    server.before.registerMailKey = () => ({ ok: false, error: "network" });
+    expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "network" });
   });
 
   it("finishReset's own codes come through (reset_expired, signed_out)", async () => {
