@@ -81,12 +81,14 @@ describe("no Supabase client or key in the browser's JavaScript", () => {
     const files = appFiles();
     const clients = [...files].filter(([, s]) => isClient(s)).map(([f]) => path.relative(process.cwd(), f));
     expect(clients).toContain("src/lib/crypto/tab-key.ts");
+    expect(clients).toContain("src/lib/crypto/password-flows.ts");
     expect(clients).toContain("src/app/app/parcels/[id]/sealed-mail.tsx");
-    expect(clients).toContain("src/app/app/settings/mail-key-panel.tsx");
-    // The walk reaches the crypto code through tab-key (an import of an import).
-    const tabKey = path.join(SRC, "lib/crypto/tab-key.ts");
-    expect(importsOf(files.get(tabKey)!)).toContain("./key-wrap");
-    expect(resolve(tabKey, "./key-wrap", (f) => files.has(f))).toBe(path.join(SRC, "lib/crypto/key-wrap.ts"));
+    expect(clients).toContain("src/app/app/settings/password-panel.tsx");
+    expect(clients).toContain("src/app/login/login-form.tsx");
+    // The walk reaches the crypto code through the password flows (an import of an import).
+    const flows = path.join(SRC, "lib/crypto/password-flows.ts");
+    expect(importsOf(files.get(flows)!)).toContain("./key-wrap");
+    expect(resolve(flows, "./key-wrap", (f) => files.has(f))).toBe(path.join(SRC, "lib/crypto/key-wrap.ts"));
   });
 
   it("no client module, nor anything it imports, names createBrowserClient, a Supabase key or @supabase/*", () => {

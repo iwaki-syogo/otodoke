@@ -7,18 +7,19 @@ import { PLAINTEXT_DROP_NOTICE } from "@/lib/mail-notices";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
 /**
- * 設定, after the review of 2026-11-06 (R1-1, R1-5):
+ * 設定, after the review of 2026-11-06 (R1-1, R1-5), in the password panel of password-v1:
  *  - Decision 7 removes, on 2026-11-14, the plaintext subject, sender and body of read mail of users
- *    with no passphrase (supabase/pending/20261114090000). The screen says so, with the date, where
- *    it used to say the mail stays until 「暗号化する」 is pressed.
- *  - Without a passphrase, a failed count of plaintext mail is said as such; the warning used to
- *    vanish, as if there were none (the panel with a passphrase already said so).
+ *    with no key (supabase/pending/20261114090000). The screen says so, with the date, where it
+ *    used to say the mail stays until 「暗号化する」 is pressed.
+ *  - Without a key, a failed count of plaintext mail is said as such; the warning used to vanish,
+ *    as if there were none (the panel with a key already said so).
  */
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
 vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readMailKey: vi.fn(), readRetiredMailKeys: vi.fn(), readSealedMail: vi.fn() }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
-const { MailKeyPanel } = await import("@/app/app/settings/mail-key-panel");
+const { PasswordPanel } = await import("@/app/app/settings/password-panel");
 const { MailHandling } = await import("@/app/app/settings/mail-handling");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
@@ -26,18 +27,19 @@ const NOTICE = "11 月 14 日に件名・差出人・本文を消します。荷
 const COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
 
 const panel = (over: { keyCreatedAt?: string | null; plainCount: number | null }) =>
-  parseHtml(renderToStaticMarkup(createElement(MailKeyPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: over.keyCreatedAt ?? null, currentKeyId: over.keyCreatedAt ? "a".repeat(32) : null, plainCount: over.plainCount, oldKeyCount: 0 } })));
+  parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: over.keyCreatedAt ?? null, plainCount: over.plainCount, oldKeyCount: 0 } })));
 
 const redBoxes = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "p" && textOf(n) === COUNT_FAILED && (n.attrs.class ?? "").includes("bg-red-50"));
 
 describe("decision 7 is announced with its date", () => {
-  it("without a passphrase: the plaintext warning says the mail goes on 11/14 unless one is set", () => {
+  it("without a key: the plaintext warning says the mail goes on 11/14 unless one is made, in mail-notices' words", () => {
     const text = textOf(panel({ plainCount: 3 }));
-    expect(text).toContain("暗号化されていない保存済みのメール 3 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。");
-    expect(text).toContain(`合言葉を決めていない場合は、${NOTICE}`);
+    expect(text).toContain(`暗号化されていない保存済みのメール 3 通も、鍵を作ったあとに暗号化できます。それまでは運営者が読める形です。${PLAINTEXT_DROP_NOTICE}`);
+    expect(PLAINTEXT_DROP_NOTICE).toContain(NOTICE);
+    expect(text).not.toContain("合言葉");
   });
 
-  it("with a passphrase: no date (decision 7 leaves these to 「暗号化する」)", () => {
+  it("with a key: no date (decision 7 leaves these to 「暗号化する」)", () => {
     const text = textOf(panel({ keyCreatedAt: "2026-11-06T00:00:00Z", plainCount: 2 }));
     expect(text).toContain("押すまでは、運営者が読める形で残ります");
     expect(text).not.toContain("11 月 14 日");
@@ -67,11 +69,11 @@ describe("decision 7 is announced with its date", () => {
 });
 
 describe("a failed count of plaintext mail", () => {
-  it("without a passphrase: says the count could not be read, instead of no warning", () => {
+  it("without a key: says the count could not be read, instead of no warning", () => {
     expect(redBoxes(panel({ plainCount: null }))).toHaveLength(1);
   });
 
-  it("with a passphrase: the same words (as before)", () => {
+  it("with a key: the same words (as before)", () => {
     expect(redBoxes(panel({ keyCreatedAt: "2026-11-06T00:00:00Z", plainCount: null }))).toHaveLength(1);
   });
 

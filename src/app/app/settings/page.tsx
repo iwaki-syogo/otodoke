@@ -9,7 +9,7 @@ import { UNREAD_FILTER } from "@/lib/unread";
 import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
 import { PressButton } from "./press";
-import { MailKeyPanel } from "./mail-key-panel";
+import { PasswordPanel } from "./password-panel";
 import { MailHandling } from "./mail-handling";
 import { readAll } from "@/lib/supabase/read-all";
 import { countPlainRead } from "@/lib/mail-keys";
@@ -122,13 +122,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
       {keyError ? (
         <section>
-          <h2 className="text-base font-bold">合言葉</h2>
+          <h2 className="text-base font-bold">パスワード</h2>
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         </section>
       ) : (
-        <MailKeyPanel state={{ userId: user.id, email: user.email ?? "", keyCreatedAt: key?.created_at ?? null, currentKeyId: key?.key_id ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
+        <PasswordPanel state={{ userId: user.id, email: user.email ?? "", keyCreatedAt: key?.created_at ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
       )}
-      {/* Which account this is, next to the passphrase and the address: a page signed in to someone
+      {/* Which account this is, next to the password and the address: a page signed in to someone
           else's account (a crafted login link) shows it here before anything is set up. */}
       <p className="-mt-6 text-xs text-neutral-500">
         ログイン中: <span className="break-all font-medium text-neutral-700">{user.email}</span>
@@ -137,7 +137,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       <section>
         <h2 className="text-base font-bold">転送先アドレス</h2>
         {keyError ? (
-          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">合言葉を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。</p>
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">メールの鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。</p>
         ) : key ? (
           <>
             <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
@@ -148,7 +148,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
             <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
           </>
         ) : (
-          <p className="mt-1 text-sm leading-6 text-neutral-600">合言葉を決めると、ここに出ます。サンプルは合言葉なしで試せます。</p>
+          <p className="mt-1 text-sm leading-6 text-neutral-600">メールの鍵を作ると、ここに出ます。サンプルは鍵なしで試せます。</p>
         )}
       </section>
 
