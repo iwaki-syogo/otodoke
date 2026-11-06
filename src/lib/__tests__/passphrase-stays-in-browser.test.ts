@@ -1,17 +1,28 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { KeyActivationSchema, KeyReadSchema, KeyRegistrationSchema, KeyRewrapSchema, SealBatchSchema, SealedMailReadSchema, type KeyRegistration, type KeyRewrap } from "@/lib/mail-keys";
+import {
+  KeyActivationSchema,
+  KeyReadSchema,
+  KeyRegistrationSchema,
+  KeyRestoreSchema,
+  KeyRewrapSchema,
+  SealBatchSchema,
+  SealedMailReadSchema,
+  type KeyRegistration,
+  type KeyRestore,
+  type KeyRewrap,
+} from "@/lib/mail-keys";
 import { appSourceFiles, read, withoutComments } from "./source-scan";
 
 /**
- * The passphrase never leaves the browser.
+ * The passphrase (and the password of password v1) never leaves the browser.
  *  - No server action ("use server" file) names a passphrase in its code.
- *  - The key-wrap code (which takes the passphrase) is imported only by client modules.
+ *  - The key-wrap and password-v1 code (which take the passphrase or the password) is imported only by client modules.
  *  - The server's input schemas have no such field and refuse unknown ones.
  */
 
 const PASSPHRASE = /passphrase|password|合言葉/i;
-const KEY_WRAP_IMPORT = /from\s+["'][^"']*crypto\/(key-wrap|tab-key)["']/;
+const KEY_WRAP_IMPORT = /from\s+["'][^"']*crypto\/(key-wrap|tab-key|password-v1)["']/;
 
 const rel = (f: string) => path.relative(process.cwd(), f);
 const isServerActionFile = (source: string) => /^\s*["']use server["']/.test(withoutComments(source));
@@ -50,16 +61,22 @@ describe("the passphrase stays in the browser", () => {
     const planted = [
       { file: path.join(process.cwd(), "src/app/x/planted-actions.ts"), source: '"use server";\nexport async function save(input: { passphrase: string }) { return input; }\n' },
       { file: path.join(process.cwd(), "src/lib/planted-server.ts"), source: 'import { wrapPrivateKey } from "@/lib/crypto/key-wrap";\nexport const w = wrapPrivateKey;\n' },
+      { file: path.join(process.cwd(), "src/lib/planted-login.ts"), source: 'import { deriveMaster } from "@/lib/crypto/password-v1";\nexport const d = deriveMaster;\n' },
+      { file: path.join(process.cwd(), "src/app/x/planted-form.tsx"), source: '"use client";\nimport { deriveMaster } from "@/lib/crypto/password-v1";\nexport const d = deriveMaster;\n' },
     ];
     expect(serverActionsNamingPassphrase(planted)).toEqual(["src/app/x/planted-actions.ts"]);
-    expect(serverFilesImportingKeyWrap(planted)).toEqual(["src/lib/planted-server.ts"]);
+    expect(serverFilesImportingKeyWrap(planted)).toEqual(["src/lib/planted-server.ts", "src/lib/planted-login.ts"]);
   });
 
   it("the server's input schemas have no passphrase field and refuse one", () => {
-    for (const schema of [KeyRegistrationSchema, KeyRewrapSchema, KeyActivationSchema, KeyReadSchema, SealedMailReadSchema, SealBatchSchema]) {
+    for (const schema of [KeyRegistrationSchema, KeyRewrapSchema, KeyRestoreSchema, KeyActivationSchema, KeyReadSchema, SealedMailReadSchema, SealBatchSchema]) {
       expect(Object.keys(schema.shape).filter((k) => PASSPHRASE.test(k))).toEqual([]);
       expect(schema.safeParse({ passphrase: "x" }).success).toBe(false);
+      expect(schema.safeParse({ password: "x" }).success).toBe(false);
     }
+    const restore: KeyRestore = { keyId: "0".repeat(32), rewrappedPrivateKey: "AQ==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 };
+    expect(KeyRestoreSchema.safeParse(restore).success).toBe(true);
+    expect(KeyRestoreSchema.safeParse({ ...restore, password: "x" }).success).toBe(false);
     const input: KeyRegistration = { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, expectedCurrentKeyId: null };
     expect(KeyRegistrationSchema.safeParse(input).success).toBe(true);
     expect(KeyRegistrationSchema.safeParse({ ...input, passphrase: "x" }).success).toBe(false);

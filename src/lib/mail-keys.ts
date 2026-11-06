@@ -70,6 +70,23 @@ export const KeyRewrapSchema = z
   .strict();
 export type KeyRewrap = z.infer<typeof KeyRewrapSchema>;
 
+/**
+ * Undoing a rewrap whose password change did not go through: the wrap from before it
+ * (`wrappedPrivateKey`, `wrapIv`, `kdfSalt`, `kdfIterations`) is stored again, only over the wrap
+ * that change stored (`rewrappedPrivateKey`), never over one the browser has not seen.
+ */
+export const KeyRestoreSchema = z
+  .object({
+    keyId: keyIdField,
+    rewrappedPrivateKey: b64,
+    wrappedPrivateKey: b64,
+    wrapIv: b64,
+    kdfSalt: b64,
+    kdfIterations: z.number().int().min(MIN_KDF_ITERATIONS).max(MAX_KDF_ITERATIONS),
+  })
+  .strict();
+export type KeyRestore = z.infer<typeof KeyRestoreSchema>;
+
 /** Which stored key the browser wants to open: the one in use (null), or one by id. */
 export const KeyReadSchema = z.object({ keyId: keyIdField.nullable() }).strict();
 export type KeyRead = z.infer<typeof KeyReadSchema>;
@@ -210,6 +227,48 @@ export async function rewrapKey(db: AdminClient, userId: string, input: unknown)
       const inUse = await currentKeyId(db, userId);
       throw new Error(inUse === r.keyId ? KEY_WRAP_CHANGED : "no key in use with this id");
     }
+    return { ok: true, keyId: r.keyId };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Put back the wrap of the key in use from before a rewrap, when the password change that rewrap
+ * belonged to did not go through (the new login secret was not set): the key then opens again with
+ * the password that still signs in. The same check as rewrapKey: written only while the stored wrap
+ * is still the one that change stored. Safe to call again: when the wrap from before is already
+ * back (an earlier call went through and its answer was lost), it answers ok and changes nothing.
+ */
+export async function restoreKeyWrap(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string }>> {
+  try {
+    const r = KeyRestoreSchema.parse(input);
+    if (r.rewrappedPrivateKey === r.wrappedPrivateKey) throw new Error("the wrap to put back is the one stored now");
+    checkWrap(r.wrappedPrivateKey, r.wrapIv, r.kdfSalt);
+    const { data, error } = await db
+      .from("user_keys")
+      .update({ wrapped_private_key: r.wrappedPrivateKey, wrap_iv: r.wrapIv, kdf_salt: r.kdfSalt, kdf_iterations: r.kdfIterations })
+      .eq("user_id", userId)
+      .eq("key_id", r.keyId)
+      .eq("wrapped_private_key", r.rewrappedPrivateKey)
+      .not("activated_at", "is", null)
+      .is("retired_at", null)
+      .select("key_id");
+    if (error) throw new Error(`user_keys update failed: ${error.message}`);
+    if (data && data.length === 1) return { ok: true, keyId: r.keyId };
+
+    // Not written: put back already, changed meanwhile (another tab), or not the key in use.
+    const { data: inUse, error: readError } = await db
+      .from("user_keys")
+      .select("key_id, wrapped_private_key, wrap_iv, kdf_salt, kdf_iterations")
+      .eq("user_id", userId)
+      .not("activated_at", "is", null)
+      .is("retired_at", null)
+      .maybeSingle();
+    if (readError) throw new Error(`user_keys lookup failed: ${readError.message}`);
+    if (!inUse || inUse.key_id !== r.keyId) throw new Error("no key in use with this id");
+    const back = inUse.wrapped_private_key === r.wrappedPrivateKey && inUse.wrap_iv === r.wrapIv && inUse.kdf_salt === r.kdfSalt && inUse.kdf_iterations === r.kdfIterations;
+    if (!back) throw new Error(KEY_WRAP_CHANGED);
     return { ok: true, keyId: r.keyId };
   } catch (err) {
     return fail(err);

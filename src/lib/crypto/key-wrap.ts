@@ -175,3 +175,100 @@ export async function openStoredKey(stored: StoredKey, passphrase: string, userI
   pkcs8.fill(0);
   return { keyId: stored.key_id, publicKey, privateKey };
 }
+
+// ---- With a KEK made elsewhere: password v1 (docs/crypto/password-v1.md) ---------------------
+//
+// The same wrap and the same stored form as above (AES-256-GCM, a 12-byte IV, the AAD
+// "otodoke/key/v1|<user_id>", ciphertext || tag in base64, kdf_iterations 600,000). Only the KEK
+// comes from outside: password-v1.ts kekFor makes it from the login password and the row's
+// kdf_salt. That salt cannot be read back out of the KEK, so a wrap is given the salt its KEK
+// was made with, and stores it.
+
+/** Tests only: a fixed IV, so a test vector comes out the same every time. */
+export interface KekWrapInjection {
+  iv: Bytes;
+}
+
+/**
+ * Wrap the PKCS#8 bytes with a KEK. `kdfSalt` is the base64 of the 16 bytes the KEK was made with
+ * (kekFor(master, kdfSalt)); it is stored as the row's kdf_salt, and opening makes the KEK again
+ * from it. Use a new salt (newKdfSalt) for every wrap.
+ */
+export async function wrapPrivateKeyWithKek(pkcs8: Bytes, kek: CryptoKey, kdfSalt: string, userId: string, inject?: KekWrapInjection): Promise<WrappedKey> {
+  if (inject && process.env.NODE_ENV !== "test") throw new Error("fixed IVs are for tests only");
+  if (fromBase64(kdfSalt).length !== 16) throw new Error("bad salt");
+  const iv = inject?.iv ?? randomBytes(12);
+  if (iv.length !== 12) throw new Error("bad iv");
+  const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: utf8(keyWrapAad(userId)), tagLength: 128 }, kek, pkcs8));
+  return { wrapped_private_key: toBase64(wrapped), wrap_iv: toBase64(iv), kdf_salt: kdfSalt, kdf_iterations: KDF_ITERATIONS };
+}
+
+/** The PKCS#8 bytes. A wrong KEK (or a changed byte, or another user id) throws the AES-GCM OperationError as it is. */
+async function unwrapWithKek(wrapped: WrappedKey, kek: CryptoKey, userId: string): Promise<Bytes> {
+  const iv = fromBase64(wrapped.wrap_iv);
+  if (iv.length !== 12) throw new Error("bad iv");
+  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: utf8(keyWrapAad(userId)), tagLength: 128 }, kek, fromBase64(wrapped.wrapped_private_key)));
+}
+
+/** What openStoredKey checks once the key is open: it is the pair of the stored public key, and the key id is that key's. */
+async function checkOpenedKey(stored: StoredKey, pkcs8: Bytes): Promise<Bytes> {
+  const publicKey = fromBase64(stored.public_key);
+  const check = await crypto.subtle.importKey("pkcs8", pkcs8, ECDH, true, ["deriveBits"]);
+  if (!equalBytes(await publicKeyOf(check), publicKey)) throw new Error("the stored private key does not match the stored public key");
+  if ((await keyIdOf(publicKey)) !== stored.key_id) throw new Error("the stored key id does not match the public key");
+  return publicKey;
+}
+
+/** A new key pair, its private key wrapped with a KEK. The private key's bytes are zeroed here and never returned. */
+export interface NewWrappedKey {
+  publicKey: Bytes;
+  keyId: string;
+  wrapped: WrappedKey;
+}
+
+/** The KEK version of createKeyPair + wrapPrivateKey: a new key pair, wrapped with the KEK made with `kdfSalt`. */
+export async function createWrappedKey(kek: CryptoKey, kdfSalt: string, userId: string): Promise<NewWrappedKey> {
+  const pair = await createKeyPair();
+  try {
+    return { publicKey: pair.publicKey, keyId: pair.keyId, wrapped: await wrapPrivateKeyWithKek(pair.pkcs8, kek, kdfSalt, userId) };
+  } finally {
+    pair.pkcs8.fill(0);
+  }
+}
+
+/**
+ * openStoredKey with a KEK: open the stored key and prove it is the pair of the stored public key
+ * (and the key id is that key's). The KEK is kekFor(master, stored.kdf_salt). The private key kept
+ * for the tab cannot be exported again. A wrong KEK rejects with the AES-GCM OperationError, as a
+ * wrong passphrase does.
+ */
+export async function openStoredKeyWithKek(stored: StoredKey, kek: CryptoKey, userId: string): Promise<PrivateRecipient> {
+  const pkcs8 = await unwrapWithKek(stored, kek, userId);
+  try {
+    const publicKey = await checkOpenedKey(stored, pkcs8);
+    const privateKey = await crypto.subtle.importKey("pkcs8", pkcs8, ECDH, false, ["deriveBits"]);
+    return { keyId: stored.key_id, publicKey, privateKey };
+  } finally {
+    pkcs8.fill(0);
+  }
+}
+
+/**
+ * The same private key wrapped again (the password or the address changed): opened with the old
+ * KEK and checked as openStoredKeyWithKek checks it, then wrapped with the new KEK, under the new
+ * kdf_salt that KEK was made with and a new IV. Returns the new wrap; nothing is stored here
+ * (the server stores it over the old one, rewrapMailKey).
+ *
+ * This cannot tell that `newKek` was made with `newKdfSalt`. Before sending, open the new wrap
+ * with kekFor(newMaster, wrap.kdf_salt): that proves the stored salt makes the KEK again.
+ */
+export async function rewrapStoredKey(stored: StoredKey, oldKek: CryptoKey, newKek: CryptoKey, newKdfSalt: string, userId: string): Promise<WrappedKey> {
+  if (equalBytes(fromBase64(newKdfSalt), fromBase64(stored.kdf_salt))) throw new Error("a new wrap needs a new kdf_salt");
+  const pkcs8 = await unwrapWithKek(stored, oldKek, userId);
+  try {
+    await checkOpenedKey(stored, pkcs8);
+    return await wrapPrivateKeyWithKek(pkcs8, newKek, newKdfSalt, userId);
+  } finally {
+    pkcs8.fill(0);
+  }
+}
