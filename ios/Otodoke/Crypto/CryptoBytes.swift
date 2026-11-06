@@ -8,7 +8,7 @@ import CryptoKit
 import Foundation
 
 /// Every way opening a key or a mail can fail. No case carries anything from the input (never a
-/// passphrase, a key, a mail or an id), so an error can be logged or shown as it is.
+/// password, a key, a mail or an id), so an error can be logged or shown as it is.
 enum CryptoError: Error, Equatable, Sendable {
     case badBase64
     /// An AAD id that is not a lowercase UUID.
@@ -23,10 +23,7 @@ enum CryptoError: Error, Equatable, Sendable {
     case badPlaintext
     /// A stored key row out of range: iterations, salt length, iv length, the public key.
     case badKeyRow
-    /// The wrapped key did not open with this passphrase.
-    case wrongPassphrase
-    /// password-v1: the wrapped key did not open with the KEK of this password (and address).
-    /// TDD-STUB(password-v1): the case only; nothing throws it yet.
+    /// The wrapped key did not open with the KEK of this password (and address): password-v1.
     case wrongPassword
     /// The unwrapped key is not the pair of the stored public key, or the key id does not match it.
     case keyMismatch

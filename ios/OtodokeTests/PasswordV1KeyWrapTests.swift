@@ -96,7 +96,7 @@ struct PasswordV1KeyWrapTests {
         #expect(caught { try KeyWrap.wrap(pkcs8: v.pkcs8, kek: c.kek, userID: c.userID, iv: c.wrapIV.prefix(11)) } == .badKeyRow)
         #expect(caught { try KeyWrap.wrap(pkcs8: v.pkcs8, kek: c.kek, userID: c.userID, iv: c.wrapIV + Data([0])) } == .badKeyRow)
         #expect(caught { try KeyWrap.wrap(pkcs8: v.pkcs8, kek: c.kek.prefix(31), userID: c.userID) } == .badKeyRow)
-        #expect(caught { try KeyWrap.wrap(pkcs8: v.pkcs8, kek: c.kek, userID: c.userID.uppercased()) } == .badID)
+        #expect(caught { try KeyWrap.wrap(pkcs8: v.pkcs8, kek: c.kek, userID: upperUUID) } == .badID)
         #expect(caught { try KeyWrap.wrap(pkcs8: v.pkcs8, kek: c.kek, userID: "not-a-uuid") } == .badID)
     }
 
@@ -112,9 +112,9 @@ struct PasswordV1KeyWrapTests {
 
     @Test func anUppercaseUUIDIsRefused() throws {
         for c in v.cases {
-            #expect(caught { try KeyWrap.unwrapPrivateKeyBytes(c.row(), kek: c.kek, userID: c.userID.uppercased()) } == .badID, "\(c.name)")
-            #expect(caught { try KeyWrap.openStoredKey(c.row(), kek: c.kek, userID: c.userID.uppercased()) } == .badID, "\(c.name)")
-            #expect(caught { try PasswordV1.openStoredKey(c.row(), master: c.master, userID: c.userID.uppercased()) } == .badID, "\(c.name)")
+            #expect(caught { try KeyWrap.unwrapPrivateKeyBytes(c.row(), kek: c.kek, userID: upperUUID) } == .badID, "\(c.name)")
+            #expect(caught { try KeyWrap.openStoredKey(c.row(), kek: c.kek, userID: upperUUID) } == .badID, "\(c.name)")
+            #expect(caught { try PasswordV1.openStoredKey(c.row(), master: c.master, userID: upperUUID) } == .badID, "\(c.name)")
         }
     }
 

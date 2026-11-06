@@ -133,6 +133,6 @@ struct PasswordV1KeyGenerationTests {
         let c = try #require(v.named("ascii"))
         #expect(caught { try KeyGeneration.generate(master: c.master, userID: Self.me.uppercased()) } == .badID)
         let key = try v.testPrivateKey()
-        #expect(caught { try KeyGeneration.row(privateKey: key, master: c.master, userID: c.userID.uppercased(), kdfSalt: c.kdfSalt, iv: c.wrapIV) } == .badID)
+        #expect(caught { try KeyGeneration.row(privateKey: key, master: c.master, userID: upperUUID, kdfSalt: c.kdfSalt, iv: c.wrapIV) } == .badID)
     }
 }

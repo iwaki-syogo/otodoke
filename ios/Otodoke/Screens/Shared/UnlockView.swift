@@ -66,7 +66,7 @@ struct UnlockView: View {
         guard !isOpening, !passphrase.isEmpty else { return }
         let typed = passphrase
         Task {
-            let opened = await model.submit(passphrase: typed)
+            let opened = await model.submit(password: typed)
             if opened {
                 passphrase = ""
                 onOpened()

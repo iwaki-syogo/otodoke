@@ -107,7 +107,7 @@ struct FaceIDSettingsTests {
         let toggle = FaceIDSwitch(policy: w.policy, vault: w.vault)
         let gate = Gate()
         w.deriver.hold(on: gate)
-        let run = Task { await w.model.submit(passphrase: w.v.passphrase) }
+        let run = Task { await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) }
         defer { gate.open() }
         let deriver = w.deriver
         #expect(await waitFor { deriver.calls == 1 })

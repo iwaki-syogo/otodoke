@@ -6,10 +6,12 @@
  *   npm run ios:fixtures                              write the file and the crypto vectors (below)
  *   npx tsx scripts/ios-fixtures.ts --stdout          print web-expected.json instead (never a vector)
  *   NODE_ENV=test npx tsx scripts/ios-fixtures.ts --crypto-out <dir>   write only the two vector files, into <dir>
+ *   npx tsx scripts/ios-fixtures.ts --password-out <dir>              write only password-v1.json, into <dir>
  *
  * The crypto vectors (batch 2, task 13) go to ios/OtodokeTests/Fixtures/crypto/, which ios/.gitignore keeps
  * out of git: envelope-v1.json is fixtures/crypto/envelope-v1.json byte for byte, and negative-v1.json holds
  * envelopes sealed by the Web's own sealBytes (its test injection, so NODE_ENV=test) whose plaintext is wrong.
+ * password-v1.json (iOS build 3) is fixtures/crypto/password-v1.json byte for byte, into the same place.
  *
  * The output does not depend on the machine's time zone or clock: every "today" is given, and the
  * functions that read today's year themselves run with the clock frozen at noon JST of that day.
@@ -78,6 +80,8 @@ const OUT = path.join(ROOT, "ios/OtodokeTests/Fixtures/web-expected.json");
 const CRYPTO_OUT = path.join(ROOT, "ios/OtodokeTests/Fixtures/crypto");
 /** The canonical vector file (scripts/crypto-vectors.ts), copied byte for byte, never by hand. */
 const CRYPTO_SOURCE = path.join(ROOT, "fixtures/crypto/envelope-v1.json");
+/** The canonical password-v1 vectors (scripts/crypto-password-v1-vectors.ts), copied byte for byte, never by hand. */
+const PASSWORD_SOURCE = path.join(ROOT, "fixtures/crypto/password-v1.json");
 
 // ---------------------------------------------------------------------------------------------
 // The clock, frozen for the functions that read it themselves (formatDateJa reads this year).
@@ -1187,6 +1191,12 @@ async function writeCryptoVectors(dir: string): Promise<void> {
   console.error(`wrote the crypto vectors into ${path.relative(ROOT, dir) || dir}`);
 }
 
+function writePasswordVectors(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, "password-v1.json"), readFileSync(PASSWORD_SOURCE));
+  console.error(`wrote the password-v1 vectors into ${path.relative(ROOT, dir) || dir}`);
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.includes("--stdout")) {
@@ -1200,10 +1210,18 @@ async function main(): Promise<void> {
     await writeCryptoVectors(path.resolve(dir));
     return;
   }
+  const pw = argv.indexOf("--password-out");
+  if (pw >= 0) {
+    const dir = argv[pw + 1];
+    if (!dir || dir.startsWith("--")) throw new Error("--password-out needs a directory");
+    writePasswordVectors(path.resolve(dir));
+    return;
+  }
   mkdirSync(path.dirname(OUT), { recursive: true });
   writeFileSync(OUT, text);
   console.error(`wrote ${path.relative(ROOT, OUT)}`);
   await writeCryptoVectors(CRYPTO_OUT);
+  writePasswordVectors(CRYPTO_OUT);
 }
 
 main().catch((error: unknown) => {

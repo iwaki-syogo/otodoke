@@ -272,7 +272,7 @@ final class ParcelDetailModel {
     /// The passphrase typed in UnlockView for this mail; opens it when the key opened.
     func submitPassphrase(_ passphrase: String, emailID: String) async {
         guard let unlock else { return }
-        guard await unlock.submit(passphrase: passphrase) else { return }
+        guard await unlock.submit(password: passphrase) else { return }
         await openSealed(emailID: emailID)
     }
 

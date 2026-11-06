@@ -1,9 +1,10 @@
 // Opening the key (task 17, CX2, CX3).
 //  - key(): the key in memory; else Face ID once per front period (KeyVault.load); else the passphrase.
 //    Face ID unavailable or refused goes back to the passphrase.
-//  - submit(passphrase:): reads the key row, runs PBKDF2 off the main thread (KeyDeriving), one at a time
-//    (a second submit while one runs does nothing), 「開いています…」 meanwhile, the time taken recorded
-//    (never a value or the passphrase). A wrong passphrase is 「合言葉が違います」. The key is put in memory
+//  - submit(password:email:): reads the key row, makes master with PBKDF2 off the main thread (KeyDeriving,
+//    password-v1), one at a time (a second submit while one runs does nothing), 「開いています…」 meanwhile,
+//    the time taken recorded (never a value or the password). A wrong password is 「合言葉が違います」 (the
+//    words stay until the Web's new wording comes). The key is put in memory
 //    and saved to the Keychain only when the stamps (session + front period) are still current; the save
 //    also takes the policy ticket from the start (CX3). A device that cannot keep it goes on in memory.
 //  - recipient(forKid:): a sealed mail's kid differs from the key in memory → read the key row again →
@@ -16,23 +17,29 @@ import Foundation
 import Observation
 
 protocol KeyDeriving: Sendable {
-    /// openStoredKey, off the main thread.
-    func open(_ row: StoredKeyRow, passphrase: String, userID: String) async throws(CryptoError) -> PrivateRecipient
+    /// password-v1: master from the password and the address, then the KEK from the row's kdf_salt, then
+    /// openStoredKey; off the main thread.
+    func open(_ row: StoredKeyRow, password: String, email: String, userID: String) async throws(CryptoError) -> PrivateRecipient
 }
 
-/// The app's: KeyWrap.openStoredKey with `kdf` (PBKDF2), never on the main thread.
+/// The app's: master through PasswordV1Deriver (PBKDF2 off the main thread, one at a time), then
+/// PasswordV1.openStoredKey (HKDF and AES-GCM, also off the main thread).
 struct LiveKeyDeriver: KeyDeriving {
-    let kdf: KeyWrap.KDF
+    let deriver: PasswordV1Deriver
 
-    init(kdf: @escaping KeyWrap.KDF = KeyWrap.pbkdf2) {
-        self.kdf = kdf
+    init(deriver: PasswordV1Deriver = PasswordV1Deriver()) {
+        self.deriver = deriver
     }
 
-    func open(_ row: StoredKeyRow, passphrase: String, userID: String) async throws(CryptoError) -> PrivateRecipient {
-        let kdf = self.kdf
+    func open(_ row: StoredKeyRow, password: String, email: String, userID: String) async throws(CryptoError) -> PrivateRecipient {
+        // A bad row is refused before PBKDF2 runs (it is the slow part).
+        _ = try KeyWrap.check(row, userID: userID)
+        var master = try await deriver.master(password: password, email: email)
+        defer { master.resetBytes(in: 0..<master.count) }
+        let key = master
         let result = await Task.detached(priority: .userInitiated) { () -> Result<PrivateRecipient, CryptoError> in
             do throws(CryptoError) {
-                return .success(try KeyWrap.openStoredKey(row, passphrase: passphrase, userID: userID, kdf: kdf))
+                return .success(try PasswordV1.openStoredKey(row, master: key, userID: userID))
             } catch {
                 return .failure(error)
             }
@@ -94,12 +101,18 @@ final class UnlockModel {
     /// A submit is running (PBKDF2 runs one at a time).
     @ObservationIgnored private var submitting = false
 
-    init(store: OpenKeyStore, keys: any MailKeyReading, vault: KeyVault?, policy: KeyStorePolicy, deriver: any KeyDeriving = LiveKeyDeriver()) {
+    /// The address password-v1 takes the password with. TDD-STUB(password-v1): where it comes from (the
+    /// address typed at sign-in, kept for the session) is decided with the Web's new screens; until then it
+    /// answers "", so the app's own unlock does not open a key.
+    @ObservationIgnored let signInEmail: @MainActor () -> String
+
+    init(store: OpenKeyStore, keys: any MailKeyReading, vault: KeyVault?, policy: KeyStorePolicy, deriver: any KeyDeriving = LiveKeyDeriver(), signInEmail: @escaping @MainActor () -> String = { "" }) {
         self.store = store
         self.keys = keys
         self.vault = vault
         self.policy = policy
         self.deriver = deriver
+        self.signInEmail = signInEmail
     }
 
     /// The Face ID reason shown by the system (FaceIDText).
@@ -155,9 +168,15 @@ final class UnlockModel {
         return PrivateRecipient(keyID: kept.keyID, publicKey: publicKey, privateKey: privateKey)
     }
 
+    /// submit(password:email:) with the address of the sign-in (signInEmail).
+    @discardableResult
+    func submit(password: String) async -> Bool {
+        await submit(password: password, email: signInEmail())
+    }
+
     /// true when the key is open in memory afterwards (and the stamps were current).
     @discardableResult
-    func submit(passphrase: String) async -> Bool {
+    func submit(password: String, email: String) async -> Bool {
         guard !submitting, let stamp = store.stamp() else { return false }
         // CX3: the save may only use the policy as it was when this started.
         let ticket = policy.ticket()
@@ -179,10 +198,10 @@ final class UnlockModel {
         let started = clock.now
         let recipient: PrivateRecipient
         do {
-            recipient = try await deriver.open(row, passphrase: passphrase, userID: stamp.session.userID)
+            recipient = try await deriver.open(row, password: password, email: email, userID: stamp.session.userID)
         } catch {
             lastOpenDuration = clock.now - started
-            return finish(stamp, message: error == .wrongPassphrase ? Self.wrongPassphraseText : Self.failedText)
+            return finish(stamp, message: error == .wrongPassword ? Self.wrongPassphraseText : Self.failedText)
         }
         lastOpenDuration = clock.now - started
 

@@ -4,7 +4,8 @@ import Foundation
 
 private func onMainThread() -> Bool { Thread.isMainThread }
 
-/// openStoredKey, faked: answers the vector's recipient for the right passphrase and .wrongPassphrase
+/// openStoredKey, faked: answers the vector's recipient for the right password (compared as UTF-8 after
+/// password-v1's NFKC) and .wrongPassword otherwise; records the address it was given;
 /// otherwise; can hold each call on a Gate (PBKDF2 still running) and records how many ran at once and
 /// whether any ran on the main thread.
 final class GatedDeriver: KeyDeriving, @unchecked Sendable {
@@ -17,6 +18,7 @@ final class GatedDeriver: KeyDeriving, @unchecked Sendable {
     private var most = 0
     private var mainThreadRuns = 0
     private var forced: CryptoError?
+    private var lastEmail: String?
 
     init(recipient: PrivateRecipient, passphrase: String, gate: Gate? = nil) {
         self.recipient = recipient
@@ -30,10 +32,13 @@ final class GatedDeriver: KeyDeriving, @unchecked Sendable {
     var calls: Int { lock.withLock { entered } }
     var maxAtOnce: Int { lock.withLock { most } }
     var ranOnMainThread: Int { lock.withLock { mainThreadRuns } }
+    /// The address of the last call.
+    var email: String? { lock.withLock { lastEmail } }
 
-    func open(_ row: StoredKeyRow, passphrase: String, userID: String) async throws(CryptoError) -> PrivateRecipient {
+    func open(_ row: StoredKeyRow, password: String, email: String, userID: String) async throws(CryptoError) -> PrivateRecipient {
         let main = onMainThread()
         let waitOn: Gate? = lock.withLock {
+            lastEmail = email
             entered += 1
             running += 1
             most = max(most, running)
@@ -46,7 +51,7 @@ final class GatedDeriver: KeyDeriving, @unchecked Sendable {
             return forced
         }
         if let failure { throw failure }
-        guard passphrase == self.passphrase || KeyWrap.normalize(passphrase) == KeyWrap.normalize(self.passphrase) else { throw .wrongPassphrase }
+        guard Array(PasswordV1.passwordNorm(password).utf8) == Array(PasswordV1.passwordNorm(self.passphrase).utf8) else { throw .wrongPassword }
         return recipient
     }
 }
@@ -131,6 +136,8 @@ struct UnlockWorld {
     let store: OpenKeyStore
     let keys: FakeMailKeys
     let deriver: GatedDeriver
+    /// The address the model is given with the password.
+    nonisolated static let email = "user@example.test"
     let model: UnlockModel
 
     static let service = "com.iwakisyogo.otodoke.auth"

@@ -121,6 +121,10 @@ func hexData(_ hex: String) -> Data {
     return out
 }
 
+/// A UUID with uppercase letters. The vectors' user_id values are digits only, so their uppercased() is the
+/// same text and proves nothing; this one's lowercase form would be a valid AAD id, and it must be refused (.badID).
+let upperUUID = "00000000-0000-4000-8000-0000000000AB"
+
 /// The UTF-8 bytes of a String (what every comparison of text here uses: Swift's == is canonical equivalence).
 func utf8Bytes(_ s: String) -> [UInt8] { Array(s.utf8) }
 

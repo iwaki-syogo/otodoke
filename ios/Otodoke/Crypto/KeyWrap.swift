@@ -1,13 +1,15 @@
-// Opening the stored key, as src/lib/crypto/key-wrap.ts (2541793) openStoredKey does.
-//   kek      PBKDF2-SHA256(NFKC(passphrase) as UTF-8, salt 16 bytes, 600,000 ... 10,000,000 rounds) -> 32 bytes
-//   pkcs8    AES-256-GCM open(kek, wrap_iv 12 bytes, aad "otodoke/key/v1|<user_id>", wrapped_private_key)
+// Wrapping and opening the stored key with the KEK (password-v1, docs/crypto/password-v1.md step 7; the
+// wrap of src/lib/crypto/key-wrap.ts, only the KEK made differently):
+//   pkcs8    AES-256-GCM(key = KEK, iv = wrap_iv 12 bytes, aad "otodoke/key/v1|<user_id>", plaintext = PKCS#8)
+//            stored as base64(ciphertext || 16-byte tag), the IV on its own
 //   then the private key from the PKCS#8 (or from d when CryptoKit cannot read it), its public point equal to
-//   public_key, and keyIdOf(public_key) equal to key_id. CommonCrypto for PBKDF2, CryptoKit for the rest.
-// Every field of the row is checked before PBKDF2 runs (it is the slow part).
+//   public_key, and keyIdOf(public_key) equal to key_id. The KEK comes from PasswordV1 (master and the row's
+//   kdf_salt); the row's kdf_iterations is never read here. A refusal of AES-GCM is .wrongPassword.
+// Every field of the row is checked before the KEK is made.
 
-import CommonCrypto
 import CryptoKit
 import Foundation
+import Security
 
 /// A user_keys row as the app reads it (the key in use).
 struct StoredKeyRow: Decodable, Equatable, Sendable {
@@ -33,58 +35,15 @@ struct StoredKeyRow: Decodable, Equatable, Sendable {
 }
 
 enum KeyWrap {
-    /// PBKDF2 itself (password bytes, salt, iterations) -> 32 bytes. Injected in tests to see where and how
-    /// often it runs.
-    typealias KDF = @Sendable (_ password: Data, _ salt: Data, _ iterations: Int) throws(CryptoError) -> Data
-
-    static let minIterations = 600_000
-    static let maxIterations = 10_000_000
-
-    /// minIterations ≤ n ≤ maxIterations.
-    static func iterationsAllowed(_ n: Int) -> Bool {
-        n >= minIterations && n <= maxIterations
-    }
-
-    /// normalizePassphrase: NFKC.
-    static func normalize(_ passphrase: String) -> String {
-        passphrase.precomposedStringWithCompatibilityMapping
-    }
-
-    /// CCKeyDerivationPBKDF (SHA-256, 32 bytes). .badKeyRow for iterations out of range or a salt that is not 16 bytes.
-    static func pbkdf2(password: Data, salt: Data, iterations: Int) throws(CryptoError) -> Data {
-        guard iterationsAllowed(iterations), salt.count == 16 else { throw .badKeyRow }
-        var out = Data(repeating: 0, count: 32)
-        let status = out.withUnsafeMutableBytes { (outBuf: UnsafeMutableRawBufferPointer) -> Int32 in
-            password.withUnsafeBytes { (pw: UnsafeRawBufferPointer) -> Int32 in
-                salt.withUnsafeBytes { (s: UnsafeRawBufferPointer) -> Int32 in
-                    CCKeyDerivationPBKDF(
-                        CCPBKDFAlgorithm(kCCPBKDF2),
-                        pw.baseAddress?.assumingMemoryBound(to: CChar.self),
-                        pw.count,
-                        s.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        s.count,
-                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-                        UInt32(iterations),
-                        outBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                        outBuf.count
-                    )
-                }
-            }
-        }
-        guard status == Int32(kCCSuccess) else { throw .badKeyRow }
-        return out
-    }
-
-    /// The row's wrapped key, IV and salt, checked (lengths, base64, iteration count) before any PBKDF2.
-    private struct CheckedWrap {
+    /// The row's wrapped key, IV and salt, checked (ids, lengths, base64). kdf_iterations is not looked at.
+    struct CheckedWrap {
         let wrapped: Data
         let iv: Data
         let salt: Data
-        let iterations: Int
         let aad: String
     }
 
-    private static func check(_ row: StoredKeyRow, userID: String) throws(CryptoError) -> CheckedWrap {
+    static func check(_ row: StoredKeyRow, userID: String) throws(CryptoError) -> CheckedWrap {
         let aad = try CryptoAAD.key(userID: userID)
         let iv: Data
         let salt: Data
@@ -96,16 +55,48 @@ enum KeyWrap {
         } catch {
             throw .badKeyRow
         }
-        guard iv.count == 12, salt.count == 16, wrapped.count >= 16, iterationsAllowed(row.kdfIterations) else { throw .badKeyRow }
-        return CheckedWrap(wrapped: wrapped, iv: iv, salt: salt, iterations: row.kdfIterations, aad: aad)
+        guard iv.count == 12, salt.count == 16, wrapped.count >= 16 else { throw .badKeyRow }
+        return CheckedWrap(wrapped: wrapped, iv: iv, salt: salt, aad: aad)
     }
 
-    /// unwrapPrivateKeyBytes: the PKCS#8 bytes; .badKeyRow before PBKDF2 for a bad row, .wrongPassphrase when
-    /// AES-GCM refuses.
-    static func unwrapPrivateKeyBytes(_ row: StoredKeyRow, passphrase: String, userID: String, kdf: KDF = KeyWrap.pbkdf2) throws(CryptoError) -> Data {
+    /// 12 bytes from the system's secure random source.
+    static func randomIV() throws(CryptoError) -> Data {
+        try randomBytes(12)
+    }
+
+    /// `count` bytes from SecRandomCopyBytes; .badKeyRow if the system refuses.
+    static func randomBytes(_ count: Int) throws(CryptoError) -> Data {
+        var out = Data(repeating: 0, count: count)
+        let status = out.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+        guard status == errSecSuccess else { throw .badKeyRow }
+        return out
+    }
+
+    /// A new random 12-byte IV for every call. .badID unless userID is a lowercase UUID; .badKeyRow unless the
+    /// KEK is 32 bytes.
+    static func wrap(pkcs8: Data, kek: Data, userID: String) throws(CryptoError) -> WrappedPrivateKey {
+        try wrap(pkcs8: pkcs8, kek: kek, userID: userID, iv: randomIV())
+    }
+
+    /// The same with a given IV (the vectors, and KeyGeneration's row). .badKeyRow unless the IV is 12 bytes.
+    static func wrap(pkcs8: Data, kek: Data, userID: String, iv: Data) throws(CryptoError) -> WrappedPrivateKey {
+        let aad = try CryptoAAD.key(userID: userID)
+        guard kek.count == 32, iv.count == 12 else { throw .badKeyRow }
+        do {
+            let box = try AES.GCM.seal(pkcs8, using: SymmetricKey(data: kek), nonce: AES.GCM.Nonce(data: iv), authenticating: Data(aad.utf8))
+            // ciphertext || tag (not `combined`, which puts the nonce in front).
+            return WrappedPrivateKey(iv: iv, sealed: box.ciphertext + box.tag)
+        } catch {
+            throw .badKeyRow
+        }
+    }
+
+    /// The PKCS#8 bytes: .badKeyRow / .badBase64 for a bad row (iv 12, salt 16, wrapped ≥ 16 bytes),
+    /// .badID for an AAD id that is not a lowercase UUID, .wrongPassword when AES-GCM refuses.
+    static func unwrapPrivateKeyBytes(_ row: StoredKeyRow, kek: Data, userID: String) throws(CryptoError) -> Data {
         let w = try check(row, userID: userID)
-        let kek = try kdf(Data(normalize(passphrase).utf8), w.salt, w.iterations)
-        return try AESGCM.open(key: kek, iv: w.iv, sealed: w.wrapped, aad: Data(w.aad.utf8), failure: .wrongPassphrase)
+        guard kek.count == 32 else { throw .wrongPassword }
+        return try AESGCM.open(key: kek, iv: w.iv, sealed: w.wrapped, aad: Data(w.aad.utf8), failure: .wrongPassword)
     }
 
     /// The private key from PKCS#8 (WebCrypto's export); from d inside it when CryptoKit does not read it.
@@ -132,14 +123,14 @@ enum KeyWrap {
     }
 
     /// openStoredKey: unwrap, read the key, prove it is the stored public key's pair and that key_id is its id.
-    static func openStoredKey(_ row: StoredKeyRow, passphrase: String, userID: String, kdf: KDF = KeyWrap.pbkdf2) throws(CryptoError) -> PrivateRecipient {
+    static func openStoredKey(_ row: StoredKeyRow, kek: Data, userID: String) throws(CryptoError) -> PrivateRecipient {
         let publicKey: Data
         do {
             publicKey = try CryptoBytes.fromBase64(row.publicKey)
         } catch {
             throw .badKeyRow
         }
-        var pkcs8 = try unwrapPrivateKeyBytes(row, passphrase: passphrase, userID: userID, kdf: kdf)
+        var pkcs8 = try unwrapPrivateKeyBytes(row, kek: kek, userID: userID)
         defer { pkcs8.resetBytes(in: 0..<pkcs8.count) }
         let key = try privateKey(pkcs8: pkcs8)
         guard key.publicKey.x963Representation == publicKey else { throw .keyMismatch }
@@ -148,41 +139,8 @@ enum KeyWrap {
     }
 }
 
-// password-v1 (docs/crypto/password-v1.md, step 7): the same wrap and open, taking the KEK itself.
-// AES-256-GCM(key = KEK, iv = 12 bytes, aad = UTF-8("otodoke/key/v1|" + user_id), plaintext = PKCS#8),
-// stored as base64(ciphertext || 16-byte tag), the IV on its own. A refusal of AES-GCM is .wrongPassword.
-// The row's kdf_iterations is never read on this path.
-// TDD-STUB(password-v1): names and signatures only. Every body answers a wrong value (never fatalError).
-
 /// What a wrap gives: the IV (12 bytes) and ciphertext || tag.
 struct WrappedPrivateKey: Equatable, Sendable {
     let iv: Data
     let sealed: Data
-}
-
-extension KeyWrap {
-    /// A new random 12-byte IV for every call. .badID unless userID is a lowercase UUID; .badKeyRow unless the
-    /// KEK is 32 bytes. TDD-STUB(password-v1)
-    static func wrap(pkcs8: Data, kek: Data, userID: String) throws(CryptoError) -> WrappedPrivateKey {
-        WrappedPrivateKey(iv: Data(), sealed: Data())
-    }
-
-    /// The same with a given IV (the vectors; wrap(pkcs8:kek:userID:) is the only caller in the app).
-    /// .badKeyRow unless the IV is 12 bytes. TDD-STUB(password-v1)
-    static func wrap(pkcs8: Data, kek: Data, userID: String, iv: Data) throws(CryptoError) -> WrappedPrivateKey {
-        WrappedPrivateKey(iv: Data(), sealed: Data())
-    }
-
-    /// The PKCS#8 bytes: .badKeyRow / .badBase64 for a bad row (iv 12, salt 16, wrapped ≥ 16 bytes),
-    /// .badID for an AAD id that is not a lowercase UUID, .wrongPassword when AES-GCM refuses.
-    /// TDD-STUB(password-v1)
-    static func unwrapPrivateKeyBytes(_ row: StoredKeyRow, kek: Data, userID: String) throws(CryptoError) -> Data {
-        Data()
-    }
-
-    /// Unwrap, read the key, prove it is the stored public key's pair and that key_id is its id (.keyMismatch).
-    /// TDD-STUB(password-v1)
-    static func openStoredKey(_ row: StoredKeyRow, kek: Data, userID: String) throws(CryptoError) -> PrivateRecipient {
-        PrivateRecipient(keyID: "", publicKey: Data(), privateKey: AgreementPrivate())
-    }
 }

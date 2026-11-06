@@ -4,8 +4,6 @@
 // stored (supabase/migrations/20261106120000_mail_encryption_keys.sql; the user_keys_row of the password-v1 vectors):
 // user_id, key_id, public_key, wrapped_private_key, wrap_iv, kdf_salt, kdf_iterations (always 600000).
 // Nothing is sent here: saving the row is the Web's endpoint (docs/api/keys.md), not this file.
-//
-// TDD-STUB(password-v1): names and signatures only. Every body answers a wrong value (never fatalError).
 
 import CryptoKit
 import Foundation
@@ -43,21 +41,35 @@ struct GeneratedKey: Sendable {
 
 enum KeyGeneration {
     /// A new private key, a random kdf_salt (16 bytes) and a random IV (12 bytes). .badID unless userID is a
-    /// lowercase UUID. TDD-STUB(password-v1)
+    /// lowercase UUID.
     static func generate(master: Data, userID: String) throws(CryptoError) -> GeneratedKey {
-        stubKey()
+        _ = try CryptoAAD.key(userID: userID)
+        let privateKey = AgreementPrivate()
+        // 16 bytes from CryptoKit's secure random source.
+        let kdfSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
+        return try row(privateKey: privateKey, master: master, userID: userID, kdfSalt: kdfSalt, iv: KeyWrap.randomIV())
     }
 
     /// The row for a given private key, kdf_salt and IV (the vectors; generate(master:userID:) is the only
-    /// caller in the app). TDD-STUB(password-v1)
+    /// caller in the app).
     static func row(privateKey: AgreementPrivate, master: Data, userID: String, kdfSalt: Data, iv: Data) throws(CryptoError) -> GeneratedKey {
-        stubKey()
-    }
-
-    /// TDD-STUB(password-v1): a wrong answer.
-    private static func stubKey() -> GeneratedKey {
-        let key = AgreementPrivate()
-        let row = NewKeyRow(userID: "", keyID: "", publicKey: "", wrappedPrivateKey: "", wrapIv: "", kdfSalt: "", kdfIterations: 0)
-        return GeneratedKey(row: row, recipient: PrivateRecipient(keyID: "", publicKey: Data(), privateKey: key))
+        _ = try CryptoAAD.key(userID: userID)
+        let publicKey = privateKey.publicKey.x963Representation
+        let keyID = KeyWrap.keyIDOf(publicKey)
+        var kek = try PasswordV1.kek(master: master, kdfSalt: kdfSalt)
+        defer { kek.resetBytes(in: 0..<kek.count) }
+        var pkcs8 = privateKey.derRepresentation
+        defer { pkcs8.resetBytes(in: 0..<pkcs8.count) }
+        let wrapped = try KeyWrap.wrap(pkcs8: pkcs8, kek: kek, userID: userID, iv: iv)
+        let row = NewKeyRow(
+            userID: userID,
+            keyID: keyID,
+            publicKey: CryptoBytes.toBase64(publicKey),
+            wrappedPrivateKey: CryptoBytes.toBase64(wrapped.sealed),
+            wrapIv: CryptoBytes.toBase64(wrapped.iv),
+            kdfSalt: CryptoBytes.toBase64(kdfSalt),
+            kdfIterations: PasswordV1.iterations
+        )
+        return GeneratedKey(row: row, recipient: PrivateRecipient(keyID: keyID, publicKey: publicKey, privateKey: privateKey))
     }
 }

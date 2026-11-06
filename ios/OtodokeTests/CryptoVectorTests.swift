@@ -16,28 +16,6 @@ func caught<T>(_ body: () throws -> T) -> CryptoError? {
     }
 }
 
-/// PBKDF2, recorded: what it was called with, how often, on which thread. Delegates to KeyWrap.pbkdf2.
-final class KDFRecorder: @unchecked Sendable {
-    struct Call: Equatable {
-        let password: Data
-        let salt: Data
-        let iterations: Int
-        let onMainThread: Bool
-    }
-
-    private let lock = NSLock()
-    private var log: [Call] = []
-
-    var calls: [Call] { lock.withLock { log } }
-
-    var kdf: KeyWrap.KDF {
-        { [self] (password: Data, salt: Data, iterations: Int) throws(CryptoError) -> Data in
-            lock.withLock { log.append(Call(password: password, salt: salt, iterations: iterations, onMainThread: Thread.isMainThread)) }
-            return try KeyWrap.pbkdf2(password: password, salt: salt, iterations: iterations)
-        }
-    }
-}
-
 /// [Batch 2, task 14] The opening side of envelope v1 and the key wrap against the Web's fixed vectors
 /// (fixtures/crypto/envelope-v1.json, written outside git by scripts/ios-fixtures.ts): every intermediate
 /// value byte for byte, every negative control refused. A missing vector file fails the suite (never skips).
@@ -245,37 +223,10 @@ struct CryptoVectorTests {
         #expect(caught { try EnvelopeCrypto.parsePlaintext(Data([0x7B, 0xFF, 0x7D])) } == .badPlaintext)
     }
 
-    // MARK: the key wrap
-
-    @Test func thePassphraseIsNFKCAsUTF8() {
-        #expect(KeyWrap.normalize(v.passphrase) == v.passphraseNFKC)
-        #expect(Data(KeyWrap.normalize(v.passphrase).utf8) == v.passphraseNFKCUTF8)
-        #expect(KeyWrap.normalize(v.passphraseNFKC) == v.passphraseNFKC)
-    }
-
-    @Test func pbkdf2GivesTheKEK() throws {
-        #expect(try KeyWrap.pbkdf2(password: v.passphraseNFKCUTF8, salt: v.salt, iterations: v.iterations) == v.kek)
-    }
-
-    @Test func theIterationCountAndTheSaltAreChecked() {
-        #expect(KeyWrap.iterationsAllowed(600_000))
-        #expect(KeyWrap.iterationsAllowed(10_000_000))
-        #expect(!KeyWrap.iterationsAllowed(599_999))
-        #expect(!KeyWrap.iterationsAllowed(10_000_001))
-        #expect(!KeyWrap.iterationsAllowed(0))
-        #expect(!KeyWrap.iterationsAllowed(-600_000))
-        #expect(caught { try KeyWrap.pbkdf2(password: v.passphraseNFKCUTF8, salt: v.salt, iterations: 599_999) } == .badKeyRow)
-        #expect(caught { try KeyWrap.pbkdf2(password: v.passphraseNFKCUTF8, salt: v.salt, iterations: 10_000_001) } == .badKeyRow)
-        #expect(caught { try KeyWrap.pbkdf2(password: v.passphraseNFKCUTF8, salt: v.salt.prefix(15), iterations: 600_000) } == .badKeyRow)
-    }
+    // MARK: the key wrap (password-v1: the KEK is given; PasswordV1 makes it)
 
     @Test func theWrappedKeyOpensToThePKCS8() throws {
-        let rec = KDFRecorder()
-        #expect(try KeyWrap.unwrapPrivateKeyBytes(v.row(), passphrase: v.passphrase, userID: v.userID, kdf: rec.kdf) == v.recipientPKCS8)
-        #expect(rec.calls.count == 1)
-        #expect(rec.calls.first?.password == v.passphraseNFKCUTF8)
-        #expect(rec.calls.first?.salt == v.salt)
-        #expect(rec.calls.first?.iterations == 600_000)
+        #expect(try KeyWrap.unwrapPrivateKeyBytes(v.row(), kek: v.kek, userID: v.userID) == v.recipientPKCS8)
     }
 
     @Test func thePrivateKeyIsReadFromPKCS8() throws {
@@ -285,48 +236,52 @@ struct CryptoVectorTests {
     }
 
     @Test func theStoredKeyOpensAndIsProvedToBeThePair() throws {
-        let r = try KeyWrap.openStoredKey(v.row(), passphrase: v.passphrase, userID: v.userID)
+        let r = try KeyWrap.openStoredKey(v.row(), kek: v.kek, userID: v.userID)
         #expect(r.keyID == v.keyID)
         #expect(r.publicKey == v.recipientPublic)
         #expect(r.privateKey.rawRepresentation == v.recipientD)
-        // Half-width typed: the same after NFKC.
-        let half = try KeyWrap.openStoredKey(v.row(), passphrase: v.passphraseNFKC, userID: v.userID)
-        #expect(half.keyID == v.keyID)
         // And it opens the vector's mail.
         #expect(try EnvelopeCrypto.openMail(r, userID: v.userID, emailID: v.emailID, envelopeJSON: v.envelopeJSON) == v.plaintext)
     }
 
     @Test func aWrongPassphraseIsTold() {
-        #expect(caught { try KeyWrap.openStoredKey(v.row(), passphrase: v.passphrase + "x", userID: v.userID) } == .wrongPassphrase)
-        #expect(caught { try KeyWrap.openStoredKey(v.row(), passphrase: String(v.passphrase.dropLast()) + "４", userID: v.userID) } == .wrongPassphrase)
+        var flipped = v.kek
+        flipped[flipped.startIndex] ^= 0x01
+        #expect(caught { try KeyWrap.openStoredKey(v.row(), kek: flipped, userID: v.userID) } == .wrongPassword)
+        #expect(caught { try KeyWrap.openStoredKey(v.row(), kek: Data(repeating: 7, count: 32), userID: v.userID) } == .wrongPassword)
     }
 
-    @Test func aBadRowIsRefusedBeforePBKDF2Runs() {
+    @Test func aBadRowIsRefusedBeforePBKDF2Runs() async {
         let shortIV = Data(repeating: 1, count: 11).base64EncodedString()
         let shortSalt = Data(repeating: 1, count: 15).base64EncodedString()
         for (name, row) in [
-            ("599,999", v.row(iterations: 599_999)),
-            ("10,000,001", v.row(iterations: 10_000_001)),
             ("iv 11", v.row(wrapIv: shortIV)),
             ("salt 15", v.row(salt: shortSalt)),
             ("salt not base64", v.row(salt: "!!!!")),
         ] {
-            let rec = KDFRecorder()
-            let err = caught { try KeyWrap.openStoredKey(row, passphrase: v.passphrase, userID: v.userID, kdf: rec.kdf) }
+            let rec = PasswordKDFRecorder()
+            let live = LiveKeyDeriver(deriver: PasswordV1Deriver(kdf: rec.kdf))
+            var err: CryptoError?
+            do {
+                _ = try await live.open(row, password: "Tr0ub4dor&3", email: "user@example.test", userID: v.userID)
+            } catch {
+                err = error
+            }
             #expect(err == .badKeyRow || err == .badBase64, "\(name)")
             #expect(rec.calls.isEmpty, "\(name): PBKDF2 ran")
+            #expect(caught { try KeyWrap.openStoredKey(row, kek: v.kek, userID: v.userID) } == .badKeyRow, "\(name)")
         }
     }
 
     @Test func anotherUsersAADDoesNotOpenTheWrap() {
-        #expect(caught { try KeyWrap.openStoredKey(v.row(), passphrase: v.passphrase, userID: "00000000-0000-4000-8000-0000000000bb") } == .wrongPassphrase)
-        #expect(caught { try KeyWrap.openStoredKey(v.row(), passphrase: v.passphrase, userID: v.userID.uppercased()) } == .badID)
+        #expect(caught { try KeyWrap.openStoredKey(v.row(), kek: v.kek, userID: "00000000-0000-4000-8000-0000000000bb") } == .wrongPassword)
+        #expect(caught { try KeyWrap.openStoredKey(v.row(), kek: v.kek, userID: v.userID.uppercased()) } == .badID)
     }
 
     @Test func aKeyIDOrPublicKeyThatIsNotThePairIsRefused() {
         let otherKid = String(v.keyID.dropLast()) + (v.keyID.last == "0" ? "1" : "0")
-        #expect(caught { try KeyWrap.openStoredKey(v.row(keyID: otherKid), passphrase: v.passphrase, userID: v.userID) } == .keyMismatch)
+        #expect(caught { try KeyWrap.openStoredKey(v.row(keyID: otherKid), kek: v.kek, userID: v.userID) } == .keyMismatch)
         let otherPublic = P256.KeyAgreement.PrivateKey().publicKey.x963Representation.base64EncodedString()
-        #expect(caught { try KeyWrap.openStoredKey(v.row(publicKey: otherPublic), passphrase: v.passphrase, userID: v.userID) } == .keyMismatch)
+        #expect(caught { try KeyWrap.openStoredKey(v.row(publicKey: otherPublic), kek: v.kek, userID: v.userID) } == .keyMismatch)
     }
 }

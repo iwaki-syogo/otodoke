@@ -93,7 +93,7 @@ struct UnlockModelTests {
     @Test func aWrongPassphraseIsTold() async throws {
         let w = try UnlockWorld()
         _ = await w.model.key()
-        #expect(await w.model.submit(passphrase: "ちがう合言葉ちがう合言葉") == false)
+        #expect(await w.model.submit(password: "ちがう合言葉ちがう合言葉", email: UnlockWorld.email) == false)
         #expect(w.model.message == UnlockModel.wrongPassphraseText)
         #expect(w.model.phase == .needsPassphrase)
         #expect(w.store.key == nil)
@@ -103,7 +103,7 @@ struct UnlockModelTests {
     @Test func theRightPassphraseOpensAndKeepsTheKeyWithFaceID() async throws {
         let w = try UnlockWorld()
         _ = await w.model.key()
-        #expect(await w.model.submit(passphrase: w.v.passphrase))
+        #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email))
         #expect(w.store.key?.keyID == w.v.keyID)
         #expect(w.model.message == nil)
         #expect(w.model.phase == .idle)
@@ -117,7 +117,7 @@ struct UnlockModelTests {
 
     @Test func aDeviceThatCannotKeepItGoesOnInMemory() async throws {
         let w = try UnlockWorld(availability: .noPasscode)
-        #expect(await w.model.submit(passphrase: w.v.passphrase))
+        #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email))
         #expect(w.store.key?.keyID == w.v.keyID)
         #expect(w.model.saveResult == .memoryOnly)
         #expect(w.vaultCount == 0)
@@ -126,7 +126,7 @@ struct UnlockModelTests {
     @Test func turnedOffItIsOpenedButNotKept() async throws {
         let w = try UnlockWorld()
         w.policy.turnOff()
-        #expect(await w.model.submit(passphrase: w.v.passphrase))
+        #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email))
         #expect(w.store.key != nil)
         #expect(w.model.saveResult == .notAllowed)
         #expect(w.keychain.adds.isEmpty)
@@ -135,7 +135,7 @@ struct UnlockModelTests {
     @Test func anUnreadableKeyRowIsReadFailedAndRunsNoPBKDF2() async throws {
         for answer in [LoadResult<StoredKeyRow?>.failed, .loaded(nil)] {
             let w = try UnlockWorld(key: answer)
-            #expect(await w.model.submit(passphrase: w.v.passphrase) == false)
+            #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) == false)
             #expect(w.model.message == UnlockModel.readFailedText)
             #expect(w.deriver.calls == 0)
             #expect(w.model.phase == .needsPassphrase)
@@ -145,7 +145,7 @@ struct UnlockModelTests {
     @Test func aBadKeyRowIsNotAWrongPassphrase() async throws {
         let w = try UnlockWorld()
         w.deriver.fail(with: .badKeyRow)
-        #expect(await w.model.submit(passphrase: w.v.passphrase) == false)
+        #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) == false)
         #expect(w.model.message == UnlockModel.failedText)
     }
 
@@ -155,12 +155,12 @@ struct UnlockModelTests {
         let w = try UnlockWorld()
         let gate = Gate()
         w.deriver.hold(on: gate)
-        let first = Task { await w.model.submit(passphrase: w.v.passphrase) }
+        let first = Task { await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) }
         defer { gate.open() }
         let deriver = w.deriver
         #expect(await waitFor { deriver.calls == 1 })
         #expect(w.model.phase == .opening)
-        #expect(await w.model.submit(passphrase: w.v.passphrase) == false)
+        #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) == false)
         #expect(w.deriver.calls == 1)
         gate.open()
         #expect(await first.value)
@@ -169,26 +169,30 @@ struct UnlockModelTests {
 
     @Test func pbkdf2RunsOffTheMainThread() async throws {
         let w = try UnlockWorld()
-        #expect(await w.model.submit(passphrase: w.v.passphrase))
+        #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email))
         #expect(w.deriver.ranOnMainThread == 0)
 
-        // The app's deriver with the real PBKDF2, called from the main actor.
-        let rec = KDFRecorder()
-        let live = LiveKeyDeriver(kdf: rec.kdf)
-        let r = try await live.open(w.v.row(), passphrase: w.v.passphrase, userID: Self.me)
-        #expect(r.keyID == w.v.keyID)
+        // The app's deriver with the real PBKDF2 (password-v1), called from the main actor.
+        let pv = try PasswordV1Vectors()
+        let c = try #require(pv.named("ascii"))
+        let rec = PasswordKDFRecorder()
+        let live = LiveKeyDeriver(deriver: PasswordV1Deriver(kdf: rec.kdf))
+        let r = try await live.open(c.row(), password: c.password, email: c.email, userID: c.userID)
+        #expect(r.keyID == pv.keyID)
         #expect(rec.calls.count == 1)
         #expect(rec.calls.first?.onMainThread == false)
+        #expect(rec.calls.first?.iterations == 600_000)
     }
 
     @Test func theLiveDeriverTellsAWrongPassphrase() async throws {
-        let w = try UnlockWorld()
+        let pv = try PasswordV1Vectors()
+        let c = try #require(pv.named("ascii"))
         let live = LiveKeyDeriver()
         do {
-            _ = try await live.open(w.v.row(), passphrase: "ちがう合言葉ちがう合言葉", userID: Self.me)
-            Issue.record("opened with a wrong passphrase")
+            _ = try await live.open(c.row(), password: "ちがう合言葉ちがう合言葉", email: c.email, userID: c.userID)
+            Issue.record("opened with a wrong password")
         } catch {
-            #expect(error == .wrongPassphrase)
+            #expect(error == .wrongPassword)
         }
     }
 
@@ -248,7 +252,7 @@ struct UnlockModelTests {
         let w = try UnlockWorld()
         let gate = Gate()
         w.deriver.hold(on: gate)
-        let run = Task { await w.model.submit(passphrase: w.v.passphrase) }
+        let run = Task { await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) }
         defer { gate.open() }
         let deriver = w.deriver
         #expect(await waitFor { deriver.calls == 1 })
@@ -267,7 +271,7 @@ struct UnlockModelTests {
         let toggle = FaceIDSwitch(policy: w.policy, vault: w.vault)
         let gate = Gate()
         w.deriver.hold(on: gate)
-        let run = Task { await w.model.submit(passphrase: w.v.passphrase) }
+        let run = Task { await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) }
         defer { gate.open() }
         let deriver = w.deriver
         #expect(await waitFor { deriver.calls == 1 })
@@ -287,7 +291,7 @@ struct UnlockModelTests {
         auth.cleanup = w.store
         let gate = Gate()
         w.deriver.hold(on: gate)
-        let run = Task { await w.model.submit(passphrase: w.v.passphrase) }
+        let run = Task { await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) }
         defer { gate.open() }
         let deriver = w.deriver
         #expect(await waitFor { deriver.calls == 1 })
