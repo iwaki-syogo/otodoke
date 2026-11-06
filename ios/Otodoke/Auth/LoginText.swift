@@ -59,8 +59,6 @@ enum LoginText {
 
     // MARK: the key does not open, or was never made (the owner's decision 11/6 23:4x)
 
-    /// key_not_opened: a sign-in that went through, with a password that does not open the key in use.
-    static let keyNotOpened = "このパスワードでは、メールの鍵を開けませんでした。"
     /// N4: the Web's address_mismatch of LOGIN_MESSAGES: the sign-in made no key for this address (letters outside
     /// ASCII); signing in again does not help.
     static let addressMismatch = "このアカウントでは、メールの鍵を作れませんでした。"
