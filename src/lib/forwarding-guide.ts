@@ -2,8 +2,7 @@
  * The words of 「メールの自動転送の設定」: one copy for the Web guide (/guide/forwarding), the
  * Web settings page and the iOS app. Pure data, no React.
  *
- * The source of the sentences is docs/ux-redo/forwarding-guide.md in the planning folder
- * (2026-11-07); change a sentence there first. Never write 「転送するだけ」 (the owner's rule).
+ * Change the wording here and in the iOS copy together. Never write 「転送するだけ」.
  *
  * Sources checked 2026-11-07:
  * - Gmail forwarding: https://support.google.com/mail/answer/10957?hl=ja
@@ -95,7 +94,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
       },
     ],
     notes: [
-      "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。買い物に関係しないメールは、本文を保存せずに捨てます。",
+      "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。",
     ],
   },
   {
@@ -117,7 +116,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
         ],
       },
     ],
-    notes: ["iCloud はすべてのメールを転送します。買い物に関係しないメールは、本文を保存せずに捨てます。"],
+    notes: ["iCloud はすべてのメールを転送します。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。"],
   },
   {
     id: "outlook",
@@ -140,7 +139,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
       },
     ],
     notes: [
-      "Outlook はすべてのメールを転送します。買い物に関係しないメールは、本文を保存せずに捨てます。会社や学校のアカウントは、決まりで転送できないことがあります。",
+      "Outlook はすべてのメールを転送します。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。会社や学校のアカウントは、決まりで転送できないことがあります。",
     ],
   },
   {
