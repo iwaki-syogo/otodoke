@@ -1,6 +1,9 @@
 // iOS-12: when the app comes back to the front, the screen shown is read again (only that one).
-// The screens say when they appear and disappear; the one that appeared last and is still shown is the
-// one in front (a detail pushed over the list is in front of the list).
+// [N3] Each appearance of a screen gets its own token (a detail of one parcel may be open in two tabs);
+// the front is the selected tab's top screen: a detail pushed on its stack over the tab's root, and of
+// two at the same depth the one that appeared later, whatever order the appear and disappear calls
+// come in. A screen that disappears is let go. The older API (register / shown / hidden / unregister)
+// stays for its tests; it is used only when no screen appeared by token.
 
 import Foundation
 
@@ -15,6 +18,60 @@ enum ScreenID: Hashable, Sendable {
 @MainActor
 final class ScreenRefresher {
     typealias Refresh = @MainActor () async -> Void
+
+    // MARK: by token (the app)
+
+    private struct Appearance {
+        let id: ScreenID
+        let tab: MainTab
+        /// The order it appeared in (larger is later).
+        let order: Int
+        let refresh: Refresh
+
+        /// A pushed detail is over its tab's root.
+        var depth: Int {
+            if case .detail = id { return 1 }
+            return 0
+        }
+    }
+
+    private var appearances: [ScreenToken: Appearance] = [:]
+    private var lastToken = 0
+    private var selected: MainTab?
+    /// The appearances being read again for a coming back: a second coming back meanwhile does not read
+    /// them once more.
+    private var refreshingTokens: Set<ScreenToken> = []
+
+    /// The TabView's selection.
+    func select(_ tab: MainTab) {
+        selected = tab
+    }
+
+    /// A screen of `tab` appeared (its root, or a detail pushed on its stack); `refresh` is kept until
+    /// `disappeared` with the token given back.
+    func appeared(_ id: ScreenID, in tab: MainTab, refresh: @escaping Refresh) -> ScreenToken {
+        lastToken += 1
+        let token = ScreenToken(raw: lastToken)
+        appearances[token] = Appearance(id: id, tab: tab, order: lastToken, refresh: refresh)
+        return token
+    }
+
+    /// That appearance is over: its refresh is let go (nothing piles up).
+    func disappeared(_ token: ScreenToken) {
+        appearances[token] = nil
+    }
+
+    /// The selected tab's top screen (all tabs before any selection).
+    private var front: (token: ScreenToken, appearance: Appearance)? {
+        appearances
+            .filter { selected == nil || $0.value.tab == selected }
+            .max { a, b in
+                a.value.depth != b.value.depth ? a.value.depth < b.value.depth : a.value.order < b.value.order
+            }
+            .map { (token: $0.key, appearance: $0.value) }
+    }
+
+    // MARK: by id (the older API)
 
     /// More than this many shown at once only happens when appearances are missed: the oldest go.
     private static let maxShown = 16
@@ -54,8 +111,17 @@ final class ScreenRefresher {
         shownStack.remove(at: i)
     }
 
+    // MARK: coming back
+
     /// scenePhase became active: the screen in front reads again, once.
     func sceneBecameActive() async {
+        if !appearances.isEmpty {
+            guard let front, !refreshingTokens.contains(front.token) else { return }
+            refreshingTokens.insert(front.token)
+            defer { refreshingTokens.remove(front.token) }
+            await front.appearance.refresh()
+            return
+        }
         guard let id = shownStack.last, let refresh = refreshes[id], !refreshing.contains(id) else { return }
         refreshing.insert(id)
         defer { refreshing.remove(id) }
@@ -63,29 +129,7 @@ final class ScreenRefresher {
     }
 }
 
-// TDD-STUB(review-1): [N3] Screens told apart by a token per appearance; the front comes from the tab
-// selected and what is stacked on it (a pushed detail is over its tab's root), not from the order the
-// appear and disappear calls come in. Names and signatures are the contract; the bodies do nothing.
-
 /// One appearance of a screen (a detail of one parcel may be open in two tabs at once).
 struct ScreenToken: Hashable, Sendable {
     let raw: Int
-}
-
-extension ScreenRefresher {
-    /// The TabView's selection.
-    func select(_ tab: MainTab) {
-        // TDD-STUB(review-1)
-    }
-
-    /// A screen of `tab` appeared (its root, or a detail pushed on its stack); `refresh` is kept until
-    /// `disappeared` with the token given back.
-    func appeared(_ id: ScreenID, in tab: MainTab, refresh: @escaping Refresh) -> ScreenToken {
-        ScreenToken(raw: 0) // TDD-STUB(review-1)
-    }
-
-    /// That appearance is over: its refresh is let go (nothing piles up).
-    func disappeared(_ token: ScreenToken) {
-        // TDD-STUB(review-1)
-    }
 }
