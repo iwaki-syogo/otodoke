@@ -34,8 +34,9 @@ enum LoginError: Error, Equatable, Sendable {
 enum CaptchaText {
     /// captcha_missing
     static let missing = "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。"
-    /// captcha_refused
-    static let refused = "確認が切れました。もう一度リンクを送ってください。"
+    /// captcha_refused, with the Web's 「リンク」 said as 「コード」 (the app sends a code; the owner's
+    /// decision, 11/6).
+    static let refused = "確認が切れました。もう一度コードを送ってください。"
 }
 
 @MainActor

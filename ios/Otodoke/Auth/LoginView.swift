@@ -60,7 +60,9 @@ struct LoginView: View {
                 .onSubmit { Task { await model.sendCode() } }
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
-            widget
+            if model.showsWidget {
+                widget
+            }
             primaryButton("コードを送る", enabled: !model.email.trimmingCharacters(in: .whitespaces).isEmpty) {
                 await model.sendCode()
             }
@@ -88,16 +90,22 @@ struct LoginView: View {
             primaryButton("ログイン", enabled: model.canVerify) {
                 await model.verify()
             }
-            widget
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 let wait = model.resendWaitSeconds()
-                Button {
-                    Task { await model.resend() }
-                } label: {
-                    Text(wait > 0 ? "コードをもう一度送る（\(wait) 秒後）" : "コードをもう一度送る")
-                        .font(.subheadline)
+                VStack(alignment: .leading, spacing: 12) {
+                    // [S3] Only when a code may be sent again, right above the resend button (a login
+                    // with the code needs no widget).
+                    if model.showsWidget {
+                        widget
+                    }
+                    Button {
+                        Task { await model.resend() }
+                    } label: {
+                        Text(wait > 0 ? "コードをもう一度送る（\(wait) 秒後）" : "コードをもう一度送る")
+                            .font(.subheadline)
+                    }
+                    .disabled(wait > 0 || model.isWorking)
                 }
-                .disabled(wait > 0 || model.isWorking)
             }
             Button("メールアドレスを変える") { model.changeAddress() }
                 .font(.subheadline)

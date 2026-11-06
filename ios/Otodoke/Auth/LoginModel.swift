@@ -97,6 +97,8 @@ final class LoginModel {
             errorMessage = nil
             code = ""
             step = .code(email: address)
+            // [S3] A new step shows a new widget: the old one's token is not kept.
+            turnstile?.reset()
             return
         }
         await send(to: email)
@@ -126,6 +128,8 @@ final class LoginModel {
         step = .email
         code = ""
         errorMessage = nil
+        // [S3] A new step shows a new widget: the old one's token is not kept.
+        turnstile?.reset()
     }
 
     /// One send. A press without a token waits for one (the spinner shows), at most `tokenWait`, unless
@@ -182,11 +186,13 @@ extension LoginModel {
 }
 #endif
 
-// TDD-STUB(review-1): [S3] The name is the contract; the body is today's behaviour (always shown).
 extension LoginModel {
-    /// The Turnstile widget is shown: always on the address step; on the code step only when a code
+    /// [S3] The Turnstile widget is shown: always on the address step; on the code step only when a code
     /// may be sent again (resendWaitSeconds() == 0), just above 「コードをもう一度送る」.
     var showsWidget: Bool {
-        true // TDD-STUB(review-1)
+        switch step {
+        case .email: true
+        case .code: resendWaitSeconds() == 0
+        }
     }
 }
