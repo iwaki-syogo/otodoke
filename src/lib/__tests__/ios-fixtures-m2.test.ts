@@ -113,7 +113,7 @@ describe("task 13: the crypto vectors for iOS", () => {
   it(".gitleaks.toml still allows only package-lock.json and the canonical vector file", () => {
     const toml = readFileSync(path.join(ROOT, ".gitleaks.toml"), "utf8");
     const paths = [...(toml.match(/paths\s*=\s*\[([\s\S]*?)\]/)?.[1] ?? "").matchAll(/'''(.*?)'''/g)].map((m) => m[1]);
-    expect(paths).toEqual(["package-lock\\.json", "^fixtures/crypto/envelope-v1\\.json$"]);
+    expect(paths).toEqual(["package-lock\\.json", "^fixtures/crypto/envelope-v1\\.json$", "^fixtures/crypto/password-v1\\.json$"]);
   });
 });
 
