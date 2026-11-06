@@ -74,6 +74,8 @@ final class SettingsModel {
     @ObservationIgnored private var fence = ReadFence()
     /// A read was started at least once (onAppear reads the first time only when none was).
     @ObservationIgnored private var hasRead = false
+    /// Reads running now (load() adds one while it runs).
+    @ObservationIgnored private var loadsRunning = 0
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
 
@@ -152,6 +154,8 @@ final class SettingsModel {
     /// Reads everything again. Each read fails on its own; a newer read drops this one's answers.
     func load() async {
         hasRead = true
+        loadsRunning += 1
+        defer { loadsRunning -= 1 }
         mark.markRead()
         let ticket = fence.beginRead()
         let signal = CutOffSignal()
@@ -218,6 +222,15 @@ final class SettingsModel {
     /// Shown (the tab opened): reads when never read, or when DataChanges moved since the last read.
     func onAppear() async {
         guard !hasRead || mark.isStale || cutOff?.isRaised == true else { return }
+        await load()
+    }
+
+    /// A page of the list was shown (pushed or come back to): reads again through load(), so a mail that
+    /// came while the tab stayed open (the Gmail approval, step 4 of the guide) shows without leaving the
+    /// tab. Nothing is cleared while it reads. Skipped while a read is running, unless that read was
+    /// cut off (its answers will be dropped).
+    func pageShown() async {
+        guard loadsRunning == 0 || cutOff?.isRaised == true else { return }
         await load()
     }
 

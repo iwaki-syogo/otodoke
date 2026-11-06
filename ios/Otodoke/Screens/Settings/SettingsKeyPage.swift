@@ -12,6 +12,7 @@ struct SettingsKeyPage: View {
             keyPanel
         }
         .refreshableToTheEnd { await model.load() }
+        .task { await model.pageShown() }
         .navigationTitle(SettingsMenuText.keyTitle)
         .navigationBarTitleDisplayMode(.inline)
     }

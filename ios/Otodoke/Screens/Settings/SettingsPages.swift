@@ -18,6 +18,7 @@ struct SettingsForwardPage: View {
             ForwardingGuideView(expanded: expandsGuide)
         }
         .refreshableToTheEnd { await model.load() }
+        .task { await model.pageShown() }
         .navigationTitle(SettingsMenuText.forwardTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -94,6 +95,7 @@ struct SettingsDroppedPage: View {
             }
         }
         .refreshableToTheEnd { await model.load() }
+        .task { await model.pageShown() }
         .navigationTitle(SettingsMenuText.droppedTitle)
         .navigationBarTitleDisplayMode(.inline)
     }

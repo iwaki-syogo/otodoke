@@ -484,4 +484,58 @@ struct SettingsModelTests {
         await s.model.sceneBecameActive()
         #expect(await s.fake.count("GET", "user_keys") == before + 1)
     }
+    // MARK: 「メールの転送」 page shown (Gmail step 4: open it again after a while)
+
+    private func confirmationReads(_ fake: FakeSupabase) async -> Int {
+        await fake.requests("GET", "emails").filter { $0.query("classification") == ["eq.forwarding_confirmation"] }.count
+    }
+
+    @Test func theForwardingPageShownReadsTheApprovalAgain() async throws {
+        let s = try await setUp()
+        #expect(s.model.confirmURL == nil)
+        let before = await confirmationReads(s.fake)
+        // The approval mail arrives while the settings tab stays open (no change is published, no scene change).
+        await s.fake.insert("emails", [confirm(["forwarding_confirm_url": .string(SettingsRows.google)])])
+        await s.model.pageShown()
+        #expect(await confirmationReads(s.fake) == before + 1)
+        #expect(s.model.confirmURL?.absoluteString == SettingsRows.google)
+        // Shown again later: read again, not only the first time.
+        await s.model.pageShown()
+        #expect(await confirmationReads(s.fake) == before + 2)
+    }
+
+    @Test func theOldAnswerStaysWhileThePageReadsAgain() async throws {
+        let s = try await setUp(mails: [confirm(["forwarding_confirm_url": .string(SettingsRows.google)])])
+        #expect(s.model.confirmURL != nil)
+        let gate = Gate()
+        let before = await confirmationReads(s.fake)
+        await s.fake.fail(where: { $0.query("classification") == ["eq.forwarding_confirmation"] }, nth: before + 1, with: .hold(gate))
+        let shown = Task { await s.model.pageShown() }
+        #expect(await waitFor { await self.confirmationReads(s.fake) == before + 1 })
+        // Mid-read: nothing is cleared (no spinner state, the approval card stays).
+        #expect(s.model.keyPanel != nil)
+        #expect(s.model.confirmURL != nil)
+        gate.open()
+        await shown.value
+        #expect(s.model.keyPanel != nil)
+        #expect(s.model.confirmURL != nil)
+    }
+
+    @Test func aPageShownWhileReadingDoesNotStartASecondRead() async throws {
+        let s = try await setUp()
+        let gate = Gate()
+        let keys = await s.fake.count("GET", "user_keys")
+        await s.fake.fail("GET", "user_keys", nth: keys + 1, with: .hold(gate))
+        let first = Task { await s.model.pageShown() }
+        #expect(await waitFor { await s.fake.count("GET", "user_keys") == keys + 1 })
+        await s.model.pageShown()
+        await s.model.pageShown()
+        #expect(await s.fake.count("GET", "user_keys") == keys + 1)
+        gate.open()
+        await first.value
+        #expect(await s.fake.count("GET", "user_keys") == keys + 1)
+        // Once it ended, the next showing reads again.
+        await s.model.pageShown()
+        #expect(await s.fake.count("GET", "user_keys") == keys + 2)
+    }
 }
