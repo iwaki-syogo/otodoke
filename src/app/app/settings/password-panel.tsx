@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PendingSubmitButton } from "@/components/pending-button";
 import { changePassword, flowMessage, signInAndOpenKey, type FlowCode, type OpenWithAnother } from "@/lib/crypto/password-flows";
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
@@ -204,11 +204,26 @@ export function MakeKeyForm({ email }: { email: string }) {
  * 「パスワードを変える」: the bot check is drawn only once it is opened. Its token goes with the
  * change: changeLoginSecret checks the current password with a sign-in, which Supabase refuses
  * without one once CAPTCHA is enforced.
+ *
+ * `open` follows the element: the toggle event says when it is opened, and the effect reads it once
+ * when the page is hydrated, because a details opened before React attached its handlers
+ * (a slow phone) has fired its toggle already and would otherwise stay "closed" here, with no bot
+ * check drawn and a form that can be pressed.
+ * The hook is exported for its tests (password-panel-forms.test.ts).
  */
-function ChangeDetails({ userId, email }: { userId: string; email: string }) {
+export function useDetailsOpen() {
   const [open, setOpen] = useState(false);
+  const element = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (element.current) setOpen(element.current.open);
+  }, []);
+  return { open, element, onToggle: (e: { currentTarget: { open: boolean } }) => setOpen(e.currentTarget.open) };
+}
+
+function ChangeDetails({ userId, email }: { userId: string; email: string }) {
+  const { open, element, onToggle } = useDetailsOpen();
   return (
-    <details className="rounded-2xl border border-neutral-200 bg-white" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details ref={element} className="rounded-2xl border border-neutral-200 bg-white" onToggle={onToggle}>
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium">パスワードを変える</summary>
       <div className="border-t border-neutral-100 p-4">
         <ChangeForm userId={userId} email={email} withCheck={open} />
