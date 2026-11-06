@@ -143,6 +143,9 @@ describe("/app/settings: あなたのメールの扱い", () => {
       "Message-ID",
       "承認リンク",
       "「これは荷物」と押したものは、次から読むために消さずに残します",
+      // Whether a mail keeps its subject, sender and body is decided when it is read
+      // (src/lib/mail-seal.ts closedBody), not when it arrives: the same sentence as /privacy.
+      "Otodoke が暗号化を始めた後、合言葉を決める前に読み取ったメールは、件名・差出人・本文を残しません",
     ]) {
       expect(text).toContain(fact);
     }
@@ -151,7 +154,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
   it("README says the same about mail read before encryption, Message-ID, the approval link and flagged ads", () => {
     const readme = readFileSync(path.resolve(__dirname, "../../../README.md"), "utf8");
     const section = readme.slice(readme.indexOf("## あなたのメールの扱い"), readme.indexOf("## 技術"));
-    for (const fact of ["暗号化を始める前に読み取ったメールは、暗号化していません", "Message-ID", "承認リンク", "「これは荷物」と押したものは、次から読むために消さずに残します", "暗号化を始めた後、合言葉を決める前に届いたメール"]) {
+    for (const fact of ["暗号化を始める前に読み取ったメールは、暗号化していません", "Message-ID", "承認リンク", "「これは荷物」と押したものは、次から読むために消さずに残します", "Otodoke が暗号化を始めた後、合言葉を決める前に読み取ったメールは、件名・差出人・本文を残しません"]) {
       expect(section).toContain(fact);
     }
   });
