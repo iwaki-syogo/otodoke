@@ -7,6 +7,9 @@
  * src/lib/__tests__/auth-mail-templates.test.ts checks them against these.
  */
 
+/** What a mail with no body says, in the sealed mail and in the plain one. */
+export const NO_BODY_TEXT = "本文はありません。";
+
 /**
  * What a reset costs (decision 3). The key that opens the stored mail is wrapped with a key made
  * from the password (docs/crypto/password-v1.md), so a new password cannot open what the old one

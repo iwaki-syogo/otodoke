@@ -137,8 +137,8 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
         <p className="mt-1 text-4xl font-bold tracking-tight">{yen(card.total)}</p>
         <p className="mt-2 text-xs text-neutral-500">
           {card.priced} 件
-          {card.unpriced > 0 ? `（ほかに金額を読み取れなかった注文が ${card.unpriced} 件）` : ""}
-          {slices.undated > 0 ? `（注文日の無い ${slices.undated} 件は除く）` : ""}
+          {card.unpriced > 0 ? ` ・ ほかに金額を読み取れなかった注文が ${card.unpriced} 件` : ""}
+          {slices.undated > 0 ? ` ・ 注文日の無い ${slices.undated} 件は除く` : ""}
         </p>
       </section>
 

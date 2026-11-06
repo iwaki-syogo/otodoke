@@ -22,7 +22,7 @@ export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; 
         <form action={clearAllParcels} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
           <label className="flex items-center gap-2">
             <input type="checkbox" name="confirm" value="yes" className="h-4 w-4" />
-            本当に消す（元に戻せません）
+            本当に消します。元に戻せません。
           </label>
           <ClearButton />
         </form>

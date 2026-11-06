@@ -6,6 +6,7 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
 import { faceToFace, faceToFaceAssumed } from "@/lib/match";
 import { isHttpsUrl } from "@/lib/safe-url";
+import { NO_BODY_TEXT } from "@/lib/mail-notices";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../../parcel-card";
@@ -226,7 +227,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
                         <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
-                          {body || "（本文なし）"}
+                          {body || NO_BODY_TEXT}
                         </pre>
                       </details>
                     </>

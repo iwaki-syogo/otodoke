@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { openMail, WrongKeyError, type MailPlaintext } from "@/lib/crypto/envelope";
 import { useTabKey } from "@/lib/crypto/tab-key";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
+import { NO_BODY_TEXT } from "@/lib/mail-notices";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { readSealedMail } from "@/app/app/settings/key-actions";
 import { UnlockForm } from "../../unlock-form";
@@ -90,7 +91,7 @@ export function SealedMail({ userId, email, emailId, fromDomain, notes, confiden
           ) : current.kind === "failed" ? (
             <p className="text-xs text-red-800">開けませんでした</p>
           ) : (
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">{body || "本文はありません。"}</pre>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">{body || NO_BODY_TEXT}</pre>
           )}
         </div>
       </details>

@@ -70,7 +70,7 @@ export function CategorySheet({ parcelId, category }: { parcelId: string; catego
           setOpen(true);
         }}
         aria-haspopup="dialog"
-        aria-label={`分類: ${categoryLabel(shown)}（変える）`}
+        aria-label={`分類を変える: ${categoryLabel(shown)}`}
         className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-xs text-neutral-700 active:bg-neutral-100"
       >
         {pending ? <Spinner /> : <span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryColor(shown) }} />}
