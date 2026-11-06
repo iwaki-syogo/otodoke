@@ -67,7 +67,7 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
   // what an unchanged field keeps (see manualParcelFields).
   const { data: saved, error: readError } = await session.supabase
     .from("parcels")
-    .select("status, category, ordered_at, expected_date, tracking_number, carrier, requires_presence")
+    .select("status, total_amount, category, ordered_at, expected_date, tracking_number, carrier, requires_presence")
     .eq("id", id.data)
     .eq("user_id", session.userId)
     .eq("source", "manual")
@@ -77,7 +77,7 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
     return { error: FAILED, values };
   }
   if (!saved) return { error: NOT_FOUND, values };
-  const parsed = manualParcelSchemaFor(saved.status).safeParse(values);
+  const parsed = manualParcelSchemaFor(saved.status, saved.total_amount).safeParse(values);
   if (!parsed.success) return { error: invalid(parsed.error), values };
 
   // Editing keeps when the parcel last heard from a mail; source stays as it is.
