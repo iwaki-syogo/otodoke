@@ -91,6 +91,10 @@ describe("ManualParcelSchema: what it lets through", () => {
     expect(ok({ total_amount: "" }).total_amount).toBeNull();
   });
 
+  it("takes an amount of only white space as no amount, not as a refusal (the text step trims first)", () => {
+    for (const v of [" ", "\u3000", "\u00a0", "\t\n"]) expect(ok({ total_amount: v }).total_amount, JSON.stringify(v)).toBeNull();
+  });
+
   it("takes only the listed values for category, carrier, presence and status", () => {
     expect(ok({ category: "electronics" }).category).toBe("electronics");
     rejects({ category: "toys" });
