@@ -65,6 +65,15 @@ export function forgetTabKey() {
   setState(null);
 }
 
+/**
+ * Keep `key`, opened by password-flows.ts, as the key in use of `userId` for this tab. Only the
+ * opened private key is kept (a CryptoKey that cannot be exported): never the password, master,
+ * the login secret or a KEK.
+ */
+export function setTabKey(userId: string, key: PrivateRecipient) {
+  setState({ userId, current: key, retired: NO_RETIRED });
+}
+
 function setCurrent(userId: string, current: PrivateRecipient, retired: Readonly<Record<string, PrivateRecipient>> = state?.userId === userId ? state.retired : NO_RETIRED) {
   setState({ userId, current, retired });
 }
