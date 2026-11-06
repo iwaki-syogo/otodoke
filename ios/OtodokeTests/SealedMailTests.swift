@@ -219,7 +219,7 @@ struct SealedMailTests {
         #expect(html.subject == nil)
         #expect(MailBody.opened(MailPlaintext(subject: "s", fromName: "", fromAddress: "b@example.test", text: nil, html: nil)) == OpenedMail(subject: "s", fromText: "b@example.test", body: ""))
         #expect(MailBody.opened(MailPlaintext(subject: "s", fromName: nil, fromAddress: nil, text: "", html: "")).body == "")
-        #expect(MailBody.noBody == "（本文なし）")
+        #expect(MailBody.noBody == "本文はありません。")
     }
 
     // MARK: hidden, dropped (CX2), signed out

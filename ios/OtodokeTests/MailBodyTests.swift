@@ -4,14 +4,14 @@ import Testing
 
 /// [Batch 2, task 3] 「メールの履歴」 by emails.body_state, as src/app/app/parcels/[id]/page.tsx (2541793)
 /// branches (copied by hand: the branches live in the page, not in lib). Sealed and dropped mails have
-/// subject, from_*, text_body and html_body null; none of them may read 「（本文なし）」.
+/// subject, from_*, text_body and html_body null; none of them may read 「本文はありません。」.
 @Suite("Mail body by body_state (batch 2, task 3)")
 struct MailBodyTests {
     static let sealedHeadline = "🔒 暗号化されたメール"
     static let droppedHeadline = "本文は保存していません"
     static let droppedDetail = "パスワードでログインする前に届いたメールです。件名・差出人・本文は保存していません。"
     static let unopenable = "開けませんでした"
-    static let noBody = "（本文なし）"
+    static let noBody = "本文はありません。"
 
     private func email(_ over: Row) throws -> EmailSummary {
         try JSONCoding.decode(EmailSummary.self, Rows.email(1, over))

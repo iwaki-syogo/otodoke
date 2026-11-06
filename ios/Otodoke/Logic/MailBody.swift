@@ -1,11 +1,11 @@
 // One mail in 「メールの履歴」, split by emails.body_state as src/app/app/parcels/[id]/page.tsx (2541793) does:
 //  - plain (and null, as the Web's else branch): subject, "name <address>" or the address, and the
-//    body (text_body trimmed, else htmlToText(html_body)), 「（本文なし）」 when there is none;
+//    body (text_body trimmed, else htmlToText(html_body)), 「本文はありません。」 when there is none;
 //  - sealed: 「🔒 暗号化されたメール」 and from_domain (M1: pressing it opens the Web's parcel page);
 //  - dropped: 「本文は保存していません」, from_domain, and inside 「元メールを見る」 the Web's sentence;
 //  - any other value: not opened, 「開けませんでした」 (a state this version does not know is never read
 //    as plain).
-// Sealed and dropped mails have subject, from_*, text_body and html_body null: never 「（本文なし）」.
+// Sealed and dropped mails have subject, from_*, text_body and html_body null: never 「本文はありません。」.
 
 import Foundation
 
@@ -53,7 +53,7 @@ struct MailDisplay: Equatable, Sendable {
     /// The line under the label: sealed 「🔒 暗号化されたメール」, dropped 「本文は保存していません」,
     /// unopenable 「開けませんでした」; nil for plain (its subject is the line).
     let headline: String?
-    /// Inside 「元メールを見る」: plain the body or 「（本文なし）」, dropped the Web's sentence; nil for
+    /// Inside 「元メールを見る」: plain the body or 「本文はありません。」, dropped the Web's sentence; nil for
     /// sealed (opened on the Web in M1) and unopenable.
     let detail: String?
 }
@@ -64,7 +64,7 @@ enum MailBody {
     /// page.tsx, word for word.
     static let droppedDetail = "パスワードでログインする前に届いたメールです。件名・差出人・本文は保存していません。"
     static let unopenable = "開けませんでした"
-    static let noBody = "（本文なし）"
+    static let noBody = "本文はありません。"
 
     static func display(_ email: EmailSummary) -> MailDisplay {
         switch MailBodyState(raw: email.bodyState) {
@@ -98,7 +98,7 @@ enum MailBody {
 }
 
 /// A sealed mail once opened, as sealed-mail.tsx shows it: the subject, "name <address>" or the address, and
-/// the body (text trimmed, else htmlToText(html), else ""; "" is shown as 「（本文なし）」).
+/// the body (text trimmed, else htmlToText(html), else ""; "" is shown as 「本文はありません。」).
 struct OpenedMail: Equatable, Sendable {
     let subject: String?
     let fromText: String?
