@@ -3,14 +3,21 @@
  * Web's own TypeScript functions. The iOS differential tests (WebParity1Tests / WebParity2Tests,
  * and for batch 2 WebParity3Tests / PresenceAssumedTests) check the Swift ports against it. No real mail, order number, tracking number or person here.
  *
- *   npm run ios:fixtures             write the file
- *   npx tsx scripts/ios-fixtures.ts --stdout   print the same text instead
+ *   npm run ios:fixtures                              write the file and the crypto vectors (below)
+ *   npx tsx scripts/ios-fixtures.ts --stdout          print web-expected.json instead (never a vector)
+ *   NODE_ENV=test npx tsx scripts/ios-fixtures.ts --crypto-out <dir>   write only the two vector files, into <dir>
+ *
+ * The crypto vectors (batch 2, task 13) go to ios/OtodokeTests/Fixtures/crypto/, which ios/.gitignore keeps
+ * out of git: envelope-v1.json is fixtures/crypto/envelope-v1.json byte for byte, and negative-v1.json holds
+ * envelopes sealed by the Web's own sealBytes (its test injection, so NODE_ENV=test) whose plaintext is wrong.
  *
  * The output does not depend on the machine's time zone or clock: every "today" is given, and the
  * functions that read today's year themselves run with the clock frozen at noon JST of that day.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fromBase64, utf8 } from "../src/lib/crypto/bytes";
+import { mailAad, sealBytes } from "../src/lib/crypto/envelope";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "../src/lib/carriers";
 import { CATEGORIES, UNCATEGORIZED_LABEL, categoryColor, categoryLabel, isCategory } from "../src/lib/category";
 import { upcomingByDay } from "../src/lib/calendar";
@@ -51,11 +58,26 @@ import {
   withEmptyMonths,
 } from "../src/lib/spend";
 import { decodeEntities, htmlToText, stripInvisible } from "../src/lib/text/html-to-text";
+import {
+  NO_ORDER_DATE_LABEL,
+  SEARCH_MAX,
+  deliveredFilterOptions,
+  filterDelivered,
+  groupByOrderMonth,
+  itemNamesByParcel,
+  monthChoices,
+  searchWord,
+  type DeliveredFilterValues,
+} from "../src/lib/delivered";
 import { undeliveredStatus } from "../src/lib/undelivered";
 import { UNREAD_FILTER } from "../src/lib/unread";
 
 const ROOT = path.resolve(__dirname, "..");
 const OUT = path.join(ROOT, "ios/OtodokeTests/Fixtures/web-expected.json");
+/** The crypto vectors' default place: outside git (ios/.gitignore). */
+const CRYPTO_OUT = path.join(ROOT, "ios/OtodokeTests/Fixtures/crypto");
+/** The canonical vector file (scripts/crypto-vectors.ts), copied byte for byte, never by hand. */
+const CRYPTO_SOURCE = path.join(ROOT, "fixtures/crypto/envelope-v1.json");
 
 // ---------------------------------------------------------------------------------------------
 // The clock, frozen for the functions that read it themselves (formatDateJa reads this year).
@@ -869,6 +891,157 @@ const stripInvisibleCases = [
 ].map((input) => ({ in: input, out: stripInvisible(input) }));
 
 // ---------------------------------------------------------------------------------------------
+// delivered (batch 2, task 13): the delivered page's grouping, search and filters
+
+const D = 7; // id group for the delivered cases
+
+const delivered = (n: number, over: Partial<ParcelRow>) => parcel(pid(D, n), { status: "delivered", ...over });
+
+// Several months across a year boundary, two parcels on the same day (kept in input order: the higher id
+// first, so a sort by id would change it), a timestamp, and undated parcels (null and malformed) last.
+const deliveredByMonthRows: ParcelRow[] = [
+  delivered(1, { title: "冬のコート", shop: "テスト服店", ordered_at: "2025-12-20", category: "fashion" }),
+  delivered(3, { title: "加湿器", shop: "テスト家電店", ordered_at: "2026-01-05", category: "electronics" }),
+  delivered(2, { title: "マグカップ", shop: "テスト雑貨店", ordered_at: "2026-01-05", category: "daily" }),
+  delivered(4, { title: "日付なし", ordered_at: null }),
+  delivered(5, { title: "お茶", shop: "テスト食品店", ordered_at: "2026-11-02T10:15:00+09:00", category: "food" }),
+  delivered(6, { title: "崩れた日付", ordered_at: "2026/11/03" }),
+  delivered(7, { title: "年末の本", shop: "テスト書店", ordered_at: "2025-12-31", category: "hobby" }),
+  delivered(8, { title: "秋の靴", shop: "テスト服店", ordered_at: "2026-10-30", category: "fashion" }),
+];
+const groupByOrderMonthCases = [
+  deliveredByMonthRows,
+  [delivered(10, { ordered_at: null }), delivered(11, { ordered_at: "" })],
+  [delivered(12, { ordered_at: "2026-11-01" })],
+  [],
+].map((parcels) => ({ parcels, out: groupByOrderMonth(parcels).map((g) => ({ label: g.label, ids: g.parcels.map((p) => p.id) })) }));
+
+type ItemName = { parcel_id: string; name: string };
+const itemNamesByParcelInputs: ItemName[][] = [
+  [],
+  [{ parcel_id: pid(D, 1), name: "ウールのコート" }],
+  [
+    { parcel_id: pid(D, 2), name: "マグ（白）" },
+    { parcel_id: pid(D, 1), name: "コート" },
+    { parcel_id: pid(D, 2), name: "マグ（黒）" },
+    { parcel_id: pid(D, 2), name: "マグ（白）" },
+  ],
+];
+const itemNamesByParcelCases = itemNamesByParcelInputs.map((items) => ({ items, out: Object.fromEntries(itemNamesByParcel(items)) }));
+
+const searchWordInputs: Array<string | null> = [
+  null,
+  "",
+  "   ",
+  "　コート　",
+  " Amazon ",
+  "あ".repeat(SEARCH_MAX),
+  `  ${"い".repeat(SEARCH_MAX)}  `,
+  "う".repeat(SEARCH_MAX + 20),
+  `${"え".repeat(SEARCH_MAX - 1)} おか`,
+];
+const searchWordCases = searchWordInputs.map((q) => ({ q, out: searchWord(q ?? undefined) }));
+
+// Rows for the search: full-width / half-width / compatibility characters, Greek and Turkish capitals,
+// Amazon under several names, item names that are the only match.
+const searchRows: ParcelRow[] = [
+  delivered(20, { title: "ABCノート", shop: "テスト文具店", ordered_at: "2026-11-01", category: "hobby" }),
+  delivered(21, { title: "テストの本", shop: "テスト書店", ordered_at: "2026-10-12", category: "hobby" }),
+  delivered(22, { title: "１番の箱", shop: "テスト雑貨店", ordered_at: "2026-10-01", category: "daily" }),
+  delivered(23, { title: "ΣΟΦΙΑ のマグ", shop: "テスト雑貨店", ordered_at: "2026-09-30", category: "daily" }),
+  delivered(24, { title: "İstanbul の地図", shop: "テスト書店", ordered_at: "2026-09-02", category: null }),
+  delivered(25, { title: "電池", shop: "Amazonマーケットプレイス", shop_key: "amazon", ordered_at: "2026-11-03", category: "electronics" }),
+  delivered(26, { title: null, shop: "Amazon.co.jp", shop_key: "amazon", ordered_at: "2026-08-15", category: "Food" }),
+  delivered(27, { title: "ⅲ巻セット", shop: "テスト書店", ordered_at: null, category: "hobby" }),
+];
+const searchItems: ItemName[] = [
+  { parcel_id: pid(D, 20), name: "方眼ノート" },
+  { parcel_id: pid(D, 26), name: "緑茶ティーバッグ" },
+  { parcel_id: pid(D, 21), name: "文庫本" },
+  { parcel_id: pid(D, 26), name: "ほうじ茶" },
+];
+const filterDeliveredInputs: Array<DeliveredFilterValues & { parcels?: ParcelRow[]; items?: ItemName[] }> = [
+  {},
+  { q: "ａｂｃ" },
+  { q: "ＡＢＣ" },
+  { q: "ﾃｽﾄ" },
+  { q: "1番" },
+  { q: "①番" },
+  { q: "Ⅲ巻" },
+  { q: "σοφια" },
+  { q: "ΣΟΦΙΑ" },
+  { q: "İstanbul" },
+  { q: "istanbul" },
+  { q: "緑茶" },
+  { q: "amazon" },
+  { q: "Amazon" },
+  { q: "  文庫  " },
+  { q: "見つからない言葉" },
+  { q: "   " },
+  { q: `${"ノ".repeat(SEARCH_MAX)}ート` },
+  { q: `ABC${"x".repeat(SEARCH_MAX)}` },
+  { s: "Amazon" },
+  { s: "Amazonマーケットプレイス" },
+  { s: "テスト書店" },
+  { s: "知らない店" },
+  { c: "hobby" },
+  { c: "none" },
+  { c: "food" },
+  { c: "toys" },
+  { c: "" },
+  { m: "2026-11" },
+  { m: "2026-10" },
+  { m: "2026-13" },
+  { m: "2026-9" },
+  { m: "" },
+  { q: "ノート", s: "テスト文具店", c: "hobby", m: "2026-11" },
+  { q: "本", s: "テスト書店", c: "hobby" },
+  { q: "茶", s: "Amazon", m: "2026-08", c: "none" },
+  { q: "テスト", s: "知らない店", c: "toys", m: "2026-99" },
+  { q: "テスト", parcels: [], items: [] },
+  { q: "緑茶", items: [] },
+];
+const filterDeliveredCases = filterDeliveredInputs.map((c) => {
+  const parcels = c.parcels ?? searchRows;
+  const items = c.items ?? searchItems;
+  const values: DeliveredFilterValues = { q: c.q, s: c.s, c: c.c, m: c.m };
+  return {
+    parcels,
+    items,
+    q: c.q ?? null,
+    s: c.s ?? null,
+    c: c.c ?? null,
+    m: c.m ?? null,
+    out: filterDelivered(parcels, itemNamesByParcel(items), values).map((p) => p.id),
+  };
+});
+
+// Shop counts tied (listed in code-unit order), Amazon by shop_key, malformed and missing months.
+const optionsRows: ParcelRow[] = [
+  delivered(40, { shop: "テスト書店", ordered_at: "2026-11-01" }),
+  delivered(41, { shop: "Amazon.co.jp", shop_key: "amazon", ordered_at: "2026-10-03" }),
+  delivered(42, { shop: "Amazonマーケットプレイス", shop_key: "amazon", ordered_at: "2026-11-20" }),
+  delivered(43, { shop: "テスト服店", ordered_at: "2025-12-31" }),
+  delivered(44, { shop: "テスト書店", ordered_at: "2026/10/05" }),
+  delivered(45, { shop: "Bテスト店", ordered_at: null }),
+  delivered(46, { shop: "Aテスト店", ordered_at: "2026-13-01" }),
+  delivered(47, { shop: "テスト服店", ordered_at: "2026-10-30T23:59:00+09:00" }),
+];
+const deliveredFilterOptionsCases = [optionsRows, [delivered(50, { shop: "テスト店", ordered_at: null })], []].map((parcels) => ({ parcels, out: deliveredFilterOptions(parcels) }));
+
+const monthChoicesInputs: Array<{ months: string[]; m: string | null }> = [
+  { months: ["2026-11", "2026-10", "2025-12"], m: "2026-10" },
+  { months: ["2026-11", "2026-10", "2025-12"], m: "2026-01" },
+  { months: ["2026-11", "2026-10", "2025-12"], m: "2027-02" },
+  { months: ["2026-11", "2026-10", "2025-12"], m: "2026-13" },
+  { months: ["2026-11", "2026-10", "2025-12"], m: "" },
+  { months: ["2026-11", "2026-10", "2025-12"], m: null },
+  { months: [], m: "2026-05" },
+  { months: [], m: null },
+];
+const monthChoicesCases = monthChoicesInputs.map((c) => ({ months: c.months, m: c.m, out: monthChoices(c.months, c.m ?? undefined) }));
+
+// ---------------------------------------------------------------------------------------------
 
 const expected = {
   generatedBy: "scripts/ios-fixtures.ts",
@@ -952,14 +1125,88 @@ const expected = {
     forwardingConfirmUrl: forwardingConfirmUrlCases,
     confirmUrl: confirmUrlCases,
   },
+  delivered: {
+    noOrderDateLabel: NO_ORDER_DATE_LABEL,
+    searchMax: SEARCH_MAX,
+    groupByOrderMonth: groupByOrderMonthCases,
+    itemNamesByParcel: itemNamesByParcelCases,
+    searchWord: searchWordCases,
+    filterDelivered: filterDeliveredCases,
+    deliveredFilterOptions: deliveredFilterOptionsCases,
+    monthChoices: monthChoicesCases,
+  },
 };
 
 const text = `${JSON.stringify(expected, null, 2)}\n`;
 
-if (process.argv.includes("--stdout")) {
-  process.stdout.write(text);
-} else {
+// ---------------------------------------------------------------------------------------------
+// The crypto vectors for iOS (batch 2, task 13). Written outside git; never into web-expected.json.
+
+/** Base64 of the vector file's field, as bytes. */
+const b64 = (value: unknown): Uint8Array<ArrayBuffer> => fromBase64(value as string);
+
+/**
+ * Envelopes sealed by the Web's own sealBytes to the vector's recipient, with the vector's ids and AAD, whose
+ * plaintext is wrong: a key missing, v = 2, bytes that are not UTF-8. The crypto is sound (openBytes opens
+ * them); openMail must refuse them. Each has its own fixed IV (never the positive vector's).
+ */
+async function negativeVectors(source: string): Promise<string> {
+  const v = JSON.parse(source);
+  const e = v.envelope;
+  const recipient = { keyId: e.recipient.key_id as string, publicKey: b64(e.recipient.public_key) };
+  const aad = mailAad(e.user_id, e.email_id);
+  if (aad !== e.aad) throw new Error("the vector's AAD is not mailAad of its ids");
+  const fields = e.plaintext_object;
+  const plaintexts: Array<{ name: string; bytes: Uint8Array<ArrayBuffer> }> = [
+    { name: "missing_key", bytes: utf8(JSON.stringify({ v: 1, subject: fields.subject, from_name: fields.from_name, from_address: fields.from_address, text: fields.text })) },
+    { name: "version_2", bytes: utf8(JSON.stringify({ v: 2, ...fields })) },
+    // {"v":1,"subject":"<0xFF 0xFE>",…}: valid JSON around two bytes that are never UTF-8.
+    { name: "bad_utf8", bytes: new Uint8Array([...utf8('{"v":1,"subject":"'), 0xff, 0xfe, ...utf8('","from_name":null,"from_address":null,"text":null,"html":null}')]) },
+  ];
+  const baseIv = b64(e.iv);
+  const mail = [];
+  for (const [i, p] of plaintexts.entries()) {
+    const iv = new Uint8Array(baseIv);
+    iv[11] ^= 0x10 + i;
+    const envelope = await sealBytes(recipient, aad, p.bytes, {
+      ephemeralPrivateKeyPkcs8: b64(e.ephemeral.private_key_pkcs8),
+      ephemeralPublicKey: b64(e.ephemeral.public_key),
+      iv,
+    });
+    mail.push({ name: p.name, user_id: e.user_id, email_id: e.email_id, aad, envelope });
+  }
+  return `${JSON.stringify({ generatedBy: "scripts/ios-fixtures.ts", format: "negative mail envelopes for the iOS app (made-up keys; they protect nothing)", mail }, null, 2)}\n`;
+}
+
+async function writeCryptoVectors(dir: string): Promise<void> {
+  const source = readFileSync(CRYPTO_SOURCE);
+  const negatives = await negativeVectors(source.toString("utf8"));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, "envelope-v1.json"), source);
+  writeFileSync(path.join(dir, "negative-v1.json"), negatives);
+  console.error(`wrote the crypto vectors into ${path.relative(ROOT, dir) || dir}`);
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  if (argv.includes("--stdout")) {
+    process.stdout.write(text);
+    return;
+  }
+  const at = argv.indexOf("--crypto-out");
+  if (at >= 0) {
+    const dir = argv[at + 1];
+    if (!dir || dir.startsWith("--")) throw new Error("--crypto-out needs a directory");
+    await writeCryptoVectors(path.resolve(dir));
+    return;
+  }
   mkdirSync(path.dirname(OUT), { recursive: true });
   writeFileSync(OUT, text);
   console.error(`wrote ${path.relative(ROOT, OUT)}`);
+  await writeCryptoVectors(CRYPTO_OUT);
 }
+
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+});
