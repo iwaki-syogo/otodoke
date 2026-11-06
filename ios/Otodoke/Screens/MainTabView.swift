@@ -87,9 +87,9 @@ final class MainScreens {
         DeliveredModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
     }
 
-    /// TDD-STUB(task 22): the cancelled page's model, told of the changes.
+    /// The cancelled page's model, told of the changes.
     func cancelled() -> CancelledModel {
-        CancelledModel(reader: StatusListReader(provider: list.reader.provider), changes: nil) // TDD-STUB(task 22)
+        CancelledModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
     }
 
     /// A parcel's detail model, told of the changes.

@@ -50,7 +50,12 @@ struct ParcelListView<Detail: View>: View {
                                 DeliveredView(model: model, detail: detail)
                             }
                         }
-                    case .cancelled: PlaceholderScreen(title: "キャンセルした荷物")
+                    case .cancelled:
+                        if let pages {
+                            StatusPage(pages.cancelled, .cancelled, pages.refresher, refresh: { await $0.sceneBecameActive() }) { model in
+                                CancelledView(model: model, detail: detail)
+                            }
+                        }
                     }
                 }
         }
