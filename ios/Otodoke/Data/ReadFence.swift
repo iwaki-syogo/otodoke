@@ -3,6 +3,7 @@
 // was taken, makes it stale. M1: the calendar, spend and settings models use it (list and detail: T24).
 
 import Foundation
+import os
 
 struct ReadFence: Sendable {
     struct Ticket: Equatable, Sendable {
@@ -47,4 +48,17 @@ struct ReadFence: Sendable {
         guard ticket.generation == writeGeneration, writesInFlight == 0 else { return .stale }
         return .current
     }
+}
+
+/// [CX-f2] Raised the moment the task of a read is cancelled (its .task cancelled when the tab is
+/// left), not when the read's awaits end: an appearance meanwhile reads again instead of counting on a
+/// read whose answers will be dropped.
+final class CutOffSignal: Sendable {
+    private let raised = OSAllocatedUnfairLock(initialState: false)
+
+    init() {}
+
+    var isRaised: Bool { raised.withLock { $0 } }
+
+    func raise() { raised.withLock { $0 = true } }
 }

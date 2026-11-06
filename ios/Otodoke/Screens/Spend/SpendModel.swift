@@ -51,6 +51,17 @@ final class SpendModel {
         var period: SpendPeriod
         var category: CategoryFilter
         var shop: String?
+
+        /// [Codex #4] Shop names compared on UTF-16 units, as the Web and Spend.slices compare them
+        /// (not Swift's canonical equivalence).
+        static func == (l: Conditions, r: Conditions) -> Bool {
+            guard l.period == r.period, l.category == r.category else { return false }
+            switch (l.shop, r.shop) {
+            case (nil, nil): return true
+            case let (a?, b?): return JSText.equal(a, b)
+            default: return false
+            }
+        }
     }
 
     @ObservationIgnored private let today: @Sendable () -> String
@@ -58,6 +69,13 @@ final class SpendModel {
     @ObservationIgnored private var fence = ReadFence()
     /// A read that came back while a save was on the way: read again once the saves end.
     @ObservationIgnored private var readAfterWrites: Conditions?
+    /// [Codex #3] The move's read came back while a save was on the way: the move stays pending (dimmed,
+    /// and load() leaves it alone) until the read after the save shows it.
+    @ObservationIgnored private var moveWaitsForSave = false
+    /// [S1] The last read was cut off (its .task cancelled): the next appearance reads again.
+    @ObservationIgnored private var wasCutOff = false
+    /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
+    @ObservationIgnored private var cutOff: CutOffSignal?
 
     init(reader: ParcelReader, writer: ParcelWriter, changes: DataChanges?, today: @escaping @Sendable () -> String) {
         self.reader = reader
@@ -75,6 +93,9 @@ final class SpendModel {
 
     /// The results are shown faded while a move is on the way.
     var isDimmed: Bool { pendingMove != nil }
+    /// [S-new1] The chips are disabled (and setCategory refused) while a move is on the way: a save
+    /// that ended in conflict or unknown would read the conditions from before the move.
+    var categoryLocked: Bool { pendingMove != nil }
     var bounds: MonthBounds { MonthBounds(today: today()) }
     /// Today's month (the 「月」 of the period switch).
     var thisMonth: String { Format.monthOf(today()) }
@@ -91,16 +112,18 @@ final class SpendModel {
     /// 店ごと: the amounts read, by normalizeShop, largest first (ties in the order first met).
     var shopRows: [ShopAmount] {
         guard let slices else { return [] }
+        // [Codex #4] Keyed by UTF-16 units, as the Web's Map: canonically equivalent names stay two shops.
         var names: [String] = []
-        var sums: [String: Int] = [:]
+        var sums: [[UInt16]: Int] = [:]
         for p in slices.byShop {
             guard let amount = p.totalAmount else { continue }
             let name = Shop.normalizeShop(p)
-            if sums[name] == nil { names.append(name) }
-            sums[name, default: 0] += amount
+            let key = Array(name.utf16)
+            if sums[key] == nil { names.append(name) }
+            sums[key, default: 0] += amount
         }
         return names.enumerated()
-            .map { (offset: $0.offset, row: ShopAmount(name: $0.element, amount: sums[$0.element] ?? 0)) }
+            .map { (offset: $0.offset, row: ShopAmount(name: $0.element, amount: sums[Array($0.element.utf16)] ?? 0)) }
             .sorted { l, r in l.row.amount != r.row.amount ? l.row.amount > r.row.amount : l.offset < r.offset }
             .map(\.row)
     }
@@ -194,7 +217,8 @@ final class SpendModel {
     }
 
     func toggleShop(_ name: String) async {
-        let next: String? = name.isEmpty || shop == name ? nil : name
+        let same = shop.map { JSText.equal($0, name) } ?? false
+        let next: String? = name.isEmpty || same ? nil : name
         await go(.shop(next), Conditions(period: period, category: category, shop: next))
     }
 
@@ -211,7 +235,7 @@ final class SpendModel {
     /// figures worked out again. Conflict or unknown: read again (never sent again). Failed: the old
     /// category stays, with categoryFailed.
     func setCategory(parcelID id: String, to chosen: ParcelCategory) async {
-        guard !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
+        guard !categoryLocked, !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
         savingCategory.insert(id)
         categoryErrors[id] = nil
         fence.beginWrite()
@@ -238,14 +262,20 @@ final class SpendModel {
             return
         }
         // A move on the way read before this save ended: its read is stale and reads again itself.
-        guard pendingMove == nil else { return }
+        guard pendingMove == nil || moveWaitsForSave else { return }
+        // A move waiting for the save: readAfterWrites is its target (newer than what is shown).
         if let target = readAfterWrites ?? (readAgain ? conditions : nil) {
             await read(target)
+        }
+        // [Codex #3] The move is shown (or dropped): it is over, unless a newer save holds it again.
+        if moveWaitsForSave, readAfterWrites == nil {
+            moveWaitsForSave = false
+            pendingMove = nil
         }
     }
 
     func onAppear() async {
-        if parcels == nil || parcels == .failed || mark.isStale { await load() }
+        if parcels == nil || parcels == .failed || mark.isStale || wasCutOff || cutOff?.isRaised == true { await load() }
     }
 
     func sceneBecameActive() async {
@@ -258,8 +288,14 @@ final class SpendModel {
     private func go(_ move: SpendMove, _ target: Conditions) async {
         guard pendingMove == nil, target != conditions else { return }
         pendingMove = move
-        defer { pendingMove = nil }
         await read(target)
+        // [Codex #3] Its read came back while a save was on the way: the move stays pending (dimmed)
+        // until the read after the save (setCategory) shows it; a load() meanwhile does not undo it.
+        if readAfterWrites != nil {
+            moveWaitsForSave = true
+        } else {
+            pendingMove = nil
+        }
     }
 
     /// Reads for `target` and shows it with the result, unless a newer read began meanwhile. A read
@@ -268,12 +304,29 @@ final class SpendModel {
         readAfterWrites = nil
         while true {
             let ticket = fence.beginRead()
+            let signal = CutOffSignal()
+            cutOff = signal
             mark.markRead()
-            let result = await reader.allParcels(excludingCancelled: true)
-            switch fence.verdict(ticket) {
+            let reader = self.reader
+            let result = await withTaskCancellationHandler {
+                await reader.allParcels(excludingCancelled: true)
+            } onCancel: {
+                signal.raise()
+            }
+            let verdict = fence.verdict(ticket)
+            // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
+            if verdict == .superseded { return }
+            // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
+            if Task.isCancelled {
+                wasCutOff = true
+                return
+            }
+            switch verdict {
             case .superseded:
+                // [N-r2-3] Never reached: returned above, before the cut-off check (N-new2).
                 return
             case .current:
+                wasCutOff = false
                 period = target.period
                 category = target.category
                 shop = target.shop

@@ -76,9 +76,12 @@ struct SpendOrderList: View {
                 isSaving: model.savingCategory.contains(p.id),
                 error: model.categoryErrors[p.id]
             ) { chosen in
+                // [S-new1] Refused while a move is on the way: the sheet stays open, nothing is saved.
+                guard !model.categoryLocked else { return false }
                 await model.setCategory(parcelID: p.id, to: chosen)
                 return model.categoryErrors[p.id] == nil
             }
+            .disabled(model.categoryLocked)
             .padding(.leading, 68)
         }
         .padding(16)

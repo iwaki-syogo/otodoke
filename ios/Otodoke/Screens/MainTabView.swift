@@ -1,7 +1,7 @@
 // The tabs after sign-in, in the order and with the names of the Web's tab-bar:
 // 荷物 / カレンダー / 支出 / 設定. Every screen shares one DataChanges with the writer (CX1): a write on one
 // tab makes the others read again when next shown. Back in front from the background, the screen
-// shown reads again, and only that one (iOS-12).
+// shown reads again, and only that one (iOS-12): the selected tab's top screen (N3).
 
 import SwiftUI
 
@@ -144,6 +144,10 @@ struct MainTabView: View {
                     .tag(tab)
             }
         }
+        // [N3] The front is the selected tab's top screen.
+        .onChange(of: selection, initial: true) { _, tab in
+            screens.refresher.select(tab)
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
@@ -171,25 +175,25 @@ struct MainTabView: View {
         case .parcels:
             let list = screens.list
             ParcelListView(model: list, openSettings: { selection = .settings }) { id in
-                TrackedDetail(screens: screens, id: id)
+                TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
-            .shownScreen(.parcels, screens.refresher) { await list.load() }
+            .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }
         case .calendar:
             let calendar = screens.calendar
             CalendarView(model: calendar) { id in
-                TrackedDetail(screens: screens, id: id)
+                TrackedDetail(screens: screens, id: id, tab: .calendar)
             }
-            .shownScreen(.calendar, screens.refresher) { await calendar.sceneBecameActive() }
+            .shownScreen(.calendar, in: .calendar, screens.refresher) { await calendar.sceneBecameActive() }
         case .spend:
             let spend = screens.spend
             SpendView(model: spend) { id in
-                TrackedDetail(screens: screens, id: id)
+                TrackedDetail(screens: screens, id: id, tab: .spend)
             }
-            .shownScreen(.spend, screens.refresher) { await spend.sceneBecameActive() }
+            .shownScreen(.spend, in: .spend, screens.refresher) { await spend.sceneBecameActive() }
         case .settings:
             let settings = screens.settings
             SettingsView(model: settings)
-                .shownScreen(.settings, screens.refresher) { await settings.sceneBecameActive() }
+                .shownScreen(.settings, in: .settings, screens.refresher) { await settings.sceneBecameActive() }
         }
     }
 }
@@ -197,27 +201,47 @@ struct MainTabView: View {
 /// A parcel's detail opened from a tab, in front while it is shown.
 private struct TrackedDetail: View {
     let refresher: ScreenRefresher
+    let tab: MainTab
     @State private var model: ParcelDetailModel
 
-    init(screens: MainScreens, id: String) {
+    init(screens: MainScreens, id: String, tab: MainTab) {
         refresher = screens.refresher
+        self.tab = tab
         _model = State(initialValue: screens.detail(id))
     }
 
     var body: some View {
         let model = self.model
         ParcelDetailView(model: model)
-            .shownScreen(.detail(model.id), refresher) { [weak model] in await model?.load() }
+            .shownScreen(.detail(model.id), in: tab, refresher) { [weak model] in await model?.load() }
+    }
+}
+
+/// [N3] One appearance of a screen at a time: a token from `appeared`, given back on `disappeared`
+/// (the refresh is let go then).
+private struct ShownScreen: ViewModifier {
+    let id: ScreenID
+    let tab: MainTab
+    let refresher: ScreenRefresher
+    let refresh: ScreenRefresher.Refresh
+    @State private var token: ScreenToken?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                if let token { refresher.disappeared(token) }
+                token = refresher.appeared(id, in: tab, refresh: refresh)
+            }
+            .onDisappear {
+                if let token { refresher.disappeared(token) }
+                token = nil
+            }
     }
 }
 
 private extension View {
-    /// Tells the refresher while this screen is shown, and how it reads again.
-    func shownScreen(_ id: ScreenID, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh) -> some View {
-        onAppear {
-            refresher.register(id, refresh)
-            refresher.shown(id)
-        }
-        .onDisappear { refresher.hidden(id) }
+    /// Tells the refresher while this screen of `tab` is shown, and how it reads again.
+    func shownScreen(_ id: ScreenID, in tab: MainTab, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh) -> some View {
+        modifier(ShownScreen(id: id, tab: tab, refresher: refresher, refresh: refresh))
     }
 }

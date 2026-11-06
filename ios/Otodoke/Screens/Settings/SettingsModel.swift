@@ -59,6 +59,8 @@ final class SettingsModel {
     private(set) var address: LoadResult<String>?
     /// The approval page, only Google's (Forwarding.confirmURL); nil when there is none.
     private(set) var confirmURL: URL?
+    /// The forwarding confirmation could not be read (told apart from "none").
+    private(set) var confirmationFailed = false
     private(set) var unread: LoadResult<Int>?
     private(set) var dropped: LoadResult<[DroppedMailRow]>?
     private(set) var isSigningOut = false
@@ -71,6 +73,8 @@ final class SettingsModel {
     @ObservationIgnored private var fence = ReadFence()
     /// A read was started at least once (onAppear reads the first time only when none was).
     @ObservationIgnored private var hasRead = false
+    /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
+    @ObservationIgnored private var cutOff: CutOffSignal?
 
     init(
         reader: SettingsReader,
@@ -136,9 +140,37 @@ final class SettingsModel {
         hasRead = true
         mark.markRead()
         let ticket = fence.beginRead()
+        let signal = CutOffSignal()
+        cutOff = signal
         let reader = self.reader
         let at = now()
 
+        let (panel, readAddress, readConfirmation, readWaiting, readDropped) = await withTaskCancellationHandler {
+            await readAll(reader, at: at)
+        } onCancel: {
+            signal.raise()
+        }
+
+        // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
+        guard fence.verdict(ticket) == .current else { return }
+        // [S1] Cut off (the .task cancelled when the tab is left): the answers are dropped, not shown
+        // as failures, and the next appearance reads again.
+        guard !Task.isCancelled else {
+            hasRead = false
+            return
+        }
+        keyPanel = panel
+        address = readAddress
+        confirmURL = readConfirmation.value.flatMap { $0 }.flatMap(Self.approvalURL)
+        if case .failed = readConfirmation { confirmationFailed = true } else { confirmationFailed = false }
+        unread = readWaiting
+        dropped = readDropped
+    }
+
+    /// The reads of load(): each fails on its own.
+    private func readAll(_ reader: SettingsReader, at: Date) async -> (
+        KeyPanel, LoadResult<String>?, LoadResult<ForwardingConfirmationRow?>, LoadResult<Int>, LoadResult<[DroppedMailRow]>
+    ) {
         async let key = reader.currentKey()
         async let plain = reader.plainCount()
         async let confirmation = reader.forwardingConfirmation()
@@ -158,16 +190,7 @@ final class SettingsModel {
             readAddress = await readAddressOfKey()
             panel = .present(plainCount: await plain, oldKeyCount: await old)
         }
-        let readConfirmation = await confirmation
-        let readWaiting = await waiting
-        let readDropped = await droppedRows
-
-        guard fence.verdict(ticket) == .current else { return }
-        keyPanel = panel
-        address = readAddress
-        confirmURL = readConfirmation.value.flatMap { $0 }.flatMap(Self.approvalURL)
-        unread = readWaiting
-        dropped = readDropped
+        return (panel, readAddress, await confirmation, await waiting, await droppedRows)
     }
 
     /// signOut of AuthService (the key's four steps are task 16). The spinner shows while it runs.
@@ -180,7 +203,7 @@ final class SettingsModel {
 
     /// Shown (the tab opened): reads when never read, or when DataChanges moved since the last read.
     func onAppear() async {
-        guard !hasRead || mark.isStale else { return }
+        guard !hasRead || mark.isStale || cutOff?.isRaised == true else { return }
         await load()
     }
 
@@ -208,11 +231,51 @@ final class SettingsModel {
         return !inboundDomain.isEmpty && text.hasSuffix("@\(inboundDomain)")
     }
 
-    /// Forwarding.confirmURL, then once more through URL: only an https URL is ever handed out.
+    /// [M1] The stored value first, then the body, as Forwarding.confirmURL (the Web's WHATWG reading),
+    /// each also read by Foundation (what Safari opens): handed out only when both readers say Google's
+    /// page. A stored value that only WHATWG passes goes on to the body.
     private static func approvalURL(_ row: ForwardingConfirmationRow) -> URL? {
-        guard let text = Forwarding.confirmURL(stored: row.forwardingConfirmUrl, textBody: row.textBody, htmlBody: row.htmlBody),
-              let url = URL(string: text), url.scheme?.lowercased() == "https"
-        else { return nil }
-        return url
+        let texts = [
+            Forwarding.confirmURL(stored: row.forwardingConfirmUrl, textBody: nil, htmlBody: nil),
+            Forwarding.confirmURL(stored: nil, textBody: row.textBody, htmlBody: row.htmlBody),
+        ]
+        for case let text? in texts where !text.contains("\\") {
+            if let url = URL(string: text), isApprovalPage(url) { return url }
+        }
+        return nil
+    }
+}
+
+extension SettingsModel {
+    /// [M1] The check right before the approval page is opened (and inside approvalURL): Foundation's
+    /// reading of the URL must also be Google's page (https, host mail-settings.google.com, no user or
+    /// password, port nil or 443, path from /mail/), not only the WHATWG reading of Forwarding.
+    /// [SEC-N5] The `\` test is only a belt: URL(string:) writes `\` as %5C, so it does not fire for
+    /// the links approvalURL hands out. The guards are approvalURL's test on the text and the host,
+    /// user, password, port and path tests here.
+    static func isApprovalPage(_ url: URL) -> Bool {
+        url.absoluteString.contains("\\") == false
+            && url.scheme?.lowercased() == "https"
+            && url.host(percentEncoded: false)?.lowercased() == "mail-settings.google.com"
+            && url.user(percentEncoded: false) == nil
+            && url.password(percentEncoded: false) == nil
+            && (url.port == nil || url.port == 443)
+            && url.path(percentEncoded: false).hasPrefix("/mail/")
+    }
+
+    /// [S2] The line under the passphrase card about mail sealed with an earlier key:
+    /// oldKeyText(n) for n > 0, failedText when the count could not be read, nil for 0 or no key row.
+    var oldKeyNote: String? {
+        guard case let .present(_, oldKeyCount)? = keyPanel else { return nil }
+        switch oldKeyCount {
+        case let .loaded(n): return n > 0 ? Self.oldKeyText(n) : nil
+        case .failed: return Self.failedText
+        }
+    }
+
+    /// [S2] failedText when the forwarding confirmation could not be read (told apart from "none");
+    /// nil when it was read (whether or not there is one).
+    var approvalNote: String? {
+        confirmationFailed ? Self.failedText : nil
     }
 }

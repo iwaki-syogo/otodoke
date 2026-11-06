@@ -77,7 +77,9 @@ describe("task 2: Turnstile", () => {
   it("the captcha words equal src/lib/login-errors.ts", () => {
     const auth = read("ios/Otodoke/Auth/AuthService.swift");
     expect(swiftConstant(auth, "missing")).toBe(LOGIN_ERROR_MESSAGES.captcha_missing);
-    expect(swiftConstant(auth, "refused")).toBe(LOGIN_ERROR_MESSAGES.captcha_refused);
+    // captcha_refused: the owner's decision (11/6) says the Web's 「リンク」 as 「コード」 on iOS (the app sends a code).
+    expect(swiftConstant(auth, "refused")).toBe(LOGIN_ERROR_MESSAGES.captcha_refused.replace("リンク", "コード"));
+    expect(swiftConstant(auth, "refused")).toBe("確認が切れました。もう一度コードを送ってください。");
   });
 
   it("the WebView: default data store and user agent, the agreed base URL, no window of its own", () => {

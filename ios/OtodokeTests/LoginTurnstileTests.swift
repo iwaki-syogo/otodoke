@@ -11,7 +11,8 @@ import Testing
 @MainActor
 struct LoginTurnstileTests {
     static let missing = "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。"
-    static let refused = "確認が切れました。もう一度リンクを送ってください。"
+    /// captcha_refused: the Web's 「リンク」 said as 「コード」 on iOS (the owner's decision, 11/6).
+    static let refused = "確認が切れました。もう一度コードを送ってください。"
 
     private let start = Date(timeIntervalSince1970: 1_793_000_000)
 

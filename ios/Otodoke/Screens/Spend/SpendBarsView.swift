@@ -17,24 +17,34 @@ struct SpendBarsView: View {
     /// Each column's slot (the tap target), as the Web's SLOT; the bar is 20 wide inside it.
     private static let slot: CGFloat = 32
     private static let labels: CGFloat = 30
+    /// The y axis' labels.
+    private static let axis: CGFloat = 40
 
     var body: some View {
         if !months.isEmpty {
             let ticks = Spend.axisTicks(Double(months.map(\.total).max() ?? 0))
             let top = ticks.last.map { $0 > 0 ? $0 : 1 } ?? 1
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 0) {
-                    yAxis(ticks, top: top)
-                    ScrollViewReader { scroller in
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            chart(ticks, top: top)
-                                .frame(width: max(Self.slot * CGFloat(months.count), 1), height: Self.plot + Self.labels)
-                                .id("bars")
+                // [N1] The columns' window is a whole number of slots (the rest goes to the axis, on its
+                // left): scrolled to the newest, the oldest column shown is never cut in half.
+                GeometryReader { geometry in
+                    let room = max(geometry.size.width - Self.axis, 0)
+                    let rest = room.truncatingRemainder(dividingBy: Self.slot)
+                    HStack(alignment: .top, spacing: 0) {
+                        yAxis(ticks, top: top, width: Self.axis + rest)
+                        ScrollViewReader { scroller in
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                chart(ticks, top: top)
+                                    .frame(width: max(Self.slot * CGFloat(months.count), 1), height: Self.plot + Self.labels)
+                                    .id("bars")
+                            }
+                            .defaultScrollAnchor(.trailing)
+                            .onAppear { scroller.scrollTo("bars", anchor: .trailing) }
                         }
-                        .defaultScrollAnchor(.trailing)
-                        .onAppear { scroller.scrollTo("bars", anchor: .trailing) }
+                        .frame(width: room - rest)
                     }
                 }
+                .frame(height: Self.plot + Self.labels)
                 legend
             }
             .padding(16)
@@ -45,7 +55,7 @@ struct SpendBarsView: View {
         }
     }
 
-    private func yAxis(_ ticks: [Double], top: Double) -> some View {
+    private func yAxis(_ ticks: [Double], top: Double, width: CGFloat) -> some View {
         ZStack(alignment: .bottomTrailing) {
             ForEach(ticks, id: \.self) { t in
                 Text(Spend.tickLabel(t))
@@ -56,7 +66,7 @@ struct SpendBarsView: View {
                     .offset(y: -CGFloat(t / top) * Self.plot)
             }
         }
-        .frame(width: 40, height: Self.plot, alignment: .bottomTrailing)
+        .frame(width: width, height: Self.plot, alignment: .bottomTrailing)
         .accessibilityHidden(true)
     }
 

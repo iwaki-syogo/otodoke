@@ -88,7 +88,7 @@ struct SettingsView: View {
             .padding(16)
             .background(SettingsPalette.skyBackground, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(SettingsPalette.skyBorder))
-        case let .present(plainCount, oldKeyCount)?:
+        case let .present(plainCount, _)?:
             VStack(alignment: .leading, spacing: 12) {
                 heading("合言葉")
                 switch plainCount {
@@ -111,10 +111,11 @@ struct SettingsView: View {
                 default:
                     EmptyView()
                 }
-                if case let .loaded(n) = oldKeyCount, n > 0 {
-                    Text(SettingsModel.oldKeyText(n))
+                if let note = model.oldKeyNote {
+                    // [S2] A failed count shows failedText (not the look of 0).
+                    Text(note)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(note == SettingsModel.failedText ? OtodokeColor.errorText : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 linkCard("合言葉を変える") { open(.changePassphrase) }
@@ -198,19 +199,29 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var approvalSection: some View {
-        if let url = model.confirmURL {
+        if let url = model.confirmURL, SettingsModel.isApprovalPage(url) {
             VStack(alignment: .leading, spacing: 4) {
                 heading("Gmail の転送を承認してください")
                 Text("Gmail から転送の確認が届いています。承認済みなら、この案内は無視して大丈夫です。")
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
-                primaryButton("承認ページを開く") { openPage(url) }
-                    .padding(.top, 8)
+                primaryButton("承認ページを開く") {
+                    // [M1] Checked again right before it opens: only Google's page, by Foundation's reading.
+                    guard SettingsModel.isApprovalPage(url) else { return }
+                    openPage(url)
+                }
+                .padding(.top, 8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
+        } else if let note = model.approvalNote {
+            // [S2] The forwarding confirmation could not be read (not the look of "none").
+            Text(note)
+                .font(.subheadline)
+                .foregroundStyle(OtodokeColor.errorText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
