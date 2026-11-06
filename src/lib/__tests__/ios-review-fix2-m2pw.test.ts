@@ -45,6 +45,30 @@ describe("N-2: the tabs live as long as the signed-in generation", () => {
   });
 });
 
+/** True when the `initial: true` scenePhase onChange sends .background to wentToBackground() and every other phase to cameToFront(). */
+function frontWiringOk(src: string): boolean {
+  const m = src.match(/\.onChange\(of: scenePhase, initial: true\)\s*\{[^}]*\}[^}]*\}[^}]*\}/);
+  if (!m) return false;
+  return /if phase == \.background \{\s*auth\.front\.wentToBackground\(\)\s*\} else \{\s*auth\.front\.cameToFront\(\)\s*\}/.test(m[0]);
+}
+
+describe("CX2: RootView tells AppFront whether the app is in front (from launch on)", () => {
+  const src = read("ios/Otodoke/App/RootView.swift");
+  it("the initial onChange calls wentToBackground() on .background and cameToFront() otherwise", () => {
+    expect(frontWiringOk(src)).toBe(true);
+  });
+  it("the check goes red on a copy with the two calls swapped, or with the onChange gone (negative control)", () => {
+    const swapped = src.replace("auth.front.wentToBackground()", "@@").replace("auth.front.cameToFront()", "auth.front.wentToBackground()").replace("@@", "auth.front.cameToFront()");
+    expect(swapped).not.toBe(src);
+    expect(frontWiringOk(swapped)).toBe(false);
+    const flipped = src.replace("phase == .background", "phase == .active");
+    expect(flipped).not.toBe(src);
+    expect(frontWiringOk(flipped)).toBe(false);
+    const gone = src.replace("initial: true", "initial: false");
+    expect(frontWiringOk(gone)).toBe(false);
+  });
+});
+
 describe("N-4: DEBUG-only names stay out of the Release .app (strings)", () => {
   it("the check finds a planted name and passes a clean bundle (negative and positive control)", () => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "otodoke-debug-names-"));
