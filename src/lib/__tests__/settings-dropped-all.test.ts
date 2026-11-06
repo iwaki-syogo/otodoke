@@ -6,7 +6,7 @@ import { findAll, hasClasses, parseHtml, textOf, type HtmlNode } from "./html-tr
 /**
  * /app/settings lists every dropped mail, not the newest 30.
  *
- * The heading 「荷物のメールが混ざっていないか見る（N 通）」 reads as the whole count, and each row
+ * The heading 「荷物のメールが混ざっていないか、N 通を見る」 reads as the whole count, and each row
  * carries 「これは荷物」. A capped read cut the list and the count at 30, so a parcel mail past the
  * 30th could never be marked. The list is read with readAll, newest first; any page failing shows
  * 「読み込めませんでした」, never a shorter list.
@@ -93,7 +93,7 @@ describe("/app/settings: 読まなかったメール lists every dropped mail", 
   it("lists and counts 1,001 dropped mails, each with 「これは荷物」, newest first", async () => {
     seed(1001);
     const section = droppedSection(await render());
-    expect(summaryOf(section)).toEqual(["荷物のメールが混ざっていないか見る（1001 通）"]);
+    expect(summaryOf(section)).toEqual(["荷物のメールが混ざっていないか、1001 通を見る"]);
     const rows = rowsOf(section);
     expect(rows).toHaveLength(1001);
     expect(markButtons(section)).toHaveLength(1001);
@@ -120,7 +120,7 @@ describe("/app/settings: 読まなかったメール lists every dropped mail", 
   it("lists 31 dropped mails, past the old 30 cap, in one read", async () => {
     seed(31);
     const section = droppedSection(await render());
-    expect(summaryOf(section)).toEqual(["荷物のメールが混ざっていないか見る（31 通）"]);
+    expect(summaryOf(section)).toEqual(["荷物のメールが混ざっていないか、31 通を見る"]);
     expect(rowsOf(section)).toHaveLength(31);
     expect(markButtons(section)).toHaveLength(31);
     expect(textOf(section)).toContain(subjectOf(0));

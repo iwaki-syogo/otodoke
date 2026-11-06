@@ -2,9 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hostName } from "@/lib/request-origin";
 
-/** The site's own address. Supabase's CAPTCHA (Cloudflare Turnstile) knows this host only. */
+/** The site's own address: a host the Turnstile widget is registered for (the list is in src/lib/turnstile.ts). */
 const SITE = "https://otodoke.app";
-/** Vercel's production URL of the project: the same app, on a host where Turnstile would refuse the login. */
+/** Vercel's production URL of the project: the same app, on a host the Turnstile widget is not registered for, where it would refuse the login. */
 const VERCEL_PRODUCTION_HOST = "otodoke-app.vercel.app";
 
 /**

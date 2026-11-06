@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PendingSubmitButton } from "@/components/pending-button";
 import { changePassword, flowMessage, signInAndOpenKey, type FlowCode, type OpenWithAnother } from "@/lib/crypto/password-flows";
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { useTabKey } from "@/lib/crypto/tab-key";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { tokenForPress, type TokenField } from "@/lib/turnstile";
+import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { signInWithAuthSecret } from "@/app/login/actions";
 import { readSignedInAddress } from "@/app/login/session-actions";
 import { OtherPasswordForm } from "@/app/login/other-password-form";
@@ -147,7 +147,7 @@ export function MakeKeyForm({ email }: { email: string }) {
       if (!result.ok) {
         // The address is the session's: a refused sign-in can only be the password.
         const code = result.code === "credentials" ? "wrong_password" : result.code;
-        setError({ text: flowMessage(code), logIn: LOG_IN_AGAIN.has(code) });
+        setError({ text: pressText(code, captchaToken, flowMessage(code)), logIn: LOG_IN_AGAIN.has(code) });
         return;
       }
       if (result.key === "opened" || result.key === "made") {
@@ -204,11 +204,26 @@ export function MakeKeyForm({ email }: { email: string }) {
  * 「パスワードを変える」: the bot check is drawn only once it is opened. Its token goes with the
  * change: changeLoginSecret checks the current password with a sign-in, which Supabase refuses
  * without one once CAPTCHA is enforced.
+ *
+ * `open` follows the element: the toggle event says when it is opened, and the effect reads it once
+ * when the page is hydrated, because a details opened before React attached its handlers
+ * (a slow phone) has fired its toggle already and would otherwise stay "closed" here, with no bot
+ * check drawn and a form that can be pressed.
+ * The hook is exported for its tests (password-panel-forms.test.ts).
  */
-function ChangeDetails({ userId, email }: { userId: string; email: string }) {
+export function useDetailsOpen() {
   const [open, setOpen] = useState(false);
+  const element = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (element.current) setOpen(element.current.open);
+  }, []);
+  return { open, element, onToggle: (e: { currentTarget: { open: boolean } }) => setOpen(e.currentTarget.open) };
+}
+
+function ChangeDetails({ userId, email }: { userId: string; email: string }) {
+  const { open, element, onToggle } = useDetailsOpen();
   return (
-    <details className="rounded-2xl border border-neutral-200 bg-white" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details ref={element} className="rounded-2xl border border-neutral-200 bg-white" onToggle={onToggle}>
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium">パスワードを変える</summary>
       <div className="border-t border-neutral-100 p-4">
         <ChangeForm userId={userId} email={email} withCheck={open} />
@@ -249,7 +264,7 @@ export function ChangeForm({ userId, email, withCheck }: { userId: string; email
         setNext("");
         setAgain("");
       }
-      setMessage(result.ok ? { ok: true, text: "変えました。前のメールも新しいパスワードで開けます。", logIn: false } : { ok: false, text: flowMessage(result.code), logIn: LOG_IN_AGAIN.has(result.code) });
+      setMessage(result.ok ? { ok: true, text: "変えました。前のメールも新しいパスワードで開けます。", logIn: false } : { ok: false, text: pressText(result.code, captchaToken, flowMessage(result.code)), logIn: LOG_IN_AGAIN.has(result.code) });
     } finally {
       // The token went with the press (each is checked once): the next press waits for a new one.
       setRound((r) => r + 1);

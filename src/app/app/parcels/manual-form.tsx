@@ -92,8 +92,8 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
             <input type="date" name="expected_date" defaultValue={values.expected_date} className={dateField} />
           </label>
           <label className="text-sm font-medium">
-            金額（円）
-            <input name="total_amount" inputMode="numeric" autoComplete="off" defaultValue={values.total_amount} className={field} />
+            金額
+            <input name="total_amount" inputMode="numeric" autoComplete="off" placeholder="2480 円" defaultValue={values.total_amount} className={field} />
           </label>
           <label className="text-sm font-medium">
             分類
@@ -165,7 +165,7 @@ function DeleteForm({ id }: { id: string }) {
         <input type="hidden" name="id" value={id} />
         <label className="flex items-center gap-2">
           <input type="checkbox" name="confirm" value="yes" required className="h-4 w-4" />
-          本当に消す（元に戻せません）
+          本当に消します。元に戻せません。
         </label>
         {state.error ? (
           <p role="alert" className="text-sm text-red-800">

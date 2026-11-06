@@ -12,10 +12,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * visitors of the website. This keeps one visitor of the form from using up the project's mail
  * allowance through the form.
  *
- * What it does not do: the limit covers only this form. Supabase's /auth/v1/otp can be called
- * directly with the public anon key (the iOS app does exactly that), and those requests never
- * pass through here, so this cannot stop someone from exhausting Supabase's project-wide mail
- * cap. Only a CAPTCHA on the Supabase side or Supabase's own rate-limit settings can.
+ * What it does not do: the limit covers only this website's three entrances (the confirmation of a
+ * new account, sending it again, the reset mail). Supabase's own endpoints behind them,
+ * /auth/v1/signup, /auth/v1/resend and /auth/v1/recover, can be called directly with the public
+ * anon key, and so can /auth/v1/otp (the iOS app does exactly that). Those requests never pass
+ * through here, so this cannot stop someone from exhausting Supabase's project-wide mail cap. Only
+ * a CAPTCHA on the Supabase side or Supabase's own rate-limit settings can.
  *
  * Who must not be blocked, and how the numbers allow for them. The three mails share every count
  * here; signing in with the password sends none.

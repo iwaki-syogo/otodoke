@@ -415,7 +415,7 @@ describe("as the forms draw it: CAPTCHA enforced, released with Supabase's CAPTC
 });
 
 describe("with CAPTCHA off (captchaEnforced false: CAPTCHA_ENFORCED if Supabase's CAPTCHA is turned off again)", () => {
-  it("says nothing when the script cannot load (the mail goes out without a token), and still lets the button send at once", async () => {
+  it("says nothing when the script cannot load (Supabase takes the request without a token), and still lets the button send at once", async () => {
     vi.stubGlobal("window", {});
     const { scripts } = fakeDocument();
     const view = widget(undefined, { round: 0, captchaEnforced: false }, await freshWidget());
