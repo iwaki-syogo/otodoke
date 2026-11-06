@@ -135,9 +135,10 @@ describe("/guide/forwarding", () => {
     else expect(source).toContain('from "@/lib/forwarding-guide"');
   });
 
-  it("sends 「設定を開く」 to the 「メールの転送」 page", async () => {
+  it("sends 「うまく届かないとき」を開く to the trouble page, and the start card to the forwarding page", async () => {
     const root = await render();
-    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "設定を開く").map((a) => a.attrs.href)).toEqual(["/app/settings/forwarding"]);
+    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "「うまく届かないとき」を開く").map((a) => a.attrs.href)).toEqual(["/app/settings/trouble"]);
+    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === BEFORE_YOU_START_ACTION).map((a) => a.attrs.href)).toEqual(["/app/settings/forwarding"]);
   });
 
   it("gives the 「始める前に」 card exactly one link to the forwarding address page", async () => {

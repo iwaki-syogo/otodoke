@@ -133,7 +133,7 @@ export default function ForwardingGuidePage() {
             <li key={t}>{t}</li>
           ))}
         </ul>
-        <Link href="/app/settings/forwarding" className={`${SECONDARY_BUTTON} mt-4`}>
+        <Link href="/app/settings/trouble" className={`${SECONDARY_BUTTON} mt-4`}>
           {FORWARDING_CHECK_ACTION}
         </Link>
       </section>
