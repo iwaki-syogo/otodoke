@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY } from "@/lib/turnstile";
+import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY } from "@/lib/turnstile";
 import { mount, type Mounted, type NodeFactory } from "./hook-harness";
 
 /**
@@ -74,7 +74,9 @@ function fakeDocument() {
 }
 
 const nodes: NodeFactory = (type) => (type === "input" ? { value: "", dataset: {} } : { dataset: {} });
-const widget = (node: NodeFactory = nodes) => mount(() => TurnstileWidget(), node);
+// The widget as it will run once Supabase enforces the check (CAPTCHA_ENFORCED = true): the notice
+// shows. While it is off (the default) the notice stays hidden: see "while CAPTCHA is off" below.
+const widget = (node: NodeFactory = nodes, props: Parameters<typeof TurnstileWidget>[0] = { captchaEnforced: true }) => mount(() => TurnstileWidget(props), node);
 const fieldHost = (view: Mounted) => view.host((h) => h.type === "input" && h.props.name === TURNSTILE_RESPONSE_FIELD);
 const fieldOf = (view: Mounted) => view.nodeOf<Field>(fieldHost(view));
 const slotOf = (view: Mounted) => view.host((h) => h.type === "div" && "data-turnstile-widget" in h.props);
@@ -209,7 +211,7 @@ describe("when Cloudflare's script cannot load", () => {
   it("shows no notice of its own when the page already says the same (captcha_missing), and still marks the field", async () => {
     vi.stubGlobal("window", {});
     const { scripts } = fakeDocument();
-    const view = mount(() => TurnstileWidget({ hideUnavailableNotice: true }), nodes);
+    const view = mount(() => TurnstileWidget({ hideUnavailableNotice: true, captchaEnforced: true }), nodes);
     scripts[0].onerror!();
     await settle();
     expect(view.text()).toBe("");
@@ -241,5 +243,26 @@ describe("when Cloudflare's script cannot load", () => {
     expect(second.text()).not.toContain(TURNSTILE_UNAVAILABLE_MESSAGE);
     expect(slotOf(second).props.hidden).toBe(false);
     expect(fieldOf(second).dataset.turnstile).toBeUndefined();
+  });
+});
+
+describe("while CAPTCHA is off (review R2b-3)", () => {
+  it("is off today: turning it on in Supabase needs a commit that sets CAPTCHA_ENFORCED", () => {
+    expect(CAPTCHA_ENFORCED).toBe(false);
+  });
+
+  it("says nothing when the script cannot load (the mail goes out without a token), and still lets the button send at once", async () => {
+    vi.stubGlobal("window", {});
+    const { scripts } = fakeDocument();
+    // A fresh module: the script promise of an earlier test (one that loaded) is not reused.
+    vi.resetModules();
+    const fresh = (await import("@/app/login/turnstile-widget")).TurnstileWidget;
+    const view = mount(() => fresh(), nodes);
+    scripts[0].onerror!();
+    await settle();
+    expect(view.text()).toBe("");
+    expect(view.hosts((h) => h.type === "p")).toHaveLength(0);
+    expect(slotOf(view).props.hidden).toBe(true);
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
   });
 });

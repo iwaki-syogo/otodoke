@@ -9,6 +9,17 @@
 export const TURNSTILE_SITEKEY = "0x4AAAAAAF1bMWXBw0RF-dvv";
 
 /**
+ * Whether Supabase refuses a login mail without a Turnstile token (Authentication > Bot and Abuse
+ * Protection > CAPTCHA). Off on 2026-11-06: a press without a token still sends the mail.
+ *
+ * It decides what the login form says and how long it waits when the check gives no token: while
+ * it is false, nobody is told to reload or try another browser (the mail goes out anyway), and a
+ * press waits at most TURNSTILE_WAIT_MS. Turning CAPTCHA on in the dashboard needs a commit that
+ * sets this to true, released with it (not an env var: a code change, reviewed like one).
+ */
+export const CAPTCHA_ENFORCED = false;
+
+/**
  * Cloudflare requires this exact URL (no proxying or caching). `render=explicit`: the widget is
  * drawn by the login form's client component, not by scanning the page for `.cf-turnstile`.
  */

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY, TURNSTILE_UNAVAILABLE } from "@/lib/turnstile";
+import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY, TURNSTILE_UNAVAILABLE } from "@/lib/turnstile";
 
 /** The part of Cloudflare's `window.turnstile` this form uses. */
 type TurnstileApi = {
@@ -55,11 +55,16 @@ function loadTurnstile(): Promise<TurnstileApi> {
  * - Each token can be checked once. After a send the form comes back drawn anew (Next.js remounts
  *   it after a Server Action redirects), and if it stays mounted the widget is reset here: either
  *   way the next press gets a new token.
+ * - The notice is shown only while Supabase enforces the check (CAPTCHA_ENFORCED): until then a
+ *   press without a token sends the mail, and "reload or try another browser" would be wrong.
  * - `hideUnavailableNotice`: the page already says the same thing above the form (a send came back
  *   with captcha_missing: reload or try another browser), so the notice would only repeat it. The
  *   field is still marked unavailable.
  */
-export function TurnstileWidget({ hideUnavailableNotice = false }: { hideUnavailableNotice?: boolean } = {}) {
+export function TurnstileWidget({
+  hideUnavailableNotice = false,
+  captchaEnforced = CAPTCHA_ENFORCED,
+}: { hideUnavailableNotice?: boolean; captchaEnforced?: boolean } = {}) {
   const container = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const widgetId = useRef<string | null>(null);
@@ -118,7 +123,7 @@ export function TurnstileWidget({ hideUnavailableNotice = false }: { hideUnavail
   return (
     <>
       <input ref={field} type="hidden" name={TURNSTILE_RESPONSE_FIELD} data-turnstile={unavailable ? TURNSTILE_UNAVAILABLE : undefined} />
-      {unavailable && !hideUnavailableNotice ? (
+      {unavailable && captchaEnforced && !hideUnavailableNotice ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{TURNSTILE_UNAVAILABLE_MESSAGE}</p>
       ) : null}
       <div ref={container} data-turnstile-widget hidden={unavailable} className="min-h-[65px] w-full" />
