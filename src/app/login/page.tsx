@@ -97,6 +97,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
           </form>
         </>
       )}
+      {/* On both screens: the policy covers the login mail and the cookie the send keeps. */}
+      <Link href="/privacy" className="mt-8 self-start text-xs text-neutral-500 underline underline-offset-4">
+        プライバシーポリシー
+      </Link>
     </main>
   );
 }

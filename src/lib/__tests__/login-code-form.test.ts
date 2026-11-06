@@ -439,3 +439,22 @@ describe("Supabase's once-a-minute limit says how long to wait (review F-6)", ()
     }
   });
 });
+
+describe("the privacy policy link", () => {
+  const privacyLink = (html: string) => tag(html, /<a[^>]*>プライバシーポリシー<\/a>/);
+
+  it("sits under the send form, small", async () => {
+    const html = await loginPage({});
+    const link = privacyLink(html);
+    expect(link).toContain('href="/privacy"');
+    expect(link).toContain("text-xs");
+    expect(html.indexOf("プライバシーポリシー")).toBeGreaterThan(html.indexOf("</form>"));
+  });
+
+  it("is on the sent screen too, under 「メールを送り直す」", async () => {
+    remember(EMAIL);
+    const html = await loginPage({ sent: "1" });
+    expect(privacyLink(html)).toContain('href="/privacy"');
+    expect(html.indexOf("プライバシーポリシー")).toBeGreaterThan(html.indexOf("メールを送り直す"));
+  });
+});
