@@ -26,7 +26,7 @@ export const LOGIN_MESSAGES_COPY: Record<string, string> = {
   stale_session: "続けるには、もう一度ログインしてください。",
   reset_expired: "再設定の期限が切れました。もう一度、再設定のメールを送ってください。",
   same_secret: "いまと同じパスワードです。別のパスワードを決めてください。",
-  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。",
+  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。入れないときは、前のパスワードでログインしてください。",
   secret_change_refused: "パスワードを変えられませんでした。もう一度お試しください。",
   secret_change_refused_key_new: "パスワードを変えられませんでした。同じ新しいパスワードで、もう一度お試しください。",
   key_in_use_changed: "ほかの画面で鍵が変わりました。ページを読み込み直してください。",
@@ -44,7 +44,7 @@ export const LOGIN_MESSAGES_COPY: Record<string, string> = {
   other_password_wrong: "このパスワードでも、メールの鍵を開けませんでした。",
   link_invalid: "このリンクは使えませんでした。確認が済んでいれば、ログインできます。",
   reset_link_invalid: "再設定のリンクは使えませんでした。もう一度、再設定のメールを送ってください。",
-  link_limited: "ただいま混み合っています。1分ほど待ってから、もう一度メールのリンクを開いてください。",
+  link_limited: "ただいま混み合っています。少し時間をおいてから、もう一度メールのリンクを開いてください。",
   link_failed: "いまは確認できませんでした。少し時間をおいて、もう一度メールのリンクを開いてください。",
   link_incomplete: "リンクが不完全です。いちばん新しいメールのリンクを開いてください。",
 };
