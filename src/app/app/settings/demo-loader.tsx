@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { clearAllParcels, loadDemo } from "./actions";
 import { PressButton } from "./press";
 
@@ -8,6 +9,7 @@ import { PressButton } from "./press";
  * `loaded` a number: nothing from the link is shown as it came.
  */
 export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; error: string | null; cleared: boolean }) {
+  const warningId = useId();
   return (
     <div className="mt-3 flex flex-col gap-3">
       <form action={loadDemo}>
@@ -20,9 +22,9 @@ export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; 
       <details className="text-sm">
         <summary className="cursor-pointer text-neutral-500">すべての荷物を消す</summary>
         <form action={clearAllParcels} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
-          <p className="text-sm leading-6">消すと元に戻せません。</p>
+          <p id={warningId} className="text-sm leading-6">荷物とメールをすべて消します。消すと元に戻せません。</p>
           <label className="flex items-center gap-2">
-            <input type="checkbox" name="confirm" value="yes" className="h-4 w-4" />
+            <input type="checkbox" name="confirm" value="yes" aria-describedby={warningId} className="h-4 w-4" />
             本当に消す
           </label>
           <ClearButton />
