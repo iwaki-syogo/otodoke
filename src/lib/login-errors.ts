@@ -33,7 +33,10 @@ export const LOGIN_MESSAGES = {
 
   // The session.
   signed_out: "ログインし直してください。",
-  // A key step more than 15 minutes after the password or the reset (auth-session.ts).
+  // A key step the session may not take (auth-session.ts, key-actions.ts): putting a key in use
+  // and rewrapping it need a sign-in with the password in the last 15 minutes; a reset link's
+  // session of the last 15 minutes registers a key only. /reset-password says reset_expired
+  // instead (password-flows.ts finishPasswordReset): that user cannot log in.
   stale_session: "続けるには、もう一度ログインしてください。",
   // finishReset without a reset link opened in the last 15 minutes.
   reset_expired: "再設定の期限が切れました。もう一度、再設定のメールを送ってください。",
@@ -140,8 +143,11 @@ export type ChangeSecretFailure =
 export type ChangeSecretResult = { ok: true } | { ok: false; code: ChangeSecretFailure };
 
 /**
- * The `error` a key Action of 設定 (key-actions.ts) answers when the session is older than 15
- * minutes since the password or the reset: the screen asks to log in again (LOGIN_MESSAGES.stale_session).
+ * The `error` a key Action (key-actions.ts) answers for a session that may not take the step:
+ * putting a key in use and rewrapping it need a sign-in with the password in the last 15 minutes;
+ * registering one takes a reset link's session of the last 15 minutes too (src/lib/auth-session.ts).
+ * The screens ask to log in again (LOGIN_MESSAGES.stale_session); /reset-password, whose user has
+ * no password to log in with, asks for a new reset mail (reset_expired).
  */
 export const KEY_SESSION_STALE = "stale_session";
 
