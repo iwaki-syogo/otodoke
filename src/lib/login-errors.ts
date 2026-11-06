@@ -44,7 +44,9 @@ export const LOGIN_MESSAGES = {
   // Changing the password.
   same_secret: "いまと同じパスワードです。別のパスワードを決めてください。",
   // Supabase did not answer whether the new password was set; the key opens with the new one.
-  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。",
+  // The new one first; if it was not set after all, the old one signs in, and a key that opens
+  // with the new one is then opened with 「ほかのパスワードで開く」 (R3-PW-15).
+  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。入れないときは、前のパスワードでログインしてください。",
   // Supabase refused the new password; the key opens with the old one again.
   secret_change_refused: "パスワードを変えられませんでした。もう一度お試しください。",
   // The same, but the wrap could not be put back: the login is the old password, and the key opens

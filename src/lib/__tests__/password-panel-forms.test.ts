@@ -203,12 +203,14 @@ describe("設定: パスワードを変える", () => {
     expect(view.text()).toContain("変えました。");
   });
 
-  it("an unknown outcome empties the fields (the current password may not be the one any more)", async () => {
+  it("an unknown outcome empties the fields (the current password may not be the one any more), and names both ways in", async () => {
     flows.change.mockResolvedValue({ ok: false, code: "secret_change_unknown" });
     const view = await typed();
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES.secret_change_unknown);
+    // The new password first, the old one when it does not sign in (R3-PW-15).
+    expect(LOGIN_MESSAGES.secret_change_unknown).toBe("パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。入れないときは、前のパスワードでログインしてください。");
     expect(fields(view)).toEqual(["", "", ""]);
   });
 
