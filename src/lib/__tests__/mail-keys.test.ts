@@ -6,30 +6,35 @@ import { challengeAad, openBytes, openMail, type PrivateRecipient } from "@/lib/
 import { createKeyPair, openStoredKey, wrapPrivateKey, type StoredKey } from "@/lib/crypto/key-wrap";
 import { activateKey, countPlainRead, readRetiredKeys, readSealedEnvelope, readStoredKey, registerKey, rewrapKey, sealPlainBatch, SEAL_BATCH_SIZE } from "@/lib/mail-keys";
 import { processInboundEmail } from "@/lib/pipeline";
-import { KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import { FakeDb, type Row } from "./fake-db";
 import { OTHER, USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const PASS = "テスト用の合言葉です1234";
 
 const current = (db: FakeDb, userId = USER) => db.rows("user_keys").filter((k) => k.user_id === userId && k.activated_at && !k.retired_at);
+/** The key in use as the settings screen shows it when drawn (what the browser sends back). */
+const shownKeyId = (db: FakeDb | null, userId = USER) => (db ? ((current(db, userId)[0]?.key_id as string | undefined) ?? null) : null);
 
-async function newRegistration(passphrase = PASS, userId = USER) {
+async function newRegistration(passphrase = PASS, userId = USER, db: FakeDb | null = null) {
   const pair = await createKeyPair();
   const w = await wrapPrivateKey(pair.pkcs8, passphrase, userId);
-  return { pair, input: { publicKey: toBase64(pair.publicKey), wrappedPrivateKey: w.wrapped_private_key, wrapIv: w.wrap_iv, kdfSalt: w.kdf_salt, kdfIterations: w.kdf_iterations } };
+  return {
+    pair,
+    input: { publicKey: toBase64(pair.publicKey), wrappedPrivateKey: w.wrapped_private_key, wrapIv: w.wrap_iv, kdfSalt: w.kdf_salt, kdfIterations: w.kdf_iterations, expectedCurrentKeyId: shownKeyId(db, userId) },
+  };
 }
 
 const stored = (db: FakeDb, keyId: string) => db.rows("user_keys").find((k) => k.key_id === keyId) as unknown as StoredKey & Row;
 
 /** The browser's side of registration, done against the row as the database holds it. */
 async function registerAndActivate(db: FakeDb, passphrase = PASS, userId = USER): Promise<PrivateRecipient> {
-  const { input } = await newRegistration(passphrase, userId);
+  const { input } = await newRegistration(passphrase, userId, db);
   const reg = await registerKey(asAdmin(db), userId, input);
   if (!reg.ok) throw new Error(reg.error);
   const recipient = await openStoredKey(stored(db, reg.keyId), passphrase, userId);
   const answer = await openBytes(recipient, challengeAad(userId, reg.keyId), reg.challenge);
-  const act = await activateKey(asAdmin(db), userId, { keyId: reg.keyId, challenge: toBase64(answer) });
+  const act = await activateKey(asAdmin(db), userId, { keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: input.expectedCurrentKeyId });
   if (!act.ok) throw new Error(act.error);
   return recipient;
 }
@@ -50,7 +55,7 @@ describe("key registration", () => {
 
     const recipient = await openStoredKey(stored(db, reg.keyId), PASS, USER);
     const answer = await openBytes(recipient, challengeAad(USER, reg.keyId), reg.challenge);
-    expect(await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer) })).toEqual({ ok: true, keyId: reg.keyId });
+    expect(await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: input.expectedCurrentKeyId })).toEqual({ ok: true, keyId: reg.keyId });
     expect(current(db)).toHaveLength(1);
     expect(stored(db, reg.keyId).challenge_hash).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -60,7 +65,7 @@ describe("key registration", () => {
     const { input } = await newRegistration();
     const reg = await registerKey(asAdmin(db), USER, input);
     if (!reg.ok) throw new Error(reg.error);
-    const res = await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(new Uint8Array(32)) });
+    const res = await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(new Uint8Array(32)), expectedCurrentKeyId: null });
     expect(res.ok).toBe(false);
     expect(current(db)).toHaveLength(0);
   });
@@ -72,7 +77,7 @@ describe("key registration", () => {
     if (!reg.ok) throw new Error(reg.error);
     const recipient = await openStoredKey(stored(db, reg.keyId), PASS, USER);
     const answer = await openBytes(recipient, challengeAad(USER, reg.keyId), reg.challenge);
-    expect((await activateKey(asAdmin(db), OTHER, { keyId: reg.keyId, challenge: toBase64(answer) })).ok).toBe(false);
+    expect((await activateKey(asAdmin(db), OTHER, { keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: input.expectedCurrentKeyId })).ok).toBe(false);
     expect(current(db, USER)).toHaveLength(0);
   });
 
@@ -110,7 +115,7 @@ describe("key registration", () => {
   it("retires the old key and activates the new one in one database call, never two writes", async () => {
     const db = new FakeDb();
     const first = await registerAndActivate(db);
-    const { input } = await newRegistration("あたらしい合言葉ですよ");
+    const { input } = await newRegistration("あたらしい合言葉ですよ", USER, db);
     const reg = await registerKey(asAdmin(db), USER, input);
     if (!reg.ok) throw new Error(reg.error);
     const recipient = await openStoredKey(stored(db, reg.keyId), "あたらしい合言葉ですよ", USER);
@@ -118,13 +123,14 @@ describe("key registration", () => {
     const updatesBefore = db.callsOn("user_keys", "update").length;
     const rpcBefore = db.rpcCalls.length;
 
-    expect(await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer) })).toEqual({ ok: true, keyId: reg.keyId });
+    expect(await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: input.expectedCurrentKeyId })).toEqual({ ok: true, keyId: reg.keyId });
     expect(db.callsOn("user_keys", "update").length).toBe(updatesBefore);
     const calls = db.rpcCalls.slice(rpcBefore);
-    expect(calls.map((c) => c.name)).toEqual(["activate_user_key"]);
-    // The hash of what the browser opened, for the database to check again (not the stored value echoed back).
+    expect(calls.map((c) => c.name)).toEqual(["activate_user_key_checked"]);
+    // The hash of what the browser opened, for the database to check again (not the stored value
+    // echoed back), and the key in use the browser's screen was drawn with.
     const { sha256, toHex } = await import("@/lib/crypto/bytes");
-    expect(calls[0].args).toEqual({ p_user_id: USER, p_key_id: reg.keyId, p_challenge_hash: toHex(await sha256(answer)) });
+    expect(calls[0].args).toEqual({ p_user_id: USER, p_key_id: reg.keyId, p_challenge_hash: toHex(await sha256(answer)), p_expected_current_key_id: first.keyId });
     expect(current(db).map((k) => k.key_id)).toEqual([reg.keyId]);
     expect(stored(db, first.keyId).retired_at).toBeTruthy();
   });
@@ -132,7 +138,7 @@ describe("key registration", () => {
   it("when the database refuses the activation, the old key stays in use", async () => {
     const db = new FakeDb();
     const first = await registerAndActivate(db);
-    const { input } = await newRegistration();
+    const { input } = await newRegistration(PASS, USER, db);
     const reg = await registerKey(asAdmin(db), USER, input);
     if (!reg.ok) throw new Error(reg.error);
     const answer = await openBytes(await openStoredKey(stored(db, reg.keyId), PASS, USER), challengeAad(USER, reg.keyId), reg.challenge);
@@ -140,7 +146,7 @@ describe("key registration", () => {
       db.rpcCalls.push({ name, args });
       return Promise.resolve({ data: null, error: { message: "activate_user_key: no matching key is waiting to be activated" } });
     };
-    const res = await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer) });
+    const res = await activateKey(asAdmin(db), USER, { keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: input.expectedCurrentKeyId });
     expect(res.ok).toBe(false);
     expect(current(db).map((k) => k.key_id)).toEqual([first.keyId]);
   });
@@ -445,5 +451,27 @@ describe("activate_user_key in migration A (exercised on Postgres 17; this pins 
     expect(fn.indexOf("set retired_at")).toBeGreaterThan(0);
     expect(fn.indexOf("set activated_at")).toBeGreaterThan(fn.indexOf("set retired_at"));
     expect(readFileSync(path.resolve(__dirname, "../../../supabase/rollback/20261106120000_mail_encryption_keys.down.sql"), "utf8")).toContain("drop function public.activate_user_key(uuid, text, text);");
+  });
+});
+
+describe("activate_user_key_checked (migration 20261106150000, exercised on Postgres 17; this pins it)", () => {
+  const sql = readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20261106150000_activate_user_key_checked.sql"), "utf8");
+  const fn = sql.slice(sql.indexOf("create function public.activate_user_key_checked"));
+
+  it("is security definer with an empty search_path, executable by service_role only", () => {
+    expect(fn).toMatch(/security definer\s+set search_path = ''/);
+    expect(sql).toContain("revoke all on function public.activate_user_key_checked(uuid, text, text, text) from public, anon, authenticated;");
+    expect(sql).toContain("grant execute on function public.activate_user_key_checked(uuid, text, text, text) to service_role;");
+  });
+
+  it("checks the key in use against the expected one under the lock, before retiring anything", () => {
+    const lock = fn.indexOf("for update");
+    const check = fn.indexOf("v_current is distinct from p_expected_current_key_id");
+    expect(lock).toBeGreaterThan(0);
+    expect(check).toBeGreaterThan(lock);
+    expect(fn.indexOf("set retired_at")).toBeGreaterThan(check);
+    // The message the server maps to the screen's words (src/lib/crypto/key-messages.ts).
+    expect(fn).toContain(`activate_user_key: ${KEY_IN_USE_CHANGED}`);
+    expect(readFileSync(path.resolve(__dirname, "../../../supabase/rollback/20261106150000_activate_user_key_checked.down.sql"), "utf8")).toContain("drop function public.activate_user_key_checked(uuid, text, text, text);");
   });
 });

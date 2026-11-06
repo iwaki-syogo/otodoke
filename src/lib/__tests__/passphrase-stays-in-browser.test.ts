@@ -60,7 +60,7 @@ describe("the passphrase stays in the browser", () => {
       expect(Object.keys(schema.shape).filter((k) => PASSPHRASE.test(k))).toEqual([]);
       expect(schema.safeParse({ passphrase: "x" }).success).toBe(false);
     }
-    const input: KeyRegistration = { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 };
+    const input: KeyRegistration = { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, expectedCurrentKeyId: null };
     expect(KeyRegistrationSchema.safeParse(input).success).toBe(true);
     expect(KeyRegistrationSchema.safeParse({ ...input, passphrase: "x" }).success).toBe(false);
     // The types say the same (checked by `npm run typecheck`).

@@ -96,7 +96,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         </section>
       ) : (
-        <MailKeyPanel state={{ userId: user.id, keyCreatedAt: key?.created_at ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
+        <MailKeyPanel state={{ userId: user.id, keyCreatedAt: key?.created_at ?? null, currentKeyId: key?.key_id ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
       )}
       {/* Which account this is, next to the passphrase and the address: a page signed in to someone
           else's account (a crafted login link) shows it here before anything is set up. */}

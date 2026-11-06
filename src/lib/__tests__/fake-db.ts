@@ -273,6 +273,17 @@ export class FakeDb {
   rpc(name: string, args?: unknown): Promise<Result> {
     this.rpcCalls.push({ name, args });
     if (name === "activate_user_key") return Promise.resolve(this.activateUserKey(args as { p_user_id: string; p_key_id: string; p_challenge_hash: string }));
+    if (name === "activate_user_key_checked") {
+      const a = args as { p_user_id: string; p_key_id: string; p_challenge_hash: string; p_expected_current_key_id: string | null };
+      // supabase/migrations/20261106150000: the same, refused when the key in use is not the expected one.
+      const keys = this.rows("user_keys").filter((k) => k.user_id === a.p_user_id);
+      if (!keys.some((k) => k.key_id === a.p_key_id && isNil(k.activated_at) && k.challenge_hash === a.p_challenge_hash)) {
+        return Promise.resolve({ data: null, error: { message: "activate_user_key: no matching key is waiting to be activated" } });
+      }
+      const current = keys.find((k) => !isNil(k.activated_at) && isNil(k.retired_at));
+      if ((current?.key_id ?? null) !== a.p_expected_current_key_id) return Promise.resolve({ data: null, error: { message: "activate_user_key: the key in use changed" } });
+      return Promise.resolve(this.activateUserKey(a));
+    }
     return Promise.resolve({ data: "ok", error: null });
   }
 

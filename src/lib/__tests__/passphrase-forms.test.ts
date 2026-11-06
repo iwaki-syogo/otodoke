@@ -76,8 +76,8 @@ async function screens(): Promise<Record<string, string>> {
   const html = (el: ReactElement) => renderToStaticMarkup(el);
   return {
     unlock: html(createElement(UnlockForm, { userId: USER })),
-    "settings without a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: null, plainCount: 2, oldKeyCount: 0 } })),
-    "settings with a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: "2026-11-06T00:00:00Z", plainCount: 2, oldKeyCount: 1 } })),
+    "settings without a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: null, currentKeyId: null, plainCount: 2, oldKeyCount: 0 } })),
+    "settings with a key": html(createElement(MailKeyPanel, { state: { userId: USER, keyCreatedAt: "2026-11-06T00:00:00Z", currentKeyId: "a".repeat(32), plainCount: 2, oldKeyCount: 1 } })),
     "sealed mail": html(createElement(SealedMail, { userId: USER, emailId: "e1", fromDomain: "example.test", notes: null, confidence: null })),
   };
 }

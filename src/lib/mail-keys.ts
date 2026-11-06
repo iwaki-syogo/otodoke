@@ -15,7 +15,7 @@
 import { z } from "zod";
 import { fromBase64, randomBytes, sha256, toHex } from "@/lib/crypto/bytes";
 import { challengeAad, importPublicKey, keyIdOf, sealBytes, type EnvelopeV1 } from "@/lib/crypto/envelope";
-import { KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import type { Json } from "@/lib/db/database.types";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
@@ -31,7 +31,12 @@ const b64 = z.string().max(4096);
 const keyIdField = z.string().regex(/^[0-9a-f]{32}$/);
 const uuidField = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
-/** What the browser sends to register a key. There is no field for the passphrase. */
+/**
+ * What the browser sends to register a key. There is no field for the passphrase.
+ * `expectedCurrentKeyId` is the key in use when the screen was drawn (null: none yet). A screen
+ * left open from before another tab or device made a key sends a stale value and is refused, so
+ * it can never retire the key in use without the user having seen it (「作り直す」).
+ */
 export const KeyRegistrationSchema = z
   .object({
     publicKey: b64,
@@ -39,12 +44,13 @@ export const KeyRegistrationSchema = z
     wrapIv: b64,
     kdfSalt: b64,
     kdfIterations: z.number().int().min(MIN_KDF_ITERATIONS).max(MAX_KDF_ITERATIONS),
+    expectedCurrentKeyId: keyIdField.nullable(),
   })
   .strict();
 export type KeyRegistration = z.infer<typeof KeyRegistrationSchema>;
 
 /** The answer to the registration challenge: the bytes the browser opened, base64. */
-export const KeyActivationSchema = z.object({ keyId: keyIdField, challenge: b64 }).strict();
+export const KeyActivationSchema = z.object({ keyId: keyIdField, challenge: b64, expectedCurrentKeyId: keyIdField.nullable() }).strict();
 export type KeyActivation = z.infer<typeof KeyActivationSchema>;
 
 /**
@@ -107,6 +113,7 @@ async function currentKeyId(db: AdminClient, userId: string): Promise<string | n
 /**
  * Store a new key as pending and answer a challenge sealed to its public key. A pending key from
  * an earlier, unfinished try is replaced. The key in use (if any) stays in use until activation.
+ * Refused when the key in use is not the one the browser's screen was drawn with.
  */
 export async function registerKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>> {
   try {
@@ -115,6 +122,9 @@ export async function registerKey(db: AdminClient, userId: string, input: unknow
     await importPublicKey(publicKey); // a point on the curve, or it throws
     checkWrap(k.wrappedPrivateKey, k.wrapIv, k.kdfSalt);
     const keyId = await keyIdOf(publicKey);
+
+    // Checked again, atomically, when the key is put in use (activate_user_key_checked).
+    if ((await currentKeyId(db, userId)) !== k.expectedCurrentKeyId) throw new Error(KEY_IN_USE_CHANGED);
 
     const { error: clearError } = await db.from("user_keys").delete().eq("user_id", userId).is("activated_at", null);
     if (clearError) throw new Error(`user_keys cleanup failed: ${clearError.message}`);
@@ -137,7 +147,10 @@ export async function registerKey(db: AdminClient, userId: string, input: unknow
   }
 }
 
-/** Put the pending key in use once its challenge came back opened. The old key (if any) is retired. */
+/**
+ * Put the pending key in use once its challenge came back opened. The old key (if any) is retired,
+ * but only if it is still the one the browser expected (checked by the database, under a lock).
+ */
 export async function activateKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string }>> {
   try {
     const a = KeyActivationSchema.parse(input);
@@ -156,15 +169,17 @@ export async function activateKey(db: AdminClient, userId: string, input: unknow
       throw new Error("the key did not open its challenge");
     }
 
-    // Retire the old key and activate this one in one database call (activate_user_key), so a
-    // mail read in between never finds no key in use and gets dropped instead of sealed. The
-    // function checks the answer's hash against the stored one again, under a lock.
-    const { data: activated, error: activateError } = await db.rpc("activate_user_key", {
+    // Retire the old key and activate this one in one database call (activate_user_key_checked,
+    // supabase/migrations/20261106150000), so a mail read in between never finds no key in use
+    // and gets dropped instead of sealed. Under a lock, the function checks that the answer's hash
+    // matches the stored one and that the key in use is still the one this browser expected.
+    const { data: activated, error: activateError } = await db.rpc("activate_user_key_checked", {
       p_user_id: userId,
       p_key_id: a.keyId,
       p_challenge_hash: answerHash,
+      p_expected_current_key_id: a.expectedCurrentKeyId,
     });
-    if (activateError) throw new Error(`user_keys activate failed: ${activateError.message}`);
+    if (activateError) throw new Error(activateError.message.includes(KEY_IN_USE_CHANGED) ? KEY_IN_USE_CHANGED : `user_keys activate failed: ${activateError.message}`);
     if (activated !== a.keyId) throw new Error("the key was not activated");
     return { ok: true, keyId: a.keyId };
   } catch (err) {

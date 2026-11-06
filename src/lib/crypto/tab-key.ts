@@ -139,8 +139,10 @@ export async function unlockRetired(userId: string, keyId: string, passphrase: s
  * Make a key pair, register it, and put it in use only after proving, from the copy the
  * database holds, that the passphrase opens it and that it is the pair of the stored public key.
  * Used both for the first passphrase and for a forgotten one (the old key is retired then).
+ * `expectedCurrentKeyId` is the key in use the screen was drawn with (null: none): the server
+ * refuses when another tab or device has made one since.
  */
-export async function createMailKey(userId: string, passphrase: string): Promise<void> {
+export async function createMailKey(userId: string, passphrase: string, expectedCurrentKeyId: string | null): Promise<void> {
   const pair = await createKeyPair();
   const wrapped = await wrapPrivateKey(pair.pkcs8, passphrase, userId);
   pair.pkcs8.fill(0);
@@ -150,6 +152,7 @@ export async function createMailKey(userId: string, passphrase: string): Promise
     wrapIv: wrapped.wrap_iv,
     kdfSalt: wrapped.kdf_salt,
     kdfIterations: wrapped.kdf_iterations,
+    expectedCurrentKeyId,
   });
   if (!reg.ok) throw new Error(reg.error);
   if (reg.keyId !== pair.keyId) throw new Error("key id mismatch");
@@ -158,7 +161,7 @@ export async function createMailKey(userId: string, passphrase: string): Promise
   if (!stored || stored.public_key !== toBase64(pair.publicKey) || stored.wrapped_private_key !== wrapped.wrapped_private_key) throw new Error("stored key differs");
   const recipient = await openStoredKey(stored, passphrase, userId);
   const challenge = await openBytes(recipient, challengeAad(userId, reg.keyId), reg.challenge);
-  const done = await activateMailKey({ keyId: reg.keyId, challenge: toBase64(challenge) });
+  const done = await activateMailKey({ keyId: reg.keyId, challenge: toBase64(challenge), expectedCurrentKeyId });
   if (!done.ok) throw new Error(done.error);
   // The key that was in use (if this tab had it open) now opens the mail sealed before.
   const previous = state?.userId === userId ? state.current : null;

@@ -11,6 +11,8 @@ export interface MailKeyState {
   userId: string;
   /** When the key in use was made, or null when there is none. */
   keyCreatedAt: string | null;
+  /** The id of the key in use (null: none). Sent back when a key is made, so a stale screen is refused. */
+  currentKeyId: string | null;
   /** Read mail still stored in plaintext (from before encryption; public samples not counted). null: could not count. */
   plainCount: number | null;
   /** Mail sealed to a key that is no longer in use (the passphrase was forgotten). */
@@ -21,7 +23,7 @@ const input = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 te
 const primary = "rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white disabled:opacity-60";
 
 export function MailKeyPanel({ state }: { state: MailKeyState }) {
-  const { userId, keyCreatedAt, plainCount, oldKeyCount } = state;
+  const { userId, keyCreatedAt, currentKeyId, plainCount, oldKeyCount } = state;
   const opened = useTabKey(userId);
 
   if (!keyCreatedAt) {
@@ -34,7 +36,7 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
             暗号化されていない保存済みのメール {plainCount} 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。
           </p>
         ) : null}
-        <NewKeyForm userId={userId} button="決める" busyLabel="準備しています…" acknowledge="忘れたら、前のメールは誰にも戻せない（荷物は残る）" />
+        <NewKeyForm userId={userId} expectedKeyId={null} button="決める" busyLabel="準備しています…" acknowledge="忘れたら、前のメールは誰にも戻せない（荷物は残る）" />
       </section>
     );
   }
@@ -65,14 +67,14 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium">合言葉を忘れたとき</summary>
         <div className="border-t border-neutral-100 p-4">
           <p className="text-sm leading-6">新しい合言葉を作ります。前のメールは開けなくなります。荷物は残ります。</p>
-          <NewKeyForm userId={userId} button="作り直す" busyLabel="作り直しています…" acknowledge="前のメールが開けなくなる" />
+          <NewKeyForm userId={userId} expectedKeyId={currentKeyId} button="作り直す" busyLabel="作り直しています…" acknowledge="前のメールが開けなくなる" />
         </div>
       </details>
     </section>
   );
 }
 
-function NewKeyForm({ userId, button, busyLabel, acknowledge }: { userId: string; button: string; busyLabel: string; acknowledge: string }) {
+function NewKeyForm({ userId, expectedKeyId, button, busyLabel, acknowledge }: { userId: string; expectedKeyId: string | null; button: string; busyLabel: string; acknowledge: string }) {
   const router = useRouter();
   const [first, setFirst] = useState("");
   const [again, setAgain] = useState("");
@@ -89,7 +91,7 @@ function NewKeyForm({ userId, button, busyLabel, acknowledge }: { userId: string
     setBusy(true);
     setError(null);
     try {
-      await createMailKey(userId, first);
+      await createMailKey(userId, first, expectedKeyId);
       setFirst("");
       setAgain("");
       router.refresh();

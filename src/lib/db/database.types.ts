@@ -425,6 +425,15 @@ export type Database = {
         Args: { p_challenge_hash: string; p_key_id: string; p_user_id: string }
         Returns: string
       }
+      activate_user_key_checked: {
+        Args: {
+          p_challenge_hash: string
+          p_expected_current_key_id: string | null
+          p_key_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       claim_claude_call: {
         Args: {
           p_global_limit: number
