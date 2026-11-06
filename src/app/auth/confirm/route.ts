@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-next";
-import { loginErrorPath, loginLinkErrorCode } from "@/lib/login-errors";
+import { linkFailureCode, loginErrorPath, type AuthFailure } from "@/lib/login-errors";
+
+const loginLinkErrorCode = (error: AuthFailure) => linkFailureCode(error, "confirm");
 import { fromThisSite } from "@/lib/request-origin";
 import { forgetLogin } from "@/lib/login-email-cookie";
 
