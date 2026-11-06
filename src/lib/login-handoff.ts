@@ -11,7 +11,14 @@ import type { LoginCode } from "@/lib/login-errors";
  *
  * Only the browser writes it (from a press or a tab shown again); on the server it stays empty.
  */
-export type LoginHandoff = { email: string; code: LoginCode };
+export type LoginHandoff = { email: string; code: LoginCode | typeof EXISTING_ACCOUNT };
+
+/**
+ * The reason for a refusal that came right after a sign-up: `credentials` there means the address
+ * already has an account (Supabase answers a repeated sign-up as a success, with no mail and the
+ * new one dropped). /login says so in its own words (EXISTING_ACCOUNT_NOTICE).
+ */
+export const EXISTING_ACCOUNT = "existing_account";
 
 let handoff: LoginHandoff | null = null;
 

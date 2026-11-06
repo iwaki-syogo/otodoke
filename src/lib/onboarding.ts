@@ -25,6 +25,13 @@ export const CONFIRM_WAIT = {
   resent: "送り直しました",
 } as const;
 
+/**
+ * /login, after /signup's waiting screen was refused with `credentials`: the address already has an
+ * account. Not in LOGIN_MESSAGES (the iOS app copies those). Shown with the link to /login/forgot
+ * and RESET_LOSES_MAIL under it.
+ */
+export const EXISTING_ACCOUNT_NOTICE = "このアドレスは、もう登録されています。前に決めたパスワードでログインしてください。";
+
 /** Screen 2: the browser that opened the confirmation link. */
 export const CONFIRMED = {
   title: "確認できました",

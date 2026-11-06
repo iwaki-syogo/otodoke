@@ -8,7 +8,7 @@ import { flowMessage, signInAndOpenKey, signUpWithPassword } from "@/lib/crypto/
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { handOffToLogin } from "@/lib/login-handoff";
+import { EXISTING_ACCOUNT, handOffToLogin } from "@/lib/login-handoff";
 import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, autoSignInGapMs, landingAfterSignIn } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { pressText, tokenForAutoAttempt, tokenForPress, type TokenField } from "@/lib/turnstile";
@@ -420,7 +420,7 @@ export function SignupForm() {
             // Another password has this address: the login, with the address filled in.
             account.current = null;
             clearAutoTimer();
-            handOffToLogin({ email: creds.email, code: "credentials" });
+            handOffToLogin({ email: creds.email, code: EXISTING_ACCOUNT });
             leaving = true;
             setLeaveFor("/login");
             return;

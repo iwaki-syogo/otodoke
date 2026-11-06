@@ -7,9 +7,9 @@ import { PendingSubmitButton } from "@/components/pending-button";
 import { flowMessage, signInAndOpenKey, type OpenWithAnother } from "@/lib/crypto/password-flows";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
+import { clearLoginHandoff, EXISTING_ACCOUNT, peekLoginHandoff } from "@/lib/login-handoff";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { landingAfterSignIn } from "@/lib/onboarding";
+import { EXISTING_ACCOUNT_NOTICE, landingAfterSignIn } from "@/lib/onboarding";
 import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { inputClass, submitClass } from "./form-style";
 import { OtherPasswordForm } from "./other-password-form";
@@ -21,7 +21,7 @@ import { TurnstileWidget } from "./turnstile-widget";
  * (`not_opened`: another password may open it) or could not be opened or made (`key_failed`); the
  * app can still be used.
  */
-type Notice = { kind: "error"; text: string } | { kind: "not_opened"; openWithAnother: OpenWithAnother } | { kind: "key_failed"; text: string };
+type Notice = { kind: "error"; text: string } | { kind: "existing_account" } | { kind: "not_opened"; openWithAnother: OpenWithAnother } | { kind: "key_failed"; text: string };
 
 /**
  * /login: the address and the password. The press is shown at once (making master takes about a
@@ -47,7 +47,8 @@ export function LoginForm({ next }: { next: string }) {
   const [round, setRound] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(() => {
     const handed = peekLoginHandoff();
-    return handed ? { kind: "error", text: flowMessage(handed.code) } : null;
+    if (!handed) return null;
+    return handed.code === EXISTING_ACCOUNT ? { kind: "existing_account" } : { kind: "error", text: flowMessage(handed.code) };
   });
   const [leaveFor, setLeaveFor] = useState<string | null>(null);
   // A ref, not state: a second press (or Enter) can come before React has drawn the first.
@@ -120,6 +121,17 @@ export function LoginForm({ next }: { next: string }) {
           </p>
         ) : null}
       </form>
+      {notice?.kind === "existing_account" ? (
+        <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+          <p className="font-medium">{EXISTING_ACCOUNT_NOTICE}</p>
+          <div className="mt-3">
+            <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white">
+              パスワードを忘れた
+            </Link>
+          </div>
+          <p className="mt-3">{RESET_LOSES_MAIL}</p>
+        </div>
+      ) : null}
       {notice?.kind === "not_opened" || notice?.kind === "key_failed" ? (
         <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
           {notice.kind === "not_opened" ? (
