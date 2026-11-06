@@ -10,6 +10,11 @@ const HOME = "/app";
  *   "//x.example", which a browser also reads as another site.
  * - And once more with the path's percent-escapes decoded ("/%2F/x.example", "/%5C/x.example",
  *   "/%252F/x.example"), for any server on the way that decodes a path before it redirects.
+ * - Never into /auth/ (nor /auth itself), checked on both of those paths and in any case. Nothing
+ *   after login leads there: the login pages are where a link is used, not where one arrives. A
+ *   next there showed this site's own answers after a login that worked
+ *   (/auth/continue?link=refused, a refusal that did not happen), or put another person's token
+ *   behind 「荷物を見る」 (/auth/continue?token_hash=…).
  *
  * No page of the app has a path that starts with an empty or encoded segment, so nothing a person
  * is sent to after login is refused. The query and fragment are kept as they are.
@@ -19,8 +24,16 @@ export function safeNextPath(value: string | null): string {
   const url = onThisSite(value);
   if (!url) return HOME;
   const decoded = decodeAsciiEscapes(url.pathname);
-  if (decoded === null || !onThisSite(decoded)) return HOME;
+  const decodedUrl = decoded === null ? null : onThisSite(decoded);
+  if (!decodedUrl) return HOME;
+  if (isAuthPath(url.pathname) || isAuthPath(decodedUrl.pathname)) return HOME;
   return url.pathname + url.search + url.hash;
+}
+
+/** /auth and everything under it, in capitals too (a parsed path: dot segments resolved). */
+function isAuthPath(pathname: string): boolean {
+  const path = pathname.toLowerCase();
+  return path === "/auth" || path.startsWith("/auth/");
 }
 
 /** `value` read as a browser reads a Location on this site; null when it would leave the site. */

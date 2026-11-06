@@ -333,3 +333,43 @@ describe("[R3-35] 「ログアウト」 under the notice of a refused switch", (
     expect(signOuts(await continuePage("/auth/continue?link=refused"))).toHaveLength(0);
   });
 });
+
+/**
+ * [Review R3-36] A next into /auth/ (safe-next-path.test.ts has every spelling): a link made with
+ * someone's token and next=/auth/continue?link=refused ended a login that worked on a refusal
+ * that did not happen; a refused switch whose next held a token led 「荷物を見る」 to that token's
+ * switch. Every way after login now leads to /app.
+ */
+describe("[R3-36] a next into /auth/", () => {
+  const MADE = "TOKEN-OF-THE-ONE-WHO-MADE-THE-URL";
+  const madeLink = `/auth/confirm?token_hash=${MADE}&type=email&next=${encodeURIComponent("/auth/continue?link=refused")}`;
+  const WORKS = { data: { user: {}, session: {} }, error: null };
+
+  it("a switch that works from the made link lands on the parcels, not on a refusal", async () => {
+    signedInAs("a@example.com");
+    const page = await continuePage(await open(madeLink));
+    mocks.verifyOtp.mockResolvedValue(WORKS);
+    expect(await post(fieldsOf(formOf(page, "別のアカウントでログインする")))).toBe("/app");
+  });
+
+  it("「ログインする」 from the made link, signed out, lands on the parcels too", async () => {
+    const page = await continuePage(await open(madeLink));
+    mocks.verifyOtp.mockResolvedValue(WORKS);
+    expect(await post(fieldsOf(formOf(page, "ログインする")))).toBe("/app");
+  });
+
+  it("「荷物を見る」 on the made link goes to the parcels", async () => {
+    signedInAs("a@example.com");
+    expect(links(await continuePage(await open(madeLink)))).toEqual([["/app", "荷物を見る"]]);
+  });
+
+  it("a refused switch whose next held a token: 「荷物を見る」 goes to the parcels, never to that token", async () => {
+    signedInAs("a@example.com");
+    const location = await post({ token_hash: TOKEN, type: "email", next: `/auth/continue?token_hash=${MADE}&type=email`, intent: "switch_account" });
+    expect(location).toBe("/auth/continue?link=refused");
+    const back = await continuePage(location);
+    expect(notices(back)).toHaveLength(1);
+    expect(links(back)).toEqual([["/app", "荷物を見る"]]);
+    expect(textOf(back)).not.toContain(MADE);
+  });
+});
