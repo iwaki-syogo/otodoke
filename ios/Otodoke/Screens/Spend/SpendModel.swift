@@ -323,6 +323,7 @@ final class SpendModel {
             }
             switch verdict {
             case .superseded:
+                // [N-r2-3] Never reached: returned above, before the cut-off check (N-new2).
                 return
             case .current:
                 wasCutOff = false

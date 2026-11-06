@@ -182,15 +182,18 @@ final class CalendarModel {
             signal.raise()
         }
         // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
+        // [N-r2-2] The calendar never writes (no fence.beginWrite), so the verdict is .current or
+        // .superseded; anything not current is a newer read's.
         guard fence.verdict(ticket) == .current else { return }
-        // [CX-f1] The newest read ended: a move on the way is over (shown, failed or cut off).
-        isMoving = false
-        movingTo = nil
         // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
+        // [N-r2-1] A move on the way stays (isMoving, movingTo): the next load() reads movingTo and ends it.
         guard !Task.isCancelled else {
             wasCutOff = true
             return
         }
+        // [CX-f1] The newest read ended: a move on the way is over (shown or failed).
+        isMoving = false
+        movingTo = nil
         wasCutOff = false
         month = ym
         shownToday = now
