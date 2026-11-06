@@ -28,13 +28,15 @@ struct ParcelReader: Sendable {
 
     /// Every parcel of the signed-in user (`user_id = me`), id ascending, 1,000 per request, the next
     /// page by `id > last id` until a page comes back shorter than 1,000. Any failed page fails the
-    /// whole read: never a partial list.
-    func allParcels() async -> LoadResult<[ParcelRow]> {
+    /// whole read: never a partial list. `excludingCancelled` adds `status != cancelled` (the spend
+    /// screen's condition).
+    func allParcels(excludingCancelled: Bool = false) async -> LoadResult<[ParcelRow]> {
         guard let me = await provider.currentUserID() else { return .failed }
         var rows: [ParcelRow] = []
         var after: String?
         while true {
             var query = provider.database.from("parcels").select("*").eq("user_id", value: me)
+            if excludingCancelled { query = query.neq("status", value: "cancelled") }
             if let after { query = query.gt("id", value: after) }
             let request = query.order("id", ascending: true).limit(Self.pageSize)
             guard let page: [ParcelRow] = await Self.decoded(request) else { return .failed }
