@@ -206,6 +206,19 @@ describe("when Cloudflare's script cannot load", () => {
     expect(TURNSTILE_UNAVAILABLE_MESSAGE).toBe("確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。");
   });
 
+  it("shows no notice of its own when the page already says the same (captcha_missing), and still marks the field", async () => {
+    vi.stubGlobal("window", {});
+    const { scripts } = fakeDocument();
+    const view = mount(() => TurnstileWidget({ hideUnavailableNotice: true }), nodes);
+    scripts[0].onerror!();
+    await settle();
+    expect(view.text()).toBe("");
+    expect(view.hosts((h) => h.type === "p")).toHaveLength(0);
+    expect(slotOf(view).props.hidden).toBe(true);
+    // The button still sends at once instead of waiting for a token that will not come.
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
   it("treats a script that loads without Turnstile (a proxy's block page) the same way, and tries again on the next mount", async () => {
     const win: { turnstile?: ReturnType<typeof fakeTurnstile>["api"] } = {};
     vi.stubGlobal("window", win);

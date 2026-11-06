@@ -55,8 +55,11 @@ function loadTurnstile(): Promise<TurnstileApi> {
  * - Each token can be checked once. After a send the form comes back drawn anew (Next.js remounts
  *   it after a Server Action redirects), and if it stays mounted the widget is reset here: either
  *   way the next press gets a new token.
+ * - `hideUnavailableNotice`: the page already says the same thing above the form (a send came back
+ *   with captcha_missing: reload or try another browser), so the notice would only repeat it. The
+ *   field is still marked unavailable.
  */
-export function TurnstileWidget() {
+export function TurnstileWidget({ hideUnavailableNotice = false }: { hideUnavailableNotice?: boolean } = {}) {
   const container = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const widgetId = useRef<string | null>(null);
@@ -115,7 +118,7 @@ export function TurnstileWidget() {
   return (
     <>
       <input ref={field} type="hidden" name={TURNSTILE_RESPONSE_FIELD} data-turnstile={unavailable ? TURNSTILE_UNAVAILABLE : undefined} />
-      {unavailable ? (
+      {unavailable && !hideUnavailableNotice ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{TURNSTILE_UNAVAILABLE_MESSAGE}</p>
       ) : null}
       <div ref={container} data-turnstile-widget hidden={unavailable} className="min-h-[65px] w-full" />

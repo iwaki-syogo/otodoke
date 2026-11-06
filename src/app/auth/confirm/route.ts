@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-next";
-import { loginErrorPath } from "@/lib/login-errors";
+import { loginErrorPath, loginLinkErrorCode } from "@/lib/login-errors";
 import { fromThisSite } from "@/lib/request-origin";
 
 /** A relative Location keeps the visitor on the host they opened, whatever host the server thinks it has. */
@@ -33,11 +33,19 @@ export async function POST(request: NextRequest) {
 
   if (typeof tokenHash === "string" && tokenHash && typeof type === "string" && type) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash });
+    let error: { status?: number; code?: string; message?: string } | null;
+    try {
+      ({ error } = await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash }));
+    } catch (thrown) {
+      // Not an AuthError (supabase-js returns those): nothing says the token was refused.
+      console.warn("[auth] verifyOtp threw:", thrown instanceof Error ? thrown.message : String(thrown));
+      return go(loginErrorPath(loginLinkErrorCode(null)), 303);
+    }
     if (!error) return go(safeNextPath(typeof next === "string" ? next : null), 303);
-    // The reason goes to the log only: the login page shows fixed wording for the code.
+    // The reason goes to the log only: the login page shows fixed wording for the code. A limit
+    // or an outage is told apart from a refused token (the same link works again later).
     console.warn("[auth] verifyOtp failed:", error.status, error.code, error.message);
-    return go(loginErrorPath("link_invalid"), 303);
+    return go(loginErrorPath(loginLinkErrorCode(error)), 303);
   }
   return go(loginErrorPath("link_incomplete"), 303);
 }
