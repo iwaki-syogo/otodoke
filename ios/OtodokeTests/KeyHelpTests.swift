@@ -15,8 +15,8 @@ struct KeyHelpTests {
     // MARK: the words
 
     @Test func theWordsAndTheWebsLoginPage() {
-        // The Web's sentence (to be in LOGIN_MESSAGES under a key not named yet), then the app's own.
-        #expect(LoginText.keyDoesNotOpen == "このパスワードでは、メールの鍵を開けませんでした。")
+        // The Web's key_not_opened (LOGIN_MESSAGES), then the app's own.
+        #expect(LoginText.keyNotOpened == "このパスワードでは、メールの鍵を開けませんでした。")
         #expect(LoginText.webLoginPrompt == "Web でログインしてください。")
         #expect(LoginText.keyNeedsWebLogin == "このパスワードでは、メールの鍵を開けませんでした。Web でログインしてください。")
         #expect(LoginText.openWebLogin == "Web でログイン")

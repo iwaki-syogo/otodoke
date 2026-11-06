@@ -1,5 +1,5 @@
 // The words of the password login (password-v1).
-//  - The Web's: src/lib/login-errors.ts LOGIN_MESSAGES (integrate/password-v1 3449af0) and the password rule of
+//  - The Web's: src/lib/login-errors.ts LOGIN_MESSAGES (integrate/password-v1 fd0e7d4) and the password rule of
 //    src/lib/crypto/password-v1.ts (PASSWORD_RULE, passwordProblem). Each `static let` is named after the Web's key
 //    in lowerCamelCase (credentials, notConfirmed, emailNotAscii, …) so a vitest compares them word for word.
 //  - The app's own (no Web screen has them yet): the labels and buttons of the login screen.
@@ -28,6 +28,8 @@ enum LoginText {
     static let keyChallengeFailed = "鍵を確かめられませんでした。もう一度お試しください。"
     static let keyFailed = "保存できませんでした。もう一度お試しください。"
     static let invalidInput = "うまくいきませんでした。ページを読み込み直してください。"
+    /// key_not_opened: a sign-in that went through, with a password that does not open the key in use.
+    static let keyNotOpened = "このパスワードでは、メールの鍵を開けませんでした。"
 
     // MARK: the password rule (src/lib/crypto/password-v1.ts)
 
@@ -57,15 +59,15 @@ enum LoginText {
 
     // MARK: the key does not open, or was never made (the owner's decision 11/6 23:4x)
 
-    /// The Web's key_not_opened of LOGIN_MESSAGES on integrate/password-v1 (not in this tree's copy yet).
-    static let keyDoesNotOpen = "このパスワードでは、メールの鍵を開けませんでした。"
-    /// N4: the Web's address_mismatch of LOGIN_MESSAGES on integrate/password-v1 (not in this tree's copy yet): the
-    /// sign-in made no key for this address (letters outside ASCII); signing in again does not help.
+    /// key_not_opened: a sign-in that went through, with a password that does not open the key in use.
+    static let keyNotOpened = "このパスワードでは、メールの鍵を開けませんでした。"
+    /// N4: the Web's address_mismatch of LOGIN_MESSAGES: the sign-in made no key for this address (letters outside
+    /// ASCII); signing in again does not help.
     static let addressMismatch = "このアカウントでは、メールの鍵を作れませんでした。"
-    /// The app's own, after it.
+    /// The app's own, after keyNotOpened (the Web's key_not_opened).
     static let webLoginPrompt = "Web でログインしてください。"
     /// The two, shown as one line.
-    static var keyNeedsWebLogin: String { keyDoesNotOpen + webLoginPrompt }
+    static var keyNeedsWebLogin: String { keyNotOpened + webLoginPrompt }
     static let openWebLogin = "Web でログイン"
     static let noKeyYet = "メールの鍵がまだできていません。ログインし直すと作れます。"
     static let signInAgain = "ログインし直す"

@@ -111,6 +111,9 @@ const SHOWN_KEYS = [
   "key_challenge_failed",
   "key_failed",
   "invalid_input",
+  "key_not_opened",
+  // N4: the sign-in made no key for this address.
+  "address_mismatch",
 ];
 
 /** The password words, by their LoginText names. */
@@ -145,11 +148,7 @@ const APP_OWN_WORDS: Record<string, string> = {
  * Words the Web is to put in LOGIN_MESSAGES under a key not named yet. Once the copy has them, the constant is
  * checked against the copy like the others (move it to SHOWN_KEYS then).
  */
-const TO_BE_WEB_WORDS: Record<string, string> = {
-  keyDoesNotOpen: "このパスワードでは、メールの鍵を開けませんでした。",
-  // N4 (review fix 1): the Web's address_mismatch on integrate/password-v1.
-  addressMismatch: "このアカウントでは、メールの鍵を作れませんでした。",
-};
+const TO_BE_WEB_WORDS: Record<string, string> = {};
 
 describe("the Web's words", () => {
   it("the copy of LOGIN_MESSAGES is the Web's, key for key and word for word", () => {
