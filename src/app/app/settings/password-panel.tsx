@@ -324,7 +324,7 @@ export function SealBanner({ count }: { count: number }) {
     }
   }
 
-  if (done) return <p className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm">すべて暗号化しました（残り 0 通）</p>;
+  if (done) return <p className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm">すべて暗号化しました。</p>;
   return (
     <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <p className="text-sm font-bold">暗号化されていないメールが {remaining} 通あります</p>

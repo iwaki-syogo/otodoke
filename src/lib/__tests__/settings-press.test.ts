@@ -116,7 +116,7 @@ describe("「暗号化する」 (batches of Server Action calls from the browser
     expect(button().props.disabled).toBeUndefined();
     finish({ ok: true, sealed: 3, failed: [], next: "c", remaining: 0 });
     await new Promise((r) => setTimeout(r, 0));
-    expect(view.text()).toContain("すべて暗号化しました");
+    expect(view.text()).toContain("すべて暗号化しました。");
     expect(seal.fn).toHaveBeenCalledTimes(1);
   });
 });
