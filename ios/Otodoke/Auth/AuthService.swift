@@ -1,43 +1,19 @@
+// The sign-in state and the password login of password-v1 (docs/crypto/password-v1.md; the steps of the Web's
+// src/lib/login-auth.ts on integrate/password-v1, done against Supabase Auth directly):
+//  - the address is email_norm (the five ASCII whitespaces off its ends, A-Z made a-z); the password never
+//    leaves the device: master is made from it (PBKDF2 off the main thread) and only auth_secret (64 lowercase
+//    hex) is sent as the Supabase password;
+//  - making an account and sending the confirmation again carry redirect_to = AppConfig.authRedirect (the
+//    Web's confirm page, with its `?`: the mail's link is `{{ .RedirectTo }}&token_hash=…`) and answer the
+//    same whether the address has an account or not;
+//  - a new account's address must be printable ASCII;
+//  - Supabase's errors are read by code and status (never by their text): credentials, not_confirmed, rate,
+//    captcha, network, other;
+//  - after a sign-in the key step (KeySetup) gets the sign-in's master once (takeSignInSecret).
+
 import Auth
 import Foundation
 import Observation
-
-enum LoginError: Error, Equatable, Sendable {
-    case invalidEmail
-    /// A wrong or expired code (Supabase answers both the same way).
-    case codeRejected
-    /// 429.
-    case rateLimited
-    /// No answer from the server.
-    case network
-    case other
-    /// Supabase's captcha_failed (400). Missing: this press sent no token; refused: it sent one.
-    /// The words are CaptchaText's (login-errors.ts captcha_missing / captcha_refused).
-    case captchaMissing
-    case captchaRefused
-
-    /// The text shown on the login screen.
-    var message: String {
-        switch self {
-        case .invalidEmail: "メールアドレスの形式を確認してください"
-        case .codeRejected: "コードが違うか、有効期限が切れています"
-        case .rateLimited: "しばらく待ってから、もう一度お試しください"
-        case .network: "通信できませんでした。もう一度お試しください"
-        case .other: "ログインできませんでした。もう一度お試しください"
-        case .captchaMissing: CaptchaText.missing
-        case .captchaRefused: CaptchaText.refused
-        }
-    }
-}
-
-/// The two words of src/lib/login-errors.ts, in one place (a vitest compares them).
-enum CaptchaText {
-    /// captcha_missing
-    static let missing = "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。"
-    /// captcha_refused, with the Web's 「リンク」 said as 「コード」 (the app sends a code; the owner's
-    /// decision, 11/6).
-    static let refused = "確認が切れました。もう一度コードを送ってください。"
-}
 
 @MainActor
 @Observable
@@ -61,8 +37,8 @@ final class AuthService {
 
     /// password-v1's master (PBKDF2 off the main thread, one at a time). Tests pass a fast KDF.
     @ObservationIgnored let deriver: PasswordV1Deriver
-    /// What the last password sign-in left for the key step; taken once (takeSignInSecret).
-    @ObservationIgnored private var pendingSignIn: PasswordSignIn?
+    /// What the last password sign-in left for the key step, with the session stamp it belongs to.
+    @ObservationIgnored private var pendingSignIn: (signIn: PasswordSignIn, stamp: SessionStamp)?
 
     init(provider: SupabaseProvider, deriver: PasswordV1Deriver = PasswordV1Deriver()) {
         self.provider = provider
@@ -102,38 +78,102 @@ final class AuthService {
         }
     }
 
-    /// signInWithOTP(email: normalized, redirectTo: AppConfig.authRedirect, captchaToken:). The body
-    /// carries gotrue_meta_security.captcha_token only when a token is given (Supabase ignores a missing
-    /// one while its CAPTCHA is off). captcha_failed is .captchaMissing without a token and
-    /// .captchaRefused with one. Nothing is sent for an invalid address.
-    func sendCode(email: String, captchaToken: String?) async throws(LoginError) {
-        let address = Self.normalizeEmail(email)
+    // MARK: password-v1
+
+    /// Make an account: email_norm of the address (printable ASCII only, else .emailNotAscii; nothing is sent for
+    /// an invalid or non-ASCII address), master off the main thread, then signUp(email: email_norm, password:
+    /// auth_secret, redirectTo: AppConfig.authRedirect, captchaToken:). The password's rule is LoginModel's, on
+    /// the password as typed. user_already_exists, email_exists, over_email_send_rate_limit and a 429 without a
+    /// code answer as sent.
+    func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
+        let address = PasswordV1.emailNorm(email)
         guard Self.isValidEmail(address) else { throw .invalidEmail }
-        let token = captchaToken.flatMap { $0.isEmpty ? nil : $0 }
+        guard Self.isASCIIAddress(address) else { throw .emailNotAscii }
+        var master = try await makeMaster(password: password, email: address)
+        defer { master.resetBytes(in: 0..<master.count) }
+        let secret = PasswordV1.authSecret(master: master)
         do {
-            try await provider.auth.signInWithOTP(email: address, redirectTo: AppConfig.authRedirect, shouldCreateUser: true, captchaToken: token)
+            let answer = try await provider.auth.signUp(email: address, password: secret, redirectTo: AppConfig.authRedirect, captchaToken: Self.token(captchaToken))
+            if answer.session != nil {
+                // Confirmations turned off would sign this device in here; the app signs in with the password
+                // afterwards, as the Web does, so this session is not kept.
+                try? await provider.auth.signOut(scope: .local)
+            }
         } catch {
-            throw Self.loginError(from: error, sentCaptchaToken: token != nil)
+            if case .sent = Self.mailRefusal(error) { return }
+            if case let .failed(failure) = Self.mailRefusal(error) { throw failure }
         }
     }
 
-    /// sendCode(email:captchaToken: nil).
-    func sendCode(email: String) async throws(LoginError) {
-        try await sendCode(email: email, captchaToken: nil)
+    /// signIn(email: email_norm, password: auth_secret, captchaToken:). On success the session is applied, and a
+    /// PasswordSignIn is kept for takeSignInSecret() when email_norm of the session's address is the one master
+    /// was made with (else a key made now would not open with the address the app has later).
+    func signIn(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
+        let address = PasswordV1.emailNorm(email)
+        guard Self.isValidEmail(address) else { throw .invalidEmail }
+        var master = try await makeMaster(password: password, email: address)
+        defer { master.resetBytes(in: 0..<master.count) }
+        let secret = PasswordV1.authSecret(master: master)
+        let signedIn: Session
+        do {
+            signedIn = try await provider.auth.signIn(email: address, password: secret, captchaToken: Self.token(captchaToken))
+        } catch {
+            throw Self.signInFailure(error)
+        }
+        clearPendingSignIn()
+        apply(signedIn)
+        let userID = signedIn.user.id.uuidString.lowercased()
+        if let sessionAddress = signedIn.user.email, PasswordV1.emailNorm(sessionAddress) == address, let stamp = session.stamp(), stamp.userID == userID {
+            pendingSignIn = (PasswordSignIn(userID: userID, email: address, master: Data(master)), stamp)
+        }
     }
 
-    /// verifyOTP(email:, token: code, type: .email).
-    func verifyCode(email: String, code: String) async throws(LoginError) {
-        let address = Self.normalizeEmail(email)
+    /// resend(email: email_norm, type: .signup, emailRedirectTo: AppConfig.authRedirect, captchaToken:). The same
+    /// answer whether the address has an account or not.
+    func resendConfirmation(email: String, captchaToken: String?) async throws(LoginFailure) {
+        let address = PasswordV1.emailNorm(email)
         guard Self.isValidEmail(address) else { throw .invalidEmail }
-        let session: Session?
         do {
-            session = try await provider.auth.verifyOTP(email: address, token: code, type: .email).session
+            try await provider.auth.resend(email: address, type: .signup, emailRedirectTo: AppConfig.authRedirect, captchaToken: Self.token(captchaToken))
         } catch {
-            throw Self.loginError(from: error)
+            if case .sent = Self.mailRefusal(error) { return }
+            if case let .failed(failure) = Self.mailRefusal(error) { throw failure }
         }
-        guard let session else { throw .other }
-        apply(session)
+    }
+
+    /// The PasswordSignIn of the last password sign-in, once; nil after sign-out, for another user, or when
+    /// there is none.
+    func takeSignInSecret() -> PasswordSignIn? {
+        guard let pending = pendingSignIn else { return nil }
+        guard session.isCurrent(pending.stamp) else {
+            clearPendingSignIn()
+            return nil
+        }
+        pendingSignIn = nil
+        return pending.signIn
+    }
+
+    /// The address the password opens the key with (UnlockModel.signInEmail): the signed-in session's
+    /// user.email; nil when signed out.
+    var signedInEmail: String? {
+        guard case .signedIn = state else { return nil }
+        return provider.auth.currentSession?.user.email
+    }
+
+    /// master off the main thread (PasswordV1Deriver). A failure of PBKDF2 itself is .other.
+    private func makeMaster(password: String, email: String) async throws(LoginFailure) -> Data {
+        do {
+            return try await deriver.master(password: password, email: email)
+        } catch {
+            throw .other
+        }
+    }
+
+    /// Drops the kept sign-in, its master zeroed (taken out first, so the bytes are zeroed where they are).
+    private func clearPendingSignIn() {
+        guard var master = pendingSignIn?.signIn.master else { return }
+        pendingSignIn = nil
+        master.resetBytes(in: 0..<master.count)
     }
 
     /// signOut(scope: .local). Always ends signed out on this device. First, on this device: ① the generation
@@ -141,6 +181,7 @@ final class AuthService {
     func signOut() async {
         session.advance()
         session.follow(userID: nil)
+        clearPendingSignIn()
         cleanup?.cancelWork()
         cleanup?.dropMemory()
         cleanup?.deleteKeychainKey()
@@ -157,14 +198,19 @@ final class AuthService {
         session.follow(userID: nil)
     }
 
-    /// Trimmed and lowercased, as the Web's login does.
+    /// email_norm (password-v1 step 1): the five ASCII whitespaces off both ends, A-Z made a-z.
     nonisolated static func normalizeEmail(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        PasswordV1.emailNorm(raw)
     }
 
-    /// The Web's check: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    /// The Web's check: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ and at most 254 characters (login-form.ts isLoginAddress).
     nonisolated static func isValidEmail(_ address: String) -> Bool {
-        address.wholeMatch(of: /[^\s@]+@[^\s@]+\.[^\s@]+/) != nil
+        address.count <= 254 && address.wholeMatch(of: /[^\s@]+@[^\s@]+\.[^\s@]+/) != nil
+    }
+
+    /// Only printable ASCII (login-form.ts isAsciiAddress: /^[\x21-\x7e]+$/).
+    nonisolated static func isASCIIAddress(_ address: String) -> Bool {
+        !address.isEmpty && address.unicodeScalars.allSatisfy { (0x21...0x7E).contains($0.value) }
     }
 
     private func apply(_ session: Session?) {
@@ -178,77 +224,74 @@ final class AuthService {
         }
     }
 
-    /// As the Web's loginSendErrorCode: by Supabase's error code and status, and by whether this press
-    /// sent a token; never by the English message text.
-    private static func loginError(from error: any Error, sentCaptchaToken: Bool = false) -> LoginError {
-        if error is URLError { return .network }
+    /// A token worth passing on; nil when there is none (Supabase decides, while its CAPTCHA is off).
+    private static func token(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty, raw.count <= Turnstile.tokenMaxLength else { return nil }
+        return raw
+    }
+
+    /// Supabase's error as (status, code); nil status for no answer.
+    private enum Answer {
+        case noAnswer
+        case refused(status: Int, code: String?)
+        case unknown
+    }
+
+    private static func answer(of error: any Error) -> Answer {
+        if error is URLError { return .noAnswer }
         if let failure = error as? SupabaseProvider.NoRetry {
             switch failure {
-            case .noAnswer: return .network
-            case .server: return .other
+            case .noAnswer: return .noAnswer
+            case let .server(status): return .refused(status: status, code: nil)
             }
         }
-        guard case let AuthError.api(_, code, _, response) = error else { return .other }
-        if code == .captchaFailed {
-            return sentCaptchaToken ? .captchaRefused : .captchaMissing
+        guard case let AuthError.api(_, code, _, response) = error else { return .unknown }
+        let raw = code.rawValue
+        return .refused(status: response.statusCode, code: raw.isEmpty || raw == "unknown" ? nil : raw)
+    }
+
+    /// login-errors.ts signInFailureCode.
+    private static func signInFailure(_ error: any Error) -> LoginFailure {
+        switch answer(of: error) {
+        case .noAnswer: return .network
+        case .unknown: return .other
+        case let .refused(status, code):
+            if code == "invalid_credentials" { return .credentials }
+            if code == "email_not_confirmed" { return .notConfirmed }
+            if code == "captcha_failed" { return .captcha }
+            if status == 429 || code == "over_request_rate_limit" { return .rate }
+            if status >= 500 { return .network }
+            return .other
         }
-        if response.statusCode == 429 || [.overEmailSendRateLimit, .overRequestRateLimit].contains(code) {
-            return .rateLimited
+    }
+
+    private enum MailOutcome {
+        case sent
+        case failed(LoginFailure)
+    }
+
+    /// login-auth.ts mailRefusal: the answers that depend on whether the address has an account say "sent".
+    private static func mailRefusal(_ error: any Error) -> MailOutcome {
+        switch answer(of: error) {
+        case .noAnswer: return .failed(.network)
+        case .unknown: return .failed(.other)
+        case let .refused(status, code):
+            if code == "captcha_failed" { return .failed(.captcha) }
+            if code == "over_request_rate_limit" { return .failed(.rate) }
+            if code == "email_address_invalid" || code == "validation_failed" { return .failed(.invalidEmail) }
+            if ["user_already_exists", "email_exists", "user_not_found", "over_email_send_rate_limit"].contains(code ?? "") || status == 429 { return .sent }
+            if status >= 500 { return .failed(.network) }
+            return .failed(.other)
         }
-        if code == .otpExpired || response.statusCode == 403 {
-            return .codeRejected
-        }
-        return .other
     }
 }
 
 /// What a password sign-in leaves for the key step (KeySetup): the user, the address master was made with
-/// (email_norm of the typed address) and master itself. Kept in memory only, taken once.
+/// (email_norm of the typed address) and master itself. Kept in memory only, taken once; whoever takes it
+/// zeroes master when done.
 struct PasswordSignIn: Sendable {
     let userID: String
     /// email_norm of the address master was made with.
     let email: String
     let master: Data
-}
-
-// MARK: password-v1 (TDD-STUB(password-login): every body below is a placeholder; the tests hold the behaviour)
-
-extension AuthService {
-    /// Make an account: email_norm of the address (ASCII only: .emailNotAscii otherwise, nothing sent; the
-    /// password's rule is LoginModel's, on the password as typed), master off the main thread, then
-    /// signUp(email: email_norm, password: authSecret, redirectTo: AppConfig.authRedirect, captchaToken:).
-    /// user_already_exists, email_exists, over_email_send_rate_limit and a 429 without a code answer as sent.
-    func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
-        throw .other
-    }
-
-    /// signIn(email: email_norm, password: authSecret, captchaToken:). On success the session is applied and a
-    /// PasswordSignIn is kept for takeSignInSecret() (only when email_norm of the session's address is the one
-    /// master was made with).
-    func signIn(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
-        throw .other
-    }
-
-    /// resend(email: email_norm, type: .signup, emailRedirectTo: AppConfig.authRedirect, captchaToken:). The same
-    /// answer whether the address has an account or not.
-    func resendConfirmation(email: String, captchaToken: String?) async throws(LoginFailure) {
-        throw .other
-    }
-
-    /// The PasswordSignIn of the last password sign-in, once; nil after sign-out, for another user, or when
-    /// there is none.
-    func takeSignInSecret() -> PasswordSignIn? {
-        nil
-    }
-
-    /// The address the password opens the key with (UnlockModel.signInEmail): the signed-in session's
-    /// user.email; nil when signed out.
-    var signedInEmail: String? {
-        nil
-    }
-
-    /// Only printable ASCII (login-form.ts isAsciiAddress: /^[\x21-\x7e]+$/).
-    nonisolated static func isASCIIAddress(_ address: String) -> Bool {
-        true
-    }
 }

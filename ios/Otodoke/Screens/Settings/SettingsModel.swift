@@ -7,7 +7,7 @@ import Observation
 
 /// What the settings screen opens on the Web (task.md's 「Web で開く」 list).
 enum SettingsWebAction: CaseIterable, Equatable, Sendable {
-    /// 「合言葉を決める」 (no key row)
+    /// 「鍵を作る」 (no key row)
     case createPassphrase
     case changePassphrase
     /// 未読の「読み取る」
@@ -38,9 +38,9 @@ final class SettingsModel {
     /// 「暗号化されていないメールの数を読み込めませんでした」
     static let plainCountFailedText = "暗号化されていないメールの数を読み込めませんでした"
 
-    /// 「前の合言葉で暗号化したメールが N 通あります。…」
+    /// 「前のパスワードで暗号化したメールが N 通あります。…」
     static func oldKeyText(_ n: Int) -> String {
-        "前の合言葉で暗号化したメールが \(n) 通あります。前の合言葉を覚えていれば、メールの画面から開けます。荷物は残っています。"
+        "前のパスワードで暗号化したメールが \(n) 通あります。前のパスワードを覚えていれば、メールの画面から開けます。荷物は残っています。"
     }
 
     /// The page each action opens: https://otodoke.app/… as task.md lists it.

@@ -9,7 +9,7 @@ import Testing
 struct MailBodyTests {
     static let sealedHeadline = "🔒 暗号化されたメール"
     static let droppedHeadline = "本文は保存していません"
-    static let droppedDetail = "合言葉を決める前に届いたメールです。件名・差出人・本文は保存していません。"
+    static let droppedDetail = "パスワードでログインする前に届いたメールです。件名・差出人・本文は保存していません。"
     static let unopenable = "開けませんでした"
     static let noBody = "（本文なし）"
 

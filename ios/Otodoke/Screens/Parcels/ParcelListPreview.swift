@@ -13,10 +13,12 @@ struct ListPreview {
         case checking
         /// As list; a card opens a detail filled with made-up data.
         case detail
-        /// The login screen: the address, the code with the resend wait, an error.
+        /// The login screen: signing in, making an account (with a password that breaks the rule), not confirmed
+        /// yet (with the confirmation mail again), and the mail sent after making an account.
         case login
-        case loginCode = "login-code"
+        case loginSignUp = "login-signup"
         case loginError = "login-error"
+        case loginSent = "login-sent"
     }
 
     let scenario: Scenario
@@ -39,12 +41,13 @@ struct ListPreview {
         let model = LoginModel(auth: AuthService(provider: Self.provider()), launch: LaunchOptions(arguments: []))
         switch scenario {
         case .login:
-            model.debugShow(step: .email, email: "qa@example.com")
-        case .loginCode:
-            model.debugShow(step: .code(email: "qa@example.com"), email: "qa@example.com", code: "1234", sentSecondsAgo: 18)
+            model.debugShow(mode: .signIn, email: "qa@example.com", password: "kumo-no-ue-2026")
+        case .loginSignUp:
+            model.debugShow(mode: .signUp, email: "qa@example.com", password: "password1234", again: "password1234")
         case .loginError:
-            model.debugShow(step: .code(email: "qa@example.com"), email: "qa@example.com", code: "12345678", sentSecondsAgo: 75,
-                            error: "コードが違うか、有効期限が切れています")
+            model.debugShow(mode: .signIn, email: "qa@example.com", error: LoginText.notConfirmed, canResend: true)
+        case .loginSent:
+            model.debugShow(mode: .signUp, email: "qa@example.com", notice: LoginText.signupExistsOrSent)
         default:
             return nil
         }
@@ -96,7 +99,7 @@ struct ListPreview {
         )
         let counts = ParcelCounts(delivered: .loaded(1234), cancelled: .loaded(2), unread: .loaded(scenario == .list ? 3 : 0))
         switch scenario {
-        case .list, .detail, .login, .loginCode, .loginError:
+        case .list, .detail, .login, .loginSignUp, .loginError, .loginSent:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
         case .empty:
             model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded)

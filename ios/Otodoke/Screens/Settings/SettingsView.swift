@@ -57,20 +57,20 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: the passphrase card
+    // MARK: the password card
 
     @ViewBuilder
     private var keyPanel: some View {
         switch model.keyPanel {
         case .failed?, nil:
             VStack(alignment: .leading, spacing: 8) {
-                heading("合言葉")
+                heading("パスワード")
                 errorBox(SettingsModel.failedText)
             }
         case let .none(plainCount)?:
             VStack(alignment: .leading, spacing: 8) {
-                heading("合言葉を決める")
-                Text("読み取った後のメールの件名・差出人・本文は、この合言葉でしか開けない形で保存します。運営者もデータベースからは読めません。")
+                heading("パスワード")
+                Text("読み取った後のメールの件名・差出人・本文は、パスワードでしか開けない形で保存します。運営者もデータベースからは読めません。")
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
                 if case let .loaded(n) = plainCount, n > 0 {
@@ -82,7 +82,7 @@ struct SettingsView: View {
                         .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.amberBorder))
                 }
-                primaryButton("決める") { open(.createPassphrase) }
+                primaryButton("鍵を作る") { open(.createPassphrase) }
                     .padding(.top, 4)
             }
             .padding(16)
@@ -90,7 +90,7 @@ struct SettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(SettingsPalette.skyBorder))
         case let .present(plainCount, _)?:
             VStack(alignment: .leading, spacing: 12) {
-                heading("合言葉")
+                heading("パスワード")
                 switch plainCount {
                 case let .loaded(n) where n > 0:
                     VStack(alignment: .leading, spacing: 4) {
@@ -118,7 +118,7 @@ struct SettingsView: View {
                         .foregroundStyle(note == SettingsModel.failedText ? OtodokeColor.errorText : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                linkCard("合言葉を変える") { open(.changePassphrase) }
+                linkCard("パスワードを変える") { open(.changePassphrase) }
                 FaceIDToggleRow(model: model)
             }
         }
@@ -141,9 +141,9 @@ struct SettingsView: View {
             heading("転送先アドレス")
             switch model.keyPanel {
             case .failed?, nil:
-                errorBox("合言葉を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。")
+                errorBox("鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。")
             case .none?:
-                secondaryText("合言葉を決めると、ここに出ます。サンプルは合言葉なしで試せます。")
+                secondaryText("鍵ができると、ここに出ます。サンプルは鍵なしで試せます。")
             case .present?:
                 secondaryText("注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。")
                 switch model.address {
@@ -406,7 +406,7 @@ struct SettingsView: View {
     }
 }
 
-/// The Web's sky card (合言葉を決める), with a dark-mode pair.
+/// The Web's sky card (the key to make), with a dark-mode pair.
 private enum SettingsPalette {
     /// sky-50 / border sky-300
     static let skyBackground = OtodokeColor.adaptive(light: "#f0f9ff", dark: "#082f49")

@@ -4,8 +4,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MailHandling } from "@/app/app/settings/mail-handling";
-import { LOGIN_ERROR_MESSAGES, TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
+import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
 import { TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY, TURNSTILE_TOKEN_MAX_LENGTH, TURNSTILE_WAIT_MS } from "@/lib/turnstile";
+import { LOGIN_MESSAGES_COPY } from "./login-words-pw-int";
 
 /**
  * [iOS batch 2, M1] Checks on ios/ that no Swift test can see:
@@ -75,11 +76,10 @@ describe("task 2: Turnstile", () => {
   });
 
   it("the captcha words equal src/lib/login-errors.ts", () => {
-    const auth = read("ios/Otodoke/Auth/AuthService.swift");
-    expect(swiftConstant(auth, "missing")).toBe(LOGIN_ERROR_MESSAGES.captcha_missing);
-    // captcha_refused: the owner's decision (11/6) says the Web's 「リンク」 as 「コード」 on iOS (the app sends a code).
-    expect(swiftConstant(auth, "refused")).toBe(LOGIN_ERROR_MESSAGES.captcha_refused.replace("リンク", "コード"));
-    expect(swiftConstant(auth, "refused")).toBe("確認が切れました。もう一度コードを送ってください。");
+    // password-v1: the Web's LOGIN_MESSAGES (integrate/password-v1, through its checked copy) has one sentence.
+    const words = read("ios/Otodoke/Auth/LoginText.swift");
+    expect(swiftConstant(words, "captcha")).toBe(LOGIN_MESSAGES_COPY.captcha);
+    expect(swiftConstant(words, "captcha")).toBe("確認が切れました。もう一度お試しください。");
   });
 
   it("the WebView: default data store and user agent, the agreed base URL, no window of its own", () => {

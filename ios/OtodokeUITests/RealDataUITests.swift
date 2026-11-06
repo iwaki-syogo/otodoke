@@ -1,13 +1,13 @@
 import XCTest
 
 /// The app against the real Supabase project, on the QA account only. Runs only when
-/// TEST_RUNNER_OTODOKE_REAL_IPC, TEST_RUNNER_OTODOKE_REAL_OTP_FILE and TEST_RUNNER_OTODOKE_REAL_EMAIL
+/// TEST_RUNNER_OTODOKE_REAL_IPC, TEST_RUNNER_OTODOKE_REAL_PASSWORD_FILE and TEST_RUNNER_OTODOKE_REAL_EMAIL
 /// are set in xcodebuild's environment (the TEST_RUNNER_ prefix is dropped in the test). The tests run
 /// in name order: test01 signs in, the others use that session.
 /// - OTODOKE_REAL_EMAIL: the QA account's address.
-/// - OTODOKE_REAL_OTP_FILE: a file holding a login code made on the server (admin generateLink; no
-///   mail is sent). The app starts at code entry (`-otodoke-start-at-code`), so 「コードを送る」 is
-///   never pressed. The test deletes the file once read, and never takes a screenshot with the code.
+/// - OTODOKE_REAL_PASSWORD_FILE: a file holding the QA account's password (password-v1; the code login is
+///   gone). The test types it into the password field (a SecureField) and never takes a screenshot while it
+///   is typed; the file is left as it is (the helper owns it).
 /// - OTODOKE_REAL_IPC: a folder a helper on the Mac watches. The test writes req-*.json (read the
 ///   test rows, the Web's sections, or change a test row as another writer would) and waits for
 ///   res-*.json. The helper only touches the QA account's rows titled 【試験】.
@@ -16,7 +16,7 @@ import XCTest
 @MainActor
 final class RealDataUITests: XCTestCase {
     private var ipc: URL!
-    private var otpFile: URL!
+    private var passwordFile: URL!
     private var shots: URL?
     private var seq = 0
     /// Names this test's requests; set when the test starts (every test case object is made before
@@ -32,7 +32,7 @@ final class RealDataUITests: XCTestCase {
     /// The paths from the environment; skips the test when they are not given.
     private func configure() throws {
         let env = ProcessInfo.processInfo.environment
-        guard let ipcPath = env["OTODOKE_REAL_IPC"], let otpPath = env["OTODOKE_REAL_OTP_FILE"],
+        guard let ipcPath = env["OTODOKE_REAL_IPC"], let passwordPath = env["OTODOKE_REAL_PASSWORD_FILE"],
               let address = env["OTODOKE_REAL_EMAIL"], !address.isEmpty
         else {
             throw XCTSkip("the real-data check runs only on request")
@@ -40,7 +40,7 @@ final class RealDataUITests: XCTestCase {
         email = address
         run = "\(Int(Date().timeIntervalSince1970 * 1000))-\(Int.random(in: 1000...9999))"
         ipc = URL(fileURLWithPath: ipcPath)
-        otpFile = URL(fileURLWithPath: otpPath)
+        passwordFile = URL(fileURLWithPath: passwordPath)
         shots = env["OTODOKE_REAL_SHOTS"].map { URL(fileURLWithPath: $0) }
     }
 
@@ -134,36 +134,37 @@ final class RealDataUITests: XCTestCase {
         shoot("pull-to-refresh")
     }
 
-    /// 1. Login with a code made on the server, then the session survives a relaunch.
+    /// 1. Login with the password, then the session survives a relaunch.
     func test01Login() throws {
         try configure()
         var app = XCUIApplication()
-        app.launchArguments = ["-otodoke-start-at-code", email]
         app.launch()
-        let codeField = app.textFields["12345678"]
+        let emailField = app.textFields["you@example.com"]
         let list = app.navigationBars["荷物"]
         let start = Date()
-        while !codeField.exists && !list.exists && Date().timeIntervalSince(start) < 30 {
+        while !emailField.exists && !list.exists && Date().timeIntervalSince(start) < 30 {
             Thread.sleep(forTimeInterval: 0.3)
         }
         if list.exists {
-            record("login", "already signed in (an earlier run's session); code entry skipped")
+            record("login", "already signed in (an earlier run's session); the login skipped")
         } else {
-            XCTAssertTrue(codeField.exists, "code entry")
-            shoot("login-code")
-            let code = try String(contentsOf: otpFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-            try? FileManager.default.removeItem(at: otpFile)
-            XCTAssertEqual(code.count, 8, "an 8-digit code")
-            codeField.tap()
-            codeField.typeText(code)
-            app.buttons["ログイン"].tap()
-            record("login", "code entered")
+            XCTAssertTrue(emailField.exists, "the login screen")
+            shoot("login")
+            let password = try String(contentsOf: passwordFile, encoding: .utf8).trimmingCharacters(in: .newlines)
+            XCTAssertFalse(password.isEmpty, "a password")
+            emailField.tap()
+            emailField.typeText(email)
+            let field = app.secureTextFields["パスワード"]
+            field.tap()
+            field.typeText(password)
+            app.buttons["ログイン"].firstMatch.tap()
+            record("login", "password entered")
         }
         let title = app.navigationBars["荷物"]
         XCTAssertTrue(title.waitForExistence(timeout: 30), "signed in")
         guard title.exists else {
-            // No screenshot here: the code field may still show the code.
-            for m in ["コードが違うか、有効期限が切れています", "しばらく待ってから、もう一度お試しください", "通信できませんでした。もう一度お試しください", "ログインできませんでした。もう一度お試しください"] where app.staticTexts[m].exists {
+            // No screenshot here (the password was just typed).
+            for m in ["メールアドレスかパスワードが違います。", "メールアドレスの確認がまだです。届いたメールのリンクを開いてください。", "回数が多いため、しばらく時間をおいてから、もう一度お試しください。", "つながりませんでした。少し時間をおいて、もう一度お試しください。", "うまくいきませんでした。もう一度お試しください。"] where app.staticTexts[m].exists {
                 record("login-error", m)
             }
             XCTFail("not signed in; nothing more to check")

@@ -66,7 +66,10 @@ struct SessionGenerationTests {
         let (_, auth) = try await TestSession.signedIn(fake)
         let first = try #require(auth.session.stamp())
         await auth.signOut()
-        try await auth.verifyCode(email: FakeSupabase.email, code: FakeSupabase.goodCode)
+        // password-v1: signed in again with the password.
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
+        try await AuthService(provider: auth.provider, deriver: PW.fastDeriver()).signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        await auth.checkSession()
         let second = try #require(auth.session.stamp())
         #expect(second.userID == Self.me)
         #expect(second.generation != first.generation)

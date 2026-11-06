@@ -195,7 +195,9 @@ describe("task 1: privacy manifest", () => {
 });
 
 describe("task 3: the launch argument that starts at code entry is DEBUG only", () => {
-  const ARG = "-otodoke-start-at-code";
+  // password-v1: the code login and its launch argument are gone; the screen check's argument stays DEBUG only.
+  const GONE = "-otodoke-start-at-code";
+  const ARG = "-otodoke-ui-preview";
 
   /** Line numbers of `#if DEBUG` blocks (the #else part is outside). Nested #if are tracked. */
   function debugOnlyLines(src: string): Set<number> {
@@ -219,7 +221,9 @@ describe("task 3: the launch argument that starts at code entry is DEBUG only", 
       const src = readFileSync(f, "utf8");
       const inside = debugOnlyLines(src);
       src.split("\n").forEach((line, i) => {
-        if (line.includes(ARG)) {
+        expect(line.includes(GONE), `${rel(f)}:${i + 1} still has ${GONE}`).toBe(false);
+        // Code only: a comment may name the argument.
+        if (line.replace(/\/\/.*$/, "").includes(ARG)) {
           seen += 1;
           expect(inside.has(i), `${rel(f)}:${i + 1} uses ${ARG} outside #if DEBUG`).toBe(true);
         }

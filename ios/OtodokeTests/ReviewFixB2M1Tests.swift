@@ -328,26 +328,25 @@ struct ReviewFix1QuietFailureTests {
 
 // MARK: - [S3] the login widget
 
-/// [S3] A step change makes a new widget: the token of the old one is not kept. On the code step the
-/// widget shows only when a code may be sent again (resendWaitSeconds() == 0).
+/// [S3; password-v1] A form change makes a new widget: the token of the old one is not kept. (The code step and
+/// its 60-second wait are gone with the code login.)
 @Suite("Review fix 1: the login widget across steps (S3)")
 @MainActor
 struct ReviewFix1LoginWidgetTests {
     private let start = Date(timeIntervalSince1970: 1_793_000_000)
 
     private func make(_ fake: FakeSupabase, clock: TestClock) -> (LoginModel, TurnstileToken) {
-        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()))
+        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
         let token = TurnstileToken()
         let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: ["Otodoke"]), now: clock.function, turnstile: token, tokenWait: .milliseconds(100))
         model.email = FakeSupabase.email
         return (model, token)
     }
 
-    private func sentToken(_ fake: FakeSupabase, _ nth: Int) async -> String? {
-        let otp = await fake.requests("POST", "otp")
-        guard otp.count >= nth else { return nil }
-        let security = otp[nth - 1].jsonDictionary?["gotrue_meta_security"] as? [String: Any]
-        return security?["captcha_token"] as? String
+    private func sentToken(_ fake: FakeSupabase, _ endpoint: String, _ nth: Int) async -> String? {
+        let sent = await fake.requests("POST", endpoint)
+        guard sent.count >= nth else { return nil }
+        return PW.captcha(sent[nth - 1])
     }
 
     @Test func changingTheAddressDropsTheOldWidgetsToken() async {
@@ -355,55 +354,23 @@ struct ReviewFix1LoginWidgetTests {
         let clock = TestClock(start)
         let (model, token) = make(fake, clock: clock)
         token.receive(.token("tok-1"), generation: 0)
-        await model.sendCode()
-        #expect(model.step == .code(email: FakeSupabase.email))
-        clock.advance(seconds: 61)
-        // The code step's widget gives a token; then the address step (a new widget) is shown.
+        model.password = PW.good
+        await model.submit()
+        #expect(await sentToken(fake, "token", 1) == "tok-1")
+        // The sign-in form's widget gives a token; then the sign-up form (a new widget) is shown.
         token.receive(.token("tok-2"), generation: token.generation)
         #expect(token.hasToken)
         let before = token.generation
-        model.changeAddress()
-        #expect(model.step == .email)
+        model.setMode(.signUp)
+        #expect(model.mode == .signUp)
         #expect(token.hasToken == false)
         #expect(token.generation > before)
-        // The next send does not carry the old widget's token.
-        await model.sendCode()
-        #expect(await fake.count("POST", "otp") == 2)
-        #expect(await sentToken(fake, 2) == nil)
-    }
-
-    @Test func backToTheCodeStepWithoutSendingDropsTheToken() async {
-        let fake = FakeSupabase.make()
-        let clock = TestClock(start)
-        let (model, token) = make(fake, clock: clock)
-        token.receive(.token("tok-1"), generation: 0)
-        await model.sendCode()
-        model.changeAddress()
-        token.receive(.token("tok-2"), generation: token.generation)
-        #expect(token.hasToken)
-        let before = token.generation
-        // The same address within the 60 seconds: back to the code step (a new widget), nothing sent.
-        await model.sendCode()
-        #expect(await fake.count("POST", "otp") == 1)
-        #expect(model.step == .code(email: FakeSupabase.email))
-        #expect(token.hasToken == false)
-        #expect(token.generation > before)
-    }
-
-    @Test func theCodeStepShowsTheWidgetOnlyWhenACodeMayBeSentAgain() async {
-        let fake = FakeSupabase.make()
-        let clock = TestClock(start)
-        let (model, token) = make(fake, clock: clock)
-        // The address step: always.
-        #expect(model.showsWidget)
-        token.receive(.token("tok-1"), generation: 0)
-        await model.sendCode()
-        #expect(model.step == .code(email: FakeSupabase.email))
-        #expect(model.resendWaitSeconds() > 0)
-        #expect(model.showsWidget == false)
-        clock.advance(seconds: 61)
-        #expect(model.resendWaitSeconds() == 0)
-        #expect(model.showsWidget)
+        // The next press does not carry the old widget's token.
+        model.password = PW.good
+        model.passwordAgain = PW.good
+        await model.submit()
+        #expect(await fake.count("POST", "signup") == 1)
+        #expect(await sentToken(fake, "signup", 1) == nil)
     }
 }
 

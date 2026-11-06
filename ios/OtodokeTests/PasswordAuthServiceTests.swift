@@ -83,7 +83,7 @@ struct PasswordAuthServiceTests {
         await #expect(throws: LoginFailure.network) { try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) }
     }
 
-    @Test(arguments: ["ユーザー@example.test", "user@exämple.test", "\u{0130}stanbul@example.test", "user@example.test\u{3000}"])
+    @Test(arguments: ["ユーザー@example.test", "user@exämple.test", "\u{0130}stanbul@example.test", "\u{FF55}ser@example.test"])
     func signUpRefusesANonASCIIAddressBeforeSending(email: String) async {
         let fake = FakeSupabase.make()
         let auth = PW.auth(fake)

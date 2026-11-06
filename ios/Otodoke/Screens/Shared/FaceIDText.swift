@@ -12,8 +12,8 @@ enum FaceIDText {
     /// The line over the passphrase field (nil: the device has no biometrics or keeping is turned off, so the
     /// key stays in memory only).
     static func passphraseField(_ kind: BiometryKind?) -> String {
-        guard let kind else { return "合言葉で開きます。アプリを離れるまで覚えます。" }
-        return "合言葉で開きます。次からは \(name(kind)) で開けます。"
+        guard let kind else { return "パスワードで開きます。アプリを離れるまで覚えます。" }
+        return "パスワードで開きます。次からは \(name(kind)) で開けます。"
     }
 
     /// The settings switch.

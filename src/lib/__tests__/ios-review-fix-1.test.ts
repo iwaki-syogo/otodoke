@@ -52,9 +52,10 @@ describe("S2: the two failures are shown", () => {
 
 describe("S3: the login widget", () => {
   it("LoginView shows the widget through model.showsWidget", () => {
+    // password-v1: one form, every press needs a token: the widget is always shown, from the model's token.
     const login = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
-    expect(login).toMatch(/model\.showsWidget/);
-    expect(login).toContain("TurnstileView(");
+    expect(login).toMatch(/if let turnstile = model\.turnstile\s*\{\s*TurnstileView\(token: turnstile\)/);
+    expect(login).not.toMatch(/showsWidget/);
   });
 });
 

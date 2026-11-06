@@ -742,8 +742,11 @@ enum TestSession {
         // The provider keeps its fake alive: a test that lets go of the fake but keeps a writer or a
         // model made from this provider still reaches it (the fake's deinit unregisters its host).
         objc_setAssociatedObject(provider, keptFakeKey, fake, .OBJC_ASSOCIATION_RETAIN)
+        // Signed in through supabase-swift itself (the fake's code endpoint; the app has no code login any more),
+        // then the app's AuthService reads the session.
+        _ = try await provider.auth.verifyOTP(email: FakeSupabase.email, token: FakeSupabase.goodCode, type: .email)
         let auth = AuthService(provider: provider)
-        try await auth.verifyCode(email: FakeSupabase.email, code: FakeSupabase.goodCode)
+        await auth.checkSession()
         return (provider, auth)
     }
 }

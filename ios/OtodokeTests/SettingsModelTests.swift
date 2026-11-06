@@ -278,7 +278,7 @@ struct SettingsModelTests {
         #expect(SettingsModel.failedText == "読み込めませんでした")
         #expect(SettingsModel.gmailFilter == "{注文 発送 出荷 配達 お届け 配送 到着 荷物}")
         #expect(SettingsModel.plainCountFailedText == "暗号化されていないメールの数を読み込めませんでした")
-        #expect(SettingsModel.oldKeyText(3) == "前の合言葉で暗号化したメールが 3 通あります。前の合言葉を覚えていれば、メールの画面から開けます。荷物は残っています。")
+        #expect(SettingsModel.oldKeyText(3) == "前のパスワードで暗号化したメールが 3 通あります。前のパスワードを覚えていれば、メールの画面から開けます。荷物は残っています。")
     }
 
     // MARK: the passphrase card, three states

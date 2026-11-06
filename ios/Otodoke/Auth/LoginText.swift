@@ -1,5 +1,4 @@
-// The words of the password login (password-v1). TDD-STUB(password-login): every value here is a placeholder
-// until the implementation; the tests hold the words.
+// The words of the password login (password-v1).
 //  - The Web's: src/lib/login-errors.ts LOGIN_MESSAGES (integrate/password-v1 3449af0) and the password rule of
 //    src/lib/crypto/password-v1.ts (PASSWORD_RULE, passwordProblem). Each `static let` is named after the Web's key
 //    in lowerCamelCase (credentials, notConfirmed, emailNotAscii, …) so a vitest compares them word for word.
@@ -10,54 +9,54 @@ import Foundation
 enum LoginText {
     // MARK: LOGIN_MESSAGES (the Web's words)
 
-    static let credentials = "TDD-STUB(password-login)"
-    static let notConfirmed = "TDD-STUB(password-login)"
-    static let rate = "TDD-STUB(password-login)"
-    static let captcha = "TDD-STUB(password-login)"
-    static let network = "TDD-STUB(password-login)"
-    static let other = "TDD-STUB(password-login)"
-    static let invalidEmail = "TDD-STUB(password-login)"
-    static let emailNotAscii = "TDD-STUB(password-login)"
-    static let signupExistsOrSent = "TDD-STUB(password-login)"
-    static let confirmationSent = "TDD-STUB(password-login)"
-    static let signedOut = "TDD-STUB(password-login)"
-    static let staleSession = "TDD-STUB(password-login)"
-    static let keyInUseChanged = "TDD-STUB(password-login)"
-    static let keyWrapChanged = "TDD-STUB(password-login)"
-    static let keyNotPending = "TDD-STUB(password-login)"
-    static let keyNotInUse = "TDD-STUB(password-login)"
-    static let keyChallengeFailed = "TDD-STUB(password-login)"
-    static let keyFailed = "TDD-STUB(password-login)"
-    static let invalidInput = "TDD-STUB(password-login)"
+    static let credentials = "メールアドレスかパスワードが違います。"
+    static let notConfirmed = "メールアドレスの確認がまだです。届いたメールのリンクを開いてください。"
+    static let rate = "回数が多いため、しばらく時間をおいてから、もう一度お試しください。"
+    static let captcha = "確認が切れました。もう一度お試しください。"
+    static let network = "つながりませんでした。少し時間をおいて、もう一度お試しください。"
+    static let other = "うまくいきませんでした。もう一度お試しください。"
+    static let invalidEmail = "メールアドレスの形式を確認してください。"
+    static let emailNotAscii = "半角の英数字と記号だけのメールアドレスをお使いください。"
+    static let signupExistsOrSent = "確認のメールを送りました。メールのリンクを開いてから、ログインしてください。"
+    static let confirmationSent = "確認のメールを送りました。"
+    static let signedOut = "ログインし直してください。"
+    static let staleSession = "続けるには、もう一度ログインしてください。"
+    static let keyInUseChanged = "ほかの画面で鍵が変わりました。ページを読み込み直してください。"
+    static let keyWrapChanged = "ほかの画面でパスワードが変わりました。ページを読み込み直してください。"
+    static let keyNotPending = "もう一度、最初からお試しください。"
+    static let keyNotInUse = "ページを読み込み直してください。"
+    static let keyChallengeFailed = "鍵を確かめられませんでした。もう一度お試しください。"
+    static let keyFailed = "保存できませんでした。もう一度お試しください。"
+    static let invalidInput = "うまくいきませんでした。ページを読み込み直してください。"
 
     // MARK: the password rule (src/lib/crypto/password-v1.ts)
 
     /// PASSWORD_RULE.
-    static let passwordRule = "TDD-STUB(password-login)"
+    static let passwordRule = "10 文字以上。同じ文字のくり返し、1234… や abcd… のような連番、password のようなよくある言葉と数字だけの組み合わせは使えません。"
     /// passwordProblem's three answers.
-    static let passwordTooShort = "TDD-STUB(password-login)"
-    static let passwordWeak = "TDD-STUB(password-login)"
-    static let passwordMismatch = "TDD-STUB(password-login)"
+    static let passwordTooShort = "10 文字以上にしてください"
+    static let passwordWeak = "推測されやすいパスワードです。同じ文字のくり返し・連番・よくある言葉は避けてください"
+    static let passwordMismatch = "2 回の入力が違います"
 
     // MARK: the app's own (not on the Web)
 
-    static let signInTitle = "TDD-STUB(password-login)"
-    static let signUpTitle = "TDD-STUB(password-login)"
-    static let emailLabel = "TDD-STUB(password-login)"
-    static let passwordLabel = "TDD-STUB(password-login)"
-    static let passwordAgainLabel = "TDD-STUB(password-login)"
-    static let signInButton = "TDD-STUB(password-login)"
-    static let signUpButton = "TDD-STUB(password-login)"
+    static let signInTitle = "ログイン"
+    static let signUpTitle = "アカウントを作る"
+    static let emailLabel = "メールアドレス"
+    static let passwordLabel = "パスワード"
+    static let passwordAgainLabel = "パスワード（もう一度）"
+    static let signInButton = "ログイン"
+    static let signUpButton = "アカウントを作る"
     /// Switches to the sign-up form.
-    static let toSignUp = "TDD-STUB(password-login)"
+    static let toSignUp = "アカウントを作る"
     /// Switches back to the sign-in form.
-    static let toSignIn = "TDD-STUB(password-login)"
-    static let forgotPassword = "TDD-STUB(password-login)"
+    static let toSignIn = "ログインに戻る"
+    static let forgotPassword = "パスワードを忘れた"
     /// Shown with not_confirmed: sends the confirmation mail again.
-    static let resendConfirmation = "TDD-STUB(password-login)"
+    static let resendConfirmation = "確認のメールをもう一度送る"
 
     /// Opened in Safari (the reset is done on the Web): https://otodoke.app/login/forgot
-    static let forgotPasswordURL = URL(string: "http://otodoke.app/login")!
+    static let forgotPasswordURL = URL(string: "https://otodoke.app/login/forgot")!
 }
 
 /// The six categories shared with the Web (login-errors.ts CommonFailure), and the address checks.
@@ -72,8 +71,19 @@ enum LoginFailure: String, Error, Equatable, Sendable, CaseIterable {
     case invalidEmail = "invalid_email"
     case emailNotAscii = "email_not_ascii"
 
-    /// The words for the code (LoginText). TDD-STUB(password-login): answers "" until the implementation.
-    var message: String { "" }
+    /// The words for the code (LoginText).
+    var message: String {
+        switch self {
+        case .credentials: LoginText.credentials
+        case .notConfirmed: LoginText.notConfirmed
+        case .rate: LoginText.rate
+        case .captcha: LoginText.captcha
+        case .network: LoginText.network
+        case .other: LoginText.other
+        case .invalidEmail: LoginText.invalidEmail
+        case .emailNotAscii: LoginText.emailNotAscii
+        }
+    }
 }
 
 /// The rule for a new password, on the password as typed (the Web's passwordProblem: NFKC, then 10 code points
@@ -81,9 +91,67 @@ enum LoginFailure: String, Error, Equatable, Sendable, CaseIterable {
 enum PasswordRule {
     static let minLength = 10
 
-    /// TDD-STUB(password-login): answers nil until the implementation.
-    static func problem(password: String, again: String) -> String? { nil }
+    /// The Web's COMMON_WORDS (src/lib/crypto/password-v1.ts).
+    private static let commonWords: Set<String> = [
+        "password", "passwd", "passw0rd", "qwerty", "qwertyuiop", "asdfghjkl", "zxcvbnm", "qazwsx", "iloveyou",
+        "letmein", "welcome", "admin", "administrator", "login", "otodoke", "monkey", "dragon", "sunshine",
+        "princess", "football", "baseball", "secret", "pokemon", "aikotoba", "himitsu", "abc", "abcd", "abcde",
+    ]
 
-    /// The Web's isWeakPassword on the NFKC form. TDD-STUB(password-login): answers false.
-    static func isWeak(_ normalized: String) -> Bool { false }
+    /// What is wrong with a new password (LoginText's words), or nil when it is fine.
+    static func problem(password: String, again: String) -> String? {
+        let p = PasswordV1.passwordNorm(password)
+        if p.unicodeScalars.count < minLength { return LoginText.passwordTooShort }
+        if isWeak(p) { return LoginText.passwordWeak }
+        if Array(p.utf8) != Array(PasswordV1.passwordNorm(again).utf8) { return LoginText.passwordMismatch }
+        return nil
+    }
+
+    /// The Web's isWeakPassword on the NFKC form: one short unit repeated, a run of code points up or down, or a
+    /// common word with only digits, spaces, punctuation or symbols around it.
+    static func isWeak(_ normalized: String) -> Bool {
+        let lower = String(String.UnicodeScalarView(normalized.unicodeScalars.map(lowercaseScalar)))
+        let chars = Array(lower.unicodeScalars)
+        if chars.count < 2 || isRepetition(chars) || isSequence(chars) { return true }
+        let letters = String(String.UnicodeScalarView(chars.filter { !isDigitSpacePunctOrSymbol($0) }))
+        return commonWords.contains(letters)
+    }
+
+    /// JS toLowerCase for the letters that matter here (A-Z, and Unicode's lowercase mapping of one scalar).
+    private static func lowercaseScalar(_ s: Unicode.Scalar) -> Unicode.Scalar {
+        let mapped = s.properties.lowercaseMapping.unicodeScalars
+        return mapped.count == 1 ? mapped.first! : s
+    }
+
+    private static func isRepetition(_ chars: [Unicode.Scalar]) -> Bool {
+        for unit in 1...3 where chars.count >= unit * 2 {
+            if chars.indices.allSatisfy({ chars[$0] == chars[$0 % unit] }) { return true }
+        }
+        return false
+    }
+
+    private static func isSequence(_ chars: [Unicode.Scalar]) -> Bool {
+        func step(_ a: Unicode.Scalar, _ b: Unicode.Scalar) -> Int {
+            if a == "9", b == "0" { return 1 }
+            if a == "0", b == "9" { return -1 }
+            return Int(b.value) - Int(a.value)
+        }
+        let first = step(chars[0], chars[1])
+        guard first == 1 || first == -1 else { return false }
+        for i in 1..<chars.count where step(chars[i - 1], chars[i]) != first { return false }
+        return true
+    }
+
+    /// /[\d\s\p{P}\p{S}]/u: an ASCII digit (JS \d), white space, punctuation or a symbol.
+    private static func isDigitSpacePunctOrSymbol(_ s: Unicode.Scalar) -> Bool {
+        let p = s.properties
+        if (0x30...0x39).contains(s.value) || p.isWhitespace { return true }
+        switch p.generalCategory {
+        case .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation,
+             .finalPunctuation, .otherPunctuation, .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol:
+            return true
+        default:
+            return false
+        }
+    }
 }

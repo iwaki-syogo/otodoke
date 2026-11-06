@@ -76,9 +76,10 @@ final class ScreenshotUITests: XCTestCase {
     }
 
     func testTheLoginScreens() throws {
-        for scenario in ["login", "login-code", "login-error"] {
+        for scenario in ["login", "login-signup", "login-error", "login-sent"] {
             let app = launch(scenario)
-            XCTAssertTrue(app.staticTexts["ログイン"].waitForExistence(timeout: 10), scenario)
+            let title = scenario == "login-signup" || scenario == "login-sent" ? "アカウントを作る" : "ログイン"
+            XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 10), scenario)
             try shoot(scenario)
             app.terminate()
         }

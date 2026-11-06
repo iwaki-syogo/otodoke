@@ -1,16 +1,16 @@
 // Opening the key (task 17, CX2, CX3).
-//  - key(): the key in memory; else Face ID once per front period (KeyVault.load); else the passphrase.
-//    Face ID unavailable or refused goes back to the passphrase.
+//  - key(): the key in memory; else Face ID once per front period (KeyVault.load); else the password.
+//    Face ID unavailable or refused goes back to the password.
 //  - submit(password:email:): reads the key row, makes master with PBKDF2 off the main thread (KeyDeriving,
 //    password-v1), one at a time (a second submit while one runs does nothing), 「開いています…」 meanwhile,
-//    the time taken recorded (never a value or the password). A wrong password is 「合言葉が違います」 (the
-//    words stay until the Web's new wording comes). The key is put in memory
-//    and saved to the Keychain only when the stamps (session + front period) are still current; the save
-//    also takes the policy ticket from the start (CX3). A device that cannot keep it goes on in memory.
+//    the time taken recorded (never a value or the password). A wrong password is 「パスワードが違います」. The
+//    key is put in memory and saved to the Keychain only when the stamps (session + front period) are still
+//    current; the save also takes the policy ticket from the start (CX3). A device that cannot keep it goes on
+//    in memory.
 //  - recipient(forKid:): a sealed mail's kid differs from the key in memory → read the key row again →
 //    not readable: 「読み込めませんでした」 → its kid is the mail's: the device key is old (deleted, as
-//    KeyVault.shouldDelete(.keyRowKidDiffers)), the passphrase opens the new one → still another kid:
-//    「前の合言葉で暗号化したメールです。もう開けません。」 (the device key is kept).
+//    KeyVault.shouldDelete(.keyRowKidDiffers)), the password opens the new one → still another kid:
+//    「前のパスワードで暗号化したメールです。もう開けません。」 (the device key is kept).
 
 import CryptoKit
 import Foundation
@@ -54,7 +54,7 @@ enum RecipientOutcome: Equatable, Sendable {
     case needsPassphrase
     /// 「読み込めませんでした」 (the key row could not be read).
     case readFailed
-    /// 「前の合言葉で暗号化したメールです。もう開けません。」
+    /// 「前のパスワードで暗号化したメールです。もう開けません。」
     case oldKey
 }
 
@@ -73,15 +73,15 @@ final class UnlockModel {
 
     static let openingText = "開いています…"
     /// unlock-form.tsx: the field's placeholder and the button.
-    static let placeholder = "合言葉"
+    static let placeholder = "パスワード"
     static let openText = "開く"
-    static let wrongPassphraseText = "合言葉が違います"
+    static let wrongPassphraseText = "パスワードが違います"
     static let readFailedText = "読み込めませんでした"
     static let failedText = "開けませんでした"
-    static let oldKeyText = "前の合言葉で暗号化したメールです。もう開けません。"
+    static let oldKeyText = "前のパスワードで暗号化したメールです。もう開けません。"
 
     private(set) var phase: Phase = .idle
-    /// Under the field: 「合言葉が違います」, 「読み込めませんでした」, 「開けませんでした」.
+    /// Under the field: 「パスワードが違います」, 「読み込めませんでした」, 「開けませんでした」.
     private(set) var message: String?
     /// The last save's result (.memoryOnly shows the 「保存できないとき」 line).
     private(set) var saveResult: VaultSave?
@@ -101,9 +101,8 @@ final class UnlockModel {
     /// A submit is running (PBKDF2 runs one at a time).
     @ObservationIgnored private var submitting = false
 
-    /// The address password-v1 takes the password with. TDD-STUB(password-v1): where it comes from (the
-    /// address typed at sign-in, kept for the session) is decided with the Web's new screens; until then it
-    /// answers "", so the app's own unlock does not open a key.
+    /// The address password-v1 takes the password with: the signed-in session's user.email (MainScreens passes
+    /// auth.signedInEmail). "" opens nothing.
     @ObservationIgnored let signInEmail: @MainActor () -> String
 
     init(store: OpenKeyStore, keys: any MailKeyReading, vault: KeyVault?, policy: KeyStorePolicy, deriver: any KeyDeriving = LiveKeyDeriver(), signInEmail: @escaping @MainActor () -> String = { "" }) {

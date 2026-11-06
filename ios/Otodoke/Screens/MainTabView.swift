@@ -80,8 +80,7 @@ final class MainScreens {
     /// settings switch. Set by `live(auth:)` (attachKeys, MainScreens+Keys.swift).
     var keys: OpenKeyStore?
     var unlock: UnlockModel?
-    /// [password-login] The key after a password sign-in (KeySetup), started by attachKeys with
-    /// auth.takeSignInSecret(). TDD-STUB(password-login): not set yet.
+    /// The key after a password sign-in (KeySetup), started by attachKeys with auth.takeSignInSecret().
     var keySetup: KeySetup?
     var faceID: FaceIDSwitch?
 
