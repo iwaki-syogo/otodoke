@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LeaveFor } from "@/components/leave-for";
 import { PendingSubmitButton } from "@/components/pending-button";
 import { flowMessage, signInAndOpenKey, type OpenWithAnother } from "@/lib/crypto/password-flows";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
+import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { landingAfterSignIn } from "@/lib/onboarding";
 import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
@@ -32,19 +33,29 @@ type Notice = { kind: "error"; text: string } | { kind: "not_opened"; openWithAn
  * autocomplete hints let a password manager fill and keep both.
  *
  * After the sign-in the tab goes on to `next`, or to the first-run guide when this sign-in made the
- * user's first key (landingAfterSignIn).
+ * user's first key (landingAfterSignIn), straight there.
+ *
+ * Coming from /signup's waiting screen after a `credentials` refusal, the address is filled in and
+ * those words are shown (src/lib/login-handoff.ts, this tab's memory; never the password).
  */
 export function LoginForm({ next }: { next: string }) {
-  const [email, setEmail] = useState("");
+  // /signup's waiting screen may have handed over the address and why it stopped (login-handoff.ts).
+  const [email, setEmail] = useState(() => peekLoginHandoff()?.email ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [needsTick, setNeedsTick] = useState(false);
   const [round, setRound] = useState(0);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(() => {
+    const handed = peekLoginHandoff();
+    return handed ? { kind: "error", text: flowMessage(handed.code) } : null;
+  });
   const [leaveFor, setLeaveFor] = useState<string | null>(null);
   // A ref, not state: a second press (or Enter) can come before React has drawn the first.
   const running = useRef(false);
   const token = useRef<TokenField>({ value: "", dataset: {} });
+
+  // Shown once: the next visit to /login starts empty.
+  useEffect(() => clearLoginHandoff(), []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

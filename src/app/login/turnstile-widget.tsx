@@ -76,8 +76,12 @@ export function TurnstileWidget({ tokenRef, round = 0, captchaEnforced = CAPTCHA
       else if (waitingForTick) field.dataset.turnstile = TURNSTILE_INTERACTIVE;
       else delete field.dataset.turnstile;
     };
+    // The token, and when it came (tokenIsStale reads it: a frozen tab can outlive the token).
     const setToken = (value: string) => {
-      if (!cancelled) field.value = value;
+      if (cancelled) return;
+      field.value = value;
+      if (value) field.dataset.tokenAt = String(Date.now());
+      else delete field.dataset.tokenAt;
     };
     const setTick = (waiting: boolean) => {
       if (cancelled) return;
@@ -92,6 +96,7 @@ export function TurnstileWidget({ tokenRef, round = 0, captchaEnforced = CAPTCHA
     };
     // A new widget has no token yet.
     field.value = "";
+    delete field.dataset.tokenAt;
     mark();
     resetToken.current = () => {
       setToken("");

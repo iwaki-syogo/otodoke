@@ -189,21 +189,47 @@ export async function tokenForPress(field: TokenField, { captchaEnforced = CAPTC
 
 
 /**
+ * How long a sign-in the screen tries by itself waits for its token. Nobody pressed, so nothing
+ * shows the wait, and a slow phone can need more than TURNSTILE_WAIT_MS for the challenge.
+ */
+export const TURNSTILE_AUTO_WAIT_MS = 30_000;
+
+/**
+ * A token older than this is taken as gone. Cloudflare's tokens last 300 s; a tab the browser froze
+ * in the background (iOS Safari) can be shown again before the widget's expired-callback has run,
+ * with the old token still in the field.
+ */
+export const TURNSTILE_TOKEN_STALE_MS = 280_000;
+
+/** `dataset.tokenAt` of the token field: when the widget put the token there (ms since the epoch). */
+export function tokenIsStale(field: TokenField, { staleMs = TURNSTILE_TOKEN_STALE_MS, now = Date.now() }: { staleMs?: number; now?: number } = {}): boolean {
+  const at = Number(field.dataset.tokenAt);
+  return field.value !== "" && Number.isFinite(at) && at > 0 && now - at > staleMs;
+}
+
+/**
  * The token for a sign-in the screen tries by itself (/signup's waiting screen, when its tab is
  * shown again), never one a person pressed for: `send: false` when it is not to be tried now, and
  * the screen waits for its next trigger (the tab shown again, or 「確認しました」). No loop.
  *
  * - The checkbox waits for its tick: nobody is asked to tick for a try they did not press for.
- * - Otherwise a token being made is waited for (at most `limitMs`, as long as a press waits with
- *   CAPTCHA off): the widget makes a new one after each try, and Turnstile renews an expired one.
+ * - A token past TURNSTILE_TOKEN_STALE_MS is emptied and `onStale` called (the screen moves the
+ *   widget on, which makes a new one).
+ * - Otherwise a token being made is waited for (at most `limitMs`, TURNSTILE_AUTO_WAIT_MS): the
+ *   widget makes a new one after each try, and Turnstile renews an expired one.
  * - No token came: with CAPTCHA enforced a send without one can only be refused, so nothing is sent
  *   (the widget shows its own notice when none will come); with it off, the send goes without one.
  */
 export async function tokenForAutoAttempt(
   field: TokenField,
-  { captchaEnforced = CAPTCHA_ENFORCED, limitMs = TURNSTILE_WAIT_MS }: { captchaEnforced?: boolean; limitMs?: number } = {},
+  { captchaEnforced = CAPTCHA_ENFORCED, limitMs = TURNSTILE_AUTO_WAIT_MS, staleMs = TURNSTILE_TOKEN_STALE_MS, onStale }: { captchaEnforced?: boolean; limitMs?: number; staleMs?: number; onStale?: () => void } = {},
 ): Promise<{ send: true; token: string | undefined } | { send: false }> {
   if (tokenNeedsTick(field)) return { send: false };
+  if (tokenIsStale(field, { staleMs })) {
+    field.value = "";
+    delete field.dataset.tokenAt;
+    onStale?.();
+  }
   await waitForToken(field, { limitMs, pauseForTick: false });
   const token = field.value.trim();
   if (token && token.length <= TURNSTILE_TOKEN_MAX_LENGTH) return { send: true, token };

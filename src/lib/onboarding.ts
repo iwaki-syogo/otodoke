@@ -18,6 +18,8 @@ export const CONFIRM_WAIT = {
   body: "メールのリンクを押してこの画面に戻ると、自動で次へ進みます。",
   done: "確認しました",
   resend: "メールを送り直す",
+  /** Under 「メールを送り直す」, smaller: the address and the password are let go, and the form is back. */
+  restart: "別のアドレスでやり直す",
   /** After 「確認しました」 only: a sign-in tried by itself says nothing when the address is not confirmed yet. */
   notYet: "まだ確認できていません。メールのリンクを押しましたか？",
   /** The toast after 「メールを送り直す」 went through. */
@@ -63,7 +65,16 @@ export function landingAfterSignIn(key: "opened" | "made", next: string): string
 }
 
 /**
- * The shortest time between two sign-ins the waiting screen tries by itself. Showing a tab again
- * fires both `visibilitychange` and `focus`: they make one try. No timer tries again.
+ * How often the waiting screen tries a sign-in by itself (the tab shown again): every try counts
+ * against the sign-in limits per IP (LOGIN_TRY_LIMITS, 15 in 10 minutes) and Supabase's own, which a
+ * person who switches tabs often would use up. A press of 「確認しました」 always tries.
+ *
+ * - At most one try every AUTO_SIGN_IN_GAP_MS (this also makes one try of the `visibilitychange`
+ *   and the `focus` that one return fires).
+ * - After a refusal other than "not confirmed yet", the next try waits AUTO_SIGN_IN_AFTER_FAILURE_MS.
+ * - At most AUTO_SIGN_IN_MAX sends per waiting screen; after them only the button tries.
+ * No timer tries again: only the next return does.
  */
-export const AUTO_SIGN_IN_GAP_MS = 2_000;
+export const AUTO_SIGN_IN_GAP_MS = 20_000;
+export const AUTO_SIGN_IN_AFTER_FAILURE_MS = 60_000;
+export const AUTO_SIGN_IN_MAX = 10;

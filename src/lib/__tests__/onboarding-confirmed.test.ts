@@ -25,8 +25,9 @@ const ConfirmedPage = (await import("@/app/auth/confirmed/page")).default;
 const LoginPage = (await import("@/app/login/page")).default;
 
 describe("/auth/confirmed (screen 2)", () => {
-  it("is where a sign-up's confirmation goes", () => {
+  it("is where a sign-up's confirmation goes, and its tab title is the screen's title", async () => {
     expect(SIGNUP_CONFIRMED_PATH).toBe("/auth/confirmed");
+    expect((await import("@/app/auth/confirmed/page")).metadata).toEqual({ title: "確認できました" });
   });
 
   it("has the wording file's words and one white button to the login", () => {

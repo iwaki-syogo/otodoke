@@ -1,7 +1,9 @@
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
-import { TURNSTILE_WAIT_MS, tokenForAutoAttempt, type TokenField } from "@/lib/turnstile";
+import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX } from "@/lib/onboarding";
+import { TURNSTILE_AUTO_WAIT_MS, TURNSTILE_TOKEN_STALE_MS, TURNSTILE_WAIT_MS, tokenForAutoAttempt, tokenIsStale, type TokenField } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 import { read, withoutComments } from "./source-scan";
@@ -10,9 +12,10 @@ import { read, withoutComments } from "./source-scan";
  * Onboarding screen 1 (/signup once the mail went, src/app/signup/signup-form.tsx): the tab keeps
  * the address and the password in its memory only, and signs in by itself as /login does when the
  * tab is shown again (visibilitychange to visible, focus), or when 「確認しました」 is pressed.
- * No timer tries. By itself it says nothing while the address is not confirmed; a press says so.
- * Any other refusal gets LOGIN_MESSAGES' words. The sign-in that made the first key goes on to the
- * first-run guide.
+ * No timer tries, and the tries by themselves are few (they count against the sign-in limits per
+ * IP). By itself it says nothing while the address is not confirmed; a press says so. `credentials`
+ * goes to /login with the address; any other refusal gets LOGIN_MESSAGES' words. The sign-in that
+ * made the first key goes straight to the first-run guide. 「別のアドレスでやり直す」 lets go of both.
  *
  * The words are the team's onboarding-wording.md, written out here as they are there.
  */
@@ -69,6 +72,7 @@ const WORDS = {
   body: "メールのリンクを押してこの画面に戻ると、自動で次へ進みます。",
   done: "確認しました",
   resend: "メールを送り直す",
+  restart: "別のアドレスでやり直す",
   notYet: "まだ確認できていません。メールのリンクを押しましたか？",
   resent: "送り直しました",
 };
@@ -77,7 +81,19 @@ const textOfHost = (h: Host | string): string => (typeof h === "string" ? h : h.
 const drawn = () => new Promise<void>((resolve) => queueMicrotask(() => queueMicrotask(resolve)));
 const type = (view: Mounted, id: string, value: string) => (view.host((h) => h.type === "input" && h.props.id === id).props.onChange as (e: unknown) => void)({ target: { value } });
 const buttons = (view: Mounted) => view.hosts((h) => h.type === "button");
-const pressDone = (view: Mounted) => (buttons(view)[0].props.onClick as (e: unknown) => void)(fakeEvent());
+const click = (view: Mounted, i: number) => (buttons(view)[i].props.onClick as (e: unknown) => void)(fakeEvent());
+const pressDone = (view: Mounted) => click(view, 0);
+const pressResend = (view: Mounted) => click(view, 1);
+const pressRestart = (view: Mounted) => click(view, 2);
+/** A new token from the widget. */
+const fresh = (value = TOKEN) => {
+  widget.token!.current.value = value;
+  widget.token!.current.dataset.tokenAt = String(Date.now());
+};
+/** Moves the clock on (the tries by themselves are spaced by the clock). */
+const after = (ms: number) => vi.setSystemTime(Date.now() + ms);
+/** Past both gaps between two tries by themselves. */
+const later = () => after(AUTO_SIGN_IN_AFTER_FAILURE_MS + 1_000);
 
 /** A tab: its document's visibility and the events the screen listens to. */
 function stubTab() {
@@ -114,12 +130,17 @@ async function waiting(): Promise<Mounted> {
   await (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
   await drawn();
   expect(view.text()).toContain(WORDS.title);
-  widget.token!.current.value = TOKEN;
+  fresh();
   return view;
 }
 
-/** Moves the clock past the gap between two sign-ins the screen tries by itself. */
-const later = () => vi.setSystemTime(Date.now() + 10_000);
+/** Shows the tab again and waits for the sign-in count to reach `calls`. */
+async function shownAndTried(calls: number) {
+  tab.show();
+  await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(calls));
+  await drawn();
+  await drawn();
+}
 
 let tab: ReturnType<typeof stubTab>;
 beforeEach(() => {
@@ -130,6 +151,7 @@ beforeEach(() => {
   widget.token = null;
   widget.round = -1;
   nav.to = [];
+  clearLoginHandoff();
   vi.useFakeTimers({ toFake: ["Date"] });
   tab = stubTab();
 });
@@ -139,32 +161,35 @@ afterEach(() => {
 });
 
 describe("the waiting screen's words", () => {
-  it("are the wording file's: the title, the body, the address on a line of its own, 「確認しました」 and 「メールを送り直す」", async () => {
+  it("are the wording file's: the title, the body, the address on a line of its own, 「確認しました」, 「メールを送り直す」 and 「別のアドレスでやり直す」", async () => {
     const view = await waiting();
     const h1 = view.hosts((h) => h.type === "h1").map(textOfHost);
     expect(h1).toEqual([WORDS.title]);
     const paragraphs = view.hosts((h) => h.type === "p").map(textOfHost);
     // The body, then the address alone (no label), in that order.
     expect(paragraphs.slice(0, 2)).toEqual([WORDS.body, EMAIL]);
-    expect(buttons(view).map(textOfHost)).toEqual([WORDS.done, WORDS.resend]);
+    expect(buttons(view).map(textOfHost)).toEqual([WORDS.done, WORDS.resend, WORDS.restart]);
     // No standing notes, and none of the sign-up form's links.
     expect(view.hosts((h) => h.type === "a")).toEqual([]);
     expect(view.text()).not.toContain(LOGIN_MESSAGES.signup_exists_or_sent);
     expect(view.text()).not.toContain("転送するだけ");
   });
 
-  it("the main button is black and full width; 「メールを送り直す」 reads as a link", async () => {
+  it("the main button is black and full width; 「メールを送り直す」 reads as a link, and 「別のアドレスでやり直す」 is smaller still", async () => {
     const view = await waiting();
-    const [done, resend] = buttons(view).map((b) => String(b.props.className));
-    for (const c of ["w-full", "bg-neutral-900", "text-white", "rounded-xl", "py-4"]) expect(done.split(" ")).toContain(c);
+    const [done, resend, restart] = buttons(view).map((b) => String(b.props.className).split(" "));
+    for (const c of ["w-full", "bg-neutral-900", "text-white", "rounded-xl", "py-4"]) expect(done).toContain(c);
     expect(resend).toContain("underline");
-    expect(`${done} ${resend}`).not.toMatch(/shadow|gradient/);
+    expect(resend).toContain("text-sm");
+    expect(restart).toContain("underline");
+    expect(restart).toContain("text-xs");
+    expect([...done, ...resend, ...restart].join(" ")).not.toMatch(/shadow|gradient/);
   });
 });
 
 describe("when it signs in", () => {
   it("never by itself on a timer: only when the tab is shown again, once for the two events, and with the password from memory", async () => {
-    const view = await waiting();
+    await waiting();
     // Long after the sign-up, with nothing shown again: nothing tried.
     later();
     await drawn();
@@ -174,30 +199,25 @@ describe("when it signs in", () => {
     await drawn();
     expect(flows.signIn).not.toHaveBeenCalled();
 
-    tab.show();
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    await shownAndTried(1);
     expect(flows.signIn.mock.calls[0][0]).toEqual({ email: EMAIL, password: PASSWORD, captchaToken: TOKEN });
-    await drawn();
     // A focus right after (the second event of one return) is the same try.
+    fresh("0.another");
     tab.focus();
     await drawn();
     expect(flows.signIn).toHaveBeenCalledTimes(1);
-    // The token went with it: the widget moves on to a new one.
+    // The token went with it: emptied, and the widget moves on to a new one.
     await vi.waitFor(() => expect(widget.round).toBe(2));
-    void view;
   });
 
   it("by itself, an address not confirmed yet is not told; pressed, it is (and not as an error)", async () => {
     const view = await waiting();
-    tab.show();
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
-    await drawn();
-    await drawn();
+    await shownAndTried(1);
     expect(view.text()).not.toContain(WORDS.notYet);
     expect(view.text()).not.toContain(LOGIN_MESSAGES.not_confirmed);
     expect(view.hosts((h) => h.props.role === "alert")).toEqual([]);
 
-    widget.token!.current.value = "0.token-for-the-press";
+    fresh("0.token-for-the-press");
     pressDone(view);
     await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet));
     expect(flows.signIn).toHaveBeenCalledTimes(2);
@@ -209,25 +229,55 @@ describe("when it signs in", () => {
     expect(String(said[0].props.className)).not.toMatch(/red/);
   });
 
-  it.each(["credentials", "rate", "captcha", "network", "other"] as const)("any other refusal (%s), by itself or pressed, gets LOGIN_MESSAGES' words unchanged", async (code) => {
+  it.each(["rate", "network", "other"] as const)("any other refusal (%s), by itself or pressed, gets LOGIN_MESSAGES' words unchanged and stays on the screen", async (code) => {
     flows.signIn.mockResolvedValue({ ok: false, code });
     const view = await waiting();
-    tab.show();
+    await shownAndTried(1);
     await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES[code]));
     expect(view.text()).not.toContain(WORDS.notYet);
+    expect(nav.to).toEqual([]);
 
-    later();
-    widget.token!.current.value = "0.token-for-the-press";
+    fresh("0.token-for-the-press");
     pressDone(view);
     await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES[code]));
+    // The next return tries again, once the wait after a refusal is over.
+    later();
+    fresh("0.next");
+    await shownAndTried(3);
   });
 
-  it("the sign-in that made the first key goes on to the first-run guide", async () => {
-    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "made" });
-    await waiting();
+  it("captcha, pressed: LOGIN_MESSAGES' words unchanged", async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "captcha" });
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.captcha));
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["auto", "press"] as const)("credentials (%s): stops waiting and goes to /login with the address and those words, never the password", async (how) => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
+    const view = await waiting();
+    if (how === "auto") await shownAndTried(1);
+    else pressDone(view);
+    await vi.waitFor(() => expect(nav.to).toEqual(["/login"]));
+    expect(peekLoginHandoff()).toEqual({ email: EMAIL, code: "credentials" });
+    expect(JSON.stringify(peekLoginHandoff())).not.toContain(PASSWORD);
+    // Stopped: no more tries.
+    later();
+    fresh("0.next");
     tab.show();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("the sign-in that made the first key goes straight to the first-run guide, never by the list", async () => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "made" });
+    const view = await waiting();
+    await shownAndTried(1);
     await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
+    // Still shown as pressed while the guide is on its way (no list in between).
+    expect(textOfHost(buttons(view)[0])).toBe("ログインしています…");
   });
 
   it("a key there already (the account was there before) opens and goes to the list, as /login does", async () => {
@@ -240,30 +290,84 @@ describe("when it signs in", () => {
   it("signed in but the key did not open: says so with LOGIN_MESSAGES' words and a way on, and tries no more", async () => {
     flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "not_opened", openWithAnother: vi.fn() });
     const view = await waiting();
-    tab.show();
+    await shownAndTried(1);
     await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.key_not_opened));
     expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/app", "このまま進む"]]);
     later();
+    fresh("0.next");
     tab.show();
     await drawn();
     expect(flows.signIn).toHaveBeenCalledTimes(1);
   });
 
-  it("a try by itself shows as pressed; a press that gets in before that is drawn waits for it, and its answer is told", async () => {
+  it("a try by itself shows as pressed; a press that comes meanwhile makes one sign-in with it, and its answer is told", async () => {
     let answer!: (v: unknown) => void;
     flows.signIn.mockReturnValue(new Promise((r) => (answer = r)));
     const view = await waiting();
     tab.show();
-    // Before React has drawn the try: the button still reads 「確認しました」 and takes the press.
+    // While the try waits for its token, before anything is drawn: the button still takes the press.
     pressDone(view);
     await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
     await drawn();
-    // Shown as pressed while it is on its way.
     expect(textOfHost(buttons(view)[0])).toBe("ログインしています…");
     answer({ ok: false, code: "not_confirmed" });
     await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet));
-    // One sign-in for the two.
     expect(flows.signIn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("how often it tries by itself (the sign-in limits per IP)", () => {
+  it(`at most once every ${AUTO_SIGN_IN_GAP_MS / 1000} s`, async () => {
+    await waiting();
+    await shownAndTried(1);
+    after(AUTO_SIGN_IN_GAP_MS - 1_000);
+    fresh("0.second");
+    tab.show();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    after(1_001);
+    tab.show();
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+  });
+
+  it(`after a refusal other than "not confirmed", the next try by itself waits ${AUTO_SIGN_IN_AFTER_FAILURE_MS / 1000} s`, async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "network" });
+    await waiting();
+    await shownAndTried(1);
+    after(AUTO_SIGN_IN_GAP_MS + 1_000);
+    fresh("0.second");
+    tab.show();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    after(AUTO_SIGN_IN_AFTER_FAILURE_MS);
+    tab.show();
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+  });
+
+  it(`at most ${AUTO_SIGN_IN_MAX} tries by itself per waiting screen; then only the button tries, and it always does`, async () => {
+    const view = await waiting();
+    for (let n = 1; n <= AUTO_SIGN_IN_MAX; n++) {
+      fresh(`0.auto-${n}`);
+      await shownAndTried(n);
+      after(AUTO_SIGN_IN_GAP_MS + 1);
+    }
+    fresh("0.one-too-many");
+    tab.show();
+    await drawn();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(AUTO_SIGN_IN_MAX);
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(AUTO_SIGN_IN_MAX + 1));
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet));
+  });
+
+  it("a press is never held back by the gaps", async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "network" });
+    const view = await waiting();
+    await shownAndTried(1);
+    fresh("0.press");
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -281,36 +385,184 @@ describe("the bot check of a sign-in tried by itself", () => {
     expect(widget.round).toBe(1);
 
     delete widget.token!.current.dataset.turnstile;
-    widget.token!.current.value = "0.token-after-the-tick";
+    fresh("0.token-after-the-tick");
     later();
-    tab.show();
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    await shownAndTried(1);
     expect(flows.signIn.mock.calls[0][0].captchaToken).toBe("0.token-after-the-tick");
   });
 
-  it("no token comes (CAPTCHA enforced): nothing is sent after the wait, and nothing loops", async () => {
+  it(`waits up to ${TURNSTILE_AUTO_WAIT_MS / 1000} s for a token (longer than a press with CAPTCHA off), then sends nothing and does not loop`, async () => {
     vi.useRealTimers();
     vi.useFakeTimers();
-    const view = await waiting();
+    let view = await waiting();
     widget.token!.current.value = "";
     tab.show();
-    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 1_000);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 5_000);
     expect(flows.signIn).not.toHaveBeenCalled();
-    // Long after, still nothing: no timer tries again.
+    // A slow phone's token, after 15 s: still sent.
+    fresh("0.slow-token");
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    expect(flows.signIn.mock.calls[0][0].captchaToken).toBe("0.slow-token");
+
+    // None at all: nothing sent after the wait, and long after still nothing (no timer tries).
+    flows.signIn.mockClear();
+    view = await waiting();
+    widget.token!.current.value = "";
+    tab.show();
+    await vi.advanceTimersByTimeAsync(TURNSTILE_AUTO_WAIT_MS + 1_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(flows.signIn).not.toHaveBeenCalled();
     expect(view.hosts((h) => h.props.role === "alert")).toEqual([]);
   });
-});
 
-describe("tokenForAutoAttempt", () => {
-  it("sends a token there, never asks for the tick, and without CAPTCHA sends without one", async () => {
+  it("a token older than the widget's 300 s (a tab frozen in the background) is not sent: the widget makes a new one", async () => {
+    await waiting();
+    widget.token!.current.value = "0.old-token";
+    widget.token!.current.dataset.tokenAt = String(Date.now() - TURNSTILE_TOKEN_STALE_MS - 10_000);
+    const round = widget.round;
+    tab.show();
+    await drawn();
+    await drawn();
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(widget.token!.current.value).toBe("");
+    expect(widget.round).toBe(round + 1);
+    fresh("0.new-token");
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    expect(flows.signIn.mock.calls[0][0].captchaToken).toBe("0.new-token");
+  });
+
+  it("a try by itself refused with captcha tries once more with a new token, then says nothing until the next trigger", async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "captcha" });
+    const view = await waiting();
+    tab.show();
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    await drawn();
+    // The used token is gone; the second try waits for the new one.
+    expect(widget.token!.current.value).toBe("");
+    fresh("0.retry-token");
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    expect(flows.signIn.mock.calls[1][0].captchaToken).toBe("0.retry-token");
+    await drawn();
+    await drawn();
+    expect(view.text()).not.toContain(LOGIN_MESSAGES.captcha);
+    expect(view.hosts((h) => h.props.role === "alert")).toEqual([]);
+    // Not a third time on its own, and not at the next return within the wait after a refusal.
+    fresh("0.third");
+    after(AUTO_SIGN_IN_GAP_MS + 1_000);
+    tab.show();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+  });
+
+  it("tokenForAutoAttempt: sends a fresh token, never asks for the tick, empties a stale one, and without CAPTCHA sends without one", async () => {
     vi.useRealTimers();
     expect(await tokenForAutoAttempt({ value: "0.t", dataset: {} })).toEqual({ send: true, token: "0.t" });
+    expect(await tokenForAutoAttempt({ value: "0.t", dataset: { tokenAt: String(Date.now() - 1_000) } })).toEqual({ send: true, token: "0.t" });
     expect(await tokenForAutoAttempt({ value: "", dataset: { turnstile: "interactive" } })).toEqual({ send: false });
     expect(await tokenForAutoAttempt({ value: "", dataset: { turnstile: "unavailable" } })).toEqual({ send: false });
     expect(await tokenForAutoAttempt({ value: "", dataset: { turnstile: "unavailable" } }, { captchaEnforced: false })).toEqual({ send: true, token: undefined });
     expect(await tokenForAutoAttempt({ value: "", dataset: {} }, { limitMs: 50 })).toEqual({ send: false });
+    const stale: TokenField = { value: "0.old", dataset: { tokenAt: String(Date.now() - TURNSTILE_TOKEN_STALE_MS - 1) } };
+    expect(tokenIsStale(stale)).toBe(true);
+    const onStale = vi.fn();
+    expect(await tokenForAutoAttempt(stale, { limitMs: 50, onStale })).toEqual({ send: false });
+    expect(onStale).toHaveBeenCalledTimes(1);
+    expect(stale.value).toBe("");
+    expect(tokenIsStale({ value: "0.t", dataset: {} })).toBe(false);
+  });
+});
+
+describe("one request at a time, and every press shows", () => {
+  it("「確認しました」 while 「メールを送り直す」 is on its way: shown pressed at once, and sent after it", async () => {
+    let sent!: (v: unknown) => void;
+    actions.resend.mockReturnValue(new Promise((r) => (sent = r)));
+    const view = await waiting();
+    pressResend(view);
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(1));
+    pressDone(view);
+    await drawn();
+    expect(textOfHost(buttons(view)[0])).toBe("ログインしています…");
+    expect(textOfHost(buttons(view)[1])).toBe("送っています…");
+    expect(flows.signIn).not.toHaveBeenCalled();
+    sent({ ok: true, code: "confirmation_sent" });
+    // The resend's token is spent; the widget's next one comes.
+    await vi.waitFor(() => expect(widget.token!.current.value).toBe(""));
+    fresh("0.token-for-the-press");
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet));
+    expect(view.text()).toContain(WORDS.resent);
+  });
+
+  it("「メールを送り直す」 while a sign-in is on its way: shown pressed at once, and sent after it", async () => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValue(new Promise((r) => (answer = r)));
+    actions.resend.mockResolvedValue({ ok: true, code: "confirmation_sent" });
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    await drawn();
+    pressResend(view);
+    await drawn();
+    expect(textOfHost(buttons(view)[1])).toBe("送っています…");
+    expect(actions.resend).not.toHaveBeenCalled();
+    answer({ ok: false, code: "not_confirmed" });
+    await vi.waitFor(() => expect(widget.token!.current.value).toBe(""));
+    fresh("0.token-for-the-resend");
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledWith({ email: EMAIL, captchaToken: "0.token-for-the-resend" }));
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.resent));
+  });
+});
+
+describe("「別のアドレスでやり直す」", () => {
+  it("lets the address and the password go and brings the empty form back; the tab shown again tries nothing", async () => {
+    const view = await waiting();
+    pressRestart(view);
+    await drawn();
+    expect(view.hosts((h) => h.type === "h1").map(textOfHost)).toEqual(["アカウントを作る"]);
+    const inputs = view.hosts((h) => h.type === "input");
+    expect(inputs.map((i) => i.props.id)).toEqual(["signup-email", "signup-password", "signup-password-again"]);
+    expect(inputs.map((i) => i.props.value)).toEqual(["", "", ""]);
+    later();
+    fresh("0.next");
+    tab.show();
+    await drawn();
+    await drawn();
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(JSON.stringify(view.tree)).not.toContain(PASSWORD);
+  });
+
+  it("an answer still on its way is left unread: no move on, no words", async () => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValue(new Promise((r) => (answer = r)));
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    pressRestart(view);
+    answer({ ok: true, userId: "u", key: "made" });
+    await drawn();
+    await drawn();
+    expect(nav.to).toEqual([]);
+    expect(view.hosts((h) => h.type === "h1").map(textOfHost)).toEqual(["アカウントを作る"]);
+  });
+
+  it("a new account made after it waits again for its own address", async () => {
+    const view = await waiting();
+    pressRestart(view);
+    await drawn();
+    fresh("0.signup-2");
+    type(view, "signup-email", "other@example.test");
+    type(view, "signup-password", PASSWORD);
+    type(view, "signup-password-again", PASSWORD);
+    await drawn();
+    await (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
+    await drawn();
+    expect(view.text()).toContain("other@example.test");
+    fresh();
+    later();
+    await shownAndTried(1);
+    expect(flows.signIn.mock.calls[0][0].email).toBe("other@example.test");
   });
 });
 
@@ -328,10 +580,8 @@ describe("the password stays in this tab's memory", () => {
 
     flows.signIn.mockResolvedValueOnce({ ok: false, code: "not_confirmed" }).mockResolvedValueOnce({ ok: true, userId: "u", key: "made" });
     const view = await waiting();
-    tab.show();
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
-    later();
-    widget.token!.current.value = "0.second";
+    await shownAndTried(1);
+    fresh("0.second");
     pressDone(view);
     await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
 
@@ -341,12 +591,16 @@ describe("the password stays in this tab's memory", () => {
     expect(JSON.stringify(view.tree)).not.toContain(PASSWORD);
   });
 
-  it("the form's source names no storage, cookie or URL writer (and the check finds a planted one)", () => {
+  it("the form's and the handoff's sources name no storage, cookie or URL writer (and the check finds a planted one)", () => {
     const WRITERS = /localStorage|sessionStorage|indexedDB|document\.cookie|cookieStore|history\.(push|replace)State|location\.(href|assign|replace)|URLSearchParams|searchParams/;
-    const source = withoutComments(read(path.join(process.cwd(), "src/app/signup/signup-form.tsx")));
-    expect(source).not.toMatch(WRITERS);
-    expect(source).toContain("account.current = { email, password }");
+    const form = withoutComments(read(path.join(process.cwd(), "src/app/signup/signup-form.tsx")));
+    const handoff = withoutComments(read(path.join(process.cwd(), "src/lib/login-handoff.ts")));
+    expect(form).not.toMatch(WRITERS);
+    expect(handoff).not.toMatch(WRITERS);
+    expect(form).toContain("account.current = { email: typed.email, password: typed.password }");
+    // The handoff carries the address and a code only.
+    expect(handoff).not.toMatch(/password/i);
     // Negative control.
-    expect(`${source}\nsessionStorage.setItem("p", password);`).toMatch(WRITERS);
+    expect(`${form}\nsessionStorage.setItem("p", password);`).toMatch(WRITERS);
   });
 });

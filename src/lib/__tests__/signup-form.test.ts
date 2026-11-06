@@ -54,8 +54,8 @@ const TOKEN = "0.token";
 
 const textOfHost = (h: Host | string): string => (typeof h === "string" ? h : h.children.map(textOfHost).join(""));
 const button = (view: Mounted) => view.host((h) => h.type === "button");
-/** The waiting screen's 「メールを送り直す」 (it has 「確認しました」 too). */
-const resendButton = (view: Mounted) => view.hosts((h) => h.type === "button").at(-1)!;
+/** The waiting screen's 「メールを送り直す」 (it has 「確認しました」 and 「別のアドレスでやり直す」 too). */
+const resendButton = (view: Mounted) => view.hosts((h) => h.type === "button")[1];
 const type = (view: Mounted, id: string, value: string) => (view.host((h) => h.type === "input" && h.props.id === id).props.onChange as (e: unknown) => void)({ target: { value } });
 const press = (view: Mounted) => (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
 const drawn = () => new Promise<void>((resolve) => queueMicrotask(() => queueMicrotask(resolve)));
@@ -99,7 +99,7 @@ describe("making the account", () => {
     expect(view.text()).toContain("確認のメールを送りました");
     expect(view.text()).toContain(EMAIL);
     expect(view.hosts((h) => h.type === "input")).toHaveLength(0);
-    expect(view.hosts((h) => h.type === "button").map(textOfHost)).toEqual(["確認しました", "メールを送り直す"]);
+    expect(view.hosts((h) => h.type === "button").map(textOfHost)).toEqual(["確認しました", "メールを送り直す", "別のアドレスでやり直す"]);
     expect(widget.round).toBe(1);
   });
 
@@ -120,6 +120,9 @@ describe("making the account", () => {
     expect(actions.resend).toHaveBeenCalledWith({ email: EMAIL, captchaToken: "0.second-token" });
     await vi.waitFor(() => expect(textOfHost(resendButton(view))).toBe("メールを送り直す"));
 
+    // The token went with that press: the next one waits for a new one.
+    expect(widget.token!.current.value).toBe("");
+    widget.token!.current.value = "0.third-token";
     actions.resend.mockResolvedValue({ ok: false, code: "rate" });
     click();
     await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.rate));

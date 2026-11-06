@@ -5,7 +5,7 @@ import { CONFIRMED, CONFIRMED_LOGIN_PATH } from "@/lib/onboarding";
 // browser (the one the link was opened in need not be the one that signed up).
 export const dynamic = "force-static";
 
-export const metadata = { title: "確認" };
+export const metadata = { title: CONFIRMED.title };
 
 /**
  * Where a new account's confirmation link ends (POST /auth/confirm, onboarding screen 2): the

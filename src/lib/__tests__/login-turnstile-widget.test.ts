@@ -127,6 +127,25 @@ describe("the Turnstile widget on the login form", () => {
     expect(field.value).toBe("");
   });
 
+  it("notes when each token came (a tab frozen in the background can outlive it: tokenIsStale), and forgets it with the token", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    const field = fieldOf(view);
+    const { options } = t.last();
+    const before = Date.now();
+    options.callback(TOKEN);
+    expect(Number(field.dataset.tokenAt)).toBeGreaterThanOrEqual(before);
+    expect(Number(field.dataset.tokenAt)).toBeLessThanOrEqual(Date.now());
+    options["expired-callback"]();
+    expect(field.dataset.tokenAt).toBeUndefined();
+    options.callback(TOKEN_2);
+    expect(field.dataset.tokenAt).toBeDefined();
+    options["timeout-callback"]();
+    expect(field.dataset.tokenAt).toBeUndefined();
+  });
+
   it("puts nothing in the form: no field at all, so a form that takes a password stays without a named one", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });

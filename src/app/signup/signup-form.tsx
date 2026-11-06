@@ -8,7 +8,8 @@ import { flowMessage, signInAndOpenKey, signUpWithPassword } from "@/lib/crypto/
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { AUTO_SIGN_IN_GAP_MS, CONFIRM_WAIT, landingAfterSignIn } from "@/lib/onboarding";
+import { handOffToLogin } from "@/lib/login-handoff";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX, CONFIRM_WAIT, landingAfterSignIn } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { pressText, tokenForAutoAttempt, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { inputClass, submitClass } from "@/app/login/form-style";
@@ -31,6 +32,11 @@ type WaitNotice = { kind: "not_yet" } | { kind: "error"; text: string } | { kind
 /** Who tried the sign-in: the screen by itself (the tab shown again) or a press of 「確認しました」. */
 type Trigger = "auto" | "press";
 
+/** What holds the widget's token now (one request at a time: each token is checked once). */
+type Task = "signup" | "resend" | "signin";
+
+type SignInAnswer = Awaited<ReturnType<typeof signInAndOpenKey>>;
+
 /**
  * /signup: the address and the password, twice. Only the login secret is sent; the key is made at
  * the first sign-in, after the confirmation link (decision 6). An address with characters outside
@@ -41,7 +47,20 @@ type Trigger = "auto" | "press";
  * cookie), and signs in with them as /login does when the tab is shown again (`visibilitychange`
  * to visible, `focus`) or 「確認しました」 is pressed. No timer tries. A sign-in tried by itself says
  * nothing while the address is not confirmed; a press says so. The sign-in that makes the first key
- * goes on to the first-run guide. A reload forgets the password: /login is the way on then.
+ * goes straight on to the first-run guide (the press stays shown until it is there). A reload
+ * forgets the password: /login is the way on then.
+ *
+ * - The tries by themselves are few (AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_AFTER_FAILURE_MS,
+ *   AUTO_SIGN_IN_MAX): each one counts against the sign-in limits per IP. A press always tries.
+ * - `credentials` (an account with another password has the address): it stops waiting and goes to
+ *   /login with the address filled in and those words (src/lib/login-handoff.ts; never the password).
+ *   Any other refusal stays here with LOGIN_MESSAGES' words, and the next return or press tries again.
+ * - A try by itself refused with `captcha` (the token ran out) tries once more with a new token,
+ *   then says nothing until the next trigger.
+ * - One request at a time. A press while another one is on its way is shown pressed at once and
+ *   goes after it; a press of the same while its own try is on its way is that try.
+ * - 「別のアドレスでやり直す」 lets the address and the password go and brings the form back; an answer
+ *   still on its way is then left unread.
  *
  * No field has a `name` and the form is POST without an action (password-forms.test.ts).
  */
@@ -49,28 +68,39 @@ export function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
-  const [busy, setBusy] = useState(false);
+  /** 「アカウントを作る」 on its way (or waiting for the request before it). */
+  const [creating, setCreating] = useState(false);
+  /** 「メールを送り直す」 on its way (or waiting for the request before it). */
+  const [resending, setResending] = useState(false);
+  /** A sign-in from the waiting screen on its way (by itself or pressed, or a press waiting for its turn). */
+  const [signingIn, setSigningIn] = useState(false);
+  /** The request that holds the token, for the tick prompt to show on its button. */
+  const [active, setActive] = useState<Task | null>(null);
   const [needsTick, setNeedsTick] = useState(false);
   const [round, setRound] = useState(0);
   const [error, setError] = useState<string | null>(null);
   /** The address the confirmation went to, once sent. */
   const [sentTo, setSentTo] = useState<string | null>(null);
-  /** A sign-in on its way from the waiting screen (by itself or pressed). */
-  const [signingIn, setSigningIn] = useState(false);
   const [notice, setNotice] = useState<WaitNotice | null>(null);
   /** 「送り直しました」, or the words of a resend that did not go through. */
   const [resent, setResent] = useState<{ ok: boolean; text: string } | null>(null);
   const [leaveFor, setLeaveFor] = useState<string | null>(null);
   // Refs, not state: a second press (or Enter, or the second event of a tab shown again) can come
-  // before React has drawn the first. One request at a time: each takes the widget's token.
-  const running = useRef(false);
+  // before React has drawn the first.
+  const running = useRef<Task | null>(null);
+  /** The presses waiting for the request on its way. */
+  const waiters = useRef<Array<() => void>>([]);
   const token = useRef<TokenField>({ value: "", dataset: {} });
   /** The address and the password of the account just made, for the sign-in: this tab's memory only. */
   const account = useRef<{ email: string; password: string } | null>(null);
-  /** When the screen last tried a sign-in by itself. */
-  const lastAuto = useRef(0);
+  /** Moves on at 「別のアドレスでやり直す」: an answer of an earlier screen is not read. */
+  const epoch = useRef(0);
+  /** The tries by themselves: when the last one was, the earliest the next may be, how many were sent. */
+  const auto = useRef({ lastAt: 0, notBefore: 0, sends: 0 });
   /** 「確認しました」 was pressed while a sign-in tried by itself was on its way: its answer is told. */
   const pressedMeanwhile = useRef(false);
+  /** A press of 「確認しました」 that waited for its turn (set below, once trySignIn is made). */
+  const queuedPress = useRef<(() => void) | null>(null);
 
   /** The address problem the browser can tell, or null. */
   function addressProblem(): string | null {
@@ -80,52 +110,96 @@ export function SignupForm() {
     return null;
   }
 
-  async function submit(e: React.FormEvent) {
+  /** The request on its way is over: the next press that waited for it goes. */
+  const release = useCallback(() => {
+    running.current = null;
+    setActive(null);
+    waiters.current.shift()?.();
+  }, []);
+
+  /** The token was sent (each is checked once): emptied at once, and the widget makes a new one. */
+  const spendToken = useCallback(() => {
+    token.current.value = "";
+    delete token.current.dataset.tokenAt;
+    setRound((r) => r + 1);
+  }, []);
+
+  function submit(e: React.FormEvent): Promise<void> | undefined {
     e.preventDefault();
-    if (running.current) return;
     const problem = addressProblem() ?? passwordProblem(password, again);
     if (problem) {
       setError(problem);
       return;
     }
-    running.current = true;
-    setBusy(true);
     setError(null);
+    const typed = { email, password };
+    setCreating(true);
+    if (running.current) {
+      // A request of the screen left behind is still on its way: this one goes after it.
+      waiters.current.push(() => void createAccount(typed));
+      return;
+    }
+    return createAccount(typed);
+  }
+
+  async function createAccount(typed: { email: string; password: string }) {
+    running.current = "signup";
+    setActive("signup");
+    setCreating(true);
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
-      const result = await signUpWithPassword({ email, password, captchaToken }, { signUpWithAuthSecret });
+      let result: Awaited<ReturnType<typeof signUpWithPassword>>;
+      try {
+        result = await signUpWithPassword({ email: typed.email, password: typed.password, captchaToken }, { signUpWithAuthSecret });
+      } finally {
+        spendToken();
+      }
       if (!result.ok) {
         setError(pressText(result.code, captchaToken, flowMessage(result.code)));
         return;
       }
-      account.current = { email, password };
+      account.current = { email: typed.email, password: typed.password };
+      auto.current = { lastAt: 0, notBefore: 0, sends: 0 };
       setPassword("");
       setAgain("");
-      setSentTo(email);
+      setSentTo(typed.email);
     } finally {
-      // The token went with the press (each is checked once): the next press waits for a new one.
-      setRound((r) => r + 1);
-      running.current = false;
-      setBusy(false);
+      setCreating(false);
+      release();
     }
   }
 
-  async function resend() {
-    if (running.current || !sentTo) return;
-    running.current = true;
-    setBusy(true);
+  function resend(): Promise<void> | undefined {
+    if (!sentTo) return;
     setResent(null);
+    setResending(true);
+    if (running.current) {
+      waiters.current.push(() => void resendNow(sentTo));
+      return;
+    }
+    return resendNow(sentTo);
+  }
+
+  async function resendNow(to: string) {
+    const mine = epoch.current;
+    running.current = "resend";
+    setActive("resend");
+    setResending(true);
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
-      const result = await resendConfirmation({ email: sentTo, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
+      let result: Awaited<ReturnType<typeof resendConfirmation>>;
+      try {
+        result = await resendConfirmation({ email: to, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
+      } finally {
+        spendToken();
+      }
+      if (epoch.current !== mine) return;
       setResent(result.ok ? { ok: true, text: CONFIRM_WAIT.resent } : { ok: false, text: pressText(result.code, captchaToken, loginMessage(result.code)) });
     } finally {
-      // The token went with the press (each is checked once): the next press waits for a new one.
-      setRound((r) => r + 1);
-      running.current = false;
-      setBusy(false);
+      setResending(false);
+      release();
     }
   }
 
@@ -133,65 +207,123 @@ export function SignupForm() {
    * The sign-in of the waiting screen, as /login's (signInAndOpenKey with the same Actions). Only
    * refs and setters are read, so the listeners added once always call the current one.
    */
-  const trySignIn = useCallback(async (trigger: Trigger) => {
-    const creds = account.current;
-    if (!creds) return;
-    if (running.current) {
-      if (trigger === "press") pressedMeanwhile.current = true;
-      return;
-    }
-    if (trigger === "auto") {
-      const now = Date.now();
-      if (now - lastAuto.current < AUTO_SIGN_IN_GAP_MS) return;
-      lastAuto.current = now;
-    }
-    running.current = true;
-    pressedMeanwhile.current = false;
-    setSigningIn(true);
-    if (trigger === "press") setNotice(null);
-    let sent = false;
-    let leaving = false;
-    try {
+  const trySignIn = useCallback(
+    async (trigger: Trigger) => {
+      if (!account.current) {
+        if (trigger === "press") setSigningIn(false);
+        return;
+      }
+      if (trigger === "press" && running.current) {
+        if (running.current === "signin") pressedMeanwhile.current = true;
+        else {
+          // Shown pressed at once; it goes once the request on its way is over.
+          setSigningIn(true);
+          waiters.current.push(() => queuedPress.current?.());
+        }
+        return;
+      }
+      const mine = epoch.current;
       let captchaToken: string | undefined;
-      if (trigger === "press") {
-        captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
-        setNeedsTick(false);
-      } else {
+      if (trigger === "auto") {
+        if (running.current) return;
+        const a = auto.current;
+        const now = Date.now();
+        if (a.sends >= AUTO_SIGN_IN_MAX || now - a.lastAt < AUTO_SIGN_IN_GAP_MS || now < a.notBefore) return;
+        a.lastAt = now;
         // No token without a tick: nothing is sent, and the next trigger tries again.
-        const got = await tokenForAutoAttempt(token.current);
-        if (!got.send) return;
+        const got = await tokenForAutoAttempt(token.current, { onStale: spendToken });
+        if (!got.send || running.current || epoch.current !== mine || !account.current) return;
         captchaToken = got.token;
       }
-      sent = true;
-      const result = await signInAndOpenKey({ email: creds.email, password: creds.password, captchaToken }, signInPorts());
-      const told = trigger === "press" || pressedMeanwhile.current;
-      if (!result.ok) {
-        if (result.code === "not_confirmed") {
-          if (told) setNotice({ kind: "not_yet" });
+      const creds = account.current;
+      running.current = "signin";
+      setActive("signin");
+      pressedMeanwhile.current = false;
+      setSigningIn(true);
+      if (trigger === "press") setNotice(null);
+      let leaving = false;
+      const signIn = async (withToken: string | undefined): Promise<SignInAnswer> => {
+        if (trigger === "auto") auto.current.sends += 1;
+        try {
+          return await signInAndOpenKey({ email: creds.email, password: creds.password, captchaToken: withToken }, signInPorts());
+        } finally {
+          spendToken();
+        }
+      };
+      try {
+        if (trigger === "press") {
+          captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
+          setNeedsTick(false);
+        }
+        let result = await signIn(captchaToken);
+        // A try by itself whose token was refused (it ran out while the tab was away): once more with a new one.
+        if (trigger === "auto" && !result.ok && result.code === "captcha" && !pressedMeanwhile.current && auto.current.sends < AUTO_SIGN_IN_MAX) {
+          const got = await tokenForAutoAttempt(token.current, { onStale: spendToken });
+          if (got.send && epoch.current === mine) {
+            captchaToken = got.token;
+            result = await signIn(captchaToken);
+          }
+        }
+        if (epoch.current !== mine) return;
+        const told = trigger === "press" || pressedMeanwhile.current;
+        if (!result.ok) {
+          if (result.code === "not_confirmed") {
+            if (told) setNotice({ kind: "not_yet" });
+            return;
+          }
+          if (result.code === "credentials") {
+            // Another password has this address: the login, with the address filled in.
+            account.current = null;
+            handOffToLogin({ email: creds.email, code: "credentials" });
+            leaving = true;
+            setLeaveFor("/login");
+            return;
+          }
+          auto.current.notBefore = Date.now() + AUTO_SIGN_IN_AFTER_FAILURE_MS;
+          if (result.code === "captcha" && !told) return;
+          setNotice({ kind: "error", text: pressText(result.code, captchaToken, flowMessage(result.code)) });
           return;
         }
-        setNotice({ kind: "error", text: pressText(result.code, captchaToken, flowMessage(result.code)) });
-        return;
+        // Signed in: the password is not needed again.
+        account.current = null;
+        if (result.key === "opened" || result.key === "made") {
+          leaving = true;
+          setLeaveFor(landingAfterSignIn(result.key, safeNextPath(null)));
+          return;
+        }
+        setNotice({ kind: "key", text: result.key === "not_opened" ? LOGIN_MESSAGES.key_not_opened : flowMessage(result.code) });
+      } finally {
+        pressedMeanwhile.current = false;
+        // After a sign-in that leaves the page, the press stays shown until the next page is drawn.
+        if (!leaving) {
+          setSigningIn(false);
+          release();
+        }
       }
-      // Signed in: the password is not needed again.
-      account.current = null;
-      if (result.key === "opened" || result.key === "made") {
-        leaving = true;
-        setLeaveFor(landingAfterSignIn(result.key, safeNextPath(null)));
-        return;
-      }
-      setNotice({ kind: "key", text: result.key === "not_opened" ? LOGIN_MESSAGES.key_not_opened : flowMessage(result.code) });
-    } finally {
-      pressedMeanwhile.current = false;
-      // The token went with the sign-in (each is checked once): the next one waits for a new one.
-      if (sent) setRound((r) => r + 1);
-      // After a sign-in that leaves the page, the press stays shown until the next page is drawn.
-      if (!leaving) {
-        running.current = false;
-        setSigningIn(false);
-      }
-    }
-  }, []);
+    },
+    [release, spendToken],
+  );
+
+  useEffect(() => {
+    queuedPress.current = () => void trySignIn("press");
+  }, [trySignIn]);
+
+  /** 「別のアドレスでやり直す」: the address and the password let go, the form back, empty. */
+  function restart() {
+    epoch.current += 1;
+    account.current = null;
+    waiters.current = [];
+    pressedMeanwhile.current = false;
+    setSentTo(null);
+    setNotice(null);
+    setResent(null);
+    setSigningIn(false);
+    setResending(false);
+    setEmail("");
+    setPassword("");
+    setAgain("");
+    setError(null);
+  }
 
   // The tab shown again: the person may have opened the link meanwhile.
   useEffect(() => {
@@ -214,9 +346,9 @@ export function SignupForm() {
     return () => clearTimeout(timer);
   }, [resent]);
 
+  const ticking = (task: Task) => needsTick && active === task;
+
   if (sentTo) {
-    const signInHeld = signingIn && needsTick;
-    const resendHeld = busy && needsTick;
     return (
       <>
         <h1 className="text-2xl font-bold">{CONFIRM_WAIT.title}</h1>
@@ -224,8 +356,8 @@ export function SignupForm() {
         <p className="mt-1 break-all text-sm font-medium text-neutral-900">{sentTo}</p>
         <div className="mt-6 flex flex-col gap-3">
           <TurnstileWidget tokenRef={token} round={round} />
-          <PendingButton pending={signingIn && !needsTick} pendingLabel="ログインしています…" tone="light" onClick={() => void trySignIn("press")} className={primaryClass}>
-            {signInHeld ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.done}
+          <PendingButton pending={signingIn && !ticking("signin")} pendingLabel="ログインしています…" tone="light" onClick={() => void trySignIn("press")} className={primaryClass}>
+            {signingIn && ticking("signin") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.done}
           </PendingButton>
           {notice?.kind === "not_yet" ? (
             <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -245,10 +377,13 @@ export function SignupForm() {
               </Link>
             </div>
           ) : null}
-          <PendingButton pending={busy && !needsTick} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
-            {resendHeld ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
+          <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
+            {resending && ticking("resend") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
           </PendingButton>
           {resent && !resent.ok ? <p className="text-sm text-red-800">{resent.text}</p> : null}
+          <button type="button" onClick={restart} className="self-center px-4 py-1 text-xs text-neutral-500 underline underline-offset-4">
+            {CONFIRM_WAIT.restart}
+          </button>
         </div>
         {resent?.ok ? (
           <div role="status" className="fixed inset-x-4 bottom-6 z-20 mx-auto max-w-md rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white">
@@ -278,8 +413,8 @@ export function SignupForm() {
         <input id="signup-password-again" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
         <p className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
         <TurnstileWidget tokenRef={token} round={round} />
-        <PendingSubmitButton pending={busy && !needsTick} pendingLabel="作っています…" tone="light" className={submitClass}>
-          {busy && needsTick ? TURNSTILE_TICK_PROMPT : "アカウントを作る"}
+        <PendingSubmitButton pending={creating && !ticking("signup")} pendingLabel="作っています…" tone="light" className={submitClass}>
+          {creating && ticking("signup") ? TURNSTILE_TICK_PROMPT : "アカウントを作る"}
         </PendingSubmitButton>
         {error ? (
           <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
