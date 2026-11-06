@@ -180,6 +180,19 @@ describe("/app/settings: あなたのメールの扱い", () => {
     expect(text).not.toContain("合言葉");
   });
 
+  it("says what is not encrypted, what waits unread, and what the backups keep, in short sentences", async () => {
+    const text = textOf(sectionTitled(await render(), "あなたのメールの扱い")[0]);
+    for (const sentence of [
+      "荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は本文の抜粋です。",
+      "1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。",
+      "暗号化していない状態のメールは、データベースのバックアップにも最大 7 日間残ります。読み取る前のものと、暗号化する前のものです。",
+    ]) {
+      expect(text).toContain(sentence);
+    }
+    expect(text).not.toContain("読み取り結果の根拠の行・読み取りメモ、差出人");
+    expect(text).not.toContain("読み取る前のものも暗号化する前のものも");
+  });
+
   it("README says the same about mail read before encryption or with no key, decision 7, a reset, Message-ID, the approval link, screened ads and 「これは荷物」", () => {
     const readme = readFileSync(path.resolve(__dirname, "../../../README.md"), "utf8");
     const section = readme.slice(readme.indexOf("## あなたのメールの扱い"), readme.indexOf("## 技術"));
