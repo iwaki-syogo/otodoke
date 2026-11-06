@@ -33,7 +33,7 @@ describe("decision 7 is announced with its date", () => {
   it("without a passphrase: the plaintext warning says the mail goes on 11/14 unless one is set", () => {
     const text = textOf(panel({ plainCount: 3 }));
     expect(text).toContain("暗号化されていない保存済みのメール 3 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。");
-    expect(text).toContain(`決めないままだと、${NOTICE}`);
+    expect(text).toContain(`合言葉を決めていない場合は、${NOTICE}`);
   });
 
   it("with a passphrase: no date (decision 7 leaves these to 「暗号化する」)", () => {
