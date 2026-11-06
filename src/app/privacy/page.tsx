@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  * 2026-11-06). Keep it in step with the settings' 「あなたのメールの扱い」
  * (src/app/app/settings/mail-handling.tsx) and the README section of the same name.
  *
- * The owner's wording rules: short and polite, no brackets, 「データベースからは読めません」 only
+ * The wording rules: short and polite, no brackets, 「データベースからは読めません」 only
  * of sealed mail, never 「絶対」 or 「知り得ない」 (src/lib/__tests__/privacy-page.test.ts).
  *
  * Statements tied to code elsewhere:
@@ -140,7 +140,7 @@ export default function PrivacyPage() {
         <Bullets>
           <li>荷物と保存したメールは、あなたが消すまで保存します。</li>
           <li>
-            設定の「すべての荷物を消す」で、荷物と、保存したメール・読み取り結果を消せます。アカウント、転送先アドレス、メールの鍵と、読まなかったメール・Claude を使った回数の記録は残ります。
+            設定の「サンプルで試す」にある「すべての荷物を消す」で、荷物と、保存したメール・読み取り結果を消せます。アカウント、転送先アドレス、メールの鍵と、読まなかったメール・Claude を使った回数の記録は残ります。
           </li>
           <li>
             設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します。

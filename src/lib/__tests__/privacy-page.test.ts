@@ -13,7 +13,7 @@ import { appSourceFiles, read as readSource, withoutComments } from "./source-sc
  * - A static page: nothing from the database, the cookies or the request.
  * - Who runs Otodoke (no person's name), what is kept and why, how a mail is screened, read,
  *   sealed and backed up, which outside services hold what and where, how to delete, where to write.
- * - The owner's wording rules: 「データベースからは読めません」 only of sealed mail; never 「絶対」,
+ * - The wording rules: 「データベースからは読めません」 only of sealed mail; never 「絶対」,
  *   「知り得ない」 or 「転送するだけ」; no brackets.
  * - The contact address comes from one constant, CONTACT_EMAIL (Otodoke's support address). The page
  *   is rendered with a probe value in its place, so a hard-coded address fails.
@@ -69,7 +69,7 @@ function sentences(root: HtmlNode): string[] {
     .filter(Boolean);
 }
 
-/** What in these sentences breaks the owner's wording rules (empty when nothing does). */
+/** What in these sentences breaks the wording rules (empty when nothing does). */
 function wordingProblems(lines: string[]): string[] {
   const out: string[] = [];
   for (const line of lines) {
@@ -220,13 +220,13 @@ describe("/privacy: what it says", () => {
     // Turnstile's token goes with signUp, resend, resetPasswordForEmail and signInWithPassword, which
     // 設定's 「鍵を作る」 and 「パスワードを変える」 call too.
     expect(said.Cloudflare).toContain("Turnstile で、ログイン・アカウント作成・再設定の画面と、設定で鍵を作る操作とパスワードを変える操作が、ロボットでないかを確かめます");
-    // The owner's decision (2026-11-06): no promise about handing data to others on this page.
+    // No promise about handing data to others on this page.
     expect(textOf(await render())).not.toContain("渡したり売ったり");
   });
 
   it("tells how to delete in the settings' own words, and what can stay afterwards", async () => {
     const text = textOf(section(await render(), "保存の期間と消し方"));
-    expect(text).toContain("設定の「すべての荷物を消す」で");
+    expect(text).toContain("設定の「サンプルで試す」にある「すべての荷物を消す」で");
     // clearAllParcels (settings/actions.ts) removes parcels and mail; user_keys stays.
     expect(text).toContain("アカウント、転送先アドレス、メールの鍵と、読まなかったメール・Claude を使った回数の記録は残ります");
     expect(text).toContain("設定の「アカウントを削除」で");
@@ -265,10 +265,10 @@ describe("/privacy: what it says", () => {
     }
   });
 
-  it("decision 7 is the coordinator's sentence of 2026-11-06 22:40, ending in the notice the screens have said since that morning", () => {
+  it("decision 7 is the agreed sentence, ending in the notice the screens have said since that morning", () => {
     expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインしていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。");
     expect(PLAINTEXT_DROP_NOTICE.endsWith("11 月 14 日に件名・差出人・本文を消します。荷物は残ります。")).toBe(true);
-    // The owner's rule: no brackets.
+    // No brackets.
     expect(wordingProblems([PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL])).toEqual([]);
   });
 });
@@ -355,7 +355,7 @@ describe("/privacy: what it says matches the code it describes", () => {
   });
 });
 
-describe("/privacy: the owner's wording rules", () => {
+describe("/privacy: the wording rules", () => {
   it("never 「絶対」「知り得ない」「転送するだけ」, no brackets, and 「読めません」 only of sealed mail", async () => {
     const lines = sentences(await render());
     expect(lines.length).toBeGreaterThan(40);

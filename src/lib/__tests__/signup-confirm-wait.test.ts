@@ -17,7 +17,7 @@ import { read, withoutComments } from "./source-scan";
  * goes to /login with the address; any other refusal gets LOGIN_MESSAGES' words. The sign-in that
  * made the first key goes straight to the first-run guide. 「別のアドレスでやり直す」 lets go of both.
  *
- * The words are the team's onboarding-wording.md, written out here as they are there.
+ * The words are written out here as the screen says them.
  */
 
 const actions = vi.hoisted(() => ({ signUp: vi.fn(), resend: vi.fn() }));
@@ -344,6 +344,68 @@ describe("how often it tries by itself (the sign-in limits per IP)", () => {
     await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
   });
 
+  it("the limit is 5 tries by itself (the app's per-IP login limit is 15 in 10 minutes)", () => {
+    expect(AUTO_SIGN_IN_MAX).toBe(5);
+  });
+
+  it("the visibilitychange and the focus of one return are one return: no try follows on its own", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    await waiting();
+    await shownAndTried(1);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a return inside the gap gets one try when the gap ends (a single timeout), which counts like any try", async () => {
+    // These need the timers too (the others fake only the clock).
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    await waiting();
+    await shownAndTried(1);
+    after(5_000);
+    fresh("0.second");
+    tab.show();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    // Another return inside the same gap does not add a second timer.
+    tab.show();
+    await drawn();
+    await vi.advanceTimersByTimeAsync(AUTO_SIGN_IN_GAP_MS - 5_000 + 10);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    // No repeating timer: nothing more is tried without another return.
+    after(AUTO_SIGN_IN_GAP_MS + 1_000);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+  });
+
+  it("the gap's one try is not made when the tab is hidden again, or after a restart", async () => {
+    // These need the timers too (the others fake only the clock).
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    const view = await waiting();
+    await shownAndTried(1);
+    after(5_000);
+    fresh("0.second");
+    tab.show();
+    await drawn();
+    tab.hide();
+    await vi.advanceTimersByTimeAsync(AUTO_SIGN_IN_GAP_MS);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    // Restart: the timer is cleared, and nothing is tried for the account let go.
+    after(AUTO_SIGN_IN_GAP_MS + 1_000);
+    tab.show();
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    after(5_000);
+    fresh("0.third");
+    tab.show();
+    await drawn();
+    pressRestart(view);
+    await drawn();
+    await vi.advanceTimersByTimeAsync(AUTO_SIGN_IN_GAP_MS * 2);
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+  });
+
   it(`at most ${AUTO_SIGN_IN_MAX} tries by itself per waiting screen; then only the button tries, and it always does`, async () => {
     const view = await waiting();
     for (let n = 1; n <= AUTO_SIGN_IN_MAX; n++) {
@@ -471,6 +533,72 @@ describe("the bot check of a sign-in tried by itself", () => {
     expect(onStale).toHaveBeenCalledTimes(1);
     expect(stale.value).toBe("");
     expect(tokenIsStale({ value: "0.t", dataset: {} })).toBe(false);
+  });
+});
+
+describe("an old request leaves the new form's token alone", () => {
+  it("restart while a resend is in flight: the new form's token is still there after the old resend settles", async () => {
+    let sent!: (v: unknown) => void;
+    actions.resend.mockReturnValue(new Promise((r) => (sent = r)));
+    const view = await waiting();
+    pressResend(view);
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(1));
+    pressRestart(view);
+    await drawn();
+    fresh("0.new-form-token");
+    sent({ ok: true, code: "confirmation_sent" });
+    await drawn();
+    await drawn();
+    expect(widget.token!.current.value).toBe("0.new-form-token");
+  });
+
+  it("restart after the resend sent its token: the used token is cleared, the widget moves on, and the new form's first press sends a fresh one", async () => {
+    actions.resend.mockReturnValue(new Promise(() => {}));
+    const view = await waiting();
+    pressResend(view);
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(1));
+    const round = widget.round;
+    pressRestart(view);
+    await drawn();
+    expect(widget.token!.current.value).toBe("");
+    expect(widget.round).toBe(round + 1);
+    actions.signUp.mockClear();
+    type(view, "signup-email", EMAIL);
+    type(view, "signup-password", PASSWORD);
+    type(view, "signup-password-again", PASSWORD);
+    await drawn();
+    const submitted = (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
+    await drawn();
+    expect(actions.signUp).not.toHaveBeenCalled();
+    fresh("0.fresh-for-new-form");
+    await submitted;
+    expect(actions.signUp).toHaveBeenCalledTimes(1);
+    expect(actions.signUp.mock.calls[0][0].captchaToken).toBe("0.fresh-for-new-form");
+  });
+
+  it("negative control: restart while the resend still waits for a token (nothing sent): nothing is cleared and the widget does not move", async () => {
+    const view = await waiting();
+    widget.token!.current.value = "";
+    pressResend(view);
+    await drawn();
+    const round = widget.round;
+    pressRestart(view);
+    await drawn();
+    fresh("0.kept");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(actions.resend).not.toHaveBeenCalled();
+    expect(widget.token!.current.value).toBe("0.kept");
+    expect(widget.round).toBe(round);
+  });
+
+  it("negative control: without a restart the resend's token is spent as before", async () => {
+    let sent!: (v: unknown) => void;
+    actions.resend.mockReturnValue(new Promise((r) => (sent = r)));
+    const view = await waiting();
+    pressResend(view);
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(1));
+    sent({ ok: true, code: "confirmation_sent" });
+    await vi.waitFor(() => expect(widget.token!.current.value).toBe(""));
   });
 });
 

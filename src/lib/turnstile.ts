@@ -177,8 +177,21 @@ export function waitForToken(
  * The token a press sends, once the field is settled (waitForToken, as long as tokenWaitMs), or
  * undefined when none came: Supabase decides then, as with a form sent without one. The caller
  * moves the widget on to a new token afterwards (each token is checked once).
+ *
+ * A token past TURNSTILE_TOKEN_STALE_MS (a tab the browser froze in the background, shown again
+ * before the widget's expired-callback ran) is never sent: it is emptied, `onStale` is called (the
+ * screen moves the widget on, which makes a new token), and the press waits for the new one within
+ * the same wait. Without `onStale` the widget's own refresh has to supply it.
  */
-export async function tokenForPress(field: TokenField, { captchaEnforced = CAPTCHA_ENFORCED, onNeedsTick }: { captchaEnforced?: boolean; onNeedsTick?: (needsTick: boolean) => void } = {}): Promise<string | undefined> {
+export async function tokenForPress(
+  field: TokenField,
+  { captchaEnforced = CAPTCHA_ENFORCED, onNeedsTick, onStale, staleMs = TURNSTILE_TOKEN_STALE_MS }: { captchaEnforced?: boolean; onNeedsTick?: (needsTick: boolean) => void; onStale?: () => void; staleMs?: number } = {},
+): Promise<string | undefined> {
+  if (tokenIsStale(field, { staleMs })) {
+    field.value = "";
+    delete field.dataset.tokenAt;
+    onStale?.();
+  }
   await waitForToken(field, { limitMs: tokenWaitMs(captchaEnforced), pauseForTick: captchaEnforced, onNeedsTick });
   const token = field.value.trim();
   return token && token.length <= TURNSTILE_TOKEN_MAX_LENGTH ? token : undefined;

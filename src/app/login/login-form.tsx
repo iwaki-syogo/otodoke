@@ -70,7 +70,7 @@ export function LoginForm({ next }: { next: string }) {
     setNotice(null);
     let leaving = false;
     try {
-      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
+      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick, onStale: () => setRound((r) => r + 1) });
       setNeedsTick(false);
       const result = await signInAndOpenKey({ email, password, captchaToken }, signInPorts());
       if (!result.ok) {

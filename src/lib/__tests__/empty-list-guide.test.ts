@@ -184,7 +184,7 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
 });
 
 describe("the screens", () => {
-  // The owner's rule (CLAUDE.md): 「転送するだけ」 reads as forwarding each mail by hand.
+  // 「転送するだけ」 reads as forwarding each mail by hand.
   const appDir = path.resolve(__dirname, "../../app");
   const files = (dir: string): string[] =>
     readdirSync(dir).flatMap((name) => {

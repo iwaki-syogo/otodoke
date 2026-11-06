@@ -2,8 +2,7 @@
  * The words of 「メールの自動転送の設定」: one copy for the Web guide (/guide/forwarding), the
  * Web settings page and the iOS app. Pure data, no React.
  *
- * The source of the sentences is docs/ux-redo/forwarding-guide.md in the planning folder
- * (2026-11-07); change a sentence there first. Never write 「転送するだけ」 (the owner's rule).
+ * Never write 「転送するだけ」: it reads as forwarding each mail by hand.
  *
  * Sources checked 2026-11-07:
  * - Gmail forwarding: https://support.google.com/mail/answer/10957?hl=ja

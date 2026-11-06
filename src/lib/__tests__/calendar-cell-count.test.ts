@@ -5,7 +5,7 @@ import { FakeDb, type Row } from "./fake-db";
 import { findAll, hasClasses, linksTo, parseHtml, textOf, type HtmlNode } from "./html-tree";
 
 /**
- * [Review 2026-11-06, the owner's decision] On the calendar, a red cell counts the day's
+ * [Review 2026-11-06] On the calendar, a red cell counts the day's
  * face-to-face parcels only: a day with one parcel to be home for and one left at the door reads
  * 「🤝1件」, never 「🤝2件」 (read as two to be home for). 念のため対面 is face-to-face here, as it
  * turns the cell red. A blue cell (no face-to-face parcel) counts them all, as before.

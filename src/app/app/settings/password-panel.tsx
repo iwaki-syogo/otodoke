@@ -141,7 +141,7 @@ export function MakeKeyForm({ email }: { email: string }) {
     setBusy(true);
     setError(null);
     try {
-      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
+      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick, onStale: () => setRound((r) => r + 1) });
       setNeedsTick(false);
       const result = await signInAndOpenKey({ email, password, captchaToken }, { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey, rewrapMailKey });
       if (!result.ok) {
@@ -255,7 +255,7 @@ export function ChangeForm({ userId, email, withCheck }: { userId: string; email
     setBusy(true);
     setMessage(null);
     try {
-      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
+      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick, onStale: () => setRound((r) => r + 1) });
       setNeedsTick(false);
       const result = await changePassword({ email, userId, current, next, captchaToken }, { readMailKey, changeLoginSecret });
       if (result.ok || result.code === "secret_change_unknown") {

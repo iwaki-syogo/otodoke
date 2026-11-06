@@ -41,7 +41,7 @@ describe("/account-deleted", () => {
     expect(textOf(root)).toContain("ご利用ありがとうございました。Gmail などで設定した自動転送も、忘れずに外してください。");
     expect(linksTo(root, "/login").map(textOf)).toEqual(["ログイン画面へ"]);
     expect(linksTo(root, "/")).toHaveLength(1);
-    // The words use no brackets (the owner's wording rule).
+    // The words use no brackets (wording rule).
     expect(textOf(root)).not.toMatch(/[()（）「」]/);
   });
 

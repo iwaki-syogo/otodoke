@@ -137,7 +137,7 @@ const APP_OWN_WORDS: Record<string, string> = {
   toSignIn: "ログインに戻る",
   forgotPassword: "パスワードを忘れた",
   resendConfirmation: "確認のメールをもう一度送る",
-  // The owner's decision 11/6 23:4x: the key does not open, or was never made.
+  // The key does not open, or was never made.
   webLoginPrompt: "Web でログインしてください。",
   openWebLogin: "Web でログイン",
   noKeyYet: "メールの鍵がまだできていません。ログインし直すと作れます。",

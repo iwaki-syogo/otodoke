@@ -186,7 +186,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
     ]) {
       expect(text).toContain(fact);
     }
-    // No brackets on a screen (the owner rule).
+    // No brackets on a screen.
     expect(text).not.toMatch(/[（）()]/);
     expect(text).not.toContain("次から読むために消さずに残します");
     expect(text).not.toContain("合言葉を決める前に届いたメール");

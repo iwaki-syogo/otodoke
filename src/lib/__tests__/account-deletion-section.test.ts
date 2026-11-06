@@ -177,7 +177,7 @@ describe("after a failure", () => {
 });
 
 describe("the words", () => {
-  it("use no brackets (the owner's wording rule)", async () => {
+  it("use no brackets (wording rule)", async () => {
     const view = await opened();
     action.state = { error: ACCOUNT_DELETE_FAILED };
     view.rerender();

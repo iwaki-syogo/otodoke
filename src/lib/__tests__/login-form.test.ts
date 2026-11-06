@@ -7,7 +7,7 @@ import { clearLoginHandoff, handOffToLogin, peekLoginHandoff } from "@/lib/login
 import { CONFIRMED_LOGIN_PATH } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
+import { CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_TOKEN_STALE_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -271,6 +271,62 @@ describe("a press before the bot check has its token", () => {
     await done;
     expect(flows.signIn).toHaveBeenCalledTimes(1);
     expect(flows.signIn.mock.calls[0][0].captchaToken).toBe(TOKEN);
+  });
+
+  it("a token older than 280 s (a tab frozen in the background) is not sent: the widget is moved on, and the new token is sent", async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
+    const view = await filled();
+    widget.token!.current.dataset.tokenAt = String(Date.now() - TURNSTILE_TOKEN_STALE_MS - 10_000);
+    const round = widget.round;
+    const done = press(view);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(widget.token!.current.value).toBe("");
+    expect(widget.round).toBe(round + 1);
+    widget.token!.current.value = "0.new-token";
+    widget.token!.current.dataset.tokenAt = String(Date.now());
+    await vi.advanceTimersByTimeAsync(200);
+    await done;
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    expect(flows.signIn.mock.calls[0][0].captchaToken).toBe("0.new-token");
+  });
+
+  it("a fresh token is sent at once (negative control of the stale check), without moving the widget on beforehand", async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
+    const view = await filled();
+    widget.token!.current.dataset.tokenAt = String(Date.now() - 1_000);
+    const round = widget.round;
+    await press(view);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    expect(flows.signIn.mock.calls[0][0].captchaToken).toBe(TOKEN);
+    // Only the press itself moves the widget on (each token is checked once): one step, not two.
+    expect(widget.round).toBe(round + 1);
+  });
+
+  it("tokenForPress itself: a stale token is emptied, onStale is called once, and nothing stale is returned", async () => {
+    const stale: TokenField = { value: "0.old", dataset: { tokenAt: String(Date.now() - TURNSTILE_TOKEN_STALE_MS - 1) } };
+    const onStale = vi.fn();
+    let sent: string | undefined | null = null;
+    void tokenForPress(stale, { captchaEnforced: true, onStale }).then((t) => (sent = t));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(onStale).toHaveBeenCalledTimes(1);
+    expect(stale.value).toBe("");
+    expect(sent).toBeNull();
+    stale.value = "0.new";
+    stale.dataset.tokenAt = String(Date.now());
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sent).toBe("0.new");
+    // Without onStale it still empties the stale one (the widget's own refresh supplies the next).
+    const lone: TokenField = { value: "0.old", dataset: { tokenAt: String(Date.now() - TURNSTILE_TOKEN_STALE_MS - 1) } };
+    let got: string | undefined | null = null;
+    void tokenForPress(lone, { captchaEnforced: false }).then((t) => (got = t));
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 200);
+    expect(got).toBeUndefined();
+    // A fresh one goes at once and onStale is not called.
+    const ok: TokenField = { value: "0.ok", dataset: { tokenAt: String(Date.now() - 1_000) } };
+    const never = vi.fn();
+    expect(await tokenForPress(ok, { onStale: never })).toBe("0.ok");
+    expect(never).not.toHaveBeenCalled();
   });
 
   it("with CAPTCHA enforced, is held past 10 seconds while Turnstile works on the token, and goes without one only after TURNSTILE_ENFORCED_WAIT_MS, its refusal told", async () => {

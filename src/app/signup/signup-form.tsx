@@ -11,13 +11,16 @@ import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/log
 import { handOffToLogin } from "@/lib/login-handoff";
 import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX, CONFIRM_WAIT, landingAfterSignIn } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
-import { pressText, tokenForAutoAttempt, tokenForPress, tokenIsStale, type TokenField } from "@/lib/turnstile";
+import { pressText, tokenForAutoAttempt, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { inputClass, submitClass } from "@/app/login/form-style";
 import { resendConfirmation, signUpWithAuthSecret } from "@/app/login/actions";
 import { signInPorts } from "@/app/login/sign-in-ports";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 
 /** The waiting screen's main button: black and full width, as on the other onboarding screens. */
+/** The `focus` that follows a `visibilitychange` of one return comes within this long: not a return of its own. */
+const SAME_RETURN_MS = 2_000;
+
 const primaryClass = "flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 py-4 text-base font-medium text-white active:opacity-80";
 
 /** How long the 「送り直しました」 toast stays. */
@@ -45,7 +48,8 @@ type SignInAnswer = Awaited<ReturnType<typeof signInAndOpenKey>>;
  * Once the mail is sent, the same tab waits for the confirmation (onboarding screen 1): it keeps the
  * address and the password in a ref of this component, nowhere else (no storage, no URL, no
  * cookie), and signs in with them as /login does when the tab is shown again (`visibilitychange`
- * to visible, `focus`) or 「確認しました」 is pressed. No timer tries. A sign-in tried by itself says
+ * to visible, `focus`) or 「確認しました」 is pressed. No repeating timer: a return the 20 s gap held
+ * back gets one try when the gap ends (a single setTimeout, cleared on restart, success and unmount). A sign-in tried by itself says
  * nothing while the address is not confirmed; a press says so. The sign-in that makes the first key
  * goes straight on to the first-run guide (the press stays shown until it is there). A reload
  * forgets the password: /login is the way on then.
@@ -113,6 +117,16 @@ export function SignupForm() {
   /** 「別のアドレスでやり直す」 was pressed while a sign-in was in flight: it acts on the answer. */
   const restartAfter = useRef(false);
   const [restartPending, setRestartPending] = useState(false);
+  /** The one timer that tries once when the gap after a try ends, for a return the gap held back. */
+  /** A request has sent the token in the field (it is used up until spendToken). */
+  const tokenSent = useRef(false);
+  const gapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** What the gap timer does (set below, once trySignIn is made): one try by itself, if the tab is shown. */
+  const gapTry = useRef<(() => void) | null>(null);
+  const clearGapTimer = useCallback(() => {
+    if (gapTimer.current !== null) clearTimeout(gapTimer.current);
+    gapTimer.current = null;
+  }, []);
   /** A press of 「確認しました」 that waited for its turn (set below, once trySignIn is made). */
   const queuedPress = useRef<(() => void) | null>(null);
 
@@ -136,15 +150,15 @@ export function SignupForm() {
 
   /** The token was sent (each is checked once), or is too old: emptied at once, and the widget makes a new one. */
   const spendToken = useCallback(() => {
+    tokenSent.current = false;
     token.current.value = "";
     delete token.current.dataset.tokenAt;
     setRound((r) => r + 1);
   }, []);
 
-  /** The token for a press, as /login's (tokenForPress), with one too old renewed first. */
+  /** The token for a press, as /login's (tokenForPress, which renews one too old by itself). */
   const pressToken = useCallback(async () => {
-    if (tokenIsStale(token.current)) spendToken();
-    const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
+    const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick, onStale: spendToken });
     setNeedsTick(false);
     return captchaToken;
   }, [spendToken]);
@@ -181,6 +195,7 @@ export function SignupForm() {
       const captchaToken = await pressToken();
       let result: Awaited<ReturnType<typeof signUpWithPassword>>;
       try {
+        tokenSent.current = true;
         result = await signUpWithPassword({ email: typed.email, password: typed.password, captchaToken }, { signUpWithAuthSecret });
       } finally {
         spendToken();
@@ -223,9 +238,11 @@ export function SignupForm() {
       if (epoch.current !== mine) return;
       let result: Awaited<ReturnType<typeof resendConfirmation>>;
       try {
+        tokenSent.current = true;
         result = await resendConfirmation({ email: to, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
       } finally {
-        spendToken();
+        // After 「別のアドレスでやり直す」 the token field is the new form's: an old request leaves it alone.
+        if (epoch.current === mine) spendToken();
       }
       if (epoch.current !== mine) return;
       setResent(result.ok ? { ok: true, text: CONFIRM_WAIT.resent } : { ok: false, text: pressText(result.code, captchaToken, loginMessage(result.code)) });
@@ -237,6 +254,32 @@ export function SignupForm() {
       }
     }
   }
+
+  const startOver = useCallback(() => {
+    restartAfter.current = false;
+    setRestartPending(false);
+    epoch.current += 1;
+    clearGapTimer();
+    account.current = null;
+    waitingShown.current = false;
+    waiters.current = [];
+    // A request still on its way is left to finish unread: the new form need not wait for it.
+    running.current = null;
+    setActive(null);
+    setNeedsTick(false);
+    pressedMeanwhile.current = false;
+    setSentTo(null);
+    setNotice(null);
+    setResent(null);
+    setSigningIn(false);
+    setResending(false);
+    setEmail("");
+    setPassword("");
+    setAgain("");
+    setError(null);
+    // A token a request has already sent is used up (the old request no longer spends it): the new form gets a fresh one.
+    if (tokenSent.current) spendToken();
+  }, [clearGapTimer, spendToken]);
 
   /**
    * The sign-in of the waiting screen, as /login's (signInAndOpenKey with the same Actions). Only
@@ -265,7 +308,20 @@ export function SignupForm() {
         if (running.current) return;
         const a = auto.current;
         const now = Date.now();
-        if (a.sends >= AUTO_SIGN_IN_MAX || now - a.lastAt < AUTO_SIGN_IN_GAP_MS || now < a.notBefore) return;
+        if (a.sends >= AUTO_SIGN_IN_MAX) return;
+        if (now - a.lastAt < AUTO_SIGN_IN_GAP_MS) {
+          // A return inside the gap: one try when the gap ends (never repeating; it counts like any try by itself).
+          // Not for the second event of the return that made the try (visibilitychange, then focus).
+          if (gapTimer.current === null && now - a.lastAt > SAME_RETURN_MS) {
+            gapTimer.current = setTimeout(() => {
+              gapTimer.current = null;
+              gapTry.current?.();
+            }, a.lastAt + AUTO_SIGN_IN_GAP_MS - now + 1);
+          }
+          return;
+        }
+        if (now < a.notBefore) return;
+        clearGapTimer();
         a.lastAt = now;
         // No token without a tick: nothing is sent, and the next trigger tries again.
         const got = await tokenForAutoAttempt(token.current, { onStale: spendToken });
@@ -283,10 +339,12 @@ export function SignupForm() {
         if (trigger === "auto") auto.current.sends += 1;
         inFlight.current = true;
         try {
+          tokenSent.current = true;
           return await signInAndOpenKey({ email: creds.email, password: creds.password, captchaToken: withToken }, signInPorts());
         } finally {
           inFlight.current = false;
-          spendToken();
+          // As for the resend: after a restart the token is the new form's.
+          if (epoch.current === mine) spendToken();
         }
       };
       try {
@@ -337,6 +395,7 @@ export function SignupForm() {
         }
         // Signed in: the password is not needed again.
         account.current = null;
+        clearGapTimer();
         if (result.key === "opened" || result.key === "made") {
           leaving = true;
           setLeaveFor(landingAfterSignIn(result.key, safeNextPath(null)));
@@ -355,12 +414,18 @@ export function SignupForm() {
         }
       }
     },
-    [release, spendToken, pressToken],
+    [release, spendToken, pressToken, clearGapTimer, startOver],
   );
 
   useEffect(() => {
     queuedPress.current = () => void trySignIn("press", true);
+    gapTry.current = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") void trySignIn("auto");
+    };
   }, [trySignIn]);
+
+  // No try waits past the screen: leaving it (or the form coming back) cancels the gap's one.
+  useEffect(() => clearGapTimer, [clearGapTimer]);
 
   /**
    * 「別のアドレスでやり直す」: the address and the password let go, the form back, empty. While a
@@ -373,29 +438,6 @@ export function SignupForm() {
       return;
     }
     startOver();
-  }
-
-  function startOver() {
-    restartAfter.current = false;
-    setRestartPending(false);
-    epoch.current += 1;
-    account.current = null;
-    waitingShown.current = false;
-    waiters.current = [];
-    // A request still on its way is left to finish unread: the new form need not wait for it.
-    running.current = null;
-    setActive(null);
-    setNeedsTick(false);
-    pressedMeanwhile.current = false;
-    setSentTo(null);
-    setNotice(null);
-    setResent(null);
-    setSigningIn(false);
-    setResending(false);
-    setEmail("");
-    setPassword("");
-    setAgain("");
-    setError(null);
   }
 
   // The tab shown again: the person may have opened the link meanwhile.

@@ -43,7 +43,7 @@ export const RESET_LOSES_MAIL = "パスワードを決め直すと、前に暗�
  * Decision 7 (supabase/pending/20261114090000_drop_unsealed_plaintext.sql): on 2026-11-14 the
  * plaintext subject, sender and body of read mail go, for every user with no key in use. The key
  * is made in the browser when the user signs in with the password, so the sentence says it in
- * those words (the coordinator's wording of 2026-11-06 22:40; no brackets, the owner's rule). Its
+ * those words (no brackets). Its
  * second half is the notice the screens have said since the review fixes of 2026-11-06.
  *
  * Used in: 設定's password panel (src/app/app/settings/password-panel.tsx, to a user with

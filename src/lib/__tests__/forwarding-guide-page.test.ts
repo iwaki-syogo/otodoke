@@ -31,7 +31,7 @@ async function render(): Promise<HtmlNode> {
   return parseHtml(renderToStaticMarkup(createElement(Page)));
 }
 
-/** What in this text breaks the owner's wording rule (empty when nothing does). */
+/** What in this text breaks the wording rule (empty when nothing does). */
 function wordingProblems(text: string): string[] {
   return ["転送するだけ"].filter((w) => text.includes(w));
 }

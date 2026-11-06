@@ -176,7 +176,7 @@ describe("spend page: the order list over the whole period", () => {
     expect(orderIds(root)).toEqual([OLD.id, U.id]);
     expect(totalOf(root)).toBe(yen(700));
     expect(textOf(root)).toMatch(/・\s*注文日の無い\s*1\s*件は除く/);
-    // No brackets on a screen (the owner rule).
+    // No brackets on a screen.
     expect(textOf(root)).not.toMatch(/[（）]/);
   });
 
