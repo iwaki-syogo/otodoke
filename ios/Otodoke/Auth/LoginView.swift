@@ -64,6 +64,9 @@ struct LoginView: View {
                 if let message = model.errorMessage {
                     messageBox(message, error: true)
                 }
+                if model.isExistingAddress {
+                    existingAddressBox
+                }
                 if model.canResendConfirmation {
                     Button {
                         Task { await model.resendConfirmation() }
@@ -213,16 +216,40 @@ struct LoginView: View {
             }
             .buttonStyle(.plain)
             .disabled(model.isWorking)
-            if model.mode == .signIn {
-                Button {
-                    openURL(model.forgotPasswordURL)
-                } label: {
-                    Text(LoginText.forgotPassword).font(.subheadline).underline()
-                }
-                .buttonStyle(.plain)
+            // With the guidance of a registered address the same link sits in its box.
+            if model.mode == .signIn, !model.isExistingAddress {
+                forgotPasswordButton
             }
         }
         .padding(.top, 8)
+    }
+
+    private var forgotPasswordButton: some View {
+        Button {
+            openURL(model.forgotPasswordURL)
+        } label: {
+            Text(LoginText.forgotPassword).font(.subheadline).underline()
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The address was registered already: amber like 「まだ確認できていません…」 (a guidance, not a failure of the
+    /// typed words), with the way to the reset and what the reset costs.
+    private var existingAddressBox: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(OnboardingText.existingAddress)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            forgotPasswordButton
+            Text(OnboardingText.resetLosesMail)
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Palette.amberText)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.amberBorder))
     }
 
     private func submitIfPossible() {

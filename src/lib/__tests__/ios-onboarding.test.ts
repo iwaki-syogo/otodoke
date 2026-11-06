@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { TURNSTILE_TOKEN_STALE_MS } from "../turnstile";
 import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, WELCOME } from "../onboarding";
 import { LOGIN_MESSAGES } from "../login-errors";
+import { RESET_LOSES_MAIL } from "../mail-notices";
 
 /**
  * [iOS onboarding] From making an account to the forwarding setup:
@@ -58,6 +59,24 @@ const WORDING: Record<string, string> = {
 /** The amber box's two links (src/app/signup/signup-form.tsx has them inline, not as exports). */
 const KEY_BOX: Record<string, string> = { keyBoxProceed: "このまま進む", keyBoxKeyPage: "パスワードとメールの鍵" };
 
+/**
+ * The registered address's guidance (the waiting screen's sign-in refused for credentials). resetLosesMail is the Web's
+ * RESET_LOSES_MAIL. existingAddress has no Web export yet (another session adds it to src/lib/onboarding.ts):
+ * until then the copy below is the sentence; once the Web file holds a string that starts the same way, the comparison
+ * is with the Web's.
+ * TODO: Web の onboarding.ts に入ったら、比べる先をそちらに替える (the test already follows it by itself).
+ */
+const EXISTING_ADDRESS_COPY = "このアドレスは、もう登録されています。前に決めたパスワードでログインしてください。";
+const EXISTING_ADDRESS_PREFIX = "このアドレスは、もう登録されています";
+
+/** The sentence the iOS app must show: the Web's string in onboarding.ts when there is one, else the copy. */
+function existingAddressSentence(onboardingSource: string): string {
+  const found = [...onboardingSource.matchAll(/"([^"\\\n]*)"/g)].map((m) => m[1]).find((t) => t.startsWith(EXISTING_ADDRESS_PREFIX));
+  return found ?? EXISTING_ADDRESS_COPY;
+}
+
+const GUIDANCE: Record<string, string> = { resetLosesMail: RESET_LOSES_MAIL };
+
 const APP_ONLY: Record<string, string> = { ...KEY_BOX };
 
 describe("the words", () => {
@@ -81,7 +100,26 @@ describe("the words", () => {
 
   it("OnboardingText has these constants, nothing else", () => {
     const names = [...swift().keys()].sort();
-    expect(names).toEqual([...Object.keys(WORDING), ...Object.keys(APP_ONLY)].sort());
+    expect(names).toEqual([...Object.keys(WORDING), ...Object.keys(APP_ONLY), ...Object.keys(GUIDANCE), "existingAddress"].sort());
+  });
+
+  it("the registered address's words: resetLosesMail is the Web's RESET_LOSES_MAIL, existingAddress the Web's sentence (or its copy until it exists)", () => {
+    const all = swift();
+    expect(all.get("resetLosesMail")).toBe(RESET_LOSES_MAIL);
+    expect(all.get("existingAddress")).toBe(existingAddressSentence(read("src/lib/onboarding.ts")));
+    // The ordinary credentials words are untouched and are a different sentence.
+    expect(all.get("existingAddress")).not.toBe(LOGIN_MESSAGES.credentials);
+  });
+
+  it("negative control: a changed character is caught; a Web sentence, once it exists, wins over the copy", () => {
+    const src = 'enum OnboardingText {\n    static let existingAddress = "' + EXISTING_ADDRESS_COPY + '"\n}';
+    expect(swiftConstants(src).get("existingAddress")).toBe(existingAddressSentence(""));
+    expect(swiftConstants(src.replace("ください。", "ください")).get("existingAddress")).not.toBe(existingAddressSentence(""));
+    expect(swiftConstants(src.replace("もう登録", "既に登録")).get("existingAddress")).not.toBe(existingAddressSentence(""));
+    const webLater = 'export const X = { existing: "このアドレスは、もう登録されています。別の言い方。" } as const;';
+    expect(existingAddressSentence(webLater)).toBe("このアドレスは、もう登録されています。別の言い方。");
+    expect(swiftConstants(src).get("existingAddress")).not.toBe(existingAddressSentence(webLater));
+    expect(swiftConstants('static let resetLosesMail = "' + RESET_LOSES_MAIL + '。"').get("resetLosesMail")).not.toBe(RESET_LOSES_MAIL);
   });
 
   it("the sentences follow the wording file's rules: no 「転送するだけ」, no 「このアプリ」, no shop or domain", () => {
@@ -183,6 +221,41 @@ describe("the views", () => {
 
   it("the guide shows the four services only, and no always-on note", () => {
     expect(stripComments(read("ios/Otodoke/Screens/Onboarding/OnboardingView.swift"))).toMatch(/ForwardingGuideView\(servicesOnly: true\)/);
+  });
+});
+
+describe("the registered address's guidance", () => {
+  it("only the waiting screen's credentials answer sets it, in place of LoginText.credentials; the ordinary words stay", () => {
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    const branch = model.match(/case \.credentials:[\s\S]*?return\n/)?.[0] ?? "";
+    expect(branch).toContain("dropWait()");
+    expect(branch).toContain("errorMessage = nil");
+    expect(branch).toContain("existingAddress = address");
+    expect(branch).not.toContain("failure.message");
+    // Every other failure still reads LoginFailure.message (LOGIN_MESSAGES.credentials included).
+    expect(model).toMatch(/errorMessage = error\.message/);
+    expect(stripComments(read("ios/Otodoke/Auth/LoginText.swift"))).toContain(`static let credentials = "${LOGIN_MESSAGES.credentials}"`);
+  });
+
+  it("it is dropped by the next press, a rewritten address, switching the form and leaving the screen", () => {
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/existingAddress != nil, PasswordV1\.emailNorm\(email\) != existingAddress \{ existingAddress = nil \}/);
+    expect(model).toMatch(/func setMode[\s\S]*?existingAddress = nil[\s\S]*?\n    \}/);
+    expect(model).toMatch(/func leaveWait\(\) \{\s*existingAddress = nil/);
+    expect(model).toMatch(/func submit\(\)[\s\S]*?notice = nil\s*existingAddress = nil/);
+  });
+
+  it("the view draws it from OnboardingText with the reset link (LoginText.forgotPassword, forgotPasswordURL) and no literal", () => {
+    const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
+    const box = view.match(/private var existingAddressBox: some View \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    expect(box).toContain("OnboardingText.existingAddress");
+    expect(box).toContain("OnboardingText.resetLosesMail");
+    expect(box).toContain("forgotPasswordButton");
+    for (const c of ["amberText", "amberBackground", "amberBorder"]) expect(box).toContain(`Palette.${c}`);
+    const button = view.match(/private var forgotPasswordButton: some View \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    expect(button).toContain("openURL(model.forgotPasswordURL)");
+    expect(button).toContain("LoginText.forgotPassword");
+    expect(view).toMatch(/if model\.isExistingAddress \{\s*existingAddressBox\s*\}/);
   });
 });
 

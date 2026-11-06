@@ -33,11 +33,22 @@ final class LoginModel {
     /// N6: an address changed after not_confirmed drops the resend offer (it was for the address before).
     var email = "" {
         didSet {
+            // An address rewritten drops the guidance of the registered address (it was for the address before).
+            if existingAddress != nil, PasswordV1.emailNorm(email) != existingAddress { existingAddress = nil }
             guard canResendConfirmation, PasswordV1.emailNorm(email) != unconfirmedAddress else { return }
             canResendConfirmation = false
             unconfirmedAddress = nil
         }
     }
+    /// The address (email_norm) the waiting screen's sign-in was refused for as credentials: Supabase answers a
+    /// sign-up for a registered address with "sent" and sets no new password. non-nil while the sign-in form shows
+    /// the guidance (OnboardingText.existingAddress, the link to the reset, resetLosesMail). Dropped by the next
+    /// press of the login, a rewritten address, switching the form, starting over and leaving the screen.
+    @ObservationIgnored private var existingAddress: String? {
+        didSet { isExistingAddress = existingAddress != nil }
+    }
+    /// The sign-in form draws the guidance of an address that is already registered.
+    private(set) var isExistingAddress = false
     /// Only in this model's memory; cleared after every press, and when the form changes.
     var password = ""
     /// The sign-up form's second field.
@@ -117,6 +128,7 @@ final class LoginModel {
         notice = nil
         canResendConfirmation = false
         unconfirmedAddress = nil
+        existingAddress = nil
         dropWait()
         turnstile?.reset()
     }
@@ -191,6 +203,7 @@ final class LoginModel {
     /// password all stop. Nothing is sent after this, whatever fires or arrives later. The Web's waiting screen left
     /// these running; here they are stopped and fixed by tests.
     func leaveWait() {
+        existingAddress = nil
         guard isWaitingForConfirmation || timerTask != nil || heldPassword != nil else { return }
         dropWait()
         canResendConfirmation = false
@@ -218,6 +231,7 @@ final class LoginModel {
         defer { isWorking = false }
         errorMessage = nil
         notice = nil
+        existingAddress = nil
         let mode = self.mode
         let address = PasswordV1.emailNorm(email)
         guard AuthService.isValidEmail(address) else {
@@ -361,7 +375,9 @@ final class LoginModel {
             unconfirmedAddress = nil
             // The sign-up's 「確認のメールを送りました…」 does not belong on the form it leaves for.
             notice = nil
-            errorMessage = failure.message
+            // The address had an account already: the sentence says so, in place of the ordinary credentials words.
+            errorMessage = nil
+            existingAddress = address
             return
         case .captcha where !pressed:
             // Silent, and no 60 seconds of waiting (difference 2 in AutoSignIn.swift): the tap on the widget gives a
@@ -450,6 +466,13 @@ extension LoginModel {
         unconfirmedAddress = PasswordV1.emailNorm(email)
         self.notice = notice
         errorMessage = error
+    }
+
+    /// DEBUG only: the sign-in form with the guidance of an address that is already registered (nothing is sent).
+    func debugShowExistingAddress(email: String) {
+        mode = .signIn
+        self.email = email
+        existingAddress = PasswordV1.emailNorm(email)
     }
 
     /// DEBUG only: a given state, for checking the screen on the simulator (nothing is sent).

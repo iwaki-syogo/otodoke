@@ -11,7 +11,7 @@ import UIKit
 @MainActor
 struct OnboardingScreenshots {
     enum Waiting: String, CaseIterable, Sendable {
-        case plain, notYet = "not-yet", resent, error
+        case plain, notYet = "not-yet", resent, error, existing
     }
 
     @Test(arguments: Waiting.allCases)
@@ -24,6 +24,7 @@ struct OnboardingScreenshots {
             case .notYet: model.debugShowWaiting(email: "qa@example.com", notice: OnboardingText.notConfirmedYet)
             case .resent: model.debugShowWaiting(email: "qa@example.com", notice: OnboardingText.resent)
             case .error: model.debugShowWaiting(email: "qa@example.com", error: LoginText.network)
+            case .existing: model.debugShowExistingAddress(email: "qa@example.com")
             }
             try await Self.shoot(LoginView(model: model, withWidget: false), name: "waiting-\(scenario.rawValue)-\(style == .dark ? "dark" : "light")", style: style, height: 900)
         }

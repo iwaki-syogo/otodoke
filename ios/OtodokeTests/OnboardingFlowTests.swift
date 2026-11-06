@@ -288,7 +288,9 @@ struct OnboardingFlowTests {
         #expect(!model.isWaitingForConfirmation)
         #expect(model.mode == .signIn)
         #expect(model.email == FakeSupabase.email)
-        #expect(model.errorMessage == LoginText.credentials)
+        // The registered address's own sentence replaces the ordinary credentials words here (ExistingAddressTests).
+        #expect(model.isExistingAddress)
+        #expect(model.errorMessage == nil)
         #expect(model.password.isEmpty)
     }
 
@@ -845,7 +847,9 @@ struct OnboardingFlowTests {
         await model.checkConfirmation()
         #expect(!model.isWaitingForConfirmation)
         #expect(model.mode == .signIn)
-        #expect(model.errorMessage == LoginText.credentials)
+        // The registered address's own sentence replaces the ordinary credentials words here (ExistingAddressTests).
+        #expect(model.isExistingAddress)
+        #expect(model.errorMessage == nil)
         // The form says only that: not 「確認のメールを送りました…」.
         #expect(model.notice == nil)
         #expect(model.shownNotice == nil)
