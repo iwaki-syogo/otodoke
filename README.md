@@ -35,12 +35,12 @@
 
 実際のメールは要りません。
 
-1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを開いて「確認する」を押し、そのパスワードでログインします
+1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。画面が「確認のメールを送りました」に変わります。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを別のタブで開いて「確認する」を押すと、元のタブが自動でログインし、最初の案内（/app/welcome）に着きます。そこで「あとで」を押します
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
    - 進めないときは次を見てください
      - パスワードは 10 文字以上です。同じ文字のくり返し、1234… や abcd… のような連番、password のようなよくある言葉と数字だけの組み合わせは使えません（アカウントを作る画面にも同じ決まりが出ます）
      - 新規登録とログインでは、人かどうかの確認（Cloudflare Turnstile）が出ます。ボタンが「確認のチェックを押してください」になったら、チェックを押してください。押すと、そのまま進みます。「確認を読み込めませんでした」と出たら、ページを読み込み直すか、別のブラウザで試してください
-     - 確認のメールが来ないときは、アカウントを作る画面で送ったあとに出る「送り直す」を押します
+     - 確認のメールが来ないときは、アカウントを作る画面で送ったあとに出る「メールを送り直す」を押します
      - 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」と出たら、少し待ってからやり直してください
      - それでも届かないときは support@otodoke.app へ書いてください
 2. 「設定」タブの「サンプルで試す」で「サンプルのメールを読み込む」を押します。匿名化した実際のメール 17 通が、今日の日付に合わせて入ります（保存済みの読み取り結果を使うので、Claude API は呼びません）
@@ -75,7 +75,7 @@
 | Claude Sonnet 5.5 | 73/73 | $0.23 |
 | Claude Haiku 5.5 | 73/73 | $0.02 |
 
-Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、これをコード側で直し、最新の測定（2026-11-06）は 73/73 です。匿名化した 341 通では種類の判定を確かめ（314/320）、既定を Haiku にしました。項目の一致を手で付けた正解と照らしたのは、この 17 通だけです。作者の 341 通を本番と同じ処理で読み込んだときの費用は、1 年分で約 0.4 ドルでした。デモボタンの結果は Opus 5.5 で事前に作って保存したもので、あとから人の手が入っています。商品の分類を 17 通すべてに手で付け、読み取りメモ 6 件を null や項目名の出ない日本語に書き直しました。読み取った値は変えていません。
+Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、これをコード側で直し、最新の測定（2026-11-06）は 73/73 です。匿名化した 341 通では種類の判定を確かめ（314/320）、既定を Haiku にしました。項目の一致を手で付けた正解と照らしたのは、この 17 通だけです。作者の 341 通を本番と同じ処理で読み込んだときの費用は、1 年分で約 0.4 ドルでした。デモボタンの結果は Opus 5.5 で事前に作って保存したもので、あとから人の手が入っています。商品の分類を 17 通すべてに手で付け、読み取りメモ 6 件を null や項目名の出ない日本語に書き直しました（読み取った値はこの時点では変えていません）。公開前の匿名化では、伝票番号 4 種類（7 件の読み取りの値と根拠の行）を架空の番号に替え、おすすめ商品について書いたメモ 1 件を消しました。
 
 ### 開発で：Claude Code を中心に、止める仕組みを先に置く
 
@@ -187,7 +187,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 
 ## 持ち込んだデータ
 
-`fixtures/demo/` のメール 17 通は、作者自身が受け取った実際の注文・配送メールから、氏名・住所・電話番号・メールアドレス・注文番号・追跡番号を差し替えたものです。イベント前から存在するデータの持ち込みとして、ここに明記します。コードはすべて期間中の新規制作です。
+`fixtures/demo/` のメール 17 通は、作者自身が受け取った実際の注文・配送メールから、氏名・住所・電話番号・メールアドレス・注文番号・追跡番号を差し替えたものです。2026-11-07 の匿名化では、さらに次を行いました。Message-ID を作り物に差し替え、送信時刻を分に丸め、Amazon の HTML メールにある「おすすめ商品」の欄を消し、追跡番号をチェックディジットの合わない値に替えました。イベント前から存在するデータの持ち込みとして、ここに明記します。コードはすべて期間中の新規制作です。
 
 精度の評価には、同じ方法で匿名化した 341 通を手元で使っています。買い物の履歴そのものなので、公開するのは 17 通だけです。匿名化の手順は `scripts/anonymize.py`、結果の数字は `docs/eval-log.md` にあります。
 
@@ -198,6 +198,7 @@ MIT
 ## Credits
 
 - ロゴの文字は Poppins（SIL Open Font License 1.1）
+- 説明動画（`public/guide/videos` の mp4 3 本）の声は AivisSpeech の「まお」（ACML 1.0）、曲は Mixkit（Mixkit Free License）です。動画の声と曲は MIT ライセンスの対象外です
 
 ## English overview
 
@@ -208,8 +209,9 @@ Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); not
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
 Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database. Parcel data, the evidence lines (short excerpts of the body) and reading notes, sender domains, Message-IDs and Gmail's forwarding-approval links stay plaintext, and this is disclosed in the app. Mail waiting to be read stays unsealed until it is read; mail read before encryption started stays unsealed until you press 「暗号化する」 in settings. Unsealed mail stays in database backups for up to 7 days. Resend, which receives the mail, also keeps a copy for a while. The iOS app can keep the unlocked key in the device keychain behind Face ID / Touch ID; it never leaves the device, is not synced, and is removed on logout.
 A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement: it first matched 71/73 hand-labelled fields on the 17 demo mails (Opus 73/73), the misses were time-slot formats that the code now handles, and the latest run (2026-11-06) is 73/73 at about 1/20 of the cost. Mail types were also checked on all 341 of the author's anonymized mails (314/320). Reading those 341 mails (one year) with the production pipeline cost about $0.4.
-The saved demo results were made with Opus 5.5 and then touched by hand: a category was set on all 17, and six reading notes were reworded in plain Japanese. No extracted value was changed.
+The saved demo results were made with Opus 5.5 and then touched by hand: a category was set on all 17, and six reading notes were reworded in plain Japanese. For the public release, four tracking numbers (in 7 readings, value and evidence line) were swapped for made-up ones and one note about recommended products was removed.
 Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and real-mail runs: the author's 341 mails went through the production pipeline, and an independent agent checked 46 of the 101 parcels against the original mails (errors 20/460 fields, 10/440 after fixes).
+The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the three guide videos in `public/guide/videos` are not covered by the MIT license.
 Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is in internal TestFlight testing only.
-Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) and press 「確認する」, log in with the password, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
-If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
+Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), the page changes to 「確認のメールを送りました」; open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」, and the first tab logs in by itself and lands on the first-run guide (/app/welcome); press 「あとで」, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
+If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
