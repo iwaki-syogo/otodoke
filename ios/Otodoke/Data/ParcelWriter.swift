@@ -66,8 +66,8 @@ struct ParcelWriter: Sendable {
     static let maxAtOnce = 500
 
     let provider: SupabaseProvider
-    /// TDD-STUB(task 6, CX1): where a write tells the other tabs 「古くなった」: published on a success or
-    /// an unknown result, once per bulk call (none when nothing of it succeeded or is unknown).
+    /// CX1: where a write tells the other tabs 「古くなった」: published on a success or an unknown
+    /// result, once per bulk call (none when nothing of it succeeded or is unknown).
     let changes: DataChanges?
 
     init(provider: SupabaseProvider, changes: DataChanges? = nil) {
@@ -78,6 +78,10 @@ struct ParcelWriter: Sendable {
     /// 「届いた」 on the version shown: status → delivered where id, user_id = me, status != cancelled,
     /// status = shown.status and updated_at = shown.updatedAt (sent verbatim).
     func markDelivered(_ shown: ParcelVersion) async -> WriteOutcome<UndoToken> {
+        await announced(deliver(shown))
+    }
+
+    private func deliver(_ shown: ParcelVersion) async -> WriteOutcome<UndoToken> {
         switch await write(id: shown.id, .deliver(shown)) {
         case let .success(after):
             return .success(UndoToken(id: after.id, restoreTo: shown.status, deliveredUpdatedAt: after.updatedAt))
@@ -99,15 +103,20 @@ struct ParcelWriter: Sendable {
         }
         var results: [BulkItemResult<UndoToken>] = []
         for version in shown {
-            results.append(BulkItemResult(id: version.id, outcome: await markDelivered(version)))
+            results.append(BulkItemResult(id: version.id, outcome: await deliver(version)))
             await progress?(results.count)
         }
+        await announce(results.map(\.outcome))
         return results
     }
 
     /// 「元に戻す」: status → token.restoreTo (RESTORABLE only) where id, user_id = me, status = delivered
     /// and updated_at = token.deliveredUpdatedAt.
     func undoDelivered(_ token: UndoToken) async -> WriteOutcome<ParcelVersion> {
+        await announced(restore(token))
+    }
+
+    private func restore(_ token: UndoToken) async -> WriteOutcome<ParcelVersion> {
         await write(id: token.id, .restore(to: token.restoreTo, deliveredUpdatedAt: token.deliveredUpdatedAt))
     }
 
@@ -117,8 +126,9 @@ struct ParcelWriter: Sendable {
         }
         var results: [BulkItemResult<ParcelVersion>] = []
         for token in tokens {
-            results.append(BulkItemResult(id: token.id, outcome: await undoDelivered(token)))
+            results.append(BulkItemResult(id: token.id, outcome: await restore(token)))
         }
+        await announce(results.map(\.outcome))
         return results
     }
 
@@ -142,13 +152,13 @@ struct ParcelWriter: Sendable {
         // Not there (or not ours), or no longer delivered: nothing to put back.
         guard let row = rows.first, row.status == "delivered" else { return .notUpdated(.conflict) }
         let to = StatusRules.undeliveredStatus(trackingNumber: row.trackingNumber, carrier: row.carrier)
-        return await write(id: id, .restore(to: to, deliveredUpdatedAt: row.updatedAt))
+        return await announced(write(id: id, .restore(to: to, deliveredUpdatedAt: row.updatedAt)))
     }
 
     /// category = one of the seven, category_source = "user", where updated_at = shown.updatedAt (sent
     /// verbatim). 0 rows: the parcel changed since it was shown, or is gone (conflict).
     func setCategory(_ shown: ParcelVersion, category: ParcelCategory) async -> WriteOutcome<ParcelVersion> {
-        await write(id: shown.id, .category(category, updatedAt: shown.updatedAt))
+        await announced(write(id: shown.id, .category(category, updatedAt: shown.updatedAt)))
     }
 
     /// The same, on the version read now (updated_at, then the write conditioned on it), for a caller
@@ -169,7 +179,27 @@ struct ParcelWriter: Sendable {
         }
         guard rows.count <= 1 else { return .notUpdated(.failed) }
         guard let row = rows.first else { return .notUpdated(.conflict) }
-        return await write(id: id, .category(category, updatedAt: row.updatedAt))
+        return await announced(write(id: id, .category(category, updatedAt: row.updatedAt)))
+    }
+
+    // MARK: 「古くなった」 (CX1)
+
+    /// Publishes once when any of the outcomes may have changed a row (a success or an unknown result).
+    private func announce<T>(_ outcomes: [WriteOutcome<T>]) async {
+        guard let changes, outcomes.contains(where: Self.mayHaveWritten) else { return }
+        await changes.publish()
+    }
+
+    private func announced<T>(_ outcome: WriteOutcome<T>) async -> WriteOutcome<T> {
+        await announce([outcome])
+        return outcome
+    }
+
+    private static func mayHaveWritten<T>(_ outcome: WriteOutcome<T>) -> Bool {
+        switch outcome {
+        case .success, .unknown: true
+        case .notUpdated: false
+        }
     }
 
     // MARK: the one write

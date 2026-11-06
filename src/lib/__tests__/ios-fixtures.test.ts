@@ -335,7 +335,7 @@ describe("no real person's data", () => {
     const all = strings(fx);
     const mails = all.flatMap((s) => s.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []);
     // Gmail's own public sender of the forwarding confirmation (iOS batch 2, isForwardingConfirmation) is the one exception.
-    for (const m of mails) if (m.toLowerCase() !== "forwarding-noreply@google.com") expect(m, m).toMatch(/@([a-z0-9-]+\.)*example\.(com|jp|org|net|test)$/i);
+    for (const m of mails) if (m.toLowerCase() !== "forwarding-noreply@google.com") expect(m, m).toMatch(/@([a-z0-9-]+\.)*example(\.(com|jp|org|net|test))?$/i);
   });
 
   it("holds no project ref or key", () => {

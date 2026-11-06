@@ -1,4 +1,3 @@
-// TDD-STUB(task 6) — agreed API, placeholder bodies. Remove this marker once written.
 // The fence of ParcelListModel.finishRead as one type (NtH-5): each read gets a ticket; a newer read
 // makes an older ticket superseded; a write in flight, or one that started or ended since the ticket
 // was taken, makes it stale. M1: the calendar, spend and settings models use it (list and detail: T24).
@@ -21,11 +20,31 @@ struct ReadFence: Sendable {
     }
 
     private(set) var writesInFlight = 0
+    /// The number of the newest read.
+    private var readNumber = 0
+    /// Moves on when a write starts and when it ends.
+    private var writeGeneration = 0
 
     init() {}
 
-    mutating func beginRead() -> Ticket { Ticket(number: 0, generation: 0) }
-    mutating func beginWrite() {}
-    mutating func endWrite() {}
-    func verdict(_ ticket: Ticket) -> Verdict { .current }
+    mutating func beginRead() -> Ticket {
+        readNumber &+= 1
+        return Ticket(number: readNumber, generation: writeGeneration)
+    }
+
+    mutating func beginWrite() {
+        writesInFlight += 1
+        writeGeneration &+= 1
+    }
+
+    mutating func endWrite() {
+        writesInFlight = max(0, writesInFlight - 1)
+        writeGeneration &+= 1
+    }
+
+    func verdict(_ ticket: Ticket) -> Verdict {
+        guard ticket.number == readNumber else { return .superseded }
+        guard ticket.generation == writeGeneration, writesInFlight == 0 else { return .stale }
+        return .current
+    }
 }
