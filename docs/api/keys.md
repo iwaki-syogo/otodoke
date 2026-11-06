@@ -21,9 +21,12 @@ How the client makes the values (email_norm, auth_secret, KEK, the wrap): `docs/
 - **Body**: a JSON object with exactly the fields below. A missing field, another type, or **any extra field**
   is refused (`400 invalid_input`). Body at most 16 KB.
 - **Freshness (decision 10)**: the session must have signed in with the password in the last 15 minutes
-  (the `amr` claim of the token: `{ "method": "password", "timestamp": ... }`). An older session gets
-  `403 stale_session`: sign in with the password again, then repeat the step. Refreshing the token does not
-  help: the time is when the user signed in, kept across refreshes.
+  (the `amr` claim of the token: `{ "method": "password", "timestamp": ... }`), for every endpoint. Only
+  `password` counts. A session from the 8-digit code, a magic link or a reset link gets `403 stale_session`
+  however new it is: Supabase records `otp` for every mail token it verifies, so such a session only shows
+  that someone read the mailbox, and the app does not reset. An older password session gets the same
+  `403 stale_session`. Either way: sign in with the password, then repeat the step. Refreshing the token does
+  not help: the time is when the user signed in, kept across refreshes.
 - **Answer**: JSON, `Cache-Control: no-store`.
   - Success: `200` and `{ "ok": true, ... }`.
   - Failure: `{ "ok": false, "code": "<code>" }` with the status in the table below. The code is fixed; no
@@ -34,7 +37,7 @@ How the client makes the values (email_norm, auth_secret, KEK, the wrap): `docs/
 | Status | `code` | Meaning | What the app does |
 |---|---|---|---|
 | 401 | `unauthorized` | No Bearer token, not a JWT, or Supabase Auth refused it (expired, signed out, forged). | Sign in again. |
-| 403 | `stale_session` | Signed in more than 15 minutes ago. | Sign in with the password again, then repeat. |
+| 403 | `stale_session` | Not signed in with the password in the last 15 minutes: longer ago, or with the 8-digit code or a link. | Sign in with the password again, then repeat. |
 | 400 | `invalid_input` | The body is not JSON, too long, has an unknown or missing field, or a value of the wrong form (base64, lengths, `kdfIterations` < 600000). | A bug in the app: do not repeat as is. |
 | 409 | `key_in_use_changed` | The key in use is not `expectedCurrentKeyId` (another device made or replaced a key meanwhile). Postgres `P0001` of `activate_user_key_checked`. | Read `user_keys` again and start over. Nothing changed. |
 | 409 | `key_not_pending` | No pending key with this `keyId` and challenge (`P0002`): never registered, replaced by a newer registration, or activated already. | Start over from register. |

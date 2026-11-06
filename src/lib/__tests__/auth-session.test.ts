@@ -3,10 +3,11 @@ import { amrEntries, bearerToken, checkFresh, FRESH_AUTH_MS, isFresh, tokenClaim
 import { KEY_SESSION_STALE } from "@/lib/login-errors";
 
 /**
- * Decision 10: making or replacing a key needs a session that signed in with the password, or came
- * from a reset link, in the last 15 minutes. auth-session.ts reads that from the `amr` claim of an
- * access token Supabase Auth accepted (getUser(token)); the key Actions of 設定 and the iOS key API
- * refuse an older one.
+ * Decision 10 (with review R3-PW-2): putting a key in use or rewrapping it needs a sign-in with the
+ * password in the last 15 minutes; registering one on the web takes a reset link's session too.
+ * auth-session.ts reads that from the `amr` claim of an access token Supabase Auth accepted
+ * (getUser(token)); the key Actions of 設定 and the iOS key API refuse any other session.
+ * key-steps-need-the-password.test.ts has the sessions from a mail's token.
  */
 
 const NOW = Date.UTC(2026, 10, 6, 13, 0, 0);
@@ -45,13 +46,14 @@ describe("fresh enough", () => {
     ["password", 0, true],
     ["password", FRESH_AUTH_MS, true],
     ["password", FRESH_AUTH_MS + 1000, false],
-    ["otp", 60_000, true],
-    ["recovery", 60_000, true],
-    ["magiclink", 60_000, true],
+    // A mail's token (the 8-digit code, a magic link, a reset link) is not the password.
+    ["otp", 60_000, false],
+    ["recovery", 60_000, false],
+    ["magiclink", 60_000, false],
     ["oauth", 60_000, false],
     ["token_refresh", 60_000, false],
-  ] as const)("for a key: %s, %i ms ago → %s", (method, ago, fresh) => {
-    expect(isFresh(amrEntries(tokenClaims(token(method, ago))?.amr), "key", NOW)).toBe(fresh);
+  ] as const)("for putting a key in use: %s, %i ms ago → %s", (method, ago, fresh) => {
+    expect(isFresh(amrEntries(tokenClaims(token(method, ago))?.amr), "login", NOW)).toBe(fresh);
   });
 
   it("for a reset, only a mail's token counts (a reset link): the password alone does not", () => {
@@ -66,23 +68,25 @@ describe("fresh enough", () => {
       { method: "otp", timestamp: seconds(NOW - 3 * 3_600_000) },
       { method: "password", timestamp: seconds(NOW - 60_000) },
     ]);
-    expect(isFresh(amr, "key", NOW)).toBe(true);
+    expect(isFresh(amr, "login", NOW)).toBe(true);
     expect(isFresh(amr, "reset", NOW)).toBe(false);
   });
 
   it("does not count an entry without a time (the string form), nor one far in the future", () => {
-    expect(isFresh(amrEntries(["password"]), "key", NOW)).toBe(false);
-    expect(isFresh(amrEntries([{ method: "password", timestamp: seconds(NOW + 3_600_000) }]), "key", NOW)).toBe(false);
+    expect(isFresh(amrEntries(["password"]), "login", NOW)).toBe(false);
+    expect(isFresh(amrEntries([{ method: "password", timestamp: seconds(NOW + 3_600_000) }]), "login", NOW)).toBe(false);
     // A clock a little ahead is fine.
-    expect(isFresh(amrEntries([{ method: "password", timestamp: seconds(NOW + 60_000) }]), "key", NOW)).toBe(true);
+    expect(isFresh(amrEntries([{ method: "password", timestamp: seconds(NOW + 60_000) }]), "login", NOW)).toBe(true);
   });
 
   it("checkFresh says why: signed out, stale, or Supabase could not be asked", () => {
     const signedIn = (amr: unknown): SessionRead => ({ state: "signed_in", session: { userId: "user-1", email: null, amr: amrEntries(amr) } });
-    expect(checkFresh({ state: "signed_out" }, "key", NOW)).toEqual({ ok: false, reason: "signed_out" });
-    expect(checkFresh({ state: "unknown" }, "key", NOW)).toEqual({ ok: false, reason: "unknown" });
-    expect(checkFresh(signedIn([{ method: "password", timestamp: seconds(NOW - 2 * FRESH_AUTH_MS) }]), "key", NOW)).toEqual({ ok: false, reason: "stale" });
-    expect(checkFresh(signedIn([{ method: "password", timestamp: seconds(NOW) }]), "key", NOW).ok).toBe(true);
+    expect(checkFresh({ state: "signed_out" }, "login", NOW)).toEqual({ ok: false, reason: "signed_out" });
+    expect(checkFresh({ state: "unknown" }, "login", NOW)).toEqual({ ok: false, reason: "unknown" });
+    expect(checkFresh(signedIn([{ method: "password", timestamp: seconds(NOW - 2 * FRESH_AUTH_MS) }]), "login", NOW)).toEqual({ ok: false, reason: "stale" });
+    expect(checkFresh(signedIn([{ method: "password", timestamp: seconds(NOW) }]), "login", NOW).ok).toBe(true);
+    // A mail's token is "stale" too: the screen asks to log in (with the password) again.
+    expect(checkFresh(signedIn([{ method: "otp", timestamp: seconds(NOW) }]), "login", NOW)).toEqual({ ok: false, reason: "stale" });
   });
 });
 
@@ -151,9 +155,13 @@ describe("the key Actions of 設定 need a fresh session", () => {
     expect(step).toHaveBeenCalledWith({ admin: true }, "user-1", expect.any(Object));
   });
 
-  it.each(steps)("%s goes ahead within 15 minutes of a reset link", async (_name, run) => {
+  it("within 15 minutes of a reset link, only registering goes ahead (the reset's key is put in use by finishReset)", async () => {
     session(token("otp", 60_000));
-    expect((await run()).ok).toBe(true);
+    expect((await keys.registerMailKey(REGISTRATION)).ok).toBe(true);
+    expect(await keys.activateMailKey(ACTIVATION)).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect(await keys.rewrapMailKey(REWRAP)).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect(store.activate).not.toHaveBeenCalled();
+    expect(store.rewrap).not.toHaveBeenCalled();
   });
 
   it.each(steps)("%s refuses an older session with KEY_SESSION_STALE and changes nothing", async (_name, run, step) => {

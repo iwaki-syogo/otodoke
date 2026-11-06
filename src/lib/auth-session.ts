@@ -16,12 +16,15 @@ import { createClient } from "@/lib/supabase/server";
  * - The methods a mail's token gives (the reset link through verifyOtp): Supabase's verify endpoint
  *   records `otp` for a token_hash it accepts, whatever its type; `recovery` and `magiclink` are
  *   taken too, in case a version records the type. All of them prove the same thing: whoever holds
- *   the session read the account's mailbox at that time, which is what a reset needs. On the web a
- *   fresh such session only comes from a reset link: /auth/confirm verifies every other link in a
- *   client of its own and throws the session away.
+ *   the session read the account's mailbox at that time, which is what a reset needs. They cannot
+ *   be told apart: the 8-digit code and the magic link (still on for the iOS app's second build)
+ *   make the same `otp` as a reset link.
  *
- * Decision 10: making or replacing a key needs a session that signed in with the password, or came
- * from a reset link, in the last 15 minutes.
+ * Decision 10, with review R3-PW-2: putting a key in use or wrapping it again needs a sign-in with
+ * the password in the last 15 minutes. A mail's token is not enough: with it, whoever reads the
+ * mailbox could retire the user's key, or store a wrap that opens with nothing, while the password
+ * stays the same. A reset link's session may only register a key (waiting, used for nothing):
+ * finishReset puts it in use, in the same call that sets the new password.
  */
 export const FRESH_AUTH_MS = 15 * 60 * 1000;
 
@@ -61,15 +64,24 @@ export function amrEntries(amr: unknown): AmrEntry[] {
 }
 
 /**
- * What a step needs:
- * - `key`: making, putting in use or rewrapping a key (password or reset link, 15 minutes).
- * - `reset`: setting a new password without the old one (a reset link, 15 minutes).
+ * What a step needs, each within FRESH_AUTH_MS:
+ * - `login`: a sign-in with the password, only. Putting a key in use and wrapping it again on the
+ *   web (activateMailKey, rewrapMailKey), and every step of the iOS key API (the app does not reset).
+ * - `login_or_reset`: that, or a reset link. Registering a key on the web (registerMailKey): the
+ *   reset registers the key for the new password before finishReset puts it in use.
+ * - `reset`: a reset link, only. Setting a new password without the old one (finishReset).
  */
-export type Freshness = "key" | "reset";
+export type Freshness = "login" | "login_or_reset" | "reset";
+
+const METHODS: Record<Freshness, readonly string[]> = {
+  login: PASSWORD_METHODS,
+  login_or_reset: [...PASSWORD_METHODS, ...MAILBOX_METHODS],
+  reset: MAILBOX_METHODS,
+};
 
 /** Whether `amr` shows a sign-in of the kind `need` within FRESH_AUTH_MS of `now`. */
 export function isFresh(amr: AmrEntry[], need: Freshness, now = Date.now()): boolean {
-  const methods = need === "reset" ? MAILBOX_METHODS : [...PASSWORD_METHODS, ...MAILBOX_METHODS];
+  const methods = METHODS[need];
   return amr.some((e) => methods.includes(e.method) && e.at !== null && now - e.at <= FRESH_AUTH_MS && e.at - now <= CLOCK_SKEW_MS);
 }
 

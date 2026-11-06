@@ -10,8 +10,9 @@ import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
  *
  * - POST only (Next.js answers 405 for anything else), JSON in and out, no CORS (a native app).
  * - `Authorization: Bearer <the Supabase access token of the user>`, checked by Supabase Auth
- *   (getUser(token)), and fresh: signed in with the password, or from a reset link, in the last 15
- *   minutes (src/lib/auth-session.ts).
+ *   (getUser(token)), and fresh: signed in with the password in the last 15 minutes, for every step
+ *   (src/lib/auth-session.ts `login`). A session from the 8-digit code, a magic link or a reset link
+ *   is refused (review R3-PW-2): the app does not reset, and the code still signs in to its second build.
  * - The body is parsed strictly (the mail-keys schemas): an unknown field is refused.
  * - The answer: 200 { ok: true, ... } or { ok: false, code } with the status below. docs/api/keys.md.
  */
@@ -61,7 +62,7 @@ export async function keyStep<I, T extends object>(
   schema: ZodType<I>,
   run: (db: AdminClient, userId: string, input: I) => Promise<KeyResult<T>>,
 ): Promise<Response> {
-  const check = checkFresh(await readBearerSession(request.headers.get("authorization")), "key");
+  const check = checkFresh(await readBearerSession(request.headers.get("authorization")), "login");
   if (!check.ok) {
     if (check.reason === "unknown") return failure("unavailable");
     return failure(check.reason === "stale" ? "stale_session" : "unauthorized");
