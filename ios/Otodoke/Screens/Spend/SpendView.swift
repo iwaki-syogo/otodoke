@@ -55,7 +55,7 @@ struct SpendView<Detail: View>: View {
 
     @ViewBuilder
     private func spinner(_ key: String) -> some View {
-        if isMoving && pressed == key {
+        if SpendSpinner.shows(pressed: pressed, key: key, isMoving: isMoving) {
             ProgressView().controlSize(.mini)
         }
     }
@@ -187,7 +187,7 @@ struct SpendView<Detail: View>: View {
         } label: {
             VStack(spacing: 6) {
                 HStack(spacing: 8) {
-                    if isMoving && pressed == key {
+                    if SpendSpinner.shows(pressed: pressed, key: key, isMoving: isMoving) {
                         ProgressView().controlSize(.mini).frame(width: 10, height: 10)
                     } else {
                         Circle().fill(color).frame(width: 10, height: 10)
@@ -307,7 +307,7 @@ struct SpendView<Detail: View>: View {
         } label: {
             HStack(spacing: 4) {
                 Text(label).lineLimit(1).underline()
-                if isMoving && pressed == key {
+                if SpendSpinner.shows(pressed: pressed, key: key, isMoving: isMoving) {
                     ProgressView().controlSize(.mini)
                 } else {
                     Text("×")
@@ -322,6 +322,11 @@ struct SpendView<Detail: View>: View {
     }
 }
 
+/// [N-new1] The pressed control's spinner: keys compared on UTF-16 units (JSText.equal), as the shop
+/// rows are keyed (Codex #4), so two canonically equivalent shop names do not both spin.
 enum SpendSpinner {
-    static func shows(pressed: String?, key: String, isMoving: Bool) -> Bool { isMoving && pressed == key } // TDD-STUB [N-new1]
+    static func shows(pressed: String?, key: String, isMoving: Bool) -> Bool {
+        guard isMoving, let pressed else { return false }
+        return JSText.equal(pressed, key)
+    }
 }

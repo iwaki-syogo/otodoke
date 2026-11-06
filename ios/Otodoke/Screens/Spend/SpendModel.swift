@@ -74,6 +74,8 @@ final class SpendModel {
     @ObservationIgnored private var moveWaitsForSave = false
     /// [S1] The last read was cut off (its .task cancelled): the next appearance reads again.
     @ObservationIgnored private var wasCutOff = false
+    /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
+    @ObservationIgnored private var cutOff: CutOffSignal?
 
     init(reader: ParcelReader, writer: ParcelWriter, changes: DataChanges?, today: @escaping @Sendable () -> String) {
         self.reader = reader
@@ -91,7 +93,9 @@ final class SpendModel {
 
     /// The results are shown faded while a move is on the way.
     var isDimmed: Bool { pendingMove != nil }
-    var categoryLocked: Bool { false } // TDD-STUB [S-new1]
+    /// [S-new1] The chips are disabled (and setCategory refused) while a move is on the way: a save
+    /// that ended in conflict or unknown would read the conditions from before the move.
+    var categoryLocked: Bool { pendingMove != nil }
     var bounds: MonthBounds { MonthBounds(today: today()) }
     /// Today's month (the 「月」 of the period switch).
     var thisMonth: String { Format.monthOf(today()) }
@@ -231,7 +235,7 @@ final class SpendModel {
     /// figures worked out again. Conflict or unknown: read again (never sent again). Failed: the old
     /// category stays, with categoryFailed.
     func setCategory(parcelID id: String, to chosen: ParcelCategory) async {
-        guard !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
+        guard !categoryLocked, !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
         savingCategory.insert(id)
         categoryErrors[id] = nil
         fence.beginWrite()
@@ -271,7 +275,7 @@ final class SpendModel {
     }
 
     func onAppear() async {
-        if parcels == nil || parcels == .failed || mark.isStale || wasCutOff { await load() }
+        if parcels == nil || parcels == .failed || mark.isStale || wasCutOff || cutOff?.isRaised == true { await load() }
     }
 
     func sceneBecameActive() async {
@@ -300,14 +304,24 @@ final class SpendModel {
         readAfterWrites = nil
         while true {
             let ticket = fence.beginRead()
+            let signal = CutOffSignal()
+            cutOff = signal
             mark.markRead()
-            let result = await reader.allParcels(excludingCancelled: true)
+            let reader = self.reader
+            let result = await withTaskCancellationHandler {
+                await reader.allParcels(excludingCancelled: true)
+            } onCancel: {
+                signal.raise()
+            }
+            let verdict = fence.verdict(ticket)
+            // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
+            if verdict == .superseded { return }
             // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
             if Task.isCancelled {
                 wasCutOff = true
                 return
             }
-            switch fence.verdict(ticket) {
+            switch verdict {
             case .superseded:
                 return
             case .current:
