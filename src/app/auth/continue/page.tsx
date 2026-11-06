@@ -66,13 +66,17 @@ function TokenForm({
  * link pressed again once signed in (used up by this very sign-in, an old one in another tab)
  * comes back without a word. From the URL, which anyone can write: it is only shown, never
  * followed, and the wording is fixed.
+ *
+ * That answer never carries a token, so with one nothing is said: a URL made with someone's own
+ * token and link=refused would otherwise show a refusal that did not happen right above the switch
+ * button that signs in to their account. GET /auth/confirm does not carry the mark either.
  */
 export default async function ContinuePage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const tokenHash = first(params.token_hash);
   const type = first(params.type);
   const next = safeNextPath(first(params.next) ?? null);
-  const switchRefused = first(params.link) === "refused";
+  const switchRefused = first(params.link) === "refused" && !tokenHash;
   const user = await signedInUser();
 
   if (user) {

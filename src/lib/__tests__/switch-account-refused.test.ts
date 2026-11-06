@@ -37,7 +37,7 @@ vi.mock("next/link", async () => {
   return { default: Link };
 });
 
-const { POST } = await import("@/app/auth/confirm/route");
+const { GET, POST } = await import("@/app/auth/confirm/route");
 const ContinuePage = (await import("@/app/auth/continue/page")).default as unknown as (p: {
   searchParams: Promise<Record<string, string | string[]>>;
 }) => Promise<Parameters<typeof renderToStaticMarkup>[0]>;
@@ -89,6 +89,13 @@ async function post(fields: Record<string, string>, headers: Record<string, stri
   for (const [name, value] of Object.entries(fields)) body.set(name, value);
   const res = await POST(new NextRequest("https://otodoke.app/auth/confirm", { method: "POST", body, headers }));
   expect(res.status).toBe(303);
+  return res.headers.get("location")!;
+}
+
+/** Opens a link to /auth/confirm (a path with its query), as a mail's button does; the Location. */
+async function open(url: string): Promise<string> {
+  const res = await GET(new NextRequest(new URL(url, "https://otodoke.app")));
+  expect(res.status).toBe(307);
   return res.headers.get("location")!;
 }
 
@@ -195,5 +202,58 @@ describe("the continue page", () => {
     const signedOut = await continuePage("/auth/continue?link=refused");
     expect(notices(signedOut)).toHaveLength(0);
     expect(heading(signedOut)).toEqual(["Otodoke にログインしますか？"]);
+  });
+});
+
+/**
+ * [Review R3-28] A URL made with someone's own token and link=refused (they ask for a login mail
+ * to their address and take its token_hash). GET /auth/confirm passed its whole query on, so a
+ * person signed in saw 「このリンクは使えませんでした。」, a refusal that did not happen, right
+ * above 「別のアカウントでログインする」, which posts that token and signs in to their account.
+ *
+ * Two stops, each tested on its own: either one alone closes the way, so a test that follows the
+ * made URL from end to end stays green with one of them gone.
+ * - The page says nothing when its URL carries a token: the answer to a refused switch never does.
+ * - GET /auth/confirm carries only the link's token_hash, type and next.
+ */
+describe("[R3-28] a URL made with someone's token and link=refused", () => {
+  const MADE = "TOKEN-OF-THE-ONE-WHO-MADE-THE-URL";
+  beforeEach(() => signedInAs("a@example.com"));
+
+  it("the page says nothing when its URL carries a token (the page on its own)", async () => {
+    const made = await continuePage(`/auth/continue?token_hash=${MADE}&type=email&link=refused`);
+    expect(notices(made)).toHaveLength(0);
+    expect(textOf(made)).not.toContain("使えませんでした");
+    // The switch button is as before: it was always there for a link with a token.
+    expect(fieldsOf(formOf(made, "別のアカウントでログインする"))).toMatchObject({ token_hash: MADE, intent: "switch_account" });
+    // A token without a type draws no switch button; nothing is said either.
+    expect(notices(await continuePage(`/auth/continue?token_hash=${MADE}&link=refused`))).toHaveLength(0);
+  });
+
+  it("GET /auth/confirm carries the link's token_hash, type and next, and never link=refused (the route on its own)", async () => {
+    const carried = new URL(await open(`/auth/confirm?token_hash=${MADE}&type=email&next=%2Fapp%2Fsettings&link=refused`), "https://otodoke.app");
+    expect(carried.pathname).toBe("/auth/continue");
+    expect([...carried.searchParams]).toEqual([
+      ["token_hash", MADE],
+      ["type", "email"],
+      ["next", "/app/settings"],
+    ]);
+    // The mark alone, or anything else a link holds, is not carried either.
+    expect(await open("/auth/confirm?link=refused")).toBe("/auth/continue");
+    expect(await open("/auth/confirm?link=refused&error=x&token_hash=t&type=email")).toBe("/auth/continue?token_hash=t&type=email");
+    // A field written twice keeps both, in order: the page takes the first, as before.
+    const twice = new URL(await open("/auth/confirm?token_hash=first&token_hash=second&type=email"), "https://otodoke.app");
+    expect(twice.searchParams.getAll("token_hash")).toEqual(["first", "second"]);
+  });
+
+  it("opened from the mail's button, the made URL shows no refusal", async () => {
+    const location = await open(`/auth/confirm?token_hash=${MADE}&type=email&link=refused`);
+    expect(notices(await continuePage(location))).toHaveLength(0);
+  });
+
+  it("a refused switch still comes back saying so: its answer carries no token", async () => {
+    const location = await post({ token_hash: TOKEN, type: "email", next: "/app/settings", intent: "switch_account" });
+    expect(new URL(location, "https://otodoke.app").searchParams.has("token_hash")).toBe(false);
+    expect(notices(await continuePage(location))).toHaveLength(1);
   });
 });
