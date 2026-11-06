@@ -30,6 +30,7 @@ export const BEFORE_YOU_START: string[] = [
   "Otodoke の設定の「メールの転送」で、あなた専用の転送先アドレスをコピーしておきます。",
   "アドレスは …@in.otodoke.app の形です。知らない人には教えないでください。",
 ];
+export const BEFORE_YOU_START_ACTION = "転送先アドレスを開く";
 
 export interface ForwardingStep {
   text: string;

@@ -4,6 +4,7 @@ import { Wordmark } from "@/components/wordmark";
 import { GuideGroups, PitfallBody } from "@/components/forwarding-steps";
 import {
   BEFORE_YOU_START,
+  BEFORE_YOU_START_ACTION,
   BEFORE_YOU_START_HEADING,
   FORWARDING_CHECK,
   FORWARDING_CHECK_ACTION,
@@ -108,6 +109,9 @@ export default function ForwardingGuidePage() {
             <li key={t}>{t}</li>
           ))}
         </ul>
+        <Link href="/app/settings/forwarding" className={`${SECONDARY_BUTTON} mt-4`}>
+          {BEFORE_YOU_START_ACTION}
+        </Link>
       </section>
 
       {FORWARDING_GUIDES.map((g) => (
