@@ -51,11 +51,11 @@ final class AuthService {
     let provider: SupabaseProvider
     @ObservationIgnored private var events: Task<Void, Never>?
 
-    /// TDD-STUB(task 16): the signed-in state's generation (Codex-001). Moves on at sign-out and when the
-    /// signed-in user changes; work that started under an older one is thrown away.
+    /// The signed-in state's generation (Codex-001). Moves on at sign-out and when the signed-in user
+    /// changes; work that started under an older one is thrown away.
     let session = SessionGeneration()
-    /// TDD-STUB(task 16): sign-out's steps ② ③ ④ (the opened key's store). signOut() runs ① (session
-    /// moves on) and then cleanup's cancelWork, dropMemory, deleteKeychainKey, in this order.
+    /// Sign-out's steps ② ③ ④ (the opened key's store). signOut() runs ① (session moves on) and then
+    /// cleanup's cancelWork, dropMemory, deleteKeychainKey, in this order.
     @ObservationIgnored var cleanup: (any SignOutCleanup)?
 
     init(provider: SupabaseProvider) {
@@ -84,6 +84,7 @@ final class AuthService {
     func checkSession() async {
         guard provider.auth.currentSession != nil else {
             state = .signedOut
+            session.update(userID: nil)
             return
         }
         do {
@@ -128,8 +129,14 @@ final class AuthService {
         apply(session)
     }
 
-    /// signOut(scope: .local). Always ends signed out on this device.
+    /// signOut(scope: .local). Always ends signed out on this device. First, on this device: ① the generation
+    /// moves on ② work in flight is cancelled ③ the key and the plaintext in memory go ④ the Keychain item goes.
     func signOut() async {
+        session.advance()
+        session.update(userID: nil)
+        cleanup?.cancelWork()
+        cleanup?.dropMemory()
+        cleanup?.deleteKeychainKey()
         do {
             try await provider.auth.signOut(scope: .local)
         } catch {
@@ -140,6 +147,7 @@ final class AuthService {
             provider.clearStoredSession()
         }
         state = .signedOut
+        session.update(userID: nil)
     }
 
     /// Trimmed and lowercased, as the Web's login does.
@@ -154,9 +162,12 @@ final class AuthService {
 
     private func apply(_ session: Session?) {
         if let session {
-            state = .signedIn(userID: session.user.id.uuidString.lowercased())
+            let userID = session.user.id.uuidString.lowercased()
+            state = .signedIn(userID: userID)
+            self.session.update(userID: userID)
         } else {
             state = .signedOut
+            self.session.update(userID: nil)
         }
     }
 

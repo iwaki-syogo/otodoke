@@ -64,7 +64,7 @@ final class MainScreens {
         let reader = ParcelReader(provider: auth.provider)
         let writer = ParcelWriter(provider: auth.provider, changes: changes)
         let today: @Sendable () -> String = { Format.todayJst(now: Date()) }
-        return MainScreens(
+        let screens = MainScreens(
             changes: changes,
             list: .live(reader: reader, writer: writer),
             calendar: CalendarModel(reader: reader, changes: changes, today: today),
@@ -72,6 +72,8 @@ final class MainScreens {
             settings: .live(auth: auth, changes: changes),
             detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
         )
+        screens.attachKeys(auth: auth)
+        return screens
     }
 
     /// TDD-STUB(task 16, task 17, task 19): the opened key's store (also AuthService.cleanup), the one
@@ -143,6 +145,8 @@ struct MainTabView: View {
             switch phase {
             case .background:
                 wasInBackground = true
+                // CX2: the opened key and every opened mail go; work in flight is cancelled.
+                screens.keys?.wentToBackground()
             case .active:
                 // Back in front (not a system sheet over the app): the screen shown reads again.
                 guard wasInBackground else { return }
