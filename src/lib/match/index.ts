@@ -1,5 +1,5 @@
 import type { Database } from "@/lib/db/database.types";
-import type { Extraction, OtherOrder, Relevance } from "@/lib/extract/schema";
+import { DB_INT_MAX, storableInt, type Extraction, type OtherOrder, type Relevance } from "@/lib/extract/schema";
 import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
 import { addDays, todayJst } from "@/lib/format";
 import { categoryForInsert, categoryForUpdate } from "./category";
@@ -388,23 +388,27 @@ const STATED_OUTRIGHT = 0.9;
  */
 export function parcelTotal(mails: Extraction[]): number | null {
   const orderMails = mails.filter((m) => ORDER_MAILS.includes(m.relevance));
-  const stated = orderMails.map((m) => m.total_amount).filter((f) => f.value && f.confidence >= MIN_CONFIDENCE);
+  // storableInt: a reading saved before extract.ts bounded its numbers may hold one the column cannot.
+  const stated = orderMails.map((m) => m.total_amount).filter((f) => storableInt(f.value) && f.confidence >= MIN_CONFIDENCE);
   const firm = stated.filter((f) => f.confidence >= STATED_OUTRIGHT).at(-1)?.value ?? null;
   const weak = stated.at(-1)?.value ?? 0;
 
   const listed = orderMails.find((m) => m.items.length > 0)?.items ?? [];
-  const itemSum = listed.length > 0 && listed.every((i) => i.unit_price !== null) ? listed.reduce((sum, i) => sum + (i.unit_price ?? 0) * (i.quantity ?? 1), 0) : 0;
+  const listedSum = listed.length > 0 && listed.every((i) => i.unit_price !== null) ? listed.reduce((sum, i) => sum + (i.unit_price ?? 0) * (i.quantity ?? 1), 0) : 0;
+  // Each price fits the column, their sum may not: then the item list says nothing about the cost.
+  const itemSum = listedSum <= DB_INT_MAX ? listedSum : 0;
 
   // A set: the same mail may be delivered twice, while parts of one order state different amounts.
   const shipments = new Set<number>();
   for (const m of mails) {
-    const total = m.total_amount;
-    if (SHIPMENT_MAILS.includes(m.relevance) && total.value && total.confidence >= MIN_CONFIDENCE) shipments.add(total.value);
+    const amount = storableInt(m.total_amount.value);
+    if (SHIPMENT_MAILS.includes(m.relevance) && amount && m.total_amount.confidence >= MIN_CONFIDENCE) shipments.add(amount);
   }
   const shipped = [...shipments].reduce((a, b) => a + b, 0);
 
   const total = shipped > 0 ? Math.max(shipped, firm ?? 0) : (firm ?? Math.max(weak, itemSum));
-  return total > 0 ? total : null;
+  // Shipments that add up past the column are unknown too, rather than a write that always fails.
+  return total > 0 && total <= DB_INT_MAX ? total : null;
 }
 
 /** How long past its date a parcel waits before the user is asked whether it came. */
