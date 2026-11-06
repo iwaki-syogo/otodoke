@@ -168,7 +168,7 @@ const SAID_IN_BOTH = [
   // says. No final 「。」: README's list items end without one.
   "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します",
   // The iOS app's keychain copy of the opened key. No final 「。」: README's list items end without one.
-  "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます",
+  "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、アプリの設定で切ることもできます",
 ];
 
 describe("/app/settings: あなたのメールの扱い", () => {
@@ -286,7 +286,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
   it("the Web list has the iOS Keychain sentence word for word (iOS compares it; README gets it from another change)", async () => {
     const text = textOf(findAll(await render("mail-handling"), (n) => n.tag === "section")[0]);
     expect(text).toContain(
-      "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。",
+      "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、アプリの設定で切ることもできます。",
     );
   });
 

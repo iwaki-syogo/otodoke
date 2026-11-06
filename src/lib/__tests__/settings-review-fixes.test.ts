@@ -164,6 +164,6 @@ describe("/app/settings: the signed-in address and the Gmail note", () => {
   it("does not promise that private mail never arrives", async () => {
     const all = textOf(await render("forwarding"));
     expect(all).not.toContain("私信は Otodoke に送られません");
-    expect(all).toContain("これらの言葉を含む私信");
+    expect(all).toContain("のような私信も転送されます");
   });
 });

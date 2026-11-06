@@ -191,7 +191,7 @@ describe("/privacy: what it says", () => {
     expect(said["保存と暗号化"]).toContain("メールの鍵は、パスワードでログインしたときにブラウザで作ります");
     expect(said["保存と暗号化"]).toContain("開いた鍵は、そのタブの中にだけ置きます");
     // The iOS app's keychain copy of the opened key, in the words of the README and the settings.
-    expect(said["保存と暗号化"]).toContain("iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もせず、運営者にも送りません。ログアウトしたときと、設定で切ったときに消えます。");
+    expect(said["保存と暗号化"]).toContain("iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もせず、運営者にも送りません。ログアウトしたときと、アプリの設定で切ったときに消えます。");
     expect(said["バックアップ"]).toContain("最大 7 日間");
     const unsealed = findAll(part, (n) => n.tag === "li").map((li) => textOf(li).split("。")[0]);
     expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール", "Otodoke が暗号化を始める前に読み取ったメール"]);
