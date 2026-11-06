@@ -159,15 +159,23 @@ final class ParcelDetailModel {
         self.today = today
     }
 
+    /// 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads again when it
+    /// moved since this screen's last read.
+    @ObservationIgnored var changes: DataChanges? {
+        didSet { mark = ChangeMark(changes) }
+    }
+    @ObservationIgnored private var mark = ChangeMark(nil)
+
+    /// Shown: reads the first time, and again when DataChanges moved since the last read (and does
+    /// nothing otherwise).
+    func onAppear() async {
+        if parcel == nil || mark.isStale { await load() }
+    }
+
     /// The three reads at once (parcel, items, mails), each kept apart. The mails' text is made off the
     /// main thread. A parcel read that a write overlapped is not shown but read again.
-    /// TDD-STUB(task 12): 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads
-    /// again when it moved since this screen's last read (and does nothing otherwise).
-    @ObservationIgnored var changes: DataChanges?
-
-    func onAppear() async {}
-
     func load() async {
+        mark.markRead()
         parcelReadNumber += 1
         restReadNumber += 1
         let parcelNumber = parcelReadNumber

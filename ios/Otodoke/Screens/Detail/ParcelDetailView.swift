@@ -33,9 +33,7 @@ struct ParcelDetailView: View {
                     }
                 }
             }
-            .task {
-                if model.parcel == nil { await model.load() }
-            }
+            .task { await model.onAppear() }
     }
 
     @ViewBuilder private var content: some View {

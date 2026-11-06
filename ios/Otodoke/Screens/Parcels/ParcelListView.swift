@@ -47,9 +47,7 @@ struct ParcelListView<Detail: View>: View {
                     }
                 }
         }
-        .task {
-            if model.loadState == .idle { await model.load() }
-        }
+        .task { await model.onAppear() }
     }
 
     @ViewBuilder

@@ -44,7 +44,7 @@ struct RootView: View {
             case .login:
                 LoginView(auth: auth)
             case .main:
-                MainTabView(reader: ParcelReader(provider: auth.provider), writer: ParcelWriter(provider: auth.provider))
+                MainTabView(auth: auth)
             }
         }
         .task { await auth.start() }

@@ -1,5 +1,7 @@
 // The tabs after sign-in, in the order and with the names of the Web's tab-bar:
-// 荷物 / カレンダー / 支出 / 設定. カレンダー, 支出 and 設定 are empty places for the second batch.
+// 荷物 / カレンダー / 支出 / 設定. Every screen shares one DataChanges with the writer (CX1): a write on one
+// tab makes the others read again when next shown. Back in front from the background, the screen
+// shown reads again, and only that one (iOS-12).
 
 import SwiftUI
 
@@ -27,21 +29,90 @@ enum MainTab: CaseIterable, Hashable, Sendable {
     }
 }
 
-struct MainTabView: View {
-    @State private var selection: MainTab = .parcels
-    @State private var listModel: ParcelListModel
-    /// The detail's model for an id, when made elsewhere (the DEBUG screen check).
-    private let detailModel: ((String) -> ParcelDetailModel)?
+/// The models of the tabs, made once per sign-in, with one DataChanges and one ScreenRefresher.
+@MainActor
+final class MainScreens {
+    let changes: DataChanges
+    let refresher = ScreenRefresher()
+    let list: ParcelListModel
+    let calendar: CalendarModel
+    let spend: SpendModel
+    let settings: SettingsModel
+    private let makeDetail: (String) -> ParcelDetailModel
 
-    init(reader: ParcelReader, writer: ParcelWriter) {
-        _listModel = State(initialValue: .live(reader: reader, writer: writer))
-        detailModel = nil
+    init(
+        changes: DataChanges,
+        list: ParcelListModel,
+        calendar: CalendarModel,
+        spend: SpendModel,
+        settings: SettingsModel,
+        detail: @escaping (String) -> ParcelDetailModel
+    ) {
+        self.changes = changes
+        self.list = list
+        self.calendar = calendar
+        self.spend = spend
+        self.settings = settings
+        self.makeDetail = detail
+        list.changes = changes
     }
 
-    /// With models made elsewhere (the DEBUG screen check).
+    /// The app's: the signed-in session's provider; the writer publishes to the DataChanges every
+    /// screen reads.
+    static func live(auth: AuthService) -> MainScreens {
+        let changes = DataChanges()
+        let reader = ParcelReader(provider: auth.provider)
+        let writer = ParcelWriter(provider: auth.provider, changes: changes)
+        let today: @Sendable () -> String = { Format.todayJst(now: Date()) }
+        return MainScreens(
+            changes: changes,
+            list: .live(reader: reader, writer: writer),
+            calendar: CalendarModel(reader: reader, changes: changes, today: today),
+            spend: SpendModel(reader: reader, writer: writer, changes: changes, today: today),
+            settings: .live(auth: auth, changes: changes),
+            detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
+        )
+    }
+
+    /// A parcel's detail model, told of the changes.
+    func detail(_ id: String) -> ParcelDetailModel {
+        let model = makeDetail(id)
+        model.changes = changes
+        return model
+    }
+}
+
+struct MainTabView: View {
+    @State private var selection: MainTab
+    @State private var screens: MainScreens
+    /// The app went to the background since it was last in front.
+    @State private var wasInBackground = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(auth: AuthService) {
+        self.init(screens: .live(auth: auth))
+    }
+
+    /// With models made elsewhere (the DEBUG screen check): the other tabs read through the list's
+    /// reader and writer.
     init(listModel: ParcelListModel, detailModel: ((String) -> ParcelDetailModel)? = nil) {
-        _listModel = State(initialValue: listModel)
-        self.detailModel = detailModel
+        let reader = listModel.reader
+        let writer = listModel.writer
+        let changes = writer.changes ?? DataChanges()
+        let today: @Sendable () -> String = { Format.todayJst(now: Date()) }
+        self.init(screens: MainScreens(
+            changes: changes,
+            list: listModel,
+            calendar: CalendarModel(reader: reader, changes: changes, today: today),
+            spend: SpendModel(reader: reader, writer: writer, changes: changes, today: today),
+            settings: .live(auth: AuthService(provider: reader.provider), changes: changes),
+            detail: detailModel ?? { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
+        ))
+    }
+
+    init(screens: MainScreens, selection: MainTab = .parcels) {
+        _screens = State(initialValue: screens)
+        _selection = State(initialValue: selection)
     }
 
     var body: some View {
@@ -52,23 +123,76 @@ struct MainTabView: View {
                     .tag(tab)
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background:
+                wasInBackground = true
+            case .active:
+                // Back in front (not a system sheet over the app): the screen shown reads again.
+                guard wasInBackground else { return }
+                wasInBackground = false
+                let refresher = screens.refresher
+                Task { await refresher.sceneBecameActive() }
+            default:
+                break
+            }
+        }
     }
 
     @ViewBuilder
     private func screen(_ tab: MainTab) -> some View {
+        let screens = self.screens
         switch tab {
         case .parcels:
-            ParcelListView(model: listModel, openSettings: { selection = .settings }) { id in
-                if let detailModel {
-                    ParcelDetailView(model: detailModel(id))
-                } else {
-                    ParcelDetailView(id: id, reader: listModel.reader, writer: listModel.writer)
-                }
+            let list = screens.list
+            ParcelListView(model: list, openSettings: { selection = .settings }) { id in
+                TrackedDetail(screens: screens, id: id)
             }
-        case .calendar, .spend, .settings:
-            NavigationStack {
-                PlaceholderScreen(title: tab.title)
+            .shownScreen(.parcels, screens.refresher) { await list.load() }
+        case .calendar:
+            let calendar = screens.calendar
+            CalendarView(model: calendar) { id in
+                TrackedDetail(screens: screens, id: id)
             }
+            .shownScreen(.calendar, screens.refresher) { await calendar.sceneBecameActive() }
+        case .spend:
+            let spend = screens.spend
+            SpendView(model: spend) { id in
+                TrackedDetail(screens: screens, id: id)
+            }
+            .shownScreen(.spend, screens.refresher) { await spend.sceneBecameActive() }
+        case .settings:
+            let settings = screens.settings
+            SettingsView(model: settings)
+                .shownScreen(.settings, screens.refresher) { await settings.sceneBecameActive() }
         }
+    }
+}
+
+/// A parcel's detail opened from a tab, in front while it is shown.
+private struct TrackedDetail: View {
+    let refresher: ScreenRefresher
+    @State private var model: ParcelDetailModel
+
+    init(screens: MainScreens, id: String) {
+        refresher = screens.refresher
+        _model = State(initialValue: screens.detail(id))
+    }
+
+    var body: some View {
+        let model = self.model
+        ParcelDetailView(model: model)
+            .shownScreen(.detail(model.id), refresher) { [weak model] in await model?.load() }
+    }
+}
+
+private extension View {
+    /// Tells the refresher while this screen is shown, and how it reads again.
+    func shownScreen(_ id: ScreenID, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh) -> some View {
+        onAppear {
+            refresher.register(id, refresh)
+            refresher.shown(id)
+        }
+        .onDisappear { refresher.hidden(id) }
     }
 }

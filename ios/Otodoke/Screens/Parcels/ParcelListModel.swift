@@ -144,11 +144,18 @@ final class ParcelListModel {
         )
     }
 
-    /// TDD-STUB(task 12): 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads
-    /// again when it moved since this screen's last read (and does nothing otherwise).
-    @ObservationIgnored var changes: DataChanges?
+    /// 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads again when it
+    /// moved since this screen's last read.
+    @ObservationIgnored var changes: DataChanges? {
+        didSet { mark = ChangeMark(changes) }
+    }
+    @ObservationIgnored private var mark = ChangeMark(nil)
 
-    func onAppear() async {}
+    /// Shown (the tab opened): reads the first time, and again when DataChanges moved since the last
+    /// read (and does nothing otherwise).
+    func onAppear() async {
+        if loadState == .idle || mark.isStale { await load() }
+    }
 
     /// Today (YYYY-MM-DD, JST), for the cards.
     var todayJst: String { today() }
@@ -248,6 +255,7 @@ final class ParcelListModel {
     }
 
     private func startRead() -> Task<ReadOutcome, Never> {
+        mark.markRead()
         readNumber += 1
         let number = readNumber
         let generation = writeGeneration
