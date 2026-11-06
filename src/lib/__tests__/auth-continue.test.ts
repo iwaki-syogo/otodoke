@@ -7,15 +7,16 @@ import { fakeEvent } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
 /**
- * Review F-3: 「ログインする」 on /auth/continue showed nothing when pressed and took a second
- * press, which posts the one-time link again and can end on 「すでに使われたリンク」. A person
- * already signed in got the same login prompt, and the same red error for a used link.
+ * /auth/continue, where a mail's link lands before its one-time token is used (password-v1).
  *
- * - The press shows a spinner and 「ログインしています…」 at once; a second press is cancelled
- *   (a ref, so also the second click of a double tap that comes before React draws the first).
- * - Never `disabled`: a native form does not post from a button disabled during its click.
- * - Signed in already: 「ログインしています」, the address, 「荷物を見る」, and switching to the
- *   link's account only as its own button.
+ * - Review F-3: the press shows a spinner and its words at once; a second press is cancelled (a
+ *   ref, so also the second click of a double tap); never `disabled` (a native form would not post).
+ * - The heading and the button by the link's type: the confirmation of an address, or a reset.
+ * - A reset link signs this browser in to the account it resets: when another one is signed in
+ *   here, the page says which address leaves. A confirmation does not touch this browser's session.
+ * - The switch between accounts and its refusal (R3-23, R3-35) are gone with the login by link:
+ *   nothing on the page comes from the URL but the token and its type, so a URL made with someone's
+ *   token and link=refused cannot show a refusal or a switch (R3-28's negative control, kept).
  */
 
 vi.mock("react", async (importOriginal) => {
@@ -29,9 +30,10 @@ vi.mock("next/link", async () => {
   const Link = ({ href, children, prefetch, ...rest }: Record<string, unknown>) => h("a", { href: String(href), ...rest }, children as never);
   return { default: Link };
 });
-const session = vi.hoisted(() => ({ user: null as null | { email?: string }, fails: false }));
+const session = vi.hoisted(() => ({ user: null as null | { email?: string }, fails: false, asked: 0 }));
 vi.mock("@/lib/supabase/server", () => ({
   getUser: async () => {
+    session.asked++;
     if (session.fails) throw new Error("Invalid environment: NEXT_PUBLIC_SUPABASE_URL");
     return session.user;
   },
@@ -59,7 +61,7 @@ function fakeWindow() {
   return win;
 }
 
-function setup(props: { label?: string; secondary?: boolean } = {}) {
+function setup(props: { label?: string; pendingLabel?: string; secondary?: boolean } = {}) {
   const win = fakeWindow();
   const view: Mounted = mount(() => ContinueButton(props));
   /** Presses the button; true when the press was cancelled (the form is not posted). */
@@ -75,15 +77,16 @@ function setup(props: { label?: string; secondary?: boolean } = {}) {
 beforeEach(() => {
   session.user = null;
   session.fails = false;
+  session.asked = 0;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the 「ログインする」 button", () => {
-  it("reads 「ログインする」, with no spinner, before the press", () => {
+describe("the button", () => {
+  it("reads 「確認する」, with no spinner, before the press", () => {
     const { view, button } = setup();
-    expect(view.text()).toBe("ログインする");
+    expect(view.text()).toBe("確認する");
     expect(view.hosts((h) => h.type === "span")).toHaveLength(0);
     expect(button().type).toBe("submit");
     expect(button()["aria-busy"]).toBeUndefined();
@@ -91,11 +94,11 @@ describe("the 「ログインする」 button", () => {
     expect(String(button().className)).not.toContain("pointer-events-none");
   });
 
-  it("lets the first press post the form and shows 「ログインしています…」 with a spinner at once", async () => {
+  it("lets the first press post the form and shows 「確認しています…」 with a spinner at once", async () => {
     const { view, press, button } = setup();
     expect(press()).toBe(false);
     await Promise.resolve();
-    expect(view.text()).toBe("ログインしています…");
+    expect(view.text()).toBe("確認しています…");
     expect(view.host((h) => h.type === "span").props.className).toContain("animate-spin");
     expect(button()["aria-busy"]).toBe(true);
     expect(button()["aria-disabled"]).toBe(true);
@@ -108,7 +111,6 @@ describe("the 「ログインする」 button", () => {
     // The second click of a double tap: same tick, nothing drawn yet.
     expect(press()).toBe(true);
     await Promise.resolve();
-    expect(press()).toBe(true);
     expect(press()).toBe(true);
   });
 
@@ -138,19 +140,18 @@ describe("the 「ログインする」 button", () => {
     expect(untouched.win.listening()).toBe(0);
   });
 
-  it("can say something else, with the same press", async () => {
-    const { view, press } = setup({ label: "別のアカウントでログインする", secondary: true });
-    expect(view.text()).toBe("別のアカウントでログインする");
+  it("says other words with the same press", async () => {
+    const { view, press } = setup({ label: "再設定する", pendingLabel: "開いています…" });
+    expect(view.text()).toBe("再設定する");
     expect(press()).toBe(false);
     await Promise.resolve();
-    expect(view.text()).toBe("ログインしています…");
+    expect(view.text()).toBe("開いています…");
     expect(press()).toBe(true);
   });
 
   it("is a client component without `disabled`, and the page has no button of its own", () => {
     const source = readFileSync(path.resolve(__dirname, "../../app/auth/continue/continue-button.tsx"), "utf8");
     expect(source.startsWith('"use client";')).toBe(true);
-    // `aria-disabled` is how the press is shown; a plain `disabled` would stop the post.
     expect(source).toMatch(/aria-disabled=/);
     expect(source).not.toMatch(/(?<![-\w])disabled\s*=/);
     const page = readFileSync(path.resolve(__dirname, "../../app/auth/continue/page.tsx"), "utf8");
@@ -171,77 +172,82 @@ const buttons = (html: string) => [...html.matchAll(/<button\b[^>]*>(.*?)<\/butt
 const links = (html: string) => [...html.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)].map((m) => [m[1], m[2]]);
 const hidden = (html: string) => Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)].map((m) => [m[1], m[2]]));
 
-describe("/auth/continue, signed out", () => {
-  it("asks to log in, with the button in a form that posts the token", async () => {
-    const html = await page({ token_hash: TOKEN, type: "email", next: "/app/calendar?m=2026-11" });
-    expect(html).toContain("Otodoke にログインしますか？");
+describe("/auth/continue by the link's type", () => {
+  it.each(["email", "signup", "magiclink"])("asks to confirm the address for type=%s, posting only the token and its type", async (type) => {
+    const html = await page({ token_hash: TOKEN, type, next: "/app/calendar?m=2026-11" });
+    expect(html).toContain("メールアドレスを確認しますか？</h1>");
     expect(forms(html)).toEqual([["/auth/confirm", "post"]]);
-    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "email", next: "/app/calendar?m=2026-11" });
-    expect(buttons(html)).toEqual(["ログインする"]);
-    expect(html).not.toContain("ログインしています");
+    // The next is not carried: /auth/confirm never reads it.
+    expect(hidden(html)).toEqual({ token_hash: TOKEN, type });
+    expect(buttons(html)).toEqual(["確認する"]);
   });
 
-  it("says the link is incomplete when it has no token", async () => {
-    const html = await page({ type: "email" });
-    expect(html).toContain("リンクが不完全です。");
-    expect(links(html)).toEqual([["/login", "もう一度リンクを送ってください。"]]);
-    expect(html).not.toContain("<form");
-  });
-
-  it("asks to log in, as before, when the session cannot be read", async () => {
-    session.fails = true;
+  it("does not look at this browser's session for a confirmation (it is left as it is)", async () => {
+    session.user = { email: "someone@example.com" };
     const html = await page({ token_hash: TOKEN, type: "email" });
-    expect(html).toContain("Otodoke にログインしますか？");
-    expect(buttons(html)).toEqual(["ログインする"]);
+    expect(html).not.toContain("someone@example.com");
+    expect(html).not.toContain("ログアウト");
+    expect(session.asked).toBe(0);
+  });
+
+  it("asks to reset the password for type=recovery", async () => {
+    const html = await page({ token_hash: TOKEN, type: "recovery" });
+    expect(html).toContain("パスワードを再設定しますか？</h1>");
+    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "recovery" });
+    expect(buttons(html)).toEqual(["再設定する"]);
+    expect(html).not.toContain("ログアウトします");
+  });
+
+  it("says which address leaves when another account is signed in here", async () => {
+    session.user = { email: "someone@example.com" };
+    expect(await page({ token_hash: TOKEN, type: "recovery" })).toContain("ログイン中の someone@example.com からログアウトします。");
+    session.user = {};
+    expect(await page({ token_hash: TOKEN, type: "recovery" })).toContain("ログイン中のアカウントからログアウトします。");
+  });
+
+  it("asks to reset as before when the session cannot be read (and says nothing about it)", async () => {
+    session.fails = true;
+    const html = await page({ token_hash: TOKEN, type: "recovery" });
+    expect(buttons(html)).toEqual(["再設定する"]);
+    expect(html).not.toContain("ログアウトします");
+  });
+
+  it.each([
+    ["no token", { type: "email" }],
+    ["no type", { token_hash: TOKEN }],
+    ["a type /auth/confirm does not take", { token_hash: TOKEN, type: "email_change" }],
+  ])("says the link is incomplete for %s, with no form", async (_what, params) => {
+    const html = await page(params);
+    expect(html).toContain("リンクが不完全です。");
+    expect(links(html)).toEqual([["/login", "ログイン"]]);
+    expect(html).not.toContain("<form");
   });
 
   it("takes the first of a value written twice", async () => {
-    const html = await page({ token_hash: [TOKEN, "other"], type: ["email", "magiclink"], next: ["/.//x.example", "/app"] });
-    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "email", next: "/app" });
+    const html = await page({ token_hash: [TOKEN, "other"], type: ["email", "recovery"] });
+    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "email" });
   });
 });
 
-describe("/auth/continue, signed in already", () => {
-  beforeEach(() => {
-    session.user = { email: "someone@example.com" };
+describe("[R3-23, R3-28, R3-35] no switch and no refusal from the URL", () => {
+  it("a URL made with someone's token, link=refused and intent shows no refusal, no switch and no sign-out", async () => {
+    for (const user of [null, { email: "someone@example.com" }]) {
+      session.user = user;
+      for (const type of ["email", "recovery"]) {
+        const html = await page({ token_hash: TOKEN, type, link: "refused", intent: "switch_account", next: "/auth/continue?link=refused" });
+        expect(html).not.toContain("このリンクは使えませんでした");
+        expect(html).not.toContain("別のアカウント");
+        expect(buttons(html)).toHaveLength(1);
+        expect(forms(html)).toEqual([["/auth/confirm", "post"]]);
+        expect(hidden(html)).toEqual({ token_hash: TOKEN, type });
+      }
+    }
   });
 
-  it("says so, shows the address and the way into the app, and does not prompt to log in", async () => {
-    const html = await page({ token_hash: TOKEN, type: "email", next: "/app" });
-    expect(html).toContain("<h1");
-    expect(html).toContain("ログインしています</h1>");
-    expect(html).toContain("someone@example.com");
-    expect(links(html)).toEqual([["/app", "荷物を見る"]]);
-    expect(html).not.toContain("Otodoke にログインしますか？");
-    expect(buttons(html)).not.toContain("ログインする");
-  });
-
-  it("keeps switching to the link's account as its own button", async () => {
-    const html = await page({ token_hash: TOKEN, type: "email", next: "/app" });
-    expect(buttons(html)).toEqual(["別のアカウントでログインする"]);
-    expect(forms(html)).toEqual([["/auth/confirm", "post"]]);
-    // [Review R3-23] intent: a refused switch comes back saying so (switch-account-refused.test.ts).
-    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "email", next: "/app", intent: "switch_account" });
-  });
-
-  it("goes where the link was going, and only to a path on this site", async () => {
-    expect(links(await page({ token_hash: TOKEN, type: "email", next: "/app/calendar?m=2026-11" }))).toEqual([["/app/calendar?m=2026-11", "荷物を見る"]]);
-    expect(links(await page({ token_hash: TOKEN, type: "email", next: "/.//x.example" }))).toEqual([["/app", "荷物を見る"]]);
-    expect(links(await page({ token_hash: TOKEN, type: "email" }))).toEqual([["/app", "荷物を見る"]]);
-  });
-
-  it("shows no error and no switch for a link without a token", async () => {
-    const html = await page({});
-    expect(html).toContain("ログインしています</h1>");
-    expect(links(html)).toEqual([["/app", "荷物を見る"]]);
-    expect(html).not.toContain("リンクが不完全です");
-    expect(html).not.toContain("<form");
-  });
-
-  it("leaves the address line out when the account has none", async () => {
-    session.user = {};
-    const html = await page({ token_hash: TOKEN, type: "email" });
-    expect(html).toContain("ログインしています</h1>");
-    expect(html).not.toContain("break-all");
+  it("negative control: the checks see a refusal and a switch where there is one", () => {
+    const made = '<p>このリンクは使えませんでした。</p><form action="/auth/confirm" method="post"><input type="hidden" name="intent" value="switch_account"/><button>別のアカウントでログインする</button></form><form action="/auth/signout" method="post"><button>ログアウト</button></form>';
+    expect(made).toContain("このリンクは使えませんでした");
+    expect(buttons(made)).toHaveLength(2);
+    expect(hidden(made)).toEqual({ intent: "switch_account" });
   });
 });
