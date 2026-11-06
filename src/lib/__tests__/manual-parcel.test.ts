@@ -83,9 +83,16 @@ describe("ManualParcelSchema: what it lets through", () => {
   });
 
   it("takes the amount the way people write it: with 円, with ¥, with spaces", () => {
-    for (const v of ["2480 円", "2480円", "¥2,480", "￥2,480", " 2480 ", "2 480円", "２４８０円"]) expect(ok({ total_amount: v }).total_amount, v).toBe(2480);
+    for (const v of ["2480 円", "2480円", "¥2,480", "￥2,480", " 2480 ", "２４８０円", "¥ 2,480 円", " 2,480 ", "¥ 2,480", "2,480 円"]) expect(ok({ total_amount: v }).total_amount, v).toBe(2480);
     for (const v of ["円", "¥", "2480ドル", "円2480", "¥円", "2480円円"]) rejects({ total_amount: v });
+    // Spaces between digits are refused, not joined; commas only are not an empty amount.
+    for (const v of ["480 480", "100 200", "2 480", "2 480円", "2\u00a0480", "2　480", "2\n480", ",", ", ,", "¥10,000,001円"]) rejects({ total_amount: v });
+    expect(ok({ total_amount: "10,000,000円" }).total_amount).toBe(10_000_000);
     expect(ok({ total_amount: "" }).total_amount).toBeNull();
+  });
+
+  it("takes an amount of only white space as no amount, not as a refusal (the text step trims first)", () => {
+    for (const v of [" ", "\u3000", "\u00a0", "\t\n"]) expect(ok({ total_amount: v }).total_amount, JSON.stringify(v)).toBeNull();
   });
 
   it("takes only the listed values for category, carrier, presence and status", () => {

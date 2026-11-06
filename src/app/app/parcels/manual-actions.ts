@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, type ManualFormState } from "@/lib/manual-parcel";
+import { MANUAL_DELETE_UNCHECKED, ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, type ManualFormState } from "@/lib/manual-parcel";
 import { createClient } from "@/lib/supabase/server";
 
 // Parcels typed in by hand. Writes go through the user's own session (row-level security), and
@@ -103,6 +103,9 @@ export async function deleteManualParcel(_prev: ManualFormState, formData: FormD
   if (!session) return { error: NOT_SIGNED_IN, values };
   const id = Id.safeParse(values.id);
   if (!id.success) return { error: NOT_FOUND, values };
+  // Refuse a delete sent without the check (a slip, or a request made by hand). This guards against
+  // mistakes, not against the owner: RLS lets a signed-in user delete their own rows directly.
+  if (values.confirm !== "yes") return { error: MANUAL_DELETE_UNCHECKED, values };
 
   const { data, error } = await session.supabase.from("parcels").delete().eq("id", id.data).eq("user_id", session.userId).eq("source", "manual").select("id");
   if (error) {

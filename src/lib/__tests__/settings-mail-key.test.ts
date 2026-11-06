@@ -218,6 +218,43 @@ describe("/app/settings: あなたのメールの扱い", () => {
     expect(findAll(section, (n) => n.tag === "button" && textOf(n).includes("コピー"))).toHaveLength(0);
   });
 
+  it("with a key and an inbound domain, the sentences before and after the address stand; without a domain they do not", async () => {
+    activeKey();
+    const lead = "注文・発送のメールをこのアドレスに転送してください。";
+    const warn = "あなた専用のアドレスです。知らない人に教えないでください。";
+    const withDomain = textOf(sectionTitled(await render("forwarding"), "転送先アドレス")[0]);
+    expect(withDomain).toContain(lead);
+    expect(withDomain).toContain(warn);
+    mocks.noDomain = true;
+    const without = textOf(sectionTitled(await render("forwarding"), "転送先アドレス")[0]);
+    expect(without).not.toContain(lead);
+    expect(without).not.toContain(warn);
+    expect(without).toContain("受信ドメインがまだ設定されていません。");
+  });
+
+  it("the clear-all warning names the mail too, and the checkbox is described by it", async () => {
+    const root = await render("demo");
+    const warning = findAll(root, (n) => n.tag === "p" && textOf(n) === "荷物と保存したメールを消します。消すと元に戻せません。");
+    expect(warning).toHaveLength(1);
+    expect(warning[0].attrs.id).toBeTruthy();
+    const box = findAll(root, (n) => n.tag === "input" && n.attrs.type === "checkbox" && n.attrs.name === "confirm");
+    expect(box).toHaveLength(1);
+    expect(box[0].attrs["aria-describedby"]).toBe(warning[0].attrs.id);
+  });
+
+  it("a dropped mail whose subject is blank, empty or null reads 「件名はありません。」 in pale type", async () => {
+    activeKey();
+    const row = (id: string, subject: string | null) => ({ id, user_id: USER, decision: "dropped", subject, from_domain: `${id}.example.test`, created_at: "2026-11-05T00:00:00Z", flagged_at: null });
+    db.rows("screen_events").push(row("s1", "  \u3000 "), row("s2", ""), row("s3", null), row("s4", "普通の件名"));
+    const root = await render("dropped");
+    const none = findAll(root, (n) => n.tag === "p" && textOf(n) === "件名はありません。");
+    expect(none).toHaveLength(3);
+    for (const p of none) expect(p.attrs.class).toContain("text-neutral-500");
+    const real = findAll(root, (n) => n.tag === "p" && textOf(n) === "普通の件名");
+    expect(real).toHaveLength(1);
+    expect(real[0].attrs.class).not.toContain("text-neutral");
+  });
+
   it("a dropped mail with no subject says so with a full stop and in paler type than a real subject", async () => {
     activeKey();
     db.rows("screen_events").push(
@@ -266,5 +303,13 @@ describe("/app/settings: あなたのメールの扱い", () => {
     mocks.state.db = db;
     plainRead(3);
     expect(textOf(sectionTitled(await render("password"), "メールの鍵を作る")[0])).toContain("それまでは運営者が読める形です");
+  });
+
+  it("DemoLoader says the parcels and stored mail were cleared only when cleared is set", async () => {
+    const { createElement } = await import("react");
+    const { DemoLoader } = await import("@/app/app/settings/demo-loader");
+    const render = (cleared: boolean) => textOf(parseHtml(renderToStaticMarkup(createElement(DemoLoader, { loaded: null, error: null, cleared }))));
+    expect(render(true)).toContain("荷物と保存したメールを消しました。");
+    expect(render(false)).not.toContain("荷物と保存したメールを消しました。");
   });
 });

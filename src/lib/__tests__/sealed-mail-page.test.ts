@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NO_BODY_TEXT } from "@/lib/mail-notices";
+import { NO_BODY_TEXT, NO_SUBJECT_TEXT } from "@/lib/mail-notices";
 import { FakeDb } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 import { appSourceFiles, read, withoutComments } from "./source-scan";
@@ -92,6 +92,38 @@ describe("parcel page: mail history with sealed mail", () => {
     expect(textOf(item)).toContain("発送のお知らせ");
     expect(textOf(findAll(item, (n) => n.tag === "pre")[0])).toBe("ご注文ありがとう");
     expect(html).not.toContain("<script>alert");
+  });
+});
+
+describe("a mail with no subject", () => {
+  const pales = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "p" && textOf(n) === NO_SUBJECT_TEXT);
+
+  it("a plain mail whose subject is blank, empty or null says NO_SUBJECT_TEXT in pale type; a real subject is shown as it is", async () => {
+    addMail("e1", { body_state: "plain", subject: " \u3000 ", from_address: "a@example.test" });
+    addMail("e2", { body_state: "plain", subject: "", from_address: "b@example.test" });
+    addMail("e3", { body_state: "plain", subject: null, from_address: "c@example.test" });
+    addMail("e4", { body_state: "plain", subject: "発送のお知らせ", from_address: "d@example.test" });
+    const { root } = await render();
+    const none = pales(root);
+    expect(none).toHaveLength(3);
+    for (const p of none) expect(p.attrs.class).toContain("text-neutral-500");
+    const real = findAll(root, (n) => n.tag === "p" && textOf(n) === "発送のお知らせ");
+    expect(real).toHaveLength(1);
+    expect(real[0].attrs.class).not.toContain("text-neutral");
+  });
+
+  it("a sealed mail not opened yet never says it has no subject (its subject is in the envelope; the column is null)", async () => {
+    addMail("e-sealed", { body_state: "sealed", body_envelope: ENVELOPE, subject: null, from_domain: "shop.example.test" });
+    const { root } = await render();
+    const [item] = historyItems(root);
+    expect(textOf(item)).toContain("暗号化されたメール");
+    expect(pales(root)).toHaveLength(0);
+  });
+
+  it("a dropped mail on the parcel page does not say it either", async () => {
+    addMail("e-dropped", { body_state: "dropped", subject: null, from_domain: "shop.example.test" });
+    const { root } = await render();
+    expect(pales(root)).toHaveLength(0);
   });
 });
 

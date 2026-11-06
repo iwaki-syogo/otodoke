@@ -60,25 +60,25 @@ const parcel = (over: Partial<ParcelRow>) => ({ status: "ordered", shop: "テス
 
 describe("carriers", () => {
   it("keeps only letters and digits in a tracking number", () => {
-    expect(normalizeTracking("5111-7266-6093")).toBe("511172666093");
+    expect(normalizeTracking("6203-9184-5571")).toBe("620391845571");
   });
   it("does not guess the carrier of a bare 12-digit number", () => {
-    expect(identifyCarrier("313016540476").key).toBe("unknown");
-    expect(trackingUrlFor("313016540476")).toBeNull();
+    expect(identifyCarrier("482915307128").key).toBe("unknown");
+    expect(trackingUrlFor("482915307128")).toBeNull();
   });
   it("uses the carrier named in the mail for a 12-digit number", () => {
-    expect(identifyCarrier("313016540476", "佐川急便").key).toBe("sagawa");
-    expect(identifyCarrier("5111-7266-6093", "ヤマト運輸").key).toBe("yamato");
+    expect(identifyCarrier("482915307128", "佐川急便").key).toBe("sagawa");
+    expect(identifyCarrier("6203-9184-5571", "ヤマト運輸").key).toBe("yamato");
   });
   it("hands each carrier the number in the way its site accepts it", () => {
     // Yamato ignores a number in the URL; its form posts number01.
-    expect(trackingLinkFor("5111-7266-6093", "ヤマト運輸")).toEqual({
+    expect(trackingLinkFor("6203-9184-5571", "ヤマト運輸")).toEqual({
       kind: "post",
       url: "https://toi.kuronekoyamato.co.jp/cgi-bin/tneko",
-      fields: { category: "1", number01: "511172666093" },
+      fields: { category: "1", number01: "620391845571" },
     });
     // Sagawa takes no number from outside: copy it and open the input page.
-    expect(trackingLinkFor("3130-1654-0476", "佐川急便")).toEqual({
+    expect(trackingLinkFor("4829-1530-7128", "佐川急便")).toEqual({
       kind: "copy",
       url: "https://e-customer.sagawa-exp.co.jp/k2k",
       pageName: "佐川のお荷物お問い合わせサービス",
@@ -102,10 +102,10 @@ describe("carriers", () => {
 
 describe("JST dates", () => {
   it("treats a UTC evening as the next JST day", () => {
-    expect(todayJst(new Date("2026-11-01T17:21:30Z"))).toBe("2026-11-02");
+    expect(todayJst(new Date("2026-11-01T17:21:00Z"))).toBe("2026-11-02");
   });
   it("gives the model the JST date, so 本日 resolves to the right day", () => {
-    const { text } = buildUserMessage({ from: "a", subject: "s", sentAt: "2026-11-01T17:21:30+00:00", body: "本日到着予定" });
+    const { text } = buildUserMessage({ from: "a", subject: "s", sentAt: "2026-11-01T17:21:00+00:00", body: "本日到着予定" });
     expect(text).toContain("2026-11-02(月) 02:21");
   });
   it("adds days across a month end", () => {
@@ -128,7 +128,7 @@ describe("shiftDatesInText", () => {
   ])("%s + %i days", (input, days, want) => {
     expect(shiftDatesInText(input, days, 2026)).toBe(want);
   });
-  it.each(["503-6666033-1766280", "X296693-5042632-9", "371054-20261015-7461804933", "5111-7266-6093", "0979279182570435064-8469141"])(
+  it.each(["503-6666033-1766280", "X296693-5042632-9", "371054-20261015-7461804933", "6203-9184-5571", "0979279182570435064-8469141"])(
     "leaves the number %s alone",
     (n) => {
       expect(shiftDatesInText(n, 10, 2026)).toBe(n);
@@ -172,7 +172,7 @@ describe("parcel merge", () => {
     expect(row.expected_window_start).toBe(want);
   });
   it("uses the JST date of an order mail when the mail states no order date", () => {
-    const row = buildParcelInsert("u", extraction({ relevance: "order" }), "2026-11-01T17:21:30Z");
+    const row = buildParcelInsert("u", extraction({ relevance: "order" }), "2026-11-01T17:21:00Z");
     expect(row.ordered_at).toBe("2026-11-02");
   });
   it("treats a payment notice with a tracking number as shipped", () => {
@@ -406,10 +406,10 @@ describe("dates from the model", () => {
     expect(buildParcelInsert("u", extraction({ expected_date: sure("2026-02-31") }), null).expected_date).toBeNull();
   });
   it("uses the first mail as the order date of a shop that sends no order mail", () => {
-    expect(buildParcelInsert("u", extraction({ relevance: "shipped", order_number: sure("1") }), "2026-11-01T17:21:30Z").ordered_at).toBe("2026-11-02");
+    expect(buildParcelInsert("u", extraction({ relevance: "shipped", order_number: sure("1") }), "2026-11-01T17:21:00Z").ordered_at).toBe("2026-11-02");
   });
   it("does not list a carrier notice as an order", () => {
-    expect(buildParcelInsert("u", extraction({ relevance: "shipped" }), "2026-11-01T17:21:30Z").ordered_at).toBeNull();
+    expect(buildParcelInsert("u", extraction({ relevance: "shipped" }), "2026-11-01T17:21:00Z").ordered_at).toBeNull();
   });
 });
 

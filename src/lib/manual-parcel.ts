@@ -34,6 +34,9 @@ export const MANUAL_CARRIED_STATUSES = ["out_for_delivery", "attempted"] as cons
 /** A cancel notice moves a typed-in parcel here. Only a parcel already cancelled may be saved with it. */
 export const MANUAL_CANCELLED = "cancelled";
 
+/** Said when a delete comes without the 「本当に消す」 check. The same words as settings' clear_confirm. */
+export const MANUAL_DELETE_UNCHECKED = "「本当に消す」にチェックを入れてください";
+
 /** What the form's Server Actions answer: the error, and what was sent so the fields can refill. */
 export type ManualFormState = { error: string | null; values: Record<string, string> };
 
@@ -56,13 +59,24 @@ const optionalDate = (message: string) =>
     .transform((v) => (v === "" ? null : v));
 
 /**
- * Allows "1,980", "¥1,980", "1980 円" and full-width digits; still a whole number of yen, up to MANUAL_MAX_AMOUNT. The
+ * Allows "1,980", "¥1,980", "¥ 1,980 円" and full-width digits (spaces only at the ends, after ¥ and before 円); still a whole number of yen, up to MANUAL_MAX_AMOUNT. The
  * stored amount saved back as it is passes too: a mail fills in an amount left empty, up to what
  * the column holds (2,147,483,647), and an edit that leaves it alone must still save.
  */
 const amount = (stored: number | null = null) =>
   text()
-    .transform((v) => v.normalize("NFKC").replace(/[,\s]/g, "").replace(/^[¥￥](?=\d)/, "").replace(/(?<=\d)円$/, ""))
+    .transform((v) => {
+      // Commas go wherever they are. Spaces go only at the ends, after ¥ and before 円: a space
+      // between digits stays, so "480 480" is refused instead of joined into 480480.
+      const cleaned = v
+        .normalize("NFKC")
+        .replace(/,/g, "")
+        .trim()
+        .replace(/^[¥￥]\s*(?=\d)/, "")
+        .replace(/(\d)\s*円$/, "$1");
+      // An input that was only commas must not read as empty: that would drop the amount silently.
+      return cleaned === "" && v !== "" ? v : cleaned;
+    })
     .refine((v) => v === "" || (/^\d{1,10}$/.test(v) && (Number(v) <= MANUAL_MAX_AMOUNT || Number(v) === stored)), "金額が正しくありません")
     .transform((v) => (v === "" ? null : Number(v)));
 
