@@ -31,6 +31,8 @@ const VERIFY = [
   "supabase/verify/20261106180000_screen_events_daily_purge.before.sql",
   "supabase/verify/20261106180000_screen_events_daily_purge.sql",
   "supabase/verify/20261106180000_screen_events_daily_purge.after-first-run.sql",
+  "supabase/verify/20261106170000_issued_inbox_local_parts.sql",
+  "supabase/verify/20261106190000_claude_usage_keeps_deleted_calls.sql",
 ];
 
 describe("verify files answer with a result row", () => {

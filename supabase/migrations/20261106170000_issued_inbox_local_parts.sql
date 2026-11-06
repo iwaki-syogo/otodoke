@@ -35,13 +35,9 @@
 -- To give a deleted address back on purpose (restoring an account from a backup), an operator
 -- deletes its row from the registry first.
 --
--- After applying (read only):
---   select count(*) from public.inbox_addresses a
---   where not exists (select 1 from public.issued_inbox_local_parts r where r.local_part = a.local_part);
---     -- 0: every address in use is registered
---   select tgname, tgenabled from pg_trigger
---   where tgrelid = 'public.inbox_addresses'::regclass and not tgisinternal;
---     -- inbox_addresses_issue_local_part | O
+-- After applying: supabase/verify/20261106170000_issued_inbox_local_parts.sql (one row, verdict
+-- OK: every address in use registered, the trigger and its function as below, and the refusals
+-- tried on one address row and undone).
 --
 -- Rollback: supabase/rollback/20261106170000_issued_inbox_local_parts.down.sql
 

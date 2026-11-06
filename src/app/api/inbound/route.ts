@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { requireEnv } from "@/lib/env";
 import { processInboundEmail } from "@/lib/pipeline";
 
@@ -9,6 +9,11 @@ import { processInboundEmail } from "@/lib/pipeline";
  * fetched with the Received Emails API, then routed to the user who owns the
  * receiving address and processed. Always answers 200 for mail we deliberately
  * ignore (unknown address) so Resend does not retry it.
+ *
+ * When the event names the envelope recipients (`received_for`), the address is looked up
+ * before the fetch: a mail for an address nobody has (a deleted account's, a made-up one) is
+ * not fetched at all. The fetched mail still decides where a mail goes; an event without
+ * them is fetched first, as before.
  */
 // One mail means one Claude call; leave room for a slow response.
 export const maxDuration = 120;
@@ -39,8 +44,23 @@ export async function POST(request: Request) {
   if (event.type !== "email.received") {
     return NextResponse.json({ ignored: event.type });
   }
-  const emailId = (event.data as { email_id?: string }).email_id;
+  const data = event.data as { email_id?: string; received_for?: unknown; to?: unknown };
+  const emailId = data.email_id;
   if (!emailId) return NextResponse.json({ error: "missing email_id" }, { status: 400 });
+
+  const domain = requireEnv("INBOUND_DOMAIN").toLowerCase();
+  // Made when first needed, as before: a mail that never reaches a lookup does not need it.
+  let db: AdminClient | undefined;
+  const admin = () => (db ??= createAdminClient());
+  // The same rule as for the fetched mail below, on the event's own lists.
+  const announced = Array.isArray(data.received_for) ? localPartFor([...stringsOf(data.received_for), ...stringsOf(data.to)], domain) : undefined;
+  let checked: { localPart: string; userId: string } | null = null;
+  if (announced) {
+    const found = await findInbox(admin(), announced);
+    if (found === "failed") return NextResponse.json({ error: "lookup failed" }, { status: 500 });
+    if (!found) return unknownInbox();
+    checked = { localPart: announced, userId: found.user_id };
+  }
 
   const { data: mail, error } = await resend.emails.receiving.get(emailId);
   if (error || !mail) {
@@ -48,12 +68,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "fetch failed" }, { status: 502 });
   }
 
-  const domain = requireEnv("INBOUND_DOMAIN").toLowerCase();
-  const recipients = [...(mail.received_for ?? []), ...(mail.to ?? [])].map((a) => a.toLowerCase());
-  const localPart = recipients
-    .map((addr) => addr.match(/^([^@<>\s]+)@([^>\s]+)$/))
-    .filter((m): m is RegExpMatchArray => !!m && m[2] === domain)
-    .map((m) => m[1].split("+")[0])[0];
+  const recipients = [...(mail.received_for ?? []), ...(mail.to ?? [])];
+  const localPart = localPartFor(recipients, domain);
   if (!localPart) {
     // Addresses are not logged: a count is enough to tell this case apart.
     const addressCount = recipients.length;
@@ -61,16 +77,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ignored: "no matching recipient" });
   }
 
-  const db = createAdminClient();
-  const { data: inbox, error: inboxError } = await db.from("inbox_addresses").select("user_id").eq("local_part", localPart).maybeSingle();
-  if (inboxError) {
-    // Not the same as "no such address": answering 200 here would lose the mail.
-    console.error("inbound: inbox lookup failed", inboxError.message);
-    return NextResponse.json({ error: "lookup failed" }, { status: 500 });
-  }
-  if (!inbox) {
-    console.warn("inbound: unknown inbox", localPart);
-    return NextResponse.json({ ignored: "unknown inbox" });
+  let userId: string;
+  if (checked?.localPart === localPart) {
+    userId = checked.userId;
+  } else {
+    const found = await findInbox(admin(), localPart);
+    if (found === "failed") return NextResponse.json({ error: "lookup failed" }, { status: 500 });
+    if (!found) return unknownInbox();
+    userId = found.user_id;
   }
 
   const fromHeader = mail.headers?.from ?? mail.headers?.From ?? mail.from;
@@ -78,8 +92,8 @@ export async function POST(request: Request) {
   const sentAt = parseDate(mail.headers?.date ?? mail.headers?.Date) ?? mail.created_at ?? null;
 
   try {
-    const outcome = await processInboundEmail(db, {
-      userId: inbox.user_id,
+    const outcome = await processInboundEmail(admin(), {
+      userId,
       providerEmailId: mail.id,
       messageId: mail.message_id ?? null,
       from: mail.from,
@@ -96,6 +110,35 @@ export async function POST(request: Request) {
     // 500 makes Resend retry later, which is what we want for transient failures.
     return NextResponse.json({ error: "processing failed" }, { status: 500 });
   }
+}
+
+/** The local part a mail is for: the first address on our domain, lower case, without its +tag. */
+function localPartFor(addresses: readonly string[], domain: string): string | undefined {
+  return addresses
+    .map((addr) => addr.toLowerCase().match(/^([^@<>\s]+)@([^>\s]+)$/))
+    .filter((m): m is RegExpMatchArray => !!m && m[2] === domain)
+    .map((m) => m[1].split("+")[0])[0];
+}
+
+function stringsOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+/** The owner of a receiving address; "failed" when the lookup itself failed (never taken as none). */
+async function findInbox(db: AdminClient, localPart: string): Promise<{ user_id: string } | null | "failed"> {
+  const { data, error } = await db.from("inbox_addresses").select("user_id").eq("local_part", localPart).maybeSingle();
+  if (error) {
+    // Not the same as "no such address": answering 200 here would lose the mail.
+    console.error("inbound: inbox lookup failed", error.message);
+    return "failed";
+  }
+  return data;
+}
+
+/** Mail for an address nobody has: 200, so Resend does not send it again. The address is not logged. */
+function unknownInbox() {
+  console.warn("inbound: unknown inbox");
+  return NextResponse.json({ ignored: "unknown inbox" });
 }
 
 /** What is safe to log about an error: its message and code, never the object itself. */

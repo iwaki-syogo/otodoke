@@ -112,9 +112,17 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       const keep = await secondLook(db, mail, screen);
       await logScreenEvent(db, mail, keep ? "rescued" : "dropped", screen.reason);
       if (!keep) {
-        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread forever.
+        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
+        // forever. Only while the row is as it was read, as for the take-over below: a delivery that
+        // took it over meanwhile is reading it, and its row is not removed from under it.
         if (stored) {
-          const { error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("id", stored.id);
+          const { error } = await db
+            .from("emails")
+            .delete()
+            .eq("user_id", mail.userId)
+            .eq("id", stored.id)
+            .eq("processing_status", stored.processing_status)
+            .eq("created_at", stored.created_at);
           if (error) throw new Error(`emails cleanup failed: ${error.message}`);
         }
         return { kind: "screened_out", reason: screen.reason };

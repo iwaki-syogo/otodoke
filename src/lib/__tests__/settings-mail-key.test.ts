@@ -112,7 +112,38 @@ describe("/app/settings: passphrase first", () => {
     const root = await render();
     expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === "https://mail-settings.google.com/mail/vf-xyz")).toHaveLength(1);
   });
+
+  it("the approval section is the page's one #gmail-approval, kept off the top edge like #demo", async () => {
+    db.rows("emails").push({ id: "g", user_id: USER, classification: "forwarding_confirmation", processing_status: "processed", body_state: "plain", forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-xyz", sent_at: "2026-11-06T00:00:00Z" });
+    const root = await render();
+    const anchored = findAll(root, (n) => n.attrs.id === "gmail-approval");
+    expect(anchored).toHaveLength(1);
+    expect(anchored[0].tag).toBe("section");
+    expect((anchored[0].attrs.class ?? "").split(/\s+/)).toContain("scroll-mt-4");
+    expect(findAll(anchored[0], (h) => h.tag === "h2" && textOf(h) === "Gmail の転送を承認してください")).toHaveLength(1);
+    expect(findAll(anchored[0], (n) => n.tag === "a" && n.attrs.href === "https://mail-settings.google.com/mail/vf-xyz")).toHaveLength(1);
+  });
 });
+
+/** Said the same in 「あなたのメールの扱い」 and in README's section of that name. */
+const SAID_IN_BOTH = [
+  // Mail read before encryption began stays plaintext until 「暗号化する」.
+  "暗号化を始める前に読み取ったメールは、暗号化していません",
+  // Whether a mail keeps its subject, sender and body is decided when it is read (src/lib/mail-seal.ts
+  // closedBody), not when it arrives: the same sentence as /privacy.
+  "Otodoke が暗号化を始めた後、合言葉を決める前に読み取ったメールは、件名・差出人・本文を残しません",
+  "Message-ID",
+  "承認リンク",
+  "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します",
+];
+
+/**
+ * A marked mail is kept while its sender is remembered, and goes 14 days after 「外す」, as /privacy
+ * says. README.md's line on it still has the wording from before (review 2026-11-06, seam 6): this
+ * batch may change only its line on mail read with no passphrase. Once README says this too, the
+ * sentence joins SAID_IN_BOTH.
+ */
+const FLAGGED_KEPT = "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します。";
 
 describe("/app/settings: あなたのメールの扱い", () => {
   it("states what is and is not encrypted", async () => {
@@ -127,22 +158,28 @@ describe("/app/settings: あなたのメールの扱い", () => {
       "Resend",
       "最大 7 日間",
       "コードはすべて",
-      // Mail read before encryption began stays plaintext until 「暗号化する」.
-      "暗号化を始める前に読み取ったメールは、暗号化していません",
-      "Message-ID",
-      "承認リンク",
-      "「これは荷物」と押したものは、次から読むために消さずに残します",
+      ...SAID_IN_BOTH,
+      FLAGGED_KEPT,
     ]) {
       expect(text).toContain(fact);
     }
+    expect(text).not.toContain("次から読むために消さずに残します");
+    expect(text).not.toContain("合言葉を決める前に届いたメール");
   });
 
-  it("README says the same about mail read before encryption, Message-ID, the approval link and flagged ads", () => {
+  it("README says the same about mail read before encryption or with no passphrase yet, Message-ID, the approval link and screened ads", () => {
     const readme = readFileSync(path.resolve(__dirname, "../../../README.md"), "utf8");
     const section = readme.slice(readme.indexOf("## あなたのメールの扱い"), readme.indexOf("## 技術"));
-    for (const fact of ["暗号化を始める前に読み取ったメールは、暗号化していません", "Message-ID", "承認リンク", "「これは荷物」と押したものは、次から読むために消さずに残します", "暗号化を始めた後、合言葉を決める前に届いたメール"]) {
+    for (const fact of SAID_IN_BOTH) {
       expect(section).toContain(fact);
     }
+    expect(section).not.toContain("合言葉を決める前に届いたメール");
+  });
+
+  it("the list of screened mail says the sender's domain is kept with the subject", async () => {
+    const section = findAll(await render(), (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h) === "読まなかったメール").length > 0);
+    expect(section).toHaveLength(1);
+    expect(textOf(section[0])).toContain("本文は保存せず、件名と差出人のドメインだけ 14 日間残します。");
   });
 
   it("the plaintext banner says the operator can read those mails until they are sealed", async () => {

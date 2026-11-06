@@ -25,7 +25,7 @@ export interface MailKeyState {
  * key in use are removed on 2026-11-14 (supabase/pending/20261114090000). Told here and in
  * 「あなたのメールの扱い」 (mail-handling.tsx) until then; reword both once it has run.
  */
-const PLAINTEXT_DROP_NOTICE = "決めないままだと、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。";
+const PLAINTEXT_DROP_NOTICE = "合言葉を決めていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。";
 
 /** Not knowing how many mails are in plaintext is said as such, with or without a key: never as "none". */
 const PLAIN_COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";

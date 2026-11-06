@@ -86,6 +86,8 @@ describe("markWronglyDropped", () => {
   });
 
   it("remembers nothing for a shared domain and answers ?flagged=shared", async () => {
+    // Not a forwarded copy (that one is told as the person's own mail, below): a friend's mail.
+    db.find("screen_events", GMAIL_ROW)!.subject = "週末どう？";
     expect(await redirectOf(markWronglyDropped(form({ id: GMAIL_ROW })))).toBe("/app/settings?flagged=shared");
     expect(db.find("screen_events", GMAIL_ROW)!.flagged_at).toBeNull();
     expect(db.callsOn("screen_events", "update")).toHaveLength(0);
@@ -102,6 +104,31 @@ describe("markWronglyDropped", () => {
     db.hooks.push((q) => (q.table === "screen_events" && q.op === "update" ? { data: null, error: { message: "boom" } } : undefined));
     expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=failed");
     log.mockRestore();
+  });
+});
+
+describe("markWronglyDropped: the person's own mail (review R3-8)", () => {
+  it("a hand-forwarded copy remembers nothing and answers ?flagged=own", async () => {
+    Object.assign(db.find("screen_events", SHOP_ROW)!, { subject: "Fwd: ご購入ありがとうございます", from_domain: "corp.example.test" });
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=own");
+    expect(db.find("screen_events", SHOP_ROW)!.flagged_at).toBeNull();
+  });
+
+  it("a mail from the domain of the login address remembers nothing (qa@example.com signs in here)", async () => {
+    db.find("screen_events", SHOP_ROW)!.from_domain = "example.com";
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=own");
+    expect(db.callsOn("screen_events", "update")).toHaveLength(0);
+  });
+
+  it("a provider's subdomain (sea.plala.or.jp) is shared", async () => {
+    db.find("screen_events", SHOP_ROW)!.from_domain = "sea.plala.or.jp";
+    expect(await redirectOf(markWronglyDropped(form({ id: SHOP_ROW })))).toBe("/app/settings?flagged=shared");
+  });
+
+  it("the page says why, and offers to register the parcel by hand", async () => {
+    const section = droppedSection(await render({ flagged: "own" }));
+    expect(textOf(section)).toContain("ご自身のアドレスから届いたメールは、差出人として覚えられません。今回の荷物は手で登録できます。");
+    expect(findAll(section, (n) => n.tag === "a" && n.attrs.href === "/app/parcels/new")).toHaveLength(1);
   });
 });
 

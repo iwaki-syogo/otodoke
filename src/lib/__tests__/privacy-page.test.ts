@@ -126,6 +126,8 @@ describe("/privacy: what it says", () => {
     expect(said["ログインのリンクを送った記録"]).toContain("どちらのアドレスも、そのままでは記録しません");
     expect(said["ログインのリンクを送った記録"]).toContain("1 時間を過ぎた記録");
     expect(said["接続の記録"]).toContain("障害や不正を調べるときに使うことがあります");
+    // Review R3-20: the providers' logs keep the address used to log in, for as long as the plans say.
+    expect(said["接続の記録"]).toContain("Supabase の記録には、ログインに使ったメールアドレスも入ります。Supabase は 7 日、Vercel は 1 日で消えます。");
   });
 
   it("tells what 「これは荷物」 remembers, that it still goes through Haiku, and how to remove it", async () => {
@@ -146,8 +148,9 @@ describe("/privacy: what it says", () => {
     expect(cookie).toContain("ログインのためだけに使います");
     expect(cookie).toContain("広告やアクセス解析のための cookie は使いません");
     expect(cookie).toContain("ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます");
-    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます");
-    expect(cookie).toContain("ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します");
+    // The hour first: a sign-in on another device leaves the sending browser its cookie (R3-22).
+    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。");
+    expect(cookie.match(/1 時間/g)).toHaveLength(1);
     // The old claim, untrue next to the login screen's cookie.
     expect(cookie).not.toContain("ログインの状態を保つためだけに使います");
   });
@@ -187,8 +190,19 @@ describe("/privacy: what it says", () => {
     expect(text).toContain("設定の「すべての荷物を消す」で");
     expect(text).toContain("設定の「アカウントを削除」で");
     expect(text).toContain("同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します");
+    // Review R3-1: a deleted account's calls stay in the day's count, with no user (20261106190000).
+    expect(text).toContain("1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します");
     expect(text).toContain("メールの自動転送の設定も外してください");
-    expect(text).toContain("データベースのバックアップに最大 7 日間残ります");
+    expect(text).toContain("消したデータも、データベースのバックアップと接続の記録に、最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。");
+  });
+
+  it("the longest a deleted account stays in the logs is the longest period 接続の記録 names (R3-20)", async () => {
+    const logs = Object.fromEntries(terms(section(await render(), "集める情報と使い道")))["接続の記録"];
+    const days = [...logs.matchAll(/(Supabase|Vercel) は (\d+) 日/g)].map((m) => Number(m[2]));
+    expect(days).toHaveLength(2);
+    const stays = textOf(section(await render(), "保存の期間と消し方")).match(/バックアップと接続の記録に、最大 (\d+) 日間残ります/);
+    expect(stays).not.toBeNull();
+    expect(Number(stays![1])).toBe(Math.max(...days));
   });
 
   it("sums up the safety measures, with a link to the public code", async () => {
@@ -223,6 +237,18 @@ describe("/privacy: what it says matches the code it describes", () => {
     const { LOGIN_EMAIL_COOKIE_PATH, LOGIN_EMAIL_MAX_AGE } = await import("@/lib/login-email-cookie");
     expect(LOGIN_EMAIL_MAX_AGE).toBe(60 * 60);
     expect(LOGIN_EMAIL_COOKIE_PATH).toBe("/login");
+  });
+
+  it("「この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します」: each of those removes it", () => {
+    const read = (file: string) => readFileSync(path.join(process.cwd(), file), "utf8");
+    const login = read("src/app/login/actions.ts");
+    const sending = login.slice(login.indexOf("export async function sendMagicLink"), login.indexOf("export async function verifyLoginCode"));
+    expect(sending).toContain("await rememberLogin(");
+    // Signing in by the code, by the link, signing out, deleting the account.
+    expect(login.slice(login.indexOf("export async function verifyLoginCode"))).toContain("await forgetLogin();");
+    for (const file of ["src/app/auth/confirm/route.ts", "src/app/auth/signout/route.ts", "src/app/app/settings/account-actions.ts"]) {
+      expect(read(file), file).toContain("await forgetLogin();");
+    }
   });
 
   it("「アドレスの文字と作った日時だけは残します」: the registry of given-out addresses has those two columns", () => {

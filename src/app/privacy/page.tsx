@@ -25,11 +25,14 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  * - 「これは荷物」: src/lib/screen-senders.ts (domains never remembered), src/lib/pipeline.ts
  *   secondLook (a remembered sender still gets the Haiku check), 設定「外す」 (forgetSender).
  * - The two cookies: Supabase's session (removed by signOut on logout and on account deletion) and
- *   the login screen's address cookie (src/lib/login-email-cookie.ts, one hour, Path=/login).
+ *   the login screen's address cookie (src/lib/login-email-cookie.ts, one hour, Path=/login),
+ *   removed when that browser signs in, signs out or deletes its account: a link opened on
+ *   another device leaves it its hour, so the hour is told first (review R3-22).
  * - 11 月 14 日: decision 7 (supabase/pending/20261114090000), told the same way in
  *   mail-handling.tsx and mail-key-panel.tsx. Reword all three once it has run.
  * - What account deletion leaves: the receiving address's local part and when it was given out
- *   (supabase/migrations/20261106170000_issued_inbox_local_parts.sql).
+ *   (supabase/migrations/20261106170000_issued_inbox_local_parts.sql), and the day's count of
+ *   Claude calls with no user on it (20261106190000_claude_usage_keeps_deleted_calls.sql).
  */
 export default function PrivacyPage() {
   return (
@@ -61,12 +64,17 @@ export default function PrivacyPage() {
             送りすぎを防ぐために使います。メールアドレスと接続元の IP アドレスをハッシュ値に変えて、送った時刻と一緒に記録します。どちらのアドレスも、そのままでは記録しません。1 時間を過ぎた記録は、次に送るときに消します。
           </Term>
           <Term name="Claude を使った回数">1 日の上限を守るために、あなたのメールに Claude を使った回数を日ごとに記録します。</Term>
-          <Term name="接続の記録">Supabase と Vercel に、IP アドレスやブラウザの種類などの記録が残ります。障害や不正を調べるときに使うことがあります。</Term>
+          {/* The plans set these periods: Supabase Pro log retention (API & Database) 7 days, Vercel Pro
+              runtime logs 1 day (supabase.com/pricing, vercel.com/docs/logs/runtime, checked 2026-11-06).
+              Change this and 「最大 7 日間」 under 保存の期間と消し方 when either plan changes. */}
+          <Term name="接続の記録">
+            Supabase と Vercel に、IP アドレスやブラウザの種類などの記録が残ります。Supabase の記録には、ログインに使ったメールアドレスも入ります。Supabase は 7 日、Vercel は 1 日で消えます。障害や不正を調べるときに使うことがあります。
+          </Term>
           <Term name="cookie">
             ログインのためだけに使います。広告やアクセス解析のための cookie は使いません。
             <Bullets className="mt-1">
               <li>ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます。</li>
-              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます。ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します。</li>
+              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。</li>
             </Bullets>
           </Term>
         </Terms>
@@ -121,10 +129,11 @@ export default function PrivacyPage() {
             設定の「すべての荷物を消す」で、荷物と、保存したメール・読み取り結果を消せます。アカウント、転送先アドレス、合言葉の設定と、読まなかったメール・Claude を使った回数の記録は残ります。
           </li>
           <li>
-            設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。
+            設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します。
           </li>
           <li>アカウントを削除したら、メールの自動転送の設定も外してください。外さないと、転送されたメールは Otodoke では読みませんが、Resend には届き続けます。</li>
-          <li>消したデータも、データベースのバックアップに最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。</li>
+          {/* 最大 7 日間: the longest of the database backups and the logs of 接続の記録 (see the note there). */}
+          <li>消したデータも、データベースのバックアップと接続の記録に、最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。</li>
         </Bullets>
       </Section>
 
