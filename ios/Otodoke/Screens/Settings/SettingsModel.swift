@@ -115,7 +115,7 @@ final class SettingsModel {
     var keyStepFailure: (message: String, signInAgain: Bool)? {
         guard case .none? = keyPanel else { return nil }
         switch keySetup?.lastOutcome {
-        case let .failed(message)?: return (message, true)
+        case let .failed(message)?: return (message, KeySetupOutcome.failed(message: message).offersSignInAgain)
         case .addressMismatch?: return (LoginText.addressMismatch, false)
         default: return nil
         }

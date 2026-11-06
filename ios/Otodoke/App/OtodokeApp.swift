@@ -12,6 +12,10 @@ struct OtodokeApp: App {
                 RootView(auth: auth)
             case let .misconfigured(error):
                 ConfigErrorView(error: error)
+            #if DEBUG
+            case .testHost:
+                Color.clear
+            #endif
             }
         }
     }
@@ -24,8 +28,17 @@ private let launchLog = Logger(subsystem: "com.iwakisyogo.otodoke", category: "l
 enum AppStart {
     case ready(AuthService)
     case misconfigured(AppConfigError)
+    #if DEBUG
+    /// The host of the unit tests (XCTest injected the test bundle): nothing starts, nothing reads the Keychain or
+    /// talks to Supabase. DEBUG only: a Release build has no such case.
+    case testHost
+    #endif
 
-    static func load(info: [String: Any] = Bundle.main.infoDictionary ?? [:]) -> AppStart {
+    static func load(info: [String: Any] = Bundle.main.infoDictionary ?? [:], environment: [String: String] = ProcessInfo.processInfo.environment) -> AppStart {
+        #if DEBUG
+        // Unit tests inject their bundle into this app: start nothing (no Keychain, no auth.start(), no Supabase).
+        if environment["XCTestConfigurationFilePath"] != nil { return .testHost }
+        #endif
         do {
             let config = try AppConfig.load(info: info)
             // Before the auth client reads the Keychain: a session left by an earlier install goes.

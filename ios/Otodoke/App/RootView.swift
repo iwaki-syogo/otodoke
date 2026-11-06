@@ -44,10 +44,16 @@ struct RootView: View {
             case .login:
                 LoginView(auth: auth)
             case .main:
+                // N-2: the tabs live as long as one signed-in generation.
                 MainTabView(auth: auth)
+                    .id(auth.session.value)
             }
         }
         .task { await auth.start() }
+        // CX2: in front or not, from launch on (before any sign-in): each generation's key store reads it.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .background { auth.front.wentToBackground() } else { auth.front.cameToFront() }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, auth.state != .unknown else { return }
             Task { await auth.checkSession() }

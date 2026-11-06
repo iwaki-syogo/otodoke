@@ -67,7 +67,8 @@ protocol KeyAPI: Sendable {
 }
 
 /// The Web's endpoints. Bodies exactly as keys.md lists them (camelCase; no other field; expectedCurrentKeyId
-/// always present, JSON null for none), JSON, POST, sent once (never retried).
+/// always present, JSON null for none), JSON, POST. A client never sends the same body again; the only second try is KeySetup's, once, from register
+/// with a new key (S3).
 struct KeyAPIClient: KeyAPI {
     let baseURL: URL
     let session: URLSession
@@ -191,6 +192,11 @@ enum KeySetupOutcome: Equatable, Sendable {
     /// The key in use does not open with the password that signed in (a change on the Web stopped half-way):
     /// nothing made, nothing kept; the Web's login is asked for (no other password, no rewrap or restore here).
     case needsWebLogin
+
+    /// N-6: signing in again would not help for a refusal of the input itself (invalid_input): the words only.
+    var offersSignInAgain: Bool {
+        self != .failed(message: LoginText.invalidInput)
+    }
 }
 
 @MainActor

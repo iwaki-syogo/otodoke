@@ -37,6 +37,9 @@ final class AuthService {
     /// The signed-in state's generation (Codex-001). Moves on at sign-out and when the signed-in user
     /// changes; work that started under an older one is thrown away.
     let session = SessionGeneration()
+    /// The app in front or not (CX2), followed by RootView from launch on: known before a sign-in starts and
+    /// handed to each generation's OpenKeyStore (a sign-in that ends in the background keeps no key).
+    let front = AppFront()
     /// Sign-out's steps ② ③ ④ (the opened key's store). signOut() runs ① (session moves on) and then
     /// cleanup's cancelWork, dropMemory, deleteKeychainKey, in this order.
     @ObservationIgnored var cleanup: (any SignOutCleanup)?
@@ -62,7 +65,9 @@ final class AuthService {
 
     /// Tests only: runs once supabase-swift answered a password sign-in, before the hand-off is decided (the
     /// order where the client's .signedIn was handled first).
+    #if DEBUG
     @ObservationIgnored var afterSignInAnswer: (@MainActor () async -> Void)?
+    #endif
 
     init(provider: SupabaseProvider, deriver: PasswordV1Deriver = PasswordV1Deriver()) {
         self.provider = provider
@@ -145,9 +150,17 @@ final class AuthService {
             releaseEvents(publishHeld: true)
             throw Self.signInFailure(error)
         }
+        #if DEBUG
         if let afterSignInAnswer {
             self.afterSignInAnswer = nil
             await afterSignInAnswer()
+        }
+        #endif
+        // A session change held during the sign-in (a sign-out, another account) is not thrown away: unless the
+        // client's session is still this user's, nothing of this sign-in is published (master goes with the defer).
+        guard provider.auth.currentSession?.user.id == signedIn.user.id else {
+            releaseEvents(publishHeld: true)
+            throw .other
         }
         releaseEvents(publishHeld: false)
         clearPendingSignIn()

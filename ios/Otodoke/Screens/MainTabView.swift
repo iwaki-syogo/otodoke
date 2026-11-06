@@ -59,7 +59,7 @@ final class MainScreens {
 
     /// The app's: the signed-in session's provider; the writer publishes to the DataChanges every
     /// screen reads.
-    static func live(auth: AuthService) -> MainScreens {
+    static func live(auth: AuthService, keyParts: KeyParts? = nil, withKeys: Bool = true) -> MainScreens {
         let changes = DataChanges()
         let reader = ParcelReader(provider: auth.provider)
         let writer = ParcelWriter(provider: auth.provider, changes: changes)
@@ -72,7 +72,8 @@ final class MainScreens {
             settings: .live(auth: auth, changes: changes),
             detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
         )
-        screens.attachKeys(auth: auth)
+        // N-1: withKeys false is a View made while signing out: it must not take AuthService.cleanup over.
+        if withKeys { screens.attachKeys(auth: auth, parts: keyParts) }
         return screens
     }
 

@@ -57,6 +57,27 @@ final class SessionGeneration: SessionStamping {
     }
 }
 
+/// Whether the app is in front now (CX2), followed from the scene's phase by RootView from launch on, so it is
+/// known before any sign-in (AuthService.front) and handed to each signed-in generation's OpenKeyStore: a
+/// store made while the app is in the background keeps nothing until the app is in front again.
+@MainActor
+final class AppFront {
+    /// Not in the background (an inactive app, under a system sheet, is still in front).
+    private(set) var isInFront: Bool
+
+    init(isInFront: Bool = true) {
+        self.isInFront = isInFront
+    }
+
+    func wentToBackground() {
+        isInFront = false
+    }
+
+    func cameToFront() {
+        isInFront = true
+    }
+}
+
 /// Sign-out's steps ② ③ ④, in this order, after AuthService moved the generation on (①).
 @MainActor
 protocol SignOutCleanup: AnyObject {
@@ -93,12 +114,16 @@ struct OpenedKey: Equatable, Sendable {
 final class OpenKeyStore: SignOutCleanup {
     @ObservationIgnored let session: any SessionStamping
     @ObservationIgnored let vault: KeyVault?
+    /// The app in front or not, known from before the sign-in (AuthService.front).
+    @ObservationIgnored let front: AppFront
 
     /// Moves on each time the app goes to the background (and at sign-out).
     private(set) var period = 0
 
     /// The key put last, with the session it was put under.
     private var held: (key: OpenedKey, session: SessionStamp)?
+    /// Counts the keys put (A2-2): a read of the key row that started before a put must not judge the key put after.
+    @ObservationIgnored private(set) var putSerial = 0
     @ObservationIgnored private var work: [Task<Void, Never>] = []
 
     private struct WeakHolder {
@@ -107,9 +132,10 @@ final class OpenKeyStore: SignOutCleanup {
 
     @ObservationIgnored private var holders: [WeakHolder] = []
 
-    init(session: any SessionStamping, vault: KeyVault?) {
+    init(session: any SessionStamping, vault: KeyVault?, front: AppFront = AppFront()) {
         self.session = session
         self.vault = vault
+        self.front = front
     }
 
     /// The key in memory, only for the session now.
@@ -125,7 +151,8 @@ final class OpenKeyStore: SignOutCleanup {
 
     /// The session is still the stamp's and the period has not moved.
     func isCurrent(_ stamp: UnlockStamp) -> Bool {
-        stamp.period == period && session.isCurrent(stamp.session)
+        // CX2: an app in the background keeps nothing (a store made there is not current until it is in front).
+        front.isInFront && stamp.period == period && session.isCurrent(stamp.session)
     }
 
     /// Keeps `key` in memory when `stamp` is current and the key is the stamp's user's; false otherwise.
@@ -133,6 +160,7 @@ final class OpenKeyStore: SignOutCleanup {
     func put(_ key: OpenedKey, stamp: UnlockStamp) -> Bool {
         guard isCurrent(stamp), key.userID == stamp.session.userID else { return false }
         held = (key, stamp.session)
+        putSerial += 1
         return true
     }
 

@@ -229,6 +229,8 @@ final class UnlockModel {
             // N4: the sign-in made no key for this address: signing in again would not help.
             if keySetup?.lastOutcome == .addressMismatch { return finish(stamp, message: LoginText.addressMismatch) }
             // No key row: the key step after the sign-in did not finish; signing in again makes it.
+            // N-6: a refusal of the input itself shows its words only (signing in again would not help).
+            if keySetup?.lastOutcome == .failed(message: LoginText.invalidInput) { return finish(stamp, message: LoginText.invalidInput) }
             return finish(stamp, message: LoginText.noKeyYet, help: .signInAgain)
         case .failed:
             return finish(stamp, message: Self.readFailedText)
@@ -284,8 +286,14 @@ final class UnlockModel {
         guard let stamp = store.stamp() else { return .needsPassphrase }
 
         // Another kid: the key row read again decides.
+        let serialBefore = store.putSerial
         let read = await keys.currentKey()
         guard store.isCurrent(stamp) else { return .needsPassphrase }
+        // A2-2: a key was put while the row was read (the row may be older than that key): the row judges nothing.
+        if store.putSerial != serialBefore {
+            if let now = store.key, now.keyID == kid { return .key(now) }
+            return .needsPassphrase
+        }
         guard case let .loaded(row?) = read else {
             // Not readable (or no key row): nothing is deleted.
             return .readFailed
