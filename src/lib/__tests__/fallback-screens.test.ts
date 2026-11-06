@@ -9,8 +9,8 @@ import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
  * [Review 2026-11-06 E-11] Japanese 404 and error screens instead of Next's English ones.
  *
  * - 404 (src/app/not-found.tsx, src/app/app/not-found.tsx): for a URL no page answers and for
- *   notFound() (another person's parcel, a malformed id). The way back: the parcel list when
- *   signed in, else the top page.
+ *   notFound() (another person's parcel, a malformed id). The way back: the top page from the
+ *   root 404, signed in or not; the parcel list inside /app.
  * - Errors (src/app/error.tsx, src/app/app/error.tsx, src/app/global-error.tsx): a short apology,
  *   「もう一度読み込む」 (Next's retry) and a way back; never the error's message or stack.
  *   global-error brings its own <html lang="ja"> and <body> (it replaces the root layout).
@@ -58,14 +58,15 @@ describe("the 404 screens", () => {
   /**
    * [Review R3-6] Next renders the root not-found with every page (the root boundary's fallback),
    * so it must not read the session: that cost every request a round trip to Supabase Auth and
-   * made every page per-request. One way back, the parcel list; proxy.ts sends someone signed
-   * out to /login, and back to the list after signing in.
+   * made every page per-request.
+   * [Review R3-27] One way back, the top page: it offers 「荷物を見る」 to someone signed in and the
+   * login to someone who is not. The parcel list took a judge who mistyped a URL to the login page.
    */
-  it("lead to the parcel list, signed in or not, without reading the session", async () => {
+  it("lead to the top page, signed in or not, without reading the session", async () => {
     mocks.userError = new Error("the 404 must not read the session");
     for (const user of [{ id: "u1" }, null]) {
       mocks.user = user;
-      expect(links(await rootNotFound())).toEqual([["/app", "荷物の一覧へ"]]);
+      expect(links(await rootNotFound())).toEqual([["/", "トップへ"]]);
     }
   });
 

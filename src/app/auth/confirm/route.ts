@@ -63,10 +63,14 @@ export async function POST(request: NextRequest) {
     const code = loginLinkErrorCode(error);
     // A refused link in a browser that is signed in already (an old link pressed in another tab,
     // or one used up by this very sign-in): the continue page says who is signed in and leads to
-    // the parcels, instead of a red error on the login page.
+    // the parcels, instead of a red error on the login page, and without a word: the person is
+    // signed in, as they meant to be. Only 「別のアカウントでログインする」 posts intent: then the
+    // switch they asked for did not happen, and link=refused has the page say so. The mark is
+    // only shown there; where the page leads is the next, either way.
     if (code === "link_invalid" && (await signedIn(supabase))) {
       const target = safeNextPath(typeof next === "string" ? next : null);
-      return go(target === "/app" ? "/auth/continue" : `/auth/continue?next=${encodeURIComponent(target)}`, 303);
+      const query = [target === "/app" ? null : `next=${encodeURIComponent(target)}`, form.get("intent") === "switch_account" ? "link=refused" : null].filter(Boolean);
+      return go(query.length ? `/auth/continue?${query.join("&")}` : "/auth/continue", 303);
     }
     return go(loginErrorPath(code), 303);
   }

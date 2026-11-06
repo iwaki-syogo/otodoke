@@ -84,9 +84,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
               {cells.map((day, i) => {
                 if (!day) return <div key={`e${i}`} />;
                 const list = byDay.get(day) ?? [];
-                // 念のため対面 counts as face-to-face, as it turns the cell red.
-                const inPerson = list.filter((p) => faceToFace(p) === true).length;
-                const presence = inPerson > 0;
+                const face = dayFaceToFace(list);
                 const isToday = day === today;
                 const dnum = Number(day.slice(8));
                 const Cell = list.length ? "a" : "div";
@@ -94,7 +92,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                   <Cell
                     key={day}
                     href={list.length ? `#d-${day}` : undefined}
-                    aria-label={list.length ? cellLabel(day, inPerson, list.length) : undefined}
+                    aria-label={list.length ? cellLabel(day, list.length, face) : undefined}
                     className={`flex min-h-16 flex-col items-center rounded-lg px-0.5 py-1 ${list.length ? "active:bg-neutral-100" : ""}`}
                   >
                     <span
@@ -107,12 +105,12 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
                     {list.length > 0 ? (
                       <span
                         className={`mt-1 w-full truncate rounded px-1 text-center text-[10px] leading-4 ${
-                          presence ? "bg-red-600 font-bold text-white" : "bg-sky-100 text-sky-900"
+                          face ? "bg-red-600 font-bold text-white" : "bg-sky-100 text-sky-900"
                         }`}
                       >
                         {/* A red cell counts its face-to-face parcels only (🤝2件 reads as two to be home for). */}
-                        {presence ? "🤝" : ""}
-                        {presence ? inPerson : list.length}件
+                        {face ? "🤝" : ""}
+                        {face ? face.count : list.length}件
                       </span>
                     ) : null}
                   </Cell>
@@ -129,9 +127,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
             <ol className="flex flex-col gap-5">
               {days.map((day) => {
                 const list = byDay.get(day)!;
-                const inPerson = list.filter((p) => faceToFace(p) === true);
+                const face = dayFaceToFace(list);
                 // Worded like the cards: the day reads 念のため対面 when no parcel of it was said to be.
-                const presenceLabel = inPerson.length === 0 ? null : inPerson.every((p) => faceToFaceAssumed(p)) ? ASSUMED_FACE_TO_FACE : "対面受け取り";
+                const presenceLabel = face ? (face.assumed ? ASSUMED_FACE_TO_FACE : "対面受け取り") : null;
                 return (
                   <li key={day} id={`d-${day}`} className="scroll-mt-4">
                     <h2 className={`flex items-center gap-2 text-sm font-bold ${day === today ? "text-neutral-900" : "text-neutral-700"}`}>
@@ -171,12 +169,24 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
 }
 
 /**
+ * A day's face-to-face parcels, for its cell and its heading alike (one decision, two wordings):
+ * how many (念のため対面 included, as it turns the cell red), and whether every one of them is so
+ * only by the default, with nothing said (then the day is worded 念のため対面). Null: none.
+ */
+function dayFaceToFace(list: ParcelRow[]): { count: number; assumed: boolean } | null {
+  const inPerson = list.filter((p) => faceToFace(p) === true);
+  if (inPerson.length === 0) return null;
+  return { count: inPerson.length, assumed: inPerson.every((p) => faceToFaceAssumed(p)) };
+}
+
+/**
  * What a screen reader says for a day's cell: the date, the face-to-face parcels and the rest.
  * The cell shows one number (on a red cell, the face-to-face ones only), so both are said here.
  */
-function cellLabel(day: string, inPerson: number, total: number): string {
+function cellLabel(day: string, total: number, face: ReturnType<typeof dayFaceToFace>): string {
   const [, m, d] = day.split("-").map(Number);
   const date = `${m}月${d}日`;
-  if (inPerson === 0) return `${date}、${total} 件`;
-  return inPerson === total ? `${date}、対面 ${inPerson} 件` : `${date}、対面 ${inPerson} 件、ほか ${total - inPerson} 件`;
+  if (!face) return `${date}、${total} 件`;
+  const said = `${date}、${face.assumed ? ASSUMED_FACE_TO_FACE : "対面"} ${face.count} 件`;
+  return face.count === total ? said : `${said}、ほか ${total - face.count} 件`;
 }

@@ -11,6 +11,10 @@ import { findAll, hasClasses, linksTo, parseHtml, textOf, type HtmlNode } from "
  * turns the cell red. A blue cell (no face-to-face parcel) counts them all, as before.
  * The cell's name for screen readers gives both numbers (「11月6日、対面 1 件、ほか 1 件」), with
  * no text added on screen. The day's heading, its list and the badges stay as they were.
+ *
+ * [Review R3-19] The name words the face-to-face parcels as the day's heading does, by the same
+ * decision: 「念のため対面 N 件」 when every one of them is so only by the default (the heading reads
+ * 念のため対面), 「対面 N 件」 once one was said to be (the heading reads 対面受け取り).
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
@@ -125,12 +129,25 @@ describe("the calendar's day cells", () => {
 
   it.each([
     [6, "対面 1 件、ほか 1 件"],
+    // One said to be face-to-face, one by the default: 対面, as the heading's 対面受け取り.
     [8, "対面 2 件"],
     [10, "3 件"],
-    [12, "対面 1 件"],
-    [14, "対面 1 件、ほか 1 件"],
+    // Only by the default: 念のため対面, as the heading.
+    [12, "念のため対面 1 件"],
+    [14, "念のため対面 1 件、ほか 1 件"],
   ])("names the %ith for screen readers with both numbers: 「M月D日、%s」", async (d, rest) => {
     expect(cell(await render(), d).attrs["aria-label"]).toBe(`${month}月${d}日、${rest}`);
+  });
+
+  it("words a cell's face-to-face parcels as the day's heading does", async () => {
+    const root = await render();
+    for (const d of SEEDED) {
+      const name = cell(root, d).attrs["aria-label"];
+      const red = findAll(findAll(day(root, d), (n) => n.tag === "h2")[0], (n) => hasClasses(n, "text-red-700"));
+      const heading = red.length ? textOf(red[0]) : null;
+      const said = name.includes("、念のため対面 ") ? "念のため対面" : name.includes("、対面 ") ? "対面受け取り" : null;
+      expect(said, on(d)).toBe(heading);
+    }
   });
 
   it("the numbers in a cell's name add up to the parcels listed for the day", async () => {

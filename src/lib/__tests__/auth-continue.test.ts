@@ -220,7 +220,8 @@ describe("/auth/continue, signed in already", () => {
     const html = await page({ token_hash: TOKEN, type: "email", next: "/app" });
     expect(buttons(html)).toEqual(["別のアカウントでログインする"]);
     expect(forms(html)).toEqual([["/auth/confirm", "post"]]);
-    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "email", next: "/app" });
+    // [Review R3-23] intent: a refused switch comes back saying so (switch-account-refused.test.ts).
+    expect(hidden(html)).toEqual({ token_hash: TOKEN, type: "email", next: "/app", intent: "switch_account" });
   });
 
   it("goes where the link was going, and only to a path on this site", async () => {
