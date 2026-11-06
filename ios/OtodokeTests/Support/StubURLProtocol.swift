@@ -103,7 +103,8 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        registry.get(request.url?.host) != nil
+        // A host nobody registered fails here (startLoading: unsupportedURL), never on the real network.
+        true
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
