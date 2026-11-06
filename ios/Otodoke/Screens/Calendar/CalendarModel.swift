@@ -52,6 +52,8 @@ final class CalendarModel {
     @ObservationIgnored private var movingTo: String?
     /// [S1] The last read was cut off (its .task cancelled): the next appearance reads again.
     @ObservationIgnored private var wasCutOff = false
+    /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
+    @ObservationIgnored private var cutOff: CutOffSignal?
 
     init(reader: ParcelReader, changes: DataChanges?, today: @escaping @Sendable () -> String) {
         self.reader = reader
@@ -147,7 +149,7 @@ final class CalendarModel {
 
     /// Shown (the tab opened): reads when never read, or when DataChanges moved since the last read.
     func onAppear() async {
-        if byDay == nil || byDay == .failed || mark.isStale || wasCutOff { await load() }
+        if byDay == nil || byDay == .failed || mark.isStale || wasCutOff || cutOff?.isRaised == true { await load() }
     }
 
     /// iOS-12: the app came back to the front while this screen is shown.
@@ -161,25 +163,34 @@ final class CalendarModel {
         guard !isMoving, bounds.contains(ym), !JSText.equal(ym, month) else { return }
         isMoving = true
         movingTo = ym
-        defer {
-            isMoving = false
-            movingTo = nil
-        }
+        // [CX-f1] The move ends when the newest read ends (read() clears it), not when this read does: a
+        // load() meanwhile reads movingTo too and may still be on the way when this one ends.
         await read(ym)
     }
 
     /// Reads `ym`; shown only when no newer read began meanwhile.
     private func read(_ ym: String) async {
         let ticket = fence.beginRead()
+        let signal = CutOffSignal()
+        cutOff = signal
         mark.markRead()
         let now = today()
-        let result = await reader.allParcels()
+        let reader = self.reader
+        let result = await withTaskCancellationHandler {
+            await reader.allParcels()
+        } onCancel: {
+            signal.raise()
+        }
+        // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
+        guard fence.verdict(ticket) == .current else { return }
+        // [CX-f1] The newest read ended: a move on the way is over (shown, failed or cut off).
+        isMoving = false
+        movingTo = nil
         // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
         guard !Task.isCancelled else {
             wasCutOff = true
             return
         }
-        guard fence.verdict(ticket) == .current else { return }
         wasCutOff = false
         month = ym
         shownToday = now
