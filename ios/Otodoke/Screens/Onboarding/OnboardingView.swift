@@ -21,10 +21,16 @@ enum OnboardingGate {
 enum Landing: Equatable {
     case waiting
     case guide
+    /// The sign-in of the waiting screen went through but the key did not open or could not be made: the amber
+    /// box (KeyBox) with 「このまま進む」 and 「パスワードとメールの鍵」, as the Web's waiting screen shows it.
+    case keyBox
     case tabs
 
-    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool) -> Landing {
+    /// `fromConfirmation`: the key step was the waiting screen's sign-in. `boxClosed`: the box was left by one of its
+    /// two links (it is shown once per signed-in generation, as the guide is).
+    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool, fromConfirmation: Bool = false, boxClosed: Bool = false) -> Landing {
         if deciding { return .waiting }
+        if fromConfirmation, !boxClosed, KeyBox.text(for: outcome) != nil { return .keyBox }
         return !guideClosed && OnboardingGate.shouldShow(after: outcome) ? .guide : .tabs
     }
 }

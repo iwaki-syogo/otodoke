@@ -98,8 +98,10 @@ struct LoginView: View {
         // another button. The same rationing as every try by itself.
         .onChange(of: model.turnstile?.hasToken ?? false) { _, has in
             guard has, scenePhase == .active, model.isWaitingForConfirmation else { return }
-            Task { await model.checkConfirmation() }
+            Task { await model.tokenArrived() }
         }
+        // The screen is left (closed, gone back from): the timer, the wait for a token and the held password stop.
+        .onDisappear { model.leaveWait() }
         // Back in front (from the mail's link in Safari): the sign-in is tried once, never in a quick loop.
         .onChange(of: scenePhase) { _, phase in
             model.isInFront = phase == .active

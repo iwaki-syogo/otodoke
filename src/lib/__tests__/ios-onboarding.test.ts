@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { TURNSTILE_TOKEN_STALE_MS } from "../turnstile";
-import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX, CONFIRM_WAIT, WELCOME } from "../onboarding";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, WELCOME } from "../onboarding";
+import { LOGIN_MESSAGES } from "../login-errors";
 
 /**
  * [iOS onboarding] From making an account to the forwarding setup:
@@ -35,19 +36,21 @@ function swiftConstants(src: string): Map<string, string> {
   return out;
 }
 
-/** The sentence of the waiting screen's body. A copy, because src/lib/onboarding.ts still has the earlier one. */
-const WAITING_BODY = "メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。";
+/**
+ * The sentence after 「確認しました」 when the address is not confirmed yet, as decided on 2026-11-07. src/lib/onboarding.ts
+ * (CONFIRM_WAIT.notYet) still has the earlier one, so iOS is compared with this copy until the Web has it. When the
+ * Web has it, compare with CONFIRM_WAIT.notYet and delete the copy (the test below then fails to remind of it).
+ */
+const NOT_YET = "まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？";
 
 /** The Web's constants (src/lib/onboarding.ts), by OnboardingText name. */
 const WORDING: Record<string, string> = {
   // screen 1
   waitingTitle: CONFIRM_WAIT.title,
-  // The new sentence (two sentences, full-width 「」). The Web's CONFIRM_WAIT.body is to carry it too; until it does
-  // the copy below is what iOS is compared with (WAITING_BODY).
-  waitingLead: WAITING_BODY,
+  waitingLead: CONFIRM_WAIT.body,
   confirmedButton: CONFIRM_WAIT.done,
   resendButton: CONFIRM_WAIT.resend,
-  notConfirmedYet: CONFIRM_WAIT.notYet,
+  notConfirmedYet: NOT_YET,
   resent: CONFIRM_WAIT.resent,
   startOver: CONFIRM_WAIT.restart,
   // screen 3
@@ -59,7 +62,10 @@ const WORDING: Record<string, string> = {
   laterButton: WELCOME.later,
 };
 
-const APP_ONLY: Record<string, string> = {};
+/** The amber box's two links (src/app/signup/signup-form.tsx has them inline, not as exports). */
+const KEY_BOX: Record<string, string> = { keyBoxProceed: "このまま進む", keyBoxKeyPage: "パスワードとメールの鍵" };
+
+const APP_ONLY: Record<string, string> = { ...KEY_BOX };
 
 describe("the words", () => {
   const swift = () => swiftConstants(stripComments(read("ios/Otodoke/Auth/OnboardingText.swift")));
@@ -102,24 +108,41 @@ describe("the words", () => {
 describe("the tries by itself are rationed with the Web's numbers", () => {
   const swiftAuto = () => read("ios/Otodoke/Auth/AutoSignIn.swift");
   const num = (src: string, name: string) => Number(src.match(new RegExp(`static let ${name} = ([0-9_]+)`))?.[1]?.replace(/_/g, ""));
+  const list = (src: string, name: string) =>
+    (src.match(new RegExp(`static let ${name} = \\[([0-9_, ]+)\\]`))?.[1] ?? "").split(",").map((x) => Number(x.trim().replace(/_/g, "")));
 
-  it("the iOS constants are onboarding.ts's AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_AFTER_FAILURE_MS and AUTO_SIGN_IN_MAX", () => {
+  it("the iOS constants are onboarding.ts's AUTO_SIGN_IN_BACKOFF_MS (20, 60, 180 s), AFTER_FAILURE_MS, SAME_RETURN_MS and MAX", () => {
     const src = stripComments(swiftAuto());
-    expect(num(src, "gapMs")).toBe(AUTO_SIGN_IN_GAP_MS);
+    expect(list(src, "backoffMs")).toEqual([...AUTO_SIGN_IN_BACKOFF_MS]);
+    expect(list(src, "backoffMs")).toEqual([20_000, 60_000, 180_000]);
     expect(num(src, "afterFailureMs")).toBe(AUTO_SIGN_IN_AFTER_FAILURE_MS);
+    expect(num(src, "sameReturnMs")).toBe(AUTO_SIGN_IN_SAME_RETURN_MS);
     expect(num(src, "max")).toBe(AUTO_SIGN_IN_MAX);
   });
 
-  it("negative control: a changed number is caught", () => {
-    const src = stripComments(swiftAuto()).replace("20_000", "10_000");
-    expect(num(src, "gapMs")).not.toBe(AUTO_SIGN_IN_GAP_MS);
+  it("negative control: a changed number, or a changed backoff step, is caught", () => {
+    const src = stripComments(swiftAuto());
+    expect(num(src.replace("2_000", "3_000"), "sameReturnMs")).not.toBe(AUTO_SIGN_IN_SAME_RETURN_MS);
+    expect(list(src.replace("60_000", "50_000"), "backoffMs")).not.toEqual([...AUTO_SIGN_IN_BACKOFF_MS]);
+    expect(list(src.replace("180_000", "120_000"), "backoffMs")).not.toEqual([...AUTO_SIGN_IN_BACKOFF_MS]);
   });
 
-  it("only the try by itself is rationed: the pressed button skips the gate; the front-return path goes through it", () => {
+  it("the next step of the backoff is the Web's rule: refusals - 1, at least the first, at most the last", () => {
+    const src = stripComments(swiftAuto());
+    expect(src).toMatch(/backoffMs\[min\(Swift\.max\(refusals - 1, 0\), backoffMs\.count - 1\)\]/);
+  });
+
+  it("only the try by itself is rationed: the pressed button skips the gate and does not count; a return goes through it", () => {
     const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
-    expect(model).toMatch(/\} else \{\s*guard autoGate\.allows\(now: now\(\)\) else \{\s*if !catchUp \{ scheduleCatchUp\(\) \}\s*return\s*\}/);
+    expect(model).toMatch(/guard autoGate\.allows\(now: now\(\)\) else \{\s*scheduleAuto\(\)\s*return\s*\}/);
     expect(model).toMatch(/autoGate\.countSend\(\)/);
     expect(model).toMatch(/autoGate\.refused\(now: now\(\)\)/);
+    expect(model).toMatch(/if trigger == \.returned, !autoGate\.noteReturn\(now: now\(\)\) \{ return \}/);
+    // A press: cancels the timer, notes the time; it does not count a send or a refusal as "not confirmed yet".
+    const press = model.match(/if pressed \{\s*isWorking = true[\s\S]*?autoGate\.pressed\(now: now\(\)\)/)?.[0] ?? "";
+    expect(press).toContain("cancelTimer()");
+    expect(press).not.toMatch(/countSend|refusedNotConfirmed/);
+    expect(model).toMatch(/if pressed \{ notice = OnboardingText\.notConfirmedYet \} else \{ autoGate\.refusedNotConfirmed\(\) \}/);
   });
 
   it("the stale limit of a Turnstile token is the Web's TURNSTILE_TOKEN_STALE_MS", () => {
@@ -134,7 +157,7 @@ describe("the tries by itself are rationed with the Web's numbers", () => {
     expect(auto).not.toMatch(/await|waitUntilSettled/);
     expect(auto).toMatch(/return \(false, nil\)/);
     const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
-    expect(view).toMatch(/onChange\(of: model\.turnstile\?\.hasToken \?\? false\)[\s\S]*?checkConfirmation\(\)/);
+    expect(view).toMatch(/onChange\(of: model\.turnstile\?\.hasToken \?\? false\)[\s\S]*?tokenArrived\(\)/);
   });
 
   it("「送り直しました」 is a toast that goes by itself (ToastBanner over the screen, the model clears it), not a box", () => {
@@ -196,7 +219,7 @@ describe("the wiring", () => {
     expect(gate).toMatch(/if deciding \{ return \.waiting \}/);
     const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
     expect(tabs).not.toMatch(/fullScreenCover/);
-    expect(tabs).toMatch(/Landing\.of\(deciding: screens\.keySetup\?\.isDeciding == true, outcome: screens\.keySetup\?\.lastOutcome/);
+    expect(tabs).toMatch(/Landing\.of\(\s*deciding: screens\.keySetup\?\.isDeciding == true,\s*outcome: screens\.keySetup\?\.lastOutcome,\s*guideClosed: guideClosed,\s*fromConfirmation: screens\.keySetup\?\.lastRunFromConfirmation == true/);
     expect(tabs).toMatch(/\.opacity\(landing == \.tabs \? 1 : 0\)/);
     expect(tabs).toMatch(/\.transition\(\.identity\)/);
     expect(tabs).toMatch(/route\.tab = \.parcels/);
@@ -209,17 +232,28 @@ describe("the wiring", () => {
   it("the sign-in after the mail's link is the existing one (AuthService.signIn), not a new route", () => {
     const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
     expect(model).toMatch(/auth\.signIn\(email: address, password: typed/);
-    const body = model.match(/func checkConfirmation\([\s\S]*?\n    \}\n/)?.[0] ?? "";
+    const body = model.match(/private func check\(_ trigger[\s\S]*?\n    \}\n/)?.[0] ?? "";
     expect(body).toMatch(/signInOnce\(/);
     expect(model).not.toMatch(/signInWith|verifyOTP|URLSession/);
   });
 
-  it("coming back to the front tries once; there is no timer or loop", () => {
+  it("coming back to the front tries once; the one timer is a cancellable Task with an injected sleep, not a Timer or a loop", () => {
     const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
     expect(view).toMatch(/onChange\(of: scenePhase\)[\s\S]*checkConfirmation\(\)/);
     for (const f of walk(path.join(APP, "Auth")).filter((x) => x.endsWith(".swift"))) {
       expect(stripComments(readFileSync(f, "utf8")).match(/Timer\.|\.publish\(every/g) ?? [], f).toEqual([]);
     }
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/private func scheduleAuto\(\)\s*\{\s*cancelTimer\(\)/);
+    expect(model).toMatch(/didSet \{ if !isInFront \{ cancelTimer\(\) \} \}/);
+  });
+
+  it("leaving the screen stops the timer, the wait for a token and the held password (the Web's waiting screen leaves them running)", () => {
+    const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
+    expect(view).toMatch(/\.onDisappear \{ model\.leaveWait\(\) \}/);
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/private func dropWait\(\)\s*\{\s*waitEpoch \+= 1\s*cancelTimer\(\)/);
+    expect(model).toMatch(/guard epoch == waitEpoch, heldPassword != nil else \{ return \}/);
   });
 
   it("the empty list's button opens 「メールの転送」", () => {
@@ -235,5 +269,53 @@ describe("the settings list", () => {
   it("the key row's badge for no key is the Web's 「未設定」", () => {
     const menu = stripComments(read("ios/Otodoke/Screens/Settings/SettingsMenuText.swift"));
     expect(swiftConstants(menu).get("keyNoneBadge")).toBe("未設定");
+  });
+});
+
+describe("the amber box after a sign-in whose key did not open or could not be made", () => {
+  const web = read("src/app/signup/signup-form.tsx");
+
+  it("its words and links are the Web's: key_not_opened, 「このまま進む」, 「パスワードとメールの鍵」 to /app/settings/password", () => {
+    expect(web).toContain(">\n            このまま進む\n");
+    expect(web).toContain("パスワードとメールの鍵");
+    expect(web).toContain('href="/app/settings/password"');
+    expect(web).toMatch(/kind: "key", text: result\.key === "not_opened" \? LOGIN_MESSAGES\.key_not_opened : flowMessage\(result\.code\)/);
+    const login = stripComments(read("ios/Otodoke/Auth/LoginText.swift"));
+    expect(swiftConstants(login).get("keyNotOpened")).toBe(LOGIN_MESSAGES.key_not_opened);
+    const box = stripComments(read("ios/Otodoke/Screens/Onboarding/KeyBoxView.swift"));
+    expect(box).toContain("case .needsWebLogin?: LoginText.keyNotOpened");
+    expect(box).toContain("case let .failed(message)?: message");
+    expect(box).toContain("OnboardingText.keyBoxProceed");
+    expect(box).toContain("OnboardingText.keyBoxKeyPage");
+    // No title and no button: the box holds the words and the two links only.
+    expect(box).not.toMatch(/Text\(OnboardingText\.(waitingTitle|confirmedButton)/);
+  });
+
+  it("the second link opens 設定's page of that name", () => {
+    const menu = swiftConstants(stripComments(read("ios/Otodoke/Screens/Settings/SettingsMenuText.swift")));
+    expect(menu.get("keyTitle")).toBe(KEY_BOX.keyBoxKeyPage);
+    const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
+    expect(tabs).toMatch(/mutating func showKey\(\)\s*\{\s*settingsPath = \[\.key\]\s*tab = \.settings/);
+    expect(tabs).toMatch(/proceed:\s*\{\s*route\.tab = \.parcels\s*boxClosed = true/);
+    expect(tabs).toMatch(/openKeyPage:\s*\{\s*route\.showKey\(\)\s*boxClosed = true/);
+  });
+
+  it("only the waiting screen's sign-in is marked for the box", () => {
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/auth\.signIn\(email: address, password: typed, captchaToken: captchaToken, fromConfirmation: true\)/);
+    const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
+    expect(tabs).toContain("fromConfirmation: screens.keySetup?.lastRunFromConfirmation == true");
+  });
+
+  it("negative control: a sentence that is not key_not_opened is caught", () => {
+    expect(swiftConstants('static let keyNotOpened = "このパスワードでは、メールの鍵を開けません。"').get("keyNotOpened")).not.toBe(LOGIN_MESSAGES.key_not_opened);
+  });
+});
+
+describe("the sentence after 「確認しました」 when not confirmed yet", () => {
+  it("is the new one, with 「確認する」 in full-width brackets; the Web still has the earlier one until its change lands", () => {
+    expect(NOT_YET).toBe("まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？");
+    // When the Web has it, this fails: compare iOS with CONFIRM_WAIT.notYet in WORDING and delete NOT_YET.
+    expect((CONFIRM_WAIT.notYet as string) === NOT_YET || (CONFIRM_WAIT.notYet as string) === "まだ確認できていません。メールのリンクを押しましたか？").toBe(true);
   });
 });

@@ -213,6 +213,9 @@ final class KeySetup {
 
     /// The last run's outcome (the unlock and settings screens can show a failure).
     private(set) var lastOutcome: KeySetupOutcome?
+    /// The last run was the sign-in of the waiting screen (after making an account): its failure to open or make the
+    /// key is told on the landing (KeyBox), as the Web's waiting screen tells it.
+    private(set) var lastRunFromConfirmation = false
     /// Key steps of a password sign-in's hand-off that are not over yet. While it is above 0 the tabs are held
     /// behind the waiting display (Landing): where the login lands (the guide or the 荷物 tab) is not known yet.
     /// A launch with a stored session has no hand-off, so it is 0 from the start.
@@ -258,6 +261,7 @@ final class KeySetup {
         }
         guard let stamp = store.stamp(), stamp.session.userID == signIn.userID else {
             lastOutcome = .stale
+            lastRunFromConfirmation = signIn.fromConfirmation
             return .stale
         }
         // CX3: the save may only use the policy as it was when this started.
@@ -267,6 +271,7 @@ final class KeySetup {
         let outcome = await task.value
         if running?.task == task { running = nil }
         lastOutcome = outcome
+        lastRunFromConfirmation = signIn.fromConfirmation
         return outcome
     }
 

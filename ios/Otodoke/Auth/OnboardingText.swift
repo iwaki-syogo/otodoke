@@ -14,11 +14,18 @@ enum OnboardingText {
     /// The secondary button: the confirmation mail again.
     static let resendButton = "メールを送り直す"
     /// Shown only after 「確認しました」 was pressed and the address is still not confirmed (never after the automatic try).
-    static let notConfirmedYet = "まだ確認できていません。メールのリンクを押しましたか？"
+    static let notConfirmedYet = "まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？"
     /// Right after the mail was sent again.
     static let resent = "送り直しました"
     /// Not in the wording file: the way out of the wait to the sign-up form (a different address).
     static let startOver = "別のアドレスでやり直す"
+
+    // MARK: the waiting screen's end when the key did not open or could not be made (the Web's signup-form.tsx)
+
+    /// The first link of the amber box: on to the 荷物 tab.
+    static let keyBoxProceed = "このまま進む"
+    /// The second link: 設定's page of that name (SettingsMenuText.keyTitle).
+    static let keyBoxKeyPage = "パスワードとメールの鍵"
 
     // MARK: screen 3: the first guide (after the first key was made)
 

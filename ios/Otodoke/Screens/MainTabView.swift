@@ -39,6 +39,12 @@ struct TabRoute: Equatable {
         tab = .settings
     }
 
+    /// The 設定 tab with 「パスワードとメールの鍵」 pushed (the key box's second link).
+    mutating func showKey() {
+        settingsPath = [.key]
+        tab = .settings
+    }
+
     /// The 設定 tab with 「メールの転送」 pushed (replacing what was open there).
     mutating func showForwarding() {
         settingsPath = [.forward]
@@ -128,6 +134,8 @@ struct MainTabView: View {
     @State private var screens: MainScreens
     /// The first guide was closed (it is shown once per signed-in generation).
     @State private var guideClosed = false
+    /// The key box was left by one of its two links (shown once per signed-in generation).
+    @State private var boxClosed = false
     /// The app went to the background since it was last in front.
     @State private var wasInBackground = false
     @Environment(\.scenePhase) private var scenePhase
@@ -210,6 +218,19 @@ struct MainTabView: View {
                     guideClosed = true
                 }
                 .transition(.identity)
+            case .keyBox:
+                KeyBoxView(
+                    text: KeyBox.text(for: screens.keySetup?.lastOutcome) ?? "",
+                    proceed: {
+                        route.tab = .parcels
+                        boxClosed = true
+                    },
+                    openKeyPage: {
+                        route.showKey()
+                        boxClosed = true
+                    }
+                )
+                .transition(.identity)
             case .tabs:
                 EmptyView()
             }
@@ -217,7 +238,13 @@ struct MainTabView: View {
     }
 
     private var landing: Landing {
-        Landing.of(deciding: screens.keySetup?.isDeciding == true, outcome: screens.keySetup?.lastOutcome, guideClosed: guideClosed)
+        Landing.of(
+            deciding: screens.keySetup?.isDeciding == true,
+            outcome: screens.keySetup?.lastOutcome,
+            guideClosed: guideClosed,
+            fromConfirmation: screens.keySetup?.lastRunFromConfirmation == true,
+            boxClosed: boxClosed
+        )
     }
 
     @ViewBuilder

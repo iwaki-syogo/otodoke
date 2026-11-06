@@ -136,7 +136,7 @@ final class AuthService {
     /// signIn(email: email_norm, password: auth_secret, captchaToken:). On success the session is applied, and a
     /// PasswordSignIn is kept for takeSignInSecret() when email_norm of the session's address is the one master
     /// was made with (else a key made now would not open with the address the app has later).
-    func signIn(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
+    func signIn(email: String, password: String, captchaToken: String?, fromConfirmation: Bool = false) async throws(LoginFailure) {
         let address = PasswordV1.emailNorm(email)
         guard Self.isValidEmail(address) else { throw .invalidEmail }
         var master = try await makeMaster(password: password, email: address)
@@ -170,7 +170,7 @@ final class AuthService {
         session.follow(userID: userID)
         if let stamp = session.stamp(), stamp.userID == userID {
             if let sessionAddress = signedIn.user.email, PasswordV1.emailNorm(sessionAddress) == address {
-                pendingSignIn = (PasswordSignIn(userID: userID, email: address, master: Data(master)), stamp)
+                pendingSignIn = (PasswordSignIn(userID: userID, email: address, master: Data(master), fromConfirmation: fromConfirmation), stamp)
             } else {
                 pendingMismatch = stamp
             }
@@ -403,4 +403,7 @@ struct PasswordSignIn: Sendable {
     /// email_norm of the address master was made with.
     let email: String
     let master: Data
+    /// The sign-in came from the waiting screen after making an account (the key step's failure is then told on the
+    /// landing, not left to the unlock screen).
+    var fromConfirmation = false
 }

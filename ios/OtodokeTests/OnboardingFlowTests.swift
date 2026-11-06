@@ -16,10 +16,11 @@ struct OnboardingFlowTests {
 
     private func make(
         _ fake: FakeSupabase, token: TurnstileToken? = nil, storage: InMemorySessionStorage = InMemorySessionStorage(),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        timerSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) -> (LoginModel, AuthService) {
         let auth = PW.auth(fake, storage: storage)
-        let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: []), now: clock.function, turnstile: token, tokenWait: .milliseconds(100), sleep: sleep)
+        let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: []), now: clock.function, turnstile: token, tokenWait: .milliseconds(100), sleep: sleep, timerSleep: timerSleep)
         model.email = FakeSupabase.email
         return (model, auth)
     }
@@ -189,21 +190,27 @@ struct OnboardingFlowTests {
     // MARK: the tries by itself are rationed (the Web's numbers; a press always tries)
 
     @Test func theNumbersAreTheWebs() {
-        #expect(AutoSignIn.gapMs == 20_000)
+        #expect(AutoSignIn.backoffMs == [20_000, 60_000, 180_000])
+        #expect(AutoSignIn.gapMs(refusals: 0) == 20_000)
+        #expect(AutoSignIn.gapMs(refusals: 1) == 20_000)
+        #expect(AutoSignIn.gapMs(refusals: 2) == 60_000)
+        #expect(AutoSignIn.gapMs(refusals: 3) == 180_000)
+        #expect(AutoSignIn.gapMs(refusals: 9) == 180_000)
         #expect(AutoSignIn.afterFailureMs == 60_000)
         #expect(AutoSignIn.max == 5)
     }
 
-    @Test func aSecondTryByItselfWithinTwentySecondsDoesNotRun() async {
+    @Test func aReturnTriesAtOnceInsideTheGapButTwoReturnsOfAMomentAreOne() async {
         let fake = FakeSupabase.make()
         let (model, _) = make(fake)
         await signUp(model)
         await model.checkConfirmation()
         #expect(await fake.count("POST", "token") == 1)
-        clock.advance(seconds: 19)
+        // The Web: the app shown again tries at once; the gap of the backoff holds the timer, not a return.
+        clock.advance(seconds: 1)
         await model.checkConfirmation()
         #expect(await fake.count("POST", "token") == 1)
-        clock.advance(seconds: 2)
+        clock.advance(seconds: 3)
         await model.checkConfirmation()
         #expect(await fake.count("POST", "token") == 2)
     }
@@ -333,9 +340,11 @@ struct OnboardingFlowTests {
         #expect(model.errorMessage == nil)
         #expect(model.shownNotice == nil)
         #expect(!model.isWorking)
-        // It did not use up the gap: a token that comes right after is tried at once.
+        // It did not use up the gap (difference 1 in AutoSignIn.swift): a token that comes once the timer's point is
+        // reached is tried at once.
+        clock.advance(seconds: 21)
         token.receive(.token("tok-tap"), generation: token.generation)
-        await model.checkConfirmation()
+        await model.tokenArrived()
         #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-tap")
     }
 
@@ -474,136 +483,302 @@ struct OnboardingFlowTests {
         #expect(model.toast == nil)
     }
 
-    // MARK: a return inside the gap keeps one try for the end of the gap
+    // MARK: the timer: while the app is in front, one try at each point of the backoff
 
-    @Test func aReturnInsideTheGapTriesOnceWhenTheGapEnds() async {
-        let fake = FakeSupabase.make()
+    private func waitingWithTimer(_ fake: FakeSupabase, token: TurnstileToken? = nil, confirmed: Bool? = false) async -> (LoginModel, ControlledSleeper) {
         let sleeper = ControlledSleeper()
-        let (model, _) = make(fake, sleep: sleeper.sleep)
+        let (model, _) = make(fake, token: token, timerSleep: sleeper.sleep)
         await signUp(model)
-        await model.checkConfirmation()
-        #expect(await fake.count("POST", "token") == 1)
-        // Back in front 5 seconds later: nothing now; one try is kept for the end of the gap (15 seconds on).
-        clock.advance(seconds: 5)
-        await model.checkConfirmation()
-        #expect(await fake.count("POST", "token") == 1)
-        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
-        #expect(sleeper.requested == [.milliseconds(15_000)])
-        // More returns meanwhile keep no more than that one.
-        #expect(sleeper.requested.count == 1)
-        clock.advance(seconds: 3)
-        await model.checkConfirmation()
-        await model.checkConfirmation()
-        #expect(sleeper.requested.count == 1)
-        // The gap ends and the screen is in front: one try goes.
-        clock.advance(seconds: 12)
-        sleeper.fireAll()
-        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 2 })
-        // That try keeps no other: nothing more happens by itself.
-        try? await Task.sleep(for: .milliseconds(200))
-        #expect(await fake.count("POST", "token") == 2)
-        #expect(sleeper.pendingCount == 0)
-        #expect(sleeper.requested.count == 1)
+        if let confirmed { await account(fake, confirmed: confirmed) }
+        _ = await waitFor(.seconds(3)) { sleeper.pendingCount == 1 }
+        return (model, sleeper)
     }
 
-    @Test func theSecondNoticeOfTheSameReturnKeepsNothing() async {
+    @Test func anOpenScreenTriesAt20_40_100_280_460SecondsAndThenStops() async {
         let fake = FakeSupabase.make()
-        let sleeper = ControlledSleeper()
-        let (model, _) = make(fake, sleep: sleeper.sleep)
-        await signUp(model)
-        await model.checkConfirmation()
-        // Active again a second later (inactive, active: a system sheet): the same return.
-        clock.advance(seconds: 1)
-        await model.checkConfirmation()
-        try? await Task.sleep(for: .milliseconds(200))
-        #expect(sleeper.requested.isEmpty)
-        #expect(AutoSignIn.sameReturnMs == 2_000)
-        // A return after more than two seconds, still inside the gap, keeps one.
-        clock.advance(seconds: 2)
-        await model.checkConfirmation()
-        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
-    }
-
-    @Test func theKeptTryCountsLikeAnyTryByItself() async {
-        let fake = FakeSupabase.make()
-        let sleeper = ControlledSleeper()
-        let (model, _) = make(fake, sleep: sleeper.sleep)
-        await signUp(model)
-        // Four tries by themselves use four of the five.
-        for _ in 0..<4 {
-            clock.advance(seconds: 21)
-            await model.checkConfirmation()
+        let (model, sleeper) = await waitingWithTimer(fake)
+        // The first timed try is one gap on from the screen appearing.
+        #expect(sleeper.requested == [.milliseconds(20_000)])
+        var t = 0
+        for (i, at) in [20, 40, 100, 280, 460].enumerated() {
+            clock.advance(seconds: Double(at - t))
+            t = at
+            #expect(sleeper.fireOldest())
+            #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == i + 1 })
+            if i < 4 { #expect(await waitFor(.seconds(3)) { sleeper.requested.count == i + 2 && sleeper.pendingCount == 1 }) }
         }
-        #expect(await fake.count("POST", "token") == 4)
-        clock.advance(seconds: 21)
-        await model.checkConfirmation()
-        #expect(await fake.count("POST", "token") == 5)
-        // The fifth was the last: a return inside the gap keeps nothing now.
-        clock.advance(seconds: 5)
-        await model.checkConfirmation()
-        #expect(sleeper.requested.isEmpty)
-        // The kept try is the one that counts: with three sent, a kept try is the fourth and the screen can still go on.
-        let fake2 = FakeSupabase.make()
-        let (second, _) = make(fake2, sleep: sleeper.sleep)
-        await signUp(second)
-        await second.checkConfirmation()
-        clock.advance(seconds: 5)
-        await second.checkConfirmation()
-        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
-        clock.advance(seconds: 20)
-        sleeper.fireAll()
-        #expect(await waitFor(.seconds(3)) { await fake2.count("POST", "token") == 2 })
+        // 20 s from the start, then the gaps of the backoff after each "not confirmed yet": 20, 60, 180, 180.
+        #expect(sleeper.requested == [20_000, 20_000, 60_000, 180_000, 180_000].map { Duration.milliseconds($0) })
+        // The fifth send was the last: no sixth timer, and the model says nothing.
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(sleeper.pendingCount == 0)
+        #expect(sleeper.requested.count == 5)
+        #expect(model.errorMessage == nil)
+        #expect(model.isWaitingForConfirmation)
     }
 
-    @Test func theKeptTryDoesNotGoWhenTheAppIsNotInFrontOrTheWaitIsOver() async {
+    @Test func thereIsNeverMoreThanOneTimer() async {
         let fake = FakeSupabase.make()
-        let sleeper = ControlledSleeper()
-        let (model, _) = make(fake, sleep: sleeper.sleep)
-        await signUp(model)
+        let (model, sleeper) = await waitingWithTimer(fake)
+        await fake.forceAuth("password", status: 429, code: "over_request_rate_limit")
+        // A return that tries, then returns held back by the wait after the refusal: each sets the timer anew.
         await model.checkConfirmation()
-        clock.advance(seconds: 5)
-        await model.checkConfirmation()
+        for _ in 0..<4 {
+            clock.advance(seconds: 3)
+            await model.checkConfirmation()
+            await model.checkConfirmation(pressed: false)
+        }
+        // Each new timer replaced the old (the sleeps run in tasks: give them a moment to start).
         #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(sleeper.pendingCount == 1)
         model.isInFront = false
-        clock.advance(seconds: 20)
-        sleeper.fireAll()
-        try? await Task.sleep(for: .milliseconds(300))
-        #expect(await fake.count("POST", "token") == 1)
-        // Starting over drops a kept try too.
+        #expect(sleeper.pendingCount == 0)
         model.isInFront = true
         await model.checkConfirmation()
-        model.startOver()
-        #expect(sleeper.pendingCount == 0)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(sleeper.pendingCount <= 1)
     }
 
-    @Test func theKeptTryKeepsTheOtherRules() async {
+    @Test func aRefusalOtherThanNotConfirmedHoldsTheTimerForSixtySeconds() async {
         let fake = FakeSupabase.make()
-        let sleeper = ControlledSleeper()
+        let (model, sleeper) = await waitingWithTimer(fake, confirmed: nil)
+        await fake.forceAuth("password", status: 429, code: "over_request_rate_limit")
+        await model.checkConfirmation()
+        #expect(model.errorMessage == LoginText.rate)
+        // One timer, at the end of the wait (not one that rings in the middle of it).
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 && sleeper.requested.last == .milliseconds(60_000) })
+        #expect(sleeper.requested == [.milliseconds(20_000), .milliseconds(60_000)])
+    }
+
+    @Test func aPressCancelsTheTimerAndTheNextOneIsAGapFromThePressWithoutWideningTheBackoff() async {
+        let fake = FakeSupabase.make()
+        let (model, sleeper) = await waitingWithTimer(fake)
+        clock.advance(seconds: 5)
+        await model.checkConfirmation(pressed: true)
+        #expect(model.shownNotice == OnboardingText.notConfirmedYet)
+        // Waiting from the start gave 20 s; a gap from the press at 5 s is at 25 s: 20 s from now.
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 && sleeper.requested.count == 2 })
+        #expect(sleeper.requested.last == .milliseconds(20_000))
+        // A press is not counted: five tries by itself are still left, and the backoff did not move.
+        clock.advance(seconds: 20)
+        #expect(sleeper.fireOldest())
+        #expect(await waitFor(.seconds(3)) { sleeper.requested.count == 3 && sleeper.pendingCount == 1 })
+        // The refusal of the first timed try is the first: the next gap is still 20 s.
+        #expect(sleeper.requested.last == .milliseconds(20_000))
+    }
+
+    @Test func aPressIsNeverHeldBackBySendsOrByTheWaitAfterARefusal() async {
+        let fake = FakeSupabase.make()
+        let (model, _) = await waitingWithTimer(fake)
+        await fake.forceAuth("password", status: 429, code: "over_request_rate_limit")
+        await model.checkConfirmation()
+        for _ in 0..<3 { await model.checkConfirmation(pressed: true) }
+        #expect(await fake.count("POST", "token") == 4)
+    }
+
+    @Test func theTimerStopsInTheBackgroundAndATimedTryDoesNotGoThere() async {
+        let fake = FakeSupabase.make()
+        let (model, sleeper) = await waitingWithTimer(fake)
+        model.isInFront = false
+        #expect(sleeper.pendingCount == 0)
+        clock.advance(seconds: 30)
+        #expect(!sleeper.fireOldest())
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await fake.count("POST", "token") == 0)
+        // Back in front: the return tries at once and the timer starts anew.
+        model.isInFront = true
+        await model.checkConfirmation()
+        #expect(await fake.count("POST", "token") == 1)
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+    }
+
+    @Test func theTimerStopsAtSuccessAndAtStartingOverAndSwitchingTheForm() async {
+        let fake = FakeSupabase.make()
+        let (signedIn, sleeper) = await waitingWithTimer(fake, confirmed: true)
+        await signedIn.checkConfirmation()
+        #expect(sleeper.pendingCount == 0)
+        // Nothing runs by itself after the sign-in.
+        #expect(await fake.count("POST", "token") == 1)
+
+        let (again, second) = await waitingWithTimer(FakeSupabase.make())
+        again.startOver()
+        #expect(second.pendingCount == 0)
+        let (switched, third) = await waitingWithTimer(FakeSupabase.make())
+        switched.setMode(.signIn)
+        #expect(third.pendingCount == 0)
+    }
+
+    // MARK: the two differences from the Web, on purpose (AutoSignIn.swift)
+
+    @Test func aTimedTryThatFindsNoTokenUsesNoGapAndTheTapThatBringsOneTriesAtOnce() async {
+        let fake = FakeSupabase.make()
         let token = TurnstileToken(now: clock.function)
-        let (model, _) = make(fake, token: token, sleep: sleeper.sleep)
-        await signUp(model)
+        let (model, sleeper) = await waitingWithTimer(fake, token: token)
+        clock.advance(seconds: 20)
+        #expect(sleeper.fireOldest())
+        try? await Task.sleep(for: .milliseconds(300))
+        // Nothing sent, and no other timer is set for it: the Web sets lastAt here and tries a gap later.
+        #expect(await fake.count("POST", "token") == 0)
+        #expect(sleeper.pendingCount == 0)
+        #expect(sleeper.requested.count == 1)
+        // The tap gives a token: it is tried at once (the gap was not used).
+        token.receive(.token("tok-tap"), generation: token.generation)
+        await model.tokenArrived()
+        #expect(PW.captcha(await fake.requests("POST", "token").first) == "tok-tap")
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+    }
+
+    @Test func aTokenThatComesBeforeTheTimersPointWaitsForIt() async {
+        let fake = FakeSupabase.make()
+        let token = TurnstileToken(now: clock.function)
+        let (model, sleeper) = await waitingWithTimer(fake, token: token)
+        token.receive(.token("tok-early"), generation: token.generation)
+        clock.advance(seconds: 5)
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 0)
+        #expect(sleeper.pendingCount == 1)
+        // The timer's point: it takes the token that is held.
+        clock.advance(seconds: 15)
+        #expect(sleeper.fireOldest())
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        #expect(PW.captcha(await fake.requests("POST", "token").first) == "tok-early")
+    }
+
+    @Test func aSilentCaptchaRefusalHoldsNothingBackAndTheNextTimerIsTheGapOnly() async {
+        let fake = FakeSupabase.make()
+        let token = TurnstileToken(now: clock.function)
+        let (model, sleeper) = await waitingWithTimer(fake, token: token, confirmed: nil)
+        await fake.forceAuth("password", status: 400, code: "captcha_failed")
         token.receive(.token("tok-1"), generation: token.generation)
         await model.checkConfirmation()
-        let sent = await fake.count("POST", "token")
-        clock.advance(seconds: 5)
-        await model.checkConfirmation()
-        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
-        // The gap ends with no token (the widget was reset after the send and nobody tapped): nothing is sent.
-        clock.advance(seconds: 20)
-        sleeper.fireAll()
-        try? await Task.sleep(for: .milliseconds(300))
-        #expect(await fake.count("POST", "token") == sent)
         #expect(model.errorMessage == nil)
-        // Not kept at all while the limit of sends is used up, or while a refusal's wait is longer than the gap.
-        let (full, _) = make(FakeSupabase.make(), sleep: sleeper.sleep)
-        await signUp(full)
-        for _ in 0..<AutoSignIn.max {
-            clock.advance(seconds: 21)
-            await full.checkConfirmation()
+        // The Web would hold the next try for 60 s here; iOS needs a tap for a new token and tries when it comes.
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 && sleeper.requested.count == 2 })
+        #expect(sleeper.requested.last == .milliseconds(20_000))
+        clock.advance(seconds: 21)
+        token.receive(.token("tok-2"), generation: token.generation)
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 2)
+    }
+
+    // MARK: leaving the screen stops the timer, the wait for a token and the held password
+
+    @Test func leavingTheScreenStopsTheTimerAndLetsTheHeldPasswordGo() async {
+        let fake = FakeSupabase.make()
+        let token = TurnstileToken(now: clock.function)
+        let (model, sleeper) = await waitingWithTimer(fake, token: token, confirmed: true)
+        #expect(model.isHoldingPassword)
+        model.leaveWait()
+        #expect(!model.isHoldingPassword)
+        #expect(!model.isWaitingForConfirmation)
+        #expect(!model.canCheckConfirmation)
+        #expect(sleeper.pendingCount == 0)
+        // The timer ringing after that (it cannot, but were it to), a token that comes later, a return and a press: nothing is sent.
+        clock.advance(seconds: 100)
+        #expect(!sleeper.fireOldest())
+        token.receive(.token("tok-late"), generation: token.generation)
+        await model.tokenArrived()
+        await model.checkConfirmation()
+        await model.checkConfirmation(pressed: true)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await fake.count("POST", "token") == 0)
+    }
+
+    @Test func aPressWaitingForItsTokenSendsNothingWhenTheScreenIsLeft() async {
+        let fake = FakeSupabase.make()
+        let token = TurnstileToken(now: clock.function)
+        let (model, _) = await waitingWithTimer(fake, token: token, confirmed: true)
+        let press = Task { await model.checkConfirmation(pressed: true) }
+        await Task.yield()
+        model.leaveWait()
+        await press.value
+        #expect(await fake.count("POST", "token") == 0)
+        #expect(!model.isWorking)
+        #expect(!model.isHoldingPassword)
+    }
+
+    @Test func leavingTheScreenBeforeTheAnswerReadsNoAnswer() async {
+        let fake = FakeSupabase.make()
+        let (model, _) = await waitingWithTimer(fake, confirmed: nil)
+        let gate = Gate()
+        await fake.fail("POST", "token", with: .hold(gate))
+        let first = Task { await model.checkConfirmation() }
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        model.leaveWait()
+        gate.open()
+        await first.value
+        #expect(!model.isWaitingForConfirmation)
+        #expect(!model.isHoldingPassword)
+        #expect(model.errorMessage == nil)
+    }
+
+    @Test func theSignInOfTheWaitingScreenIsMarkedForTheLandingAndTheFormsIsNot() async throws {
+        let fake = FakeSupabase.make()
+        let (model, auth) = make(fake)
+        await signUp(model)
+        await account(fake, confirmed: true)
+        await model.checkConfirmation()
+        let hand = try #require(auth.takeSignInSecret())
+        #expect(hand.fromConfirmation)
+
+        let plain = FakeSupabase.make()
+        await plain.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
+        let (form, formAuth) = make(plain)
+        form.password = PW.good
+        await form.submit()
+        let formHand = try #require(formAuth.takeSignInSecret())
+        #expect(!formHand.fromConfirmation)
+    }
+
+    // MARK: a key that does not open or cannot be made, after the waiting screen's sign-in
+
+    @Test func theBoxWordsAreTheKeyNotOpenedSentenceOrTheFailuresOwn() {
+        #expect(KeyBox.text(for: .needsWebLogin) == "このパスワードでは、メールの鍵を開けませんでした。")
+        #expect(KeyBox.text(for: .needsWebLogin) == LoginText.keyNotOpened)
+        #expect(KeyBox.text(for: .failed(message: LoginText.keyFailed)) == LoginText.keyFailed)
+        for outcome: KeySetupOutcome? in [nil, .opened(keyID: "k"), .created(keyID: "k"), .stale, .addressMismatch] {
+            #expect(KeyBox.text(for: outcome) == nil, "\(String(describing: outcome))")
         }
-        let before = sleeper.requested.count
-        await full.checkConfirmation()
-        #expect(sleeper.requested.count == before)
+        #expect(OnboardingText.keyBoxProceed == "このまま進む")
+        #expect(OnboardingText.keyBoxKeyPage == "パスワードとメールの鍵")
+        #expect(OnboardingText.keyBoxKeyPage == SettingsMenuText.keyTitle)
+    }
+
+    @Test func theLandingShowsTheBoxOnlyForTheWaitingScreensSignInAndOnlyOnce() {
+        for outcome: KeySetupOutcome in [.needsWebLogin, .failed(message: LoginText.keyFailed)] {
+            #expect(Landing.of(deciding: false, outcome: outcome, guideClosed: false, fromConfirmation: true) == .keyBox)
+            // Not the box: an ordinary sign-in (its failure is the unlock screen's), or the box already left.
+            #expect(Landing.of(deciding: false, outcome: outcome, guideClosed: false, fromConfirmation: false) == .tabs)
+            #expect(Landing.of(deciding: false, outcome: outcome, guideClosed: false, fromConfirmation: true, boxClosed: true) == .tabs)
+            #expect(Landing.of(deciding: true, outcome: outcome, guideClosed: false, fromConfirmation: true) == .waiting)
+        }
+        // A key opened or made goes on as before.
+        #expect(Landing.of(deciding: false, outcome: .created(keyID: "k"), guideClosed: false, fromConfirmation: true) == .guide)
+        #expect(Landing.of(deciding: false, outcome: .opened(keyID: "k"), guideClosed: false, fromConfirmation: true) == .tabs)
+    }
+
+    @Test func theKeyStepRemembersWhichSignInItWasAndTheBoxFollowsIt() async throws {
+        let w = try await KeySetupTests.World()
+        _ = try await w.plantKeyInUse(master: Data(repeating: 9, count: 32))
+        var fromWaiting = w.signIn
+        fromWaiting.fromConfirmation = true
+        let outcome = await w.setup.run(fromWaiting)
+        #expect(outcome == .needsWebLogin)
+        #expect(w.setup.lastRunFromConfirmation)
+        #expect(Landing.of(deciding: false, outcome: w.setup.lastOutcome, guideClosed: false, fromConfirmation: w.setup.lastRunFromConfirmation) == .keyBox)
+        // The same failure after an ordinary sign-in: the tabs (and the unlock screen's help), no box.
+        await w.setup.run(w.signIn)
+        #expect(!w.setup.lastRunFromConfirmation)
+        #expect(Landing.of(deciding: false, outcome: w.setup.lastOutcome, guideClosed: false, fromConfirmation: w.setup.lastRunFromConfirmation) == .tabs)
+    }
+
+    @Test func theBoxsTwoLinksGoToTheParcelsAndToTheKeyPage() {
+        var route = TabRoute()
+        route.tab = .spend
+        route.showKey()
+        #expect(route.tab == .settings)
+        #expect(route.settingsPath == [.key])
     }
 
     // MARK: sending the mail again, starting over

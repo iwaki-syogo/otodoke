@@ -28,6 +28,20 @@ struct OnboardingScreenshots {
         }
     }
 
+    enum KeyBoxShot: String, CaseIterable, Sendable {
+        case notOpened = "not-opened", failed
+    }
+
+    /// The amber box after the waiting screen's sign-in whose key did not open (or could not be made).
+    @Test(arguments: KeyBoxShot.allCases)
+    func keyBox(_ scenario: KeyBoxShot) async throws {
+        let text = KeyBox.text(for: scenario == .notOpened ? .needsWebLogin : .failed(message: LoginText.keyFailed)) ?? ""
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let name = "key-box-" + scenario.rawValue + "-" + (style == .dark ? "dark" : "light")
+            try await Self.shoot(KeyBoxView(text: text, proceed: {}, openKeyPage: {}), name: name, style: style, height: 600)
+        }
+    }
+
     enum Guide: String, CaseIterable, Sendable {
         case address, approval, noKey = "no-key"
     }
