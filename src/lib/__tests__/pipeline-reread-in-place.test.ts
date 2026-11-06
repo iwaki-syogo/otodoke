@@ -138,6 +138,8 @@ describe("a redelivered mail that was read", () => {
     const db = new FakeDb({ emails: [{ id: "e-unread", user_id: USER, message_id: mail.messageId, processing_status: "over_limit", created_at: STORED_AT }] });
     expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
     expect(db.rows("emails")).toHaveLength(0);
+    // Gone from emails, so it is listed in 読まなかったメール, with its subject.
+    expect(db.rows("screen_events").map((e) => [e.decision, e.subject])).toEqual([["dropped", "今週のおすすめ"]]);
   });
 
   it("a stored mail another delivery took over meanwhile is not removed from under it (review R3-5)", async () => {
@@ -153,5 +155,16 @@ describe("a redelivered mail that was read", () => {
     });
     expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
     expect(db.rows("emails").map((e) => [e.id, e.processing_status])).toEqual([["e-unread", "pending"]]);
+    // That delivery may read and seal it: its subject is not kept in plaintext as dropped (R3-33).
+    expect(db.rows("screen_events")).toEqual([]);
+  });
+
+  it("a failed removal leaves no dropped subject behind, and the webhook is asked to retry (review R3-33)", async () => {
+    const mail = promo();
+    const db = new FakeDb({ emails: [{ id: "e-unread", user_id: USER, message_id: mail.messageId, processing_status: "over_limit", created_at: STORED_AT }] });
+    db.hooks.push((q: Query) => (q.table === "emails" && q.op === "delete" ? { data: null, error: { message: "connection reset" } } : undefined));
+    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("emails cleanup failed");
+    expect(db.rows("screen_events")).toEqual([]);
+    expect(db.rows("emails").map((e) => e.id)).toEqual(["e-unread"]);
   });
 });

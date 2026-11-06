@@ -110,21 +110,29 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     const screen = screenMail(mail);
     if (!screen.pass) {
       const keep = await secondLook(db, mail, screen);
-      await logScreenEvent(db, mail, keep ? "rescued" : "dropped", screen.reason);
-      if (!keep) {
+      if (keep) {
+        await logScreenEvent(db, mail, "rescued", screen.reason);
+      } else {
         // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
         // forever. Only while the row is as it was read, as for the take-over below: a delivery that
         // took it over meanwhile is reading it, and its row is not removed from under it.
+        let removed = true;
         if (stored) {
-          const { error } = await db
+          const { data, error } = await db
             .from("emails")
             .delete()
             .eq("user_id", mail.userId)
             .eq("id", stored.id)
             .eq("processing_status", stored.processing_status)
-            .eq("created_at", stored.created_at);
+            .eq("created_at", stored.created_at)
+            .select("id");
           if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+          removed = (data ?? []).length > 0;
         }
+        // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
+        // delivery that took the row over may read and seal it (review R3-33). Removed first and
+        // logged after, so a failure in between leaves no subject behind.
+        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
         return { kind: "screened_out", reason: screen.reason };
       }
     }
