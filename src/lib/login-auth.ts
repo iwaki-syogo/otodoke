@@ -27,9 +27,9 @@ import {
   type SignUpResult,
 } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { ChangeSecretInputSchema, FinishResetInputSchema, MailRequestInputSchema, SignInInputSchema, SignUpInputSchema, type KeyWrapRestore } from "@/lib/login-input";
+import { ChangeSecretInputSchema, FinishResetInputSchema, MailRequestInputSchema, SignInInputSchema, SignUpInputSchema } from "@/lib/login-input";
 import { claimLoginAttempt, claimLoginMail, claimLoginTry, clientIp, releaseLoginAttempt, releaseLoginMail } from "@/lib/login-mail-limit";
-import { activateKey, readStoredKey, rewrapKey, type KeyResult } from "@/lib/mail-keys";
+import { activateKey, readStoredKey, rewrapKey, type KeyRestore, type KeyResult } from "@/lib/mail-keys";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { TURNSTILE_TOKEN_MAX_LENGTH } from "@/lib/turnstile";
@@ -292,18 +292,10 @@ export async function finishReset(input: unknown): Promise<FinishResetResult> {
 }
 
 /**
- * Putting back the wrap from before a rewrap. restoreKeyWrap of src/lib/mail-keys.ts
- * (integrate/password-v1) has this shape; changeSecret takes it as an argument.
+ * Putting back the wrap from before a rewrap: restoreKeyWrap of src/lib/mail-keys.ts, which the
+ * Action (password-actions.ts) passes in. It answers ok also when that wrap is back already.
  */
-export type RestoreKeyWrap = (db: AdminClient, userId: string, input: KeyWrapRestore) => Promise<KeyResult<{ keyId: string }>>;
-
-/**
- * The same through rewrapKey (the same check: only over the wrap the rewrap stored), for this
- * branch, where restoreKeyWrap is not yet. Unlike restoreKeyWrap it answers key_wrap_changed, not
- * ok, when the wrap from before is back already.
- */
-export const restoreWrapByRewrap: RestoreKeyWrap = (db, userId, r) =>
-  rewrapKey(db, userId, { keyId: r.keyId, previousWrappedPrivateKey: r.rewrappedPrivateKey, wrappedPrivateKey: r.wrappedPrivateKey, wrapIv: r.wrapIv, kdfSalt: r.kdfSalt, kdfIterations: r.kdfIterations });
+export type RestoreKeyWrap = (db: AdminClient, userId: string, input: KeyRestore) => Promise<KeyResult<{ keyId: string }>>;
 
 /**
  * Change the password while the current one is known (設定). In this order, in this one call:
@@ -352,7 +344,7 @@ export async function changeSecret(input: unknown, restoreWrap: RestoreKeyWrap):
   const db = createAdminClient();
   const stored = await readStoredKey(db, userId, { keyId: null });
   if (!stored.ok) return { ok: false, code: "key_failed" };
-  let restore: KeyWrapRestore | null = null;
+  let restore: KeyRestore | null = null;
   if (rewrap) {
     if (!stored.key || stored.key.key_id !== rewrap.keyId) return { ok: false, code: "key_not_in_use" };
     if (stored.key.wrapped_private_key !== rewrap.previousWrappedPrivateKey) return { ok: false, code: "key_wrap_changed" };

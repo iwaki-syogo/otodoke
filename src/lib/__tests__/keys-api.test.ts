@@ -13,7 +13,7 @@ const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const jwt = (method: string, agoMs: number, sub = "user-1") =>
   `${b64url({ alg: "ES256" })}.${b64url({ sub, amr: [{ method, timestamp: Math.floor((NOW - agoMs) / 1000) }] })}.c2ln`;
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), register: vi.fn(), activate: vi.fn(), rewrap: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), register: vi.fn(), activate: vi.fn(), rewrap: vi.fn(), restore: vi.fn() }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ admin: true }) }));
@@ -22,6 +22,7 @@ vi.mock("@/lib/mail-keys", async (importOriginal) => ({
   registerKey: mocks.register,
   activateKey: mocks.activate,
   rewrapKey: mocks.rewrap,
+  restoreKeyWrap: mocks.restore,
 }));
 
 const routes = {
@@ -59,6 +60,7 @@ beforeEach(() => {
   mocks.register.mockResolvedValue({ ok: true, keyId: KEY_ID, challenge: { v: 1, kid: KEY_ID } });
   mocks.activate.mockResolvedValue({ ok: true, keyId: KEY_ID });
   mocks.rewrap.mockResolvedValue({ ok: true, keyId: KEY_ID });
+  mocks.restore.mockResolvedValue({ ok: true, keyId: KEY_ID });
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -93,7 +95,7 @@ describe("who may call", () => {
 
   it.each(STEPS)("%s: 403 stale_session more than 15 minutes after the password, and nothing changes", async (step) => {
     expect(await call(step, { token: jwt("password", FRESH_AUTH_MS + 60_000) })).toMatchObject({ status: 403, json: { ok: false, code: "stale_session" } });
-    for (const fn of [mocks.register, mocks.activate, mocks.rewrap]) expect(fn).not.toHaveBeenCalled();
+    for (const fn of [mocks.register, mocks.activate, mocks.rewrap, mocks.restore]) expect(fn).not.toHaveBeenCalled();
   });
 
   it("503 unavailable, not 401, when Supabase Auth cannot be asked", async () => {
@@ -117,16 +119,10 @@ describe("what it does", () => {
     expect(mocks.rewrap).toHaveBeenCalledWith({ admin: true }, "user-1", BODIES.rewrap);
   });
 
-  it("restore: puts back the wrap from before, only over the wrap the rewrap stored", async () => {
-    expect(await call("restore")).toMatchObject({ status: 200, json: { ok: true, keyId: KEY_ID } });
-    expect(mocks.rewrap).toHaveBeenCalledWith({ admin: true }, "user-1", {
-      keyId: KEY_ID,
-      previousWrappedPrivateKey: BODIES.restore.rewrappedPrivateKey,
-      wrappedPrivateKey: BODIES.restore.wrappedPrivateKey,
-      wrapIv: BODIES.restore.wrapIv,
-      kdfSalt: BODIES.restore.kdfSalt,
-      kdfIterations: BODIES.restore.kdfIterations,
-    });
+  it("restore: restoreKeyWrap of mail-keys.ts with the token's user and the body as it came", async () => {
+    expect(await call("restore")).toEqual({ status: 200, json: { ok: true, keyId: KEY_ID }, cache: "no-store" });
+    expect(mocks.restore).toHaveBeenCalledWith({ admin: true }, "user-1", BODIES.restore);
+    expect(mocks.rewrap).not.toHaveBeenCalled();
   });
 
   it.each(STEPS)("%s: 400 for a body that is not JSON, too long, or has a field it does not take", async (step) => {
@@ -136,7 +132,7 @@ describe("what it does", () => {
     for (const extra of [{ userId: "someone-else" }, { password: "x" }, { passphrase: "x" }, { authSecret: "0".repeat(64) }]) {
       expect(await call(step, { body: { ...BODIES[step], ...extra } })).toMatchObject({ status: 400, json: { code: "invalid_input" } });
     }
-    for (const fn of [mocks.register, mocks.activate, mocks.rewrap]) expect(fn).not.toHaveBeenCalled();
+    for (const fn of [mocks.register, mocks.activate, mocks.rewrap, mocks.restore]) expect(fn).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -149,8 +145,12 @@ describe("what it does", () => {
     ["rewrap", KEY_WRAP_CHANGED, 409, "key_wrap_changed"],
     ["rewrap", "no key in use with this id", 409, "key_not_in_use"],
     ["rewrap", "user_keys update failed: deadlock detected (row (a, b, c))", 500, "key_failed"],
+    ["restore", KEY_WRAP_CHANGED, 409, "key_wrap_changed"],
+    ["restore", "no key in use with this id", 409, "key_not_in_use"],
+    ["restore", "the wrap to put back is the one stored now", 400, "invalid_input"],
+    ["restore", "user_keys lookup failed: connection reset", 500, "key_failed"],
   ] as const)("%s refused with %s: %i %s, and the text is not passed on", async (step, error, status, code) => {
-    const fn = step === "activate" ? mocks.activate : step === "register" ? mocks.register : mocks.rewrap;
+    const fn = { activate: mocks.activate, register: mocks.register, rewrap: mocks.rewrap, restore: mocks.restore }[step];
     fn.mockResolvedValue({ ok: false, error });
     const res = await call(step);
     expect(res).toMatchObject({ status, json: { ok: false, code } });

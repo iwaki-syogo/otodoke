@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { ChangeSecretInputSchema, FinishResetInputSchema, KeyWrapRestoreSchema, MailRequestInputSchema, SignInInputSchema, SignUpInputSchema } from "@/lib/login-input";
-import { KeyActivationSchema, KeyRegistrationSchema, KeyRewrapSchema } from "@/lib/mail-keys";
+import { ChangeSecretInputSchema, FinishResetInputSchema, MailRequestInputSchema, SignInInputSchema, SignUpInputSchema } from "@/lib/login-input";
+import { KeyActivationSchema, KeyRegistrationSchema, KeyRestoreSchema, KeyRewrapSchema } from "@/lib/mail-keys";
 import { appSourceFiles, read, withoutComments } from "./source-scan";
 
 /**
@@ -39,7 +39,7 @@ const INPUTS: Array<[string, z.ZodType, Record<string, unknown>]> = [
   ["POST /api/keys/register", KeyRegistrationSchema, { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, expectedCurrentKeyId: null }],
   ["POST /api/keys/activate", KeyActivationSchema, { keyId: KEY_ID, challenge: "AA==", expectedCurrentKeyId: null }],
   ["POST /api/keys/rewrap", KeyRewrapSchema, REWRAP],
-  ["POST /api/keys/restore", KeyWrapRestoreSchema, { keyId: KEY_ID, rewrappedPrivateKey: "AQ==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 }],
+  ["POST /api/keys/restore", KeyRestoreSchema, { keyId: KEY_ID, rewrappedPrivateKey: "AQ==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 }],
 ];
 
 /** Every field name of an object schema, with those of the objects inside it. */
