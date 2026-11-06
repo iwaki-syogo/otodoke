@@ -124,7 +124,8 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
    * [Review R3-3] Gmail's forwarding confirmation is not forwarded mail: Gmail sends it when the
    * address is added and forwards nothing until it is approved, so 「お待ちください」 would wait
    * forever. With only that, the list asks about the approval (worded for both: not approved yet,
-   * or approved and no mail since) and its button goes to 設定, where the approval button is.
+   * or approved and no mail since) and its button goes to the approval in 設定 (#gmail-approval;
+   * approval-link-scroll.test.ts follows it there).
    */
   it("with only Gmail's forwarding confirmation, asks about the approval instead of saying mail arrives", async () => {
     for (const seed of [{ emails: [confirmation()] }, { emails: [confirmation(), confirmation()] }]) {
@@ -133,7 +134,7 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
       expect(textOf(block)).not.toContain("届いています");
       expect(textOf(block)).not.toContain("お待ちください");
       expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
-        ["/app/settings", "設定で承認する"],
+        ["/app/settings#gmail-approval", "設定で承認する"],
         ["/app/settings#demo", "サンプルで試す"],
       ]);
     }
