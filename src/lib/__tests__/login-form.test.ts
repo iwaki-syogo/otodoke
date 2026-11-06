@@ -3,8 +3,8 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
-import { clearLoginHandoff, handOffToLogin, peekLoginHandoff } from "@/lib/login-handoff";
-import { CONFIRMED_LOGIN_PATH } from "@/lib/onboarding";
+import { EXISTING_ACCOUNT, clearLoginHandoff, handOffToLogin, peekLoginHandoff } from "@/lib/login-handoff";
+import { CONFIRMED_LOGIN_PATH, EXISTING_ACCOUNT_NOTICE } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_TOKEN_STALE_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
@@ -452,6 +452,53 @@ describe("from /signup's waiting screen after `credentials` (login-handoff.ts)",
     await drawn();
     expect(input(again, "login-email").props.value).toBe("");
     expect(again.hosts((h) => h.props.role === "alert")).toEqual([]);
+  });
+
+  it("existing_account: the address is filled, the account words, the forgot link and RESET_LOSES_MAIL show; the generic words do not", async () => {
+    vi.stubGlobal("window", {});
+    handOffToLogin({ email: EMAIL, code: EXISTING_ACCOUNT });
+    const view = mount(() => LoginForm({ next: "/app" }));
+    await drawn();
+    expect(input(view, "login-email").props.value).toBe(EMAIL);
+    expect(input(view, "login-password").props.value).toBe("");
+    expect(EXISTING_ACCOUNT_NOTICE).toBe("このアドレスは、もう登録されています。前に決めたパスワードでログインしてください。");
+    const text = view.text();
+    expect(text).toContain(EXISTING_ACCOUNT_NOTICE);
+    expect(text).toContain(RESET_LOSES_MAIL);
+    expect(text).not.toContain(LOGIN_MESSAGES.credentials);
+    expect(view.hosts((h) => h.props.role === "alert")).toEqual([]);
+    const forgot = view.hosts((h) => h.type === "a" && h.props.href === "/login/forgot");
+    expect(forgot.map(textOfHost)).toEqual(["パスワードを忘れた"]);
+    expect(peekLoginHandoff()).toBeNull();
+  });
+
+  it("existing_account: a successful login still lands where next says (and a first key at the guide)", async () => {
+    vi.stubGlobal("window", {});
+    handOffToLogin({ email: EMAIL, code: EXISTING_ACCOUNT });
+    flows.signIn.mockResolvedValue({ ok: true, key: "opened" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(nav.to).toEqual([NEXT]);
+  });
+
+  it("existing_account: a login whose key was made lands on the first-run guide", async () => {
+    vi.stubGlobal("window", {});
+    handOffToLogin({ email: EMAIL, code: EXISTING_ACCOUNT });
+    flows.signIn.mockResolvedValue({ ok: true, key: "made" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(nav.to).toEqual(["/app/welcome"]);
+  });
+
+  it("negative control: a wrong password on /login itself still says the generic words only", async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([LOGIN_MESSAGES.credentials]);
+    expect(view.text()).not.toContain(EXISTING_ACCOUNT_NOTICE);
   });
 
   it("is not written on the server (a module's memory there is every visitor's)", () => {

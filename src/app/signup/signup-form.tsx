@@ -8,7 +8,7 @@ import { flowMessage, signInAndOpenKey, signUpWithPassword } from "@/lib/crypto/
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { handOffToLogin } from "@/lib/login-handoff";
+import { EXISTING_ACCOUNT, handOffToLogin } from "@/lib/login-handoff";
 import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, autoSignInGapMs, landingAfterSignIn } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { pressText, tokenForAutoAttempt, tokenForPress, type TokenField } from "@/lib/turnstile";
@@ -58,7 +58,8 @@ type SignInAnswer = Awaited<ReturnType<typeof signInAndOpenKey>>;
  * - Signed in, but the key did not open or could not be made: the waiting screen goes, and the
  *   key's words stay with 「このまま進む」 and the way to 設定 › パスワードとメールの鍵.
  * - `credentials` (an account with another password has the address): it stops waiting and goes to
- *   /login with the address filled in and those words (src/lib/login-handoff.ts; never the password).
+ *   /login with the address filled in and the existing_account notice (the address is already
+ *   registered; src/lib/login-handoff.ts; no password is handed off).
  *   Any other refusal stays here with LOGIN_MESSAGES' words, and the next return or press tries again.
  * - A try by itself refused with `captcha` (the token ran out) tries once more with a new token,
  *   then says nothing until the next trigger.
@@ -420,7 +421,7 @@ export function SignupForm() {
             // Another password has this address: the login, with the address filled in.
             account.current = null;
             clearAutoTimer();
-            handOffToLogin({ email: creds.email, code: "credentials" });
+            handOffToLogin({ email: creds.email, code: EXISTING_ACCOUNT });
             leaving = true;
             setLeaveFor("/login");
             return;
