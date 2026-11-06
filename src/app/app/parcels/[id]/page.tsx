@@ -16,6 +16,12 @@ import { SealedMail } from "./sealed-mail";
 
 type Params = Promise<{ id: string }>;
 
+/**
+ * The tab's title, as on the other pages: what the page is, never which parcel. A product or shop
+ * name in the tab would show to anyone who sees the screen shared or the tab bar.
+ */
+export const metadata = { title: "荷物" };
+
 export default async function ParcelDetailPage({ params }: { params: Params }) {
   const { id } = await params;
   // Postgres answers a malformed id with an error; that is a page that is not there, not a failed read.

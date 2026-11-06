@@ -6,6 +6,8 @@ import { LoginForm } from "./login-form";
 
 type SearchParams = Promise<{ error?: string; next?: string; confirmed?: string }>;
 
+export const metadata = { title: "ログイン" };
+
 /**
  * /login: the address and the password (password-v1). The key that opens the stored mail is
  * opened, or made at the first sign-in, in the browser (LoginForm).
