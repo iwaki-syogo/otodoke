@@ -146,9 +146,9 @@ describe("/privacy: what it says", () => {
     expect(cookie).toContain("ログインのためだけに使います");
     expect(cookie).toContain("広告やアクセス解析のための cookie は使いません");
     expect(cookie).toContain("ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます");
-    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます");
-    expect(cookie).toContain("ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します");
-    expect(cookie).toContain("最後に「リンクを送る」を押してから 1 時間たったときも消えます");
+    // The hour first: a sign-in on another device leaves the sending browser its cookie (R3-22).
+    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。");
+    expect(cookie.match(/1 時間/g)).toHaveLength(1);
     // The old claim, untrue next to the login screen's cookie.
     expect(cookie).not.toContain("ログインの状態を保つためだけに使います");
   });
@@ -228,16 +228,16 @@ describe("/privacy: what it says matches the code it describes", () => {
     expect(LOGIN_EMAIL_COOKIE_PATH).toBe("/login");
   });
 
-  it("「最後に「リンクを送る」を押してから 1 時間」: that button sends the form, and every press writes the cookie again", () => {
-    const button = readFileSync(path.join(process.cwd(), "src/app/login/submit-button.tsx"), "utf8");
-    expect(button).toContain('"リンクを送る"');
-    const action = readFileSync(path.join(process.cwd(), "src/app/login/actions.ts"), "utf8");
-    const send = action.slice(action.indexOf("export async function sendMagicLink"), action.indexOf("export async function verifyLoginCode"));
-    // Written before any check can turn the press away (a refused press restarts the hour too),
-    // and again once the mail is out.
-    expect(send.indexOf("await rememberLogin(")).toBeGreaterThan(-1);
-    expect(send.indexOf("await rememberLogin(")).toBeLessThan(send.indexOf("if (!isLoginAddress(email))"));
-    expect(send.lastIndexOf("await rememberLogin({ email, sentAt: Date.now() });")).toBeGreaterThan(send.indexOf("signInWithOtp"));
+  it("「この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します」: each of those removes it", () => {
+    const read = (file: string) => readFileSync(path.join(process.cwd(), file), "utf8");
+    const login = read("src/app/login/actions.ts");
+    const sending = login.slice(login.indexOf("export async function sendMagicLink"), login.indexOf("export async function verifyLoginCode"));
+    expect(sending).toContain("await rememberLogin(");
+    // Signing in by the code, by the link, signing out, deleting the account.
+    expect(login.slice(login.indexOf("export async function verifyLoginCode"))).toContain("await forgetLogin();");
+    for (const file of ["src/app/auth/confirm/route.ts", "src/app/auth/signout/route.ts", "src/app/app/settings/account-actions.ts"]) {
+      expect(read(file), file).toContain("await forgetLogin();");
+    }
   });
 
   it("「アドレスの文字と作った日時だけは残します」: the registry of given-out addresses has those two columns", () => {
