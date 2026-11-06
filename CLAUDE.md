@@ -48,7 +48,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - **Supabase のパスワードの強さの設定を上げない**。`minimum_password_length = 6` と `password_requirements = ""` のまま。authSecret は小文字の hex 64 文字なので、大文字や記号を必須にすると誰も登録もログインもできない。パスワードの強さは、ブラウザで生のパスワードに対して確かめる
 - **Preview と本番は同じ Supabase**。project_ref は下の「外部サービス依存」。Preview でのアカウント作成・パスワードの変更・再設定は、本番のアカウントと鍵を変える。再設定は前の鍵を retire するので、前のメールは開けなくなる。試すアカウントに気をつける
 - メールアドレスを変える画面は作らない。salt が変わり、同じパスワードから同じ値が作れなくなるため。ASCII 以外の文字を含むメールアドレスの登録は断る。Web と iOS で email_norm が割れないようにするため
-- CAPTCHA は OFF のまま。`src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = false`。Turnstile のトークンは `signUp`・`signInWithPassword`・`resetPasswordForEmail` に渡す
+- コードは `src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = true`。2026-11-07 から。Supabase の CAPTCHA は、この版を本番で確かめたあとに ON にする。戻すときは Supabase を先に OFF にする。Turnstile のトークンは `signUp`・`resend`・`resetPasswordForEmail`・`signInWithPassword` に渡す。`signInWithPassword` はログイン・鍵を作る・パスワードを変えるの 3 つ。開く・ほかのパスワードで開く・`finishReset` は渡さない
 
 ## ディレクトリ
 
