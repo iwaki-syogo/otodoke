@@ -11,6 +11,9 @@ import { forgetLogin, readRememberedLogin, rememberLogin } from "@/lib/login-ema
 import { isLoginAddress, normalizeLoginAddress, normalizeLoginCode } from "@/lib/login-form";
 import { safeNextPath } from "@/lib/safe-next";
 
+/** Supabase sends to one address at most this often (max_frequency = "1m0s" in config.toml). */
+const SUPABASE_MAIL_INTERVAL_MS = 60_000;
+
 /**
  * Send a magic link. The mail carries the link, which lands on /auth/confirm with a token_hash
  * (works in any browser), and the same token as a code, which the "sent" screen takes.
@@ -18,10 +21,13 @@ import { safeNextPath } from "@/lib/safe-next";
 export async function sendMagicLink(formData: FormData): Promise<void> {
   const email = normalizeLoginAddress(formData.get("email"));
   const next = String(formData.get("next") ?? "/app");
+  // When a mail last went to this address from this browser (Supabase sends once a minute).
+  const before = await readRememberedLogin();
+  const lastSentAt = before?.email === email ? before.sentAt : undefined;
   // Whatever happens next, the field shows this address again (also one the check below refuses,
   // so a typo can be fixed in place), and the code form checks the code with it. In a cookie for
   // this browser, never in the URL.
-  await rememberLogin({ email });
+  await rememberLogin({ email, sentAt: lastSentAt });
   if (!isLoginAddress(email)) {
     redirect(loginErrorPath("invalid_email", next));
   }
@@ -63,10 +69,15 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     // No mail went out, so this press does not count against the limit (never throws).
     await releaseLoginMail(email, claim.claimId);
     // A refused token and a missing one need different advice: this press sent one or it did not.
-    redirect(loginErrorPath(loginSendErrorCode(error, captchaToken !== undefined), next));
+    const code = loginSendErrorCode(error, captchaToken !== undefined);
+    // Refused within a minute of the last mail to this address: the wait is known.
+    const recent = code === "busy" && lastSentAt !== undefined && Date.now() - lastSentAt < SUPABASE_MAIL_INTERVAL_MS;
+    redirect(loginErrorPath(recent ? "busy_recent" : code, next));
   }
+  await rememberLogin({ email, sentAt: Date.now() });
   redirect(loginSentPath(next));
 }
+
 
 /**
  * Sign in with the code from the mail (the same token as its link), on the page that asked for

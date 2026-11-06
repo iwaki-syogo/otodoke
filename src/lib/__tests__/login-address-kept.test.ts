@@ -179,9 +179,11 @@ describe("a refused send keeps the address in the field", () => {
 describe("the cookie", () => {
   it("is httpOnly, for /login only, SameSite=Lax, one hour, and Secure", async () => {
     await submit(EMAIL);
-    expect(mocks.sets).toHaveLength(1);
-    expect(mocks.sets[0].name).toBe("otodoke_login");
-    expect(mocks.sets[0].options).toEqual({ httpOnly: true, secure: true, sameSite: "lax", path: "/login", maxAge: 3600 });
+    expect(mocks.sets.length).toBeGreaterThan(0);
+    for (const cookie of mocks.sets) {
+      expect(cookie.name).toBe("otodoke_login");
+      expect(cookie.options).toEqual({ httpOnly: true, secure: true, sameSite: "lax", path: "/login", maxAge: 3600 });
+    }
   });
 
   it("is not Secure over plain http (the local dev server), and Secure without the header", async () => {

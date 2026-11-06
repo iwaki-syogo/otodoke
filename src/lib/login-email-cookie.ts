@@ -26,7 +26,12 @@ export const LOGIN_EMAIL_COOKIE_PATH = "/login";
 /** The longest address SMTP allows; anything longer is not kept. */
 const MAX_ADDRESS = 254;
 
-export type RememberedLogin = { email: string };
+/**
+ * `sentAt` (ms): when a mail last went to this address from this browser. Supabase sends to one
+ * address at most once a minute (max_frequency in config.toml), so a refusal within that minute
+ * can say how long to wait.
+ */
+export type RememberedLogin = { email: string; sentAt?: number };
 
 /** The cookie's value, or null when it is not one this app wrote (missing, edited, too long). */
 export function parseRememberedLogin(value: string | undefined): RememberedLogin | null {
@@ -34,9 +39,9 @@ export function parseRememberedLogin(value: string | undefined): RememberedLogin
   try {
     const data: unknown = JSON.parse(value);
     if (typeof data !== "object" || data === null) return null;
-    const { e } = data as { e?: unknown };
+    const { e, t } = data as { e?: unknown; t?: unknown };
     if (typeof e !== "string" || !e || e.length > MAX_ADDRESS) return null;
-    return { email: e };
+    return typeof t === "number" && Number.isFinite(t) && t > 0 ? { email: e, sentAt: t } : { email: e };
   } catch {
     return null;
   }
@@ -66,7 +71,7 @@ export async function rememberLogin(login: RememberedLogin): Promise<void> {
     // No request headers: keep it Secure.
   }
   try {
-    (await cookies()).set(LOGIN_EMAIL_COOKIE, JSON.stringify({ e: login.email }), {
+    (await cookies()).set(LOGIN_EMAIL_COOKIE, JSON.stringify(login.sentAt ? { e: login.email, t: login.sentAt } : { e: login.email }), {
       httpOnly: true,
       secure,
       sameSite: "lax",

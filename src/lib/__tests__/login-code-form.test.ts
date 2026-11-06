@@ -153,7 +153,7 @@ describe("after a send, the address is in a cookie, not the URL", () => {
     const url = await send();
     expect(url).toBe("REDIRECT:/login?sent=1");
     expect(url).not.toMatch(/example|%40|@/);
-    expect(JSON.parse(mocks.jar.get("otodoke_login")!)).toEqual({ e: EMAIL });
+    expect(JSON.parse(mocks.jar.get("otodoke_login")!)).toMatchObject({ e: EMAIL });
   });
 
   it("keeps where to go after signing in, on the sent screen and on a refused send", async () => {
@@ -365,6 +365,77 @@ describe("the 「ログイン」 button", () => {
       const event = fakeEvent();
       button.props.onClick(event);
       expect(event.defaultPrevented).toBe(pending);
+    }
+  });
+});
+
+describe("Supabase's once-a-minute limit says how long to wait (review F-6)", () => {
+  const T = new Date("2026-11-06T04:00:00Z").getTime();
+  const limit = { status: 429, code: "over_email_send_rate_limit", message: "For security purposes, you can only request this after 31 seconds." };
+  const at = (ms: number) => vi.setSystemTime(T + ms);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("remembers when the mail went out", async () => {
+    expect(await send()).toBe("REDIRECT:/login?sent=1");
+    expect(JSON.parse(mocks.jar.get("otodoke_login")!)).toEqual({ e: EMAIL, t: T });
+  });
+
+  it("says a minute when Supabase refuses within a minute of the last mail to the same address", async () => {
+    await send();
+    at(30_000);
+    mocks.otpError = limit;
+    expect(await send()).toBe("REDIRECT:/login?error=busy_recent");
+    expect(await loginPage({ error: "busy_recent" })).toContain("このメールアドレスには、さきほどメールを送りました。1分ほど待ってから、もう一度お試しください。");
+    // A refused send does not move the time of the mail that went out.
+    expect(JSON.parse(mocks.jar.get("otodoke_login")!)).toEqual({ e: EMAIL, t: T });
+    at(45_000);
+    expect(await send()).toBe("REDIRECT:/login?error=busy_recent");
+  });
+
+  it("keeps the general words when the wait is not known", async () => {
+    mocks.otpError = limit;
+    // No mail from this browser before (another browser, or the cookie is gone).
+    expect(await send()).toBe("REDIRECT:/login?error=busy");
+    mocks.otpError = null;
+    await send();
+    // Over a minute later: the project's hourly allowance, or something else.
+    at(61_000);
+    mocks.otpError = limit;
+    expect(await send()).toBe("REDIRECT:/login?error=busy");
+    // Another address.
+    at(70_000);
+    mocks.otpError = null;
+    await send();
+    at(80_000);
+    mocks.otpError = limit;
+    expect(await send({ email: "other@example.com" })).toBe("REDIRECT:/login?error=busy");
+  });
+
+  it("does not change the other refusals within the minute", async () => {
+    await send();
+    at(10_000);
+    mocks.otpError = { status: 500, code: "unexpected_failure", message: "Error sending magic link email" };
+    expect(await send()).toBe("REDIRECT:/login?error=send_failed");
+    mocks.otpError = { status: 400, code: "captcha_failed", message: "captcha protection: request disallowed" };
+    expect(await send()).toBe("REDIRECT:/login?error=captcha_missing");
+    // And the time of the mail that went out survives them.
+    at(20_000);
+    mocks.otpError = limit;
+    expect(await send()).toBe("REDIRECT:/login?error=busy_recent");
+  });
+
+  it("ignores a time the app did not write", async () => {
+    for (const t of ['"soon"', "-1", "0", "null", "1e400"]) {
+      mocks.jar.set("otodoke_login", `{"e":"${EMAIL}","t":${t}}`);
+      mocks.otpError = limit;
+      expect(await send(), t).toBe("REDIRECT:/login?error=busy");
     }
   });
 });

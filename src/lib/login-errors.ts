@@ -10,6 +10,9 @@ export const LOGIN_ERROR_MESSAGES = {
   send_failed: "メールを送れませんでした。少し時間をおいて、もう一度お試しください。",
   // Supabase refused to send (one address once a minute, or the project's hourly allowance).
   busy: "いまはリンクを送れませんでした。少し時間をおいて、もう一度お試しください。",
+  // The same refusal less than a minute after this browser sent to the same address: it is the
+  // once-a-minute limit (max_frequency), so the wait is known. The earlier mail is on its way.
+  busy_recent: "このメールアドレスには、さきほどメールを送りました。1分ほど待ってから、もう一度お試しください。",
   // Supabase's CAPTCHA wanted a Turnstile token and the press had none: the check did not finish
   // (script blocked, host not allowed, not solved within the button's wait).
   captcha_missing: "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。",
