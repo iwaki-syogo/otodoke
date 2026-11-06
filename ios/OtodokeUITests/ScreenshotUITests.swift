@@ -41,7 +41,7 @@ final class ScreenshotUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 5))
         try shoot("detail-nav")
 
-        let chip = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "分類:")).firstMatch
+        let chip = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "分類を変える")).firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         chip.tap()
         XCTAssertTrue(app.buttons["閉じる"].waitForExistence(timeout: 5))
