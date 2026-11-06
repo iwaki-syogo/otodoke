@@ -135,15 +135,10 @@ const SAID_IN_BOTH = [
   "Message-ID",
   "承認リンク",
   "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します",
+  // A marked mail is kept while its sender is remembered, and goes 14 days after 「外す」, as /privacy
+  // says. No final 「。」: README's list items end without one.
+  "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します",
 ];
-
-/**
- * A marked mail is kept while its sender is remembered, and goes 14 days after 「外す」, as /privacy
- * says. README.md's line on it still has the wording from before (review 2026-11-06, seam 6): this
- * batch may change only its line on mail read with no passphrase. Once README says this too, the
- * sentence joins SAID_IN_BOTH.
- */
-const FLAGGED_KEPT = "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します。";
 
 describe("/app/settings: あなたのメールの扱い", () => {
   it("states what is and is not encrypted", async () => {
@@ -159,7 +154,6 @@ describe("/app/settings: あなたのメールの扱い", () => {
       "最大 7 日間",
       "コードはすべて",
       ...SAID_IN_BOTH,
-      FLAGGED_KEPT,
     ]) {
       expect(text).toContain(fact);
     }
@@ -167,13 +161,14 @@ describe("/app/settings: あなたのメールの扱い", () => {
     expect(text).not.toContain("合言葉を決める前に届いたメール");
   });
 
-  it("README says the same about mail read before encryption or with no passphrase yet, Message-ID, the approval link and screened ads", () => {
+  it("README says the same about mail read before encryption or with no passphrase yet, Message-ID, the approval link, screened ads and 「これは荷物」", () => {
     const readme = readFileSync(path.resolve(__dirname, "../../../README.md"), "utf8");
     const section = readme.slice(readme.indexOf("## あなたのメールの扱い"), readme.indexOf("## 技術"));
     for (const fact of SAID_IN_BOTH) {
       expect(section).toContain(fact);
     }
     expect(section).not.toContain("合言葉を決める前に届いたメール");
+    expect(section).not.toContain("次から読むために消さずに残します");
   });
 
   it("the list of screened mail says the sender's domain is kept with the subject", async () => {
