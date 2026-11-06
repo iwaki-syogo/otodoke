@@ -19,6 +19,19 @@ enum SettingsMenuText {
     /// The badge on the key row while there is no key.
     static let keyNoneBadge = "鍵なし"
 
+    /// The badge on the key row while a count of mail could not be read (not drawn as 0).
+    static let keyUnknownBadge = "確認できません"
+
+    /// The badge on the key row while the key step after the sign-in did not make a key.
+    static let keyStepFailedBadge = "鍵を作れませんでした"
+
+    /// The hint of the 「Web で開く」 row (it leaves the app).
+    static let webHint = "Safari で開きます"
+
+    /// The value of an opening and closing card (VoiceOver).
+    static let disclosureOpen = "開いています"
+    static let disclosureClosed = "閉じています"
+
     /// The badge on the key row while mail from before the encryption is still readable by the operator.
     static func plainBadge(_ n: Int) -> String {
         "未暗号化 \(n) 通"

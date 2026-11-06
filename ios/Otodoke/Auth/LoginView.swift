@@ -68,6 +68,7 @@ struct LoginView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
+        .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
     }
 

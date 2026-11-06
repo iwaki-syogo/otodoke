@@ -23,6 +23,8 @@ struct WelcomeView: View {
                             Text(WelcomeText.headlineSecond)
                         }
                         .font(.largeTitle.bold())
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isHeader)
                         .padding(.top, 40)
                         Text(WelcomeText.lede)
                             .font(.body)

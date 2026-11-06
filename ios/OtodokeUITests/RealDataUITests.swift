@@ -373,7 +373,7 @@ final class RealDataUITests: XCTestCase {
         let cat = "【試験】分類を変える荷物"
         XCTAssertTrue(scrollTo(app, app.staticTexts[cat]))
         app.staticTexts[cat].tap()
-        let chip = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "分類:")).firstMatch
+        let chip = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "分類を変える")).firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 15))
         XCTAssertTrue(chip.label.contains("食費"), chip.label)
         let catBefore = try rows(label: "category-before")

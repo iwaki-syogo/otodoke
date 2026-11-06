@@ -233,7 +233,7 @@ struct SettingsDisclosure<Content: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityAddTraits(isExpanded ? [.isSelected] : [])
+            .accessibilityValue(isExpanded ? SettingsMenuText.disclosureOpen : SettingsMenuText.disclosureClosed)
             if isExpanded {
                 Divider()
                 content()

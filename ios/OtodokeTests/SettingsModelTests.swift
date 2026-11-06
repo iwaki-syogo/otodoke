@@ -538,4 +538,34 @@ struct SettingsModelTests {
         await s.model.pageShown()
         #expect(await s.fake.count("GET", "user_keys") == keys + 2)
     }
+    // MARK: the key row's badge (a failed count is never drawn as no badge)
+
+    @Test func theKeyBadgeForTheCountsThatCouldNotBeRead() async throws {
+        let sampleFails = try await setUp(faults: { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) })
+        #expect(SettingsView.keyBadge(for: sampleFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        let allFail = try await setUp(faults: { await $0.fail(where: { $0.url.lastPathComponent == "emails" }, with: .http(503)) })
+        #expect(SettingsView.keyBadge(for: allFail.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        #expect(SettingsMenuText.keyUnknownBadge == "確認できません")
+    }
+
+    @Test func theKeyBadgeKeepsItsOtherStates() async throws {
+        let clean = try await setUp()
+        #expect(SettingsView.keyBadge(for: clean.model) == nil)
+        let plain = try await setUp(mails: [SettingsRows.mail(1), SettingsRows.mail(2)])
+        #expect(SettingsView.keyBadge(for: plain.model) == .init(text: SettingsMenuText.plainBadge(2), kind: .amber))
+        let noKey = try await setUp(keys: [])
+        #expect(SettingsView.keyBadge(for: noKey.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .sky))
+    }
+
+    @Test func aKeyStepThatFailedShowsOnTheKeyRow() async throws {
+        let w = try await KeyOwnerAndOrderTests.SignInWorld(keyInUse: false)
+        try await w.signIn()
+        let screens = MainScreens.live(auth: w.auth)
+        let setup = try #require(screens.keySetup)
+        #expect(await waitFor(.seconds(5)) { await MainActor.run { setup.lastOutcome != nil } })
+        await screens.settings.onAppear()
+        #expect(screens.settings.keyStepFailure != nil)
+        #expect(SettingsView.keyBadge(for: screens.settings) == .init(text: SettingsMenuText.keyStepFailedBadge, kind: .red))
+        #expect(SettingsMenuText.keyStepFailedBadge == "鍵を作れませんでした")
+    }
 }

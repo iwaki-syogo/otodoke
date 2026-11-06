@@ -22,6 +22,17 @@ struct BoxMarkView: View {
 /// font, so the heaviest rounded system face stands in. Sized by `size` (scaled with Dynamic Type); the box is
 /// 0.6 em. VoiceOver hears "Otodoke" once.
 struct WordmarkView: View {
+    let size: CGFloat
+
+    /// The growth stops at xxxLarge: the mark is fixed in size, so a bigger one would run off the screen.
+    var body: some View {
+        ScaledWordmark(size: size)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    }
+}
+
+/// The drawing: its size reads the Dynamic Type of the environment it is in (WordmarkView caps that).
+private struct ScaledWordmark: View {
     @ScaledMetric private var size: CGFloat
 
     init(size: CGFloat) {

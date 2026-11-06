@@ -28,6 +28,8 @@ function parseTopPage(src: string): { first: string; second: string; lede: strin
 }
 
 const JAPANESE = /[぀-ヿ㐀-鿿＀-￯]/;
+/** The sign-up button opens the form in sign-up mode and the sign-in button in sign-in mode (not the other way round). */
+const LOGIN_MODE_BY_DESTINATION = /LoginView\(auth: auth, startMode: destination == \.signUp \? \.signUp : \.signIn\)/;
 
 describe("the iOS first screen", () => {
   const text = () => stripComments(read("ios/Otodoke/Auth/WelcomeText.swift"));
@@ -69,7 +71,14 @@ describe("the iOS first screen", () => {
     const src = view();
     expect(src).toMatch(/accessibilityIdentifier\("welcome\.signUp"\)/);
     expect(src).toMatch(/accessibilityIdentifier\("welcome\.signIn"\)/);
-    expect(src).toMatch(/LoginView\(auth: auth, startMode:/);
+    expect(src).toMatch(LOGIN_MODE_BY_DESTINATION);
+  });
+
+  it("negative control: the two modes swapped, or one dropped, are caught", () => {
+    expect("LoginView(auth: auth, startMode: destination == .signUp ? .signUp : .signIn)").toMatch(LOGIN_MODE_BY_DESTINATION);
+    expect("LoginView(auth: auth, startMode: destination == .signUp ? .signIn : .signUp)").not.toMatch(LOGIN_MODE_BY_DESTINATION);
+    expect("LoginView(auth: auth, startMode: .signIn)").not.toMatch(LOGIN_MODE_BY_DESTINATION);
+    expect("LoginView(auth: auth, startMode: destination == .signIn ? .signUp : .signIn)").not.toMatch(LOGIN_MODE_BY_DESTINATION);
   });
 
   it("RootView shows the first screen, not the login form, when signed out", () => {
