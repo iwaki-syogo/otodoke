@@ -55,9 +55,12 @@ export function isParcelRelevant(r: Relevance): boolean {
   return r !== "unrelated";
 }
 
-/** Normalize an order number for matching: drop spaces/dashes, uppercase. */
+/**
+ * Normalize an order number for matching: full-width forms as half-width (NFKC: ＡＢ－１２３ is
+ * AB-123), then drop spaces and dashes, uppercase. "−" and "ー" are dashes too: NFKC keeps them.
+ */
 export function normalizeOrderNumber(raw: string): string {
-  return raw.replace(/[\s\-‐–—]/g, "").toUpperCase();
+  return raw.normalize("NFKC").replace(/[\s\-‐–—−ー]/g, "").toUpperCase();
 }
 
 const MIN_CONFIDENCE = 0.6;
@@ -79,6 +82,12 @@ export function asTime(v: string | null): string | null {
 
 function confident<T>(f: { value: T | null; confidence: number }): T | null {
   return f.value !== null && f.confidence >= MIN_CONFIDENCE ? f.value : null;
+}
+
+/** The tracking number to store and compare: normalized, or null when nothing of it is left (never ""). */
+function trackingOf(x: Pick<Extraction, "tracking_number">): string | null {
+  const stated = confident(x.tracking_number);
+  return stated === null ? null : normalizeTracking(stated) || null;
 }
 
 /** Shown when no mail names who sent the parcel. */
@@ -135,7 +144,7 @@ function orderDate(x: Extraction, emailSentAt: string | null): string | null {
 
 /** Fields to write for a brand-new parcel from one extraction. */
 export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: string | null): ParcelInsert {
-  const tracking = confident(x.tracking_number);
+  const tracking = trackingOf(x);
   const carrierHint = x.carrier.value;
   const carrier = tracking || carrierHint ? identifyCarrier(tracking, carrierHint) : null;
   const status = statusOf(x) ?? "unknown";
@@ -155,7 +164,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
     expected_window_end: asTime(confident(x.expected_window_end)),
     expected_text: x.expected_text,
     carrier: carrier && carrier.key !== "unknown" ? carrier.name : carrierHint,
-    tracking_number: tracking ? normalizeTracking(tracking) : null,
+    tracking_number: tracking,
     tracking_url: trackingUrlFor(tracking, carrierHint),
     requires_presence: confident(x.requires_presence),
     presence_evidence: x.requires_presence.evidence,
@@ -184,9 +193,9 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   const orderNumber = confident(x.order_number);
   if (orderNumber && !existing.order_number) update.order_number = orderNumber;
 
-  const tracking = confident(x.tracking_number);
+  const tracking = trackingOf(x);
   if (tracking && (!existing.tracking_number || isNewer)) {
-    update.tracking_number = normalizeTracking(tracking);
+    update.tracking_number = tracking;
     const info = identifyCarrier(tracking, x.carrier.value ?? existing.carrier);
     update.carrier = info.key !== "unknown" ? info.name : (x.carrier.value ?? existing.carrier);
     update.tracking_url = trackingUrlFor(tracking, x.carrier.value ?? existing.carrier);
@@ -251,9 +260,9 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   const orderNumber = confident(x.order_number);
   if (orderNumber && !existing.order_number) update.order_number = orderNumber;
 
-  const tracking = confident(x.tracking_number);
+  const tracking = trackingOf(x);
   if (tracking && !existing.tracking_number) {
-    update.tracking_number = normalizeTracking(tracking);
+    update.tracking_number = tracking;
     if (!existing.tracking_url) update.tracking_url = trackingUrlFor(tracking, existing.carrier ?? x.carrier.value);
   }
   if (!existing.carrier) {
@@ -320,8 +329,7 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
     );
     if (hit) return hit;
   }
-  const statedTracking = confident(x.tracking_number);
-  const tracking = statedTracking ? normalizeTracking(statedTracking) : null;
+  const tracking = trackingOf(x);
   if (tracking) {
     const hit = newestFirst.find((p) => p.tracking_number === tracking);
     if (hit) return hit;
