@@ -69,7 +69,7 @@ export function AccountDeletion() {
       <h2 id="account-delete-title" ref={title} tabIndex={-1} className="text-base font-bold outline-none">
         アカウントを削除しますか？
       </h2>
-      <p className="mt-1 text-sm leading-6">荷物、保存したメール、転送先アドレス、合言葉を、アカウントごと消します。元に戻せません。</p>
+      <p className="mt-1 text-sm leading-6">荷物、保存したメール、転送先アドレスを、アカウントごと消します。元に戻せません。</p>
       <p className="mt-1 text-sm leading-6">Gmail などで設定した自動転送も外してください。</p>
       <form action={formAction} className="mt-3 flex flex-wrap items-center gap-2">
         <input type="hidden" name={ACCOUNT_DELETE_CONFIRM.name} value={ACCOUNT_DELETE_CONFIRM.value} />
