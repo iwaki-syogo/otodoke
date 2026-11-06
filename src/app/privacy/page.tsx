@@ -3,6 +3,11 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { CONTACT_EMAIL } from "./contact";
 
+// Prerendered (○ in `next build`). src/app/not-found.tsx reads the session, and Next renders the
+// root not-found with every page as its fallback, so without this line this page would be rendered
+// per request too. It reads nothing from the request, and that fallback is never shown here.
+export const dynamic = "force-static";
+
 export const metadata: Metadata = { title: "プライバシーポリシー" };
 
 /**
