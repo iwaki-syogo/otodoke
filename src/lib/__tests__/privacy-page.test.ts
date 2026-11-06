@@ -185,9 +185,10 @@ describe("/privacy: what it says", () => {
     expect(said["バックアップ"]).toContain("最大 7 日間");
     const unsealed = findAll(part, (n) => n.tag === "li").map((li) => textOf(li).split("。")[0]);
     expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール", "Otodoke が暗号化を始める前に読み取ったメール"]);
-    // A mail read once sealing began while the user has no key: not kept (src/lib/mail-seal.ts, "dropped").
-    const noKey = said["メールの鍵がないときと、パスワードを忘れたとき"];
-    expect(noKey).toContain("Otodoke が暗号化を始めた後、メールの鍵がないときに読み取ったメールは、件名・差出人・本文を残しません");
+    // A mail read once sealing began while the user has no key, that is before their first password
+    // sign-in: not kept (src/lib/mail-seal.ts, "dropped").
+    const noKey = said["パスワードでログインする前と、忘れたとき"];
+    expect(noKey).toContain("Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません");
     // A reset loses the mail sealed before; a change keeps it (decision 3).
     expect(noKey).toContain(`パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます。`);
     // Decision 7, told as the settings tell it.
@@ -253,9 +254,11 @@ describe("/privacy: what it says", () => {
     }
   });
 
-  it("decision 7 keeps the notice the screens have said since 2026-11-06, after the words for no key", () => {
-    expect(PLAINTEXT_DROP_NOTICE).toBe("メールの鍵がない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。");
+  it("decision 7 is the coordinator's sentence of 2026-11-06 22:40, ending in the notice the screens have said since that morning", () => {
+    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインしていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。");
     expect(PLAINTEXT_DROP_NOTICE.endsWith("11 月 14 日に件名・差出人・本文を消します。荷物は残ります。")).toBe(true);
+    // The owner's rule: no brackets.
+    expect(wordingProblems([PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL])).toEqual([]);
   });
 });
 

@@ -132,10 +132,10 @@ const SAID_IN_BOTH = [
   "暗号化を始める前に読み取ったメールは、暗号化していません",
   // Whether a mail keeps its subject, sender and body is decided when it is read (src/lib/mail-seal.ts
   // closedBody), not when it arrives: the same sentence as /privacy.
-  "Otodoke が暗号化を始めた後、メールの鍵がないときに読み取ったメールは、件名・差出人・本文を残しません",
-  // The key comes with the password sign-in (password-v1); then decision 7 in the words of
-  // src/lib/mail-notices.ts. No final 「。」 (see below).
-  `メールの鍵は、パスワードでログインしたときに作ります。${PLAINTEXT_DROP_NOTICE.replace(/。$/, "")}`,
+  "Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません",
+  // Decision 7 in the words of src/lib/mail-notices.ts, right after the mail read before
+  // encryption. No final 「。」 (see below).
+  `「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE.replace(/。$/, "")}`,
   // A reset loses the mail sealed before; a change keeps it (decision 3).
   `パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます`,
   "Message-ID",

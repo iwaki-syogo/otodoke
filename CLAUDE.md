@@ -33,20 +33,22 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
   - `config diff` は `auth.email.smtp.pass` などを masked として比べない。`config.toml` では `env(RESEND_SMTP_KEY)` の参照なので、手元にその環境変数が無いまま push すると本番の SMTP パスワードを空にしうる（確認・再設定のメールが全部止まる）。1 項目だけ変えるときはダッシュボードで変え、`config.toml` も同じ値にそろえる（2026-11-04、Redirect URLs はこの方法で変えた）
   - Redirect URLs は `https://otodoke.app/auth/confirm**`・dev のブランチ URL `https://otodoke-app-git-dev-syodgo-9062s-projects.vercel.app/auth/confirm**`・localhost 2 行だけ。Vercel のワイルドカード（`*-<team>.vercel.app`）は他人の Vercel の名前に一致しうるので使わない。dev 以外のブランチの Preview でログインするときは、その URL ちょうどを足す（`supabase-redirect-urls.test.ts` が固定）
 
-## ログイン（password-v1、本人の決定 2026-11-06）
+## ログインとパスワード
 
-- ログインはメールアドレスとパスワード。初回は「アカウント作成」。ブラウザでパスワードから authSecret（ログイン用）と KEK（メールの鍵を包む用）を別々に作り、Supabase Auth には authSecret だけをパスワードとして送る。生のパスワード・KEK・開いた秘密鍵はサーバーに出さない。取り決めは `docs/crypto/password-v1.md` とテストベクタ `fixtures/crypto/password-v1.json`（iOS と合意済み。変えるときは iOS と同時に）
-- 開いたメールの鍵はそのタブのメモリだけ（`src/lib/crypto/tab-key.ts`）。再読み込み・新しいタブでは、元メールを開くときにパスワードを入れ直す
-- メールの鍵は、パスワードでログインしたとき（鍵がまだ無いとき）と再設定のあとに作る。作成と付け替えは、パスワードか再設定で入って 15 分以内のセッションだけ
-- パスワードの変更（今のパスワードが分かる）は同じ秘密鍵を包み直すので、前のメールも開ける。再設定は新しい鍵を作るので、前のメールは開けない。画面・メール・文書で同じ文を使う（`src/lib/mail-notices.ts`）
-- Web は 8 桁コードとリンクのログインをやめた。**Supabase の OTP とマジックリンクのログインはサーバー側では止めない**（iOS 2 本目が 8 桁コードでログインする。iOS 3 本目が TestFlight に出るまで）。だから `magic_link.html` はコードだけを載せる
-- メールのリンク: 確認（Confirm sign up、`supabase/templates/confirmation.html`）は `{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email`、再設定（Reset password、`recovery.html`）は同じ形で `type=recovery`。テンプレートが `&token_hash=` を後ろに付けるので、`signUp` の `emailRedirectTo` と `resetPasswordForEmail` の `redirectTo` は `?` を含む `/auth/confirm?…` にする（Redirect URLs に一致しない URL を渡すと Supabase は Site URL に置き換え、リンクが壊れる）
-- `/auth/confirm` は type で分ける。email（確認）→ `/login?confirmed=1`（確認のあとはパスワードでログインし直し、そのときに鍵を作る）、recovery（再設定）→ `/reset-password`。行き先はコードの定数で、リンクの `next` は読まない
-- **再設定の画面は `/reset-password`（`/auth/` の外）**。`safeNextPath` が `/auth` の下を拒むため（R3-36）
-- **Supabase のパスワードの強さの設定を上げない**（`minimum_password_length = 6`・`password_requirements = ""` のまま）。authSecret は小文字の hex 64 文字なので、大文字や記号を必須にすると誰も登録もログインもできない。パスワードの強さはブラウザで、生のパスワードに対して確かめる
-- **Preview と本番は同じ Supabase**（project_ref は下の「外部サービス依存」）。Preview でのアカウント作成・パスワードの変更・再設定は本番のアカウントと鍵を変える（再設定は前の鍵を retire し、前のメールは開けなくなる）。試すアカウントに気をつける
-- メールアドレスを変える画面は作らない（salt が変わり、同じパスワードから同じ値が作れなくなる）。ASCII 以外の文字を含むメールアドレスの登録は断る（Web と iOS で email_norm が割れないため）
-- CAPTCHA は OFF のまま（`src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = false`）。Turnstile のトークンは `signUp`・`signInWithPassword`・`resetPasswordForEmail` に渡す
+本人の決定 2026-11-06。取り決めは password-v1 で、正本は `docs/crypto/password-v1.md` とテストベクタ `fixtures/crypto/password-v1.json`。iOS と合意済みなので、変えるときは iOS と同時に変える。
+
+- ログインはメールアドレスとパスワード。初回は「アカウント作成」。ブラウザがパスワードから、ログイン用の authSecret と、メールの鍵を包む KEK を別々に作る。Supabase Auth に送るのは authSecret だけで、生のパスワード・KEK・開いた秘密鍵はサーバーに出さない
+- 開いたメールの鍵は、そのタブのメモリにだけ置く。置き場所は `src/lib/crypto/tab-key.ts`。再読み込みや新しいタブでは、元メールを開くときにパスワードを入れ直す
+- メールの鍵は、鍵がまだ無い人がパスワードでログインしたときと、再設定のあとに作る。作成と付け替えは、パスワードか再設定で入って 15 分以内のセッションだけ
+- 今のパスワードが分かる変更では、同じ秘密鍵を包み直すので前のメールも開ける。再設定では新しい鍵を作るので、前のメールは開けない。画面・メール・文書で同じ文を使い、文の正本は `src/lib/mail-notices.ts` に置く
+- Web は 8 桁コードとリンクのログインをやめた。**Supabase の OTP とマジックリンクのログインは、サーバー側では止めない**。iOS 2 本目が 8 桁コードでログインするので、iOS 3 本目が TestFlight に出るまで残す。だから `magic_link.html` はコードだけを載せる
+- メールのリンク: 確認のメール `supabase/templates/confirmation.html` は `{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email`、再設定のメール `recovery.html` は同じ形で `type=recovery`。テンプレートが `&token_hash=` を後ろに付けるので、`signUp` の `emailRedirectTo` と `resetPasswordForEmail` の `redirectTo` は `?` を含む `/auth/confirm?…` にする。Redirect URLs に一致しない URL を渡すと、Supabase は Site URL に置き換え、リンクが壊れる
+- `/auth/confirm` は type で分ける。確認の email は `/login?confirmed=1` へ行き、そこでパスワードでログインし直したときに鍵を作る。再設定の recovery は `/reset-password` へ行く。行き先はコードの定数で、リンクの `next` は読まない
+- **再設定の画面は `/reset-password` で、`/auth/` の外に置く**。`safeNextPath` が `/auth` の下を拒むため
+- **Supabase のパスワードの強さの設定を上げない**。`minimum_password_length = 6` と `password_requirements = ""` のまま。authSecret は小文字の hex 64 文字なので、大文字や記号を必須にすると誰も登録もログインもできない。パスワードの強さは、ブラウザで生のパスワードに対して確かめる
+- **Preview と本番は同じ Supabase**。project_ref は下の「外部サービス依存」。Preview でのアカウント作成・パスワードの変更・再設定は、本番のアカウントと鍵を変える。再設定は前の鍵を retire するので、前のメールは開けなくなる。試すアカウントに気をつける
+- メールアドレスを変える画面は作らない。salt が変わり、同じパスワードから同じ値が作れなくなるため。ASCII 以外の文字を含むメールアドレスの登録は断る。Web と iOS で email_norm が割れないようにするため
+- CAPTCHA は OFF のまま。`src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = false`。Turnstile のトークンは `signUp`・`signInWithPassword`・`resetPasswordForEmail` に渡す
 
 ## ディレクトリ
 

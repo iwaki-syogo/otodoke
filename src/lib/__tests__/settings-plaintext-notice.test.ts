@@ -43,12 +43,12 @@ describe("decision 7 is announced with its date", () => {
     expect(text).not.toContain("11 月 14 日");
   });
 
-  it("「あなたのメールの扱い」 says the same, next to the mail read before encryption, after where the key comes from", () => {
+  it("「あなたのメールの扱い」 says the same, next to the mail read before encryption", () => {
     const item = findAll(parseHtml(renderToStaticMarkup(createElement(MailHandling))), (n) => n.tag === "li" && textOf(n).includes("暗号化を始める前に読み取ったメールは、暗号化していません"));
     expect(item).toHaveLength(1);
     // password-v1: the key is made at the password sign-in, so "no key" is said in those words.
-    expect(textOf(item[0])).toContain(`メールの鍵は、パスワードでログインしたときに作ります。${PLAINTEXT_DROP_NOTICE}`);
-    expect(PLAINTEXT_DROP_NOTICE).toContain(NOTICE);
+    expect(textOf(item[0])).toContain(`「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE}`);
+    expect(PLAINTEXT_DROP_NOTICE).toBe(`パスワードでログインしていない場合は、${NOTICE}。`);
     expect(textOf(item[0])).not.toContain("合言葉");
   });
 
