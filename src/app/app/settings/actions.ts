@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { loadDemoEntries } from "@/lib/demo";
 import { processInboundEmail } from "@/lib/pipeline";
-import { isRememberableDomain } from "@/lib/screen-senders";
+import { cameFromThemselves, isRememberableDomain } from "@/lib/screen-senders";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
 import { settingsErrorPath } from "@/lib/settings-errors";
@@ -128,11 +128,12 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
   const id = String(formData.get("id") ?? "");
-  let outcome: "remembered" | "shared" | "failed" = "failed";
+  let outcome: "remembered" | "shared" | "own" | "failed" = "failed";
   if (UUID.test(id)) {
     const db = createAdminClient();
-    const { data: row, error: readError } = await db.from("screen_events").select("from_domain").eq("id", id).eq("user_id", user.id).eq("decision", "dropped").maybeSingle();
+    const { data: row, error: readError } = await db.from("screen_events").select("from_domain, subject").eq("id", id).eq("user_id", user.id).eq("decision", "dropped").maybeSingle();
     if (readError) console.error("markWronglyDropped (lookup):", readError.message);
+    else if (row && cameFromThemselves(row, user.email)) outcome = "own";
     else if (row && !isRememberableDomain(row.from_domain)) outcome = "shared";
     else if (row) {
       const { error } = await db.from("screen_events").update({ flagged_at: new Date().toISOString() }).eq("id", id).eq("user_id", user.id);
