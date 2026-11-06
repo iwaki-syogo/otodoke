@@ -69,7 +69,7 @@ describe("/guide/forwarding", () => {
       "サインインしていないと Outlook の紹介ページが開きます。サインインしてから、もう一度このボタンを押してください。",
       "Yahoo!メールは、自動転送したメールが Yahoo!メールに残らないので、おすすめしません。",
       "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。",
-      "届かない人が多い落とし穴（必ず確かめてください）",
+      "届かない人が多い落とし穴",
       "1. ヤマト運輸などのお届け予定メールを受け取っていない",
       "2. ショップの「発送のお知らせ」メールを止めている",
       "3. 荷物のメールが迷惑メールに入っている",
@@ -192,8 +192,24 @@ describe("/guide/forwarding", () => {
   it("shows the video credit and the minutes label", async () => {
     const text = textOf(await render()).replace(/\s+/g, " ");
     expect(text).toContain(VIDEO_CREDIT);
-    expect(text).toContain("動画で見る（約 2 分）");
-    expect(text).toContain("動画で見る（約 1 分半）");
+    expect(text).toContain("動画で見る・約 2 分");
+    expect(text).toContain("動画で見る・約 1 分半");
     expect(text).not.toContain("約 0 分半");
+  });
+});
+
+describe("forwarding-guide data has no full-width parentheses", () => {
+  it("shows no （ or ） in any string that reaches the screen", () => {
+    const strings: string[] = [];
+    const walk = (v: unknown, key = ""): void => {
+      if (typeof v === "string") {
+        // URLs and the Gmail filter are not screen text.
+        if (key !== "href" && key !== "src" && key !== "poster" && v !== GMAIL_FILTER) strings.push(v);
+      } else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+      else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, k);
+    };
+    walk(guideData);
+    expect(strings.length).toBeGreaterThan(20);
+    for (const s of strings) expect(s, s).not.toMatch(/[（）]/);
   });
 });

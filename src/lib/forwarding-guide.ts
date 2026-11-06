@@ -68,8 +68,8 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "gmail",
     chip: "Gmail",
     title: "Gmail",
-    video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 116 },
-    time: "5 分・パソコンのブラウザで（スマホの Gmail アプリでは設定できません）",
+    video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 131 },
+    time: "5 分・パソコンのブラウザで。スマホの Gmail アプリでは設定できません",
     link: { label: "転送の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/fwdandpop" },
     linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
     groups: [
@@ -94,14 +94,14 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
       },
     ],
     notes: [
-      "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。",
+      "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む「到着したよ」のような私信も転送されます。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。",
     ],
   },
   {
     id: "icloud",
     chip: "iCloud メール",
     title: "iCloud メール",
-    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 81 },
+    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 92 },
     addresses: "@icloud.com・@me.com・@mac.com",
     time: "3 分・ブラウザで",
     link: { label: "iCloud メールを開く", href: "https://www.icloud.com/mail/" },
@@ -122,7 +122,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "outlook",
     chip: "Outlook",
     title: "Outlook",
-    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 87 },
+    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 99 },
     addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
     time: "3 分・ブラウザで",
     link: { label: "転送の設定を開く", href: "https://outlook.live.com/mail/0/options/mail/forwarding" },
@@ -158,8 +158,8 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
 export const VIDEO_LABEL = "動画で見る";
 export const VIDEO_CREDIT = "動画の画面はイメージです。声は AivisSpeech のまお、曲は Mixkit の素材です。";
 
-export const PITFALLS_HEADING = "届かない人が多い落とし穴（必ず確かめてください）";
-export const PITFALLS_LEAD = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。";
+export const PITFALLS_HEADING = "届かない人が多い落とし穴";
+export const PITFALLS_LEAD = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。必ず確かめてください。";
 
 export interface ForwardingPitfall {
   title: string;
@@ -182,7 +182,7 @@ export const FORWARDING_PITFALLS: ForwardingPitfall[] = [
     body: ["ヤマト運輸の「お届け予定メール」は、クロネコメンバーズに登録した人にだけ届きます。いつ届くかは、このメールで分かることが多いです。"],
     stepsLabel: "確かめ方:",
     steps: [
-      "クロネコメンバーズにログインします（未登録なら登録して、本人認証まで済ませます）。",
+      "クロネコメンバーズにログインします。未登録なら登録して、本人認証まで済ませます。",
       "左上のメニュー › 「荷物に関する通知設定」を開きます。",
       "メールを「利用する」にして、「通知設定を保存する」を押します。LINE やアプリだけにしていると、メールが届きません。",
     ],
@@ -190,8 +190,8 @@ export const FORWARDING_PITFALLS: ForwardingPitfall[] = [
     codes: ["@kuronekoyamato.co.jp", "@ml.kuronekoyamato.co.jp", "@ml2.kuronekoyamato.co.jp"],
     after: ["佐川急便・日本郵便も、会員サービスでメールの通知を受け取る設定にしておくと、届く日が分かりやすくなります。"],
     links: [
-      { label: "お届け予定通知（ヤマト運輸）", href: "https://www.kuronekoyamato.co.jp/ytc/customer/redelivery/members/schedule_notice/" },
-      { label: "受け取るドメイン（ヤマト運輸のよくある質問）", href: "https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/7935" },
+      { label: "ヤマト運輸のお届け予定通知", href: "https://www.kuronekoyamato.co.jp/ytc/customer/redelivery/members/schedule_notice/" },
+      { label: "ヤマト運輸のよくある質問・受け取るドメイン", href: "https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/7935" },
     ],
   },
   {

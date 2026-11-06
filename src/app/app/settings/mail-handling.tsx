@@ -1,11 +1,12 @@
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 
 /** 「あなたのメールの扱い」: what happens to a forwarded mail, without promising more than the code does. Same facts as README. */
-export function MailHandling() {
+export function MailHandling({ hideHeading = false }: { hideHeading?: boolean } = {}) {
   return (
     <section>
-      <h2 className="text-base font-bold">あなたのメールの扱い</h2>
-      <ul className="mt-2 flex list-disc flex-col gap-2 rounded-2xl border border-neutral-200 bg-white py-3 pl-8 pr-4 text-sm leading-6 text-neutral-700">
+      {/* On its own page the page's h1 says it; the default keeps the h2 for any other place. */}
+      {hideHeading ? null : <h2 className="text-base font-bold">あなたのメールの扱い</h2>}
+      <ul className={`${hideHeading ? "" : "mt-2 "}flex list-disc flex-col gap-2 rounded-2xl border border-neutral-200 bg-white py-3 pl-8 pr-4 text-sm leading-6 text-neutral-700`}>
         <li>届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。</li>
         <li>読み取って買い物に関係ないと分かったメールは消します。</li>
         <li>読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。パスワードそのものはサーバーに送らないので、運営者もデータベースからは読めません。</li>
@@ -20,7 +21,7 @@ export function MailHandling() {
         <li>受信を受け持つ Resend にも、メールの写しが一定期間残ります。</li>
         <li>暗号化していない状態のメールは、データベースのバックアップにも最大 7 日間残ります。読み取る前のものと、暗号化する前のものです。</li>
         <li>広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します。「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します。</li>
-        <li>iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。</li>
+        <li>iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、アプリの設定で切ることもできます。</li>
         <li>
           運営者が正しいプログラムを動かしていることが前提です。コードはすべて
           <a href="https://github.com/iwaki-syogo/otodoke" target="_blank" rel="noopener noreferrer" className="text-sky-700 underline underline-offset-4">

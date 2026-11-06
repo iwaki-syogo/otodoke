@@ -1,5 +1,6 @@
 import type { createClient } from "@/lib/supabase/server";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
+import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import { UNREAD_FILTER } from "@/lib/unread";
 
 /**
@@ -57,4 +58,46 @@ export async function readDroppedCount(supabase: Supabase, where: string): Promi
     return null;
   }
   return count;
+}
+
+/**
+ * What has come in so far (the empty parcel list and the approval cards share this one rule):
+ * - "received": forwarded mail of the person's own, a stored mail or one the screen dropped
+ *   (screen_events keeps those 14 days).
+ * - "approval": only Gmail's forwarding confirmation. Gmail forwards nothing until it is approved.
+ * - "none": nothing. The public samples never count (no sample is a Gmail confirmation).
+ */
+export type MailSoFar = "none" | "approval" | "received";
+
+/** `where` names the page in the server log; null when any of the reads failed (the caller decides what that means). */
+export async function readMailSoFar(supabase: Supabase, userId: string, where: string): Promise<MailSoFar | null> {
+  const head = { count: "exact", head: true } as const;
+  const [all, samples, confirmations, screened] = await Promise.all([
+    supabase.from("emails").select("id", head).eq("user_id", userId),
+    supabase.from("emails").select("id", head).eq("user_id", userId).like("provider_email_id", SAMPLE_PROVIDER_ID),
+    supabase.from("emails").select("id", head).eq("user_id", userId).eq("classification", "forwarding_confirmation"),
+    supabase.from("screen_events").select("id", head).eq("user_id", userId),
+  ]);
+  for (const [what, r] of [["emails", all], ["samples", samples], ["confirmations", confirmations], ["screen_events", screened]] as const) {
+    if (r.error) {
+      console.error(`${where} (${what}):`, r.error.message);
+      return null;
+    }
+  }
+  const forwarded = (all.count ?? 0) - (samples.count ?? 0) - (confirmations.count ?? 0);
+  if (forwarded > 0 || (screened.count ?? 0) > 0) return "received";
+  return (confirmations.count ?? 0) > 0 ? "approval" : "none";
+}
+
+/**
+ * Gmail's approval link, only while it is still to be done: once other mail has come in (the same
+ * rule as the empty parcel list's "received"), Gmail is forwarding and the link is not offered.
+ * `failed` when the link or that rule could not be read: neither "waiting" nor "done".
+ */
+export async function readPendingApproval(supabase: Supabase, userId: string, where: string): Promise<{ url: string | null; failed: boolean }> {
+  const confirmation = await readConfirmUrl(supabase, where);
+  if (confirmation.failed || !confirmation.url) return confirmation;
+  const mail = await readMailSoFar(supabase, userId, where);
+  if (mail === null) return { url: null, failed: true };
+  return mail === "received" ? { url: null, failed: false } : confirmation;
 }

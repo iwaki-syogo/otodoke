@@ -34,11 +34,12 @@ export function orderRows<T extends { id: string; action?: boolean }>(rows: T[])
   return [...urgent, ...rows.filter((r) => !urgent.includes(r))];
 }
 
-export type Badge = { text: string; tone: "amber" | "neutral" };
+export type Badge = { text: string; tone: "amber" | "neutral" | "red" };
 
 const BADGE_TONES: Record<Badge["tone"], string> = {
   amber: "border border-amber-300 bg-amber-50 text-amber-900",
   neutral: "bg-neutral-100 text-neutral-600",
+  red: "border border-red-200 bg-red-50 text-red-800",
 };
 
 export const ROW_CLASS = "flex min-h-[52px] w-full items-center gap-3 px-4 text-left text-sm font-medium text-neutral-900";

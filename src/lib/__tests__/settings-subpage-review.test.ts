@@ -128,7 +128,7 @@ describe("the old-key count on the password page", () => {
     const Page = (await import("@/app/app/settings/password/page")).default;
     return parseHtml(renderToStaticMarkup(await Page()));
   };
-  const boxes = (root: HtmlNode) => findAll(root, (n) => n.tag === "p" && textOf(n) === "読み込めませんでした");
+  const boxes = (root: HtmlNode) => findAll(root, (n) => n.tag === "p" && textOf(n) === "前の鍵のメールの数を読み込めませんでした");
 
   it("a failed count says it could not be read instead of looking like none", async () => {
     activeKey();

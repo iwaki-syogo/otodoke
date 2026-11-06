@@ -97,7 +97,8 @@ describe("設定 is a list of titles", () => {
     db.hooks.push((q) => (q.table === "user_keys" || q.table === "screen_events" ? { data: null, error: { message: "boom" }, count: null } : undefined));
     const rows = mailRows(await render());
     expect(rows.map((r) => r[1])).toEqual(["メールの転送", "パスワードとメールの鍵", "読まなかったメール", "あなたのメールの扱い", "うまく届かないとき", "サンプルで試す"]);
-    expect(rows.map((r) => r[2])).toEqual([null, null, null, null, null, null]);
+    // L8: not blank (that would read as nothing to do), and no 「未設定」 or number.
+    expect(rows.map((r) => r[2])).toEqual([null, "確認できません", "確認できません", null, null, null]);
     log.mockRestore();
   });
 
