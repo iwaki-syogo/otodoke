@@ -276,11 +276,9 @@ describe("/privacy: what it says matches the code it describes", () => {
       .filter((file) => setsCookie(readSource(file)))
       .map((file) => path.relative(process.cwd(), file))
       .sort();
-    // The two Supabase clients pass on the cookies Supabase asks for (setAll).
-    // 🚨 src/lib/login-email-cookie.ts is the login screen's address cookie, removed by the
-    // password sign-in's server side (B). Until that merge it is still here; once it is gone, take it
-    // off this list: then the list is exactly the policy's one cookie.
-    expect(found).toEqual(["src/lib/login-email-cookie.ts", "src/lib/supabase/server.ts", "src/proxy.ts"]);
+    // The two Supabase clients only pass on the cookies Supabase asks them to set (setAll).
+    // That is the whole of the policy's one cookie.
+    expect(found).toEqual(["src/lib/supabase/server.ts", "src/proxy.ts"]);
     // Negative control: a planted cookie of the app's own is caught.
     expect(setsCookie('(await cookies()).set("seen", "1");')).toBe(true);
     expect(setsCookie('// (await cookies()).set("seen", "1");')).toBe(false);
