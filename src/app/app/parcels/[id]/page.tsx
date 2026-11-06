@@ -207,7 +207,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
-                        <p className="mt-2 text-xs leading-5 text-neutral-600">合言葉を決める前に届いたメールです。件名・差出人・本文は保存していません。</p>
+                        <p className="mt-2 text-xs leading-5 text-neutral-600">合言葉を決める前に読み取ったメールです。件名・差出人・本文は残していません。</p>
                       </details>
                     </>
                   ) : (

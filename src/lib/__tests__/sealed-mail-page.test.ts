@@ -73,8 +73,10 @@ describe("parcel page: mail history with sealed mail", () => {
     addMail("e-dropped", { body_state: "dropped", from_domain: "shop.example.test" });
     const { root } = await render();
     const [item] = historyItems(root);
-    expect(textOf(item)).toContain("本文は保存していません");
-    expect(textOf(item)).toContain("合言葉を決める前に届いたメールです");
+    // Decided when the mail is read, not when it arrives (src/lib/mail-seal.ts closedBody), as
+    // 「あなたのメールの扱い」 and /privacy say it.
+    expect(textOf(item)).toContain("合言葉を決める前に読み取ったメールです。件名・差出人・本文は残していません。");
+    expect(textOf(item)).not.toContain("届いたメール");
     expect(findAll(item, (n) => n.tag === "pre")).toHaveLength(0);
   });
 

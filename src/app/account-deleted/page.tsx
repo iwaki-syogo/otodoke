@@ -3,9 +3,11 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { ForgetTabKey } from "./forget-tab-key";
 
-// Prerendered (○ in `next build`). src/app/not-found.tsx reads the session, and Next renders the
-// root not-found with every page as its fallback, so without this line this page would be rendered
-// per request too. It reads nothing from the request, and that fallback is never shown here.
+// Prerendered (○ in `next build`). Next renders the root not-found with every page as its
+// fallback, so a root 404 that reads the request makes this page per request too: it did while
+// src/app/not-found.tsx read the session. That 404 reads nothing now (review R3-6); the line stays
+// so this page stays static if it ever does again. This page reads nothing from the request, and
+// that fallback is never shown here.
 export const dynamic = "force-static";
 
 export const metadata: Metadata = { title: "アカウントを削除しました", robots: { index: false } };

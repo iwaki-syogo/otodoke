@@ -3,9 +3,11 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { CONTACT_EMAIL } from "./contact";
 
-// Prerendered (○ in `next build`). src/app/not-found.tsx reads the session, and Next renders the
-// root not-found with every page as its fallback, so without this line this page would be rendered
-// per request too. It reads nothing from the request, and that fallback is never shown here.
+// Prerendered (○ in `next build`). Next renders the root not-found with every page as its
+// fallback, so a root 404 that reads the request makes this page per request too: it did while
+// src/app/not-found.tsx read the session. That 404 reads nothing now (review R3-6); the line stays
+// so this page stays static if it ever does again. This page reads nothing from the request, and
+// that fallback is never shown here.
 export const dynamic = "force-static";
 
 export const metadata: Metadata = { title: "プライバシーポリシー" };
@@ -74,7 +76,7 @@ export default function PrivacyPage() {
             ログインのためだけに使います。広告やアクセス解析のための cookie は使いません。
             <Bullets className="mt-1">
               <li>ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます。</li>
-              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。</li>
+              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。送った端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。</li>
             </Bullets>
           </Term>
         </Terms>
