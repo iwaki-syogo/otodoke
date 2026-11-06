@@ -52,7 +52,7 @@ const confirmation = () =>
   db.rows("emails").push({ id: "g", user_id: USER, classification: "forwarding_confirmation", processing_status: "processed", body_state: "plain", forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-xyz", sent_at: "2026-11-06T00:00:00Z" });
 
 async function render() {
-  const Page = (await import("@/app/app/settings/page")).default;
+  const Page = (await import("@/app/app/settings/(list)/page")).default;
   return parseHtml(renderToStaticMarkup(await Page()));
 }
 
@@ -107,7 +107,7 @@ describe("設定 is a list of titles", () => {
     db.rows("screen_events").push({ id: "k", user_id: USER, decision: "kept" });
     expect(mailRows(await render())[2]).toEqual(["/app/settings/dropped", "読まなかったメール", "5"]);
     expect(db.callsOn("screen_events", "select").every((q) => q.head)).toBe(true);
-    expect(source("page.tsx")).not.toContain("readAll");
+    expect(source("(list)/page.tsx")).not.toContain("readAll");
   });
 });
 
@@ -136,7 +136,7 @@ describe("the old fragment links still arrive", () => {
   });
 
   it("is on the list page and replaces the URL (the back button does not come back to the list)", () => {
-    expect(source("page.tsx")).toContain("<SettingsHashRedirect />");
+    expect(source("(list)/page.tsx")).toContain("<SettingsHashRedirect />");
     const code = source("settings-hash-redirect.tsx");
     expect(code).toMatch(/router\.replace\(to\)/);
     expect(code).toMatch(/window\.location\.hash/);

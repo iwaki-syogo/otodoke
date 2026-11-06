@@ -120,7 +120,7 @@ describe("設定: 鍵を作る", () => {
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
-    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login?next=%2Fapp%2Fsettings", "ログイン"]]);
+    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login?next=%2Fapp%2Fsettings%2Fpassword", "ログイン"]]);
   });
 
   it("a key that does not open with it: says so, offers another password below the form, and the reset", async () => {
@@ -147,7 +147,7 @@ describe("設定: 鍵を作る", () => {
     other.props!.onLogInAgain(code);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
-    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login?next=%2Fapp%2Fsettings", "ログイン"]]);
+    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login?next=%2Fapp%2Fsettings%2Fpassword", "ログイン"]]);
     expect(view.hosts((h) => h.type === "form" && "data-other-password" in h.props)).toEqual([]);
   });
 });

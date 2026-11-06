@@ -3,7 +3,7 @@ import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "@/components/copy-button";
 import { ForwardingGuides } from "../forwarding-guide";
 import { readActiveKey, readConfirmUrl } from "../settings-reads";
-import { SubPage } from "../sub-page";
+import { LoggedInAs, SubPage } from "../sub-page";
 
 export const metadata = { title: "メールの転送" };
 
@@ -41,6 +41,11 @@ export default async function ForwardingPage() {
           <p className="mt-1 text-sm leading-6 text-neutral-600">メールの鍵を作ると、ここに出ます。サンプルは鍵なしで試せます。</p>
         )}
       </section>
+
+      {/* Outside the address section, pulled up under it: whose account the address belongs to. */}
+      <div className="-mt-6">
+        <LoggedInAs email={user.email} />
+      </div>
 
       {confirmation.failed ? (
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>

@@ -19,3 +19,8 @@ export function SubPage({ title, children }: { title: string; children: React.Re
     </div>
   );
 }
+
+/** 「ログイン中: …」: whose account this is, shown beside what is private to it (the address, the password). */
+export function LoggedInAs({ email }: { email: string | undefined }) {
+  return <p className="text-xs text-neutral-500">ログイン中: <span className="break-all font-medium text-neutral-700">{email}</span></p>;
+}

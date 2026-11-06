@@ -242,6 +242,13 @@ describe("/app/settings: あなたのメールの扱い", () => {
     expect(section).not.toContain("合言葉");
   });
 
+  it("the Web list has the iOS Keychain sentence word for word (iOS compares it; README gets it from another change)", async () => {
+    const text = textOf(sectionTitled(await render("mail-handling"), "あなたのメールの扱い")[0]);
+    expect(text).toContain(
+      "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。",
+    );
+  });
+
   it("the list of screened mail says the sender's domain is kept with the subject", async () => {
     const section = findAll(await render("dropped"), (n) => n.tag === "section");
     expect(section).toHaveLength(1);

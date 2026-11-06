@@ -58,7 +58,7 @@ describe("設定 › アカウントの削除", () => {
   });
 
   it("the list ends with 「アカウントの削除」, after ログアウト, and holds no deletion form", async () => {
-    const Page = (await import("@/app/app/settings/page")).default;
+    const Page = (await import("@/app/app/settings/(list)/page")).default;
     const root = parseHtml(renderToStaticMarkup(await Page()));
     const cards = findAll(root, (n) => n.tag === "section");
     const account = cards.at(-1)!;

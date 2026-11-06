@@ -224,7 +224,7 @@ const LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   "parcels/[id]": () => import("@/app/app/parcels/[id]/loading"),
   "parcels/[id]/edit": () => import("@/app/app/parcels/[id]/edit/loading"),
   "parcels/new": () => import("@/app/app/parcels/new/loading"),
-  settings: () => import("@/app/app/settings/loading"),
+  settings: () => import("@/app/app/settings/(list)/loading"),
   "settings/forwarding": () => import("@/app/app/settings/forwarding/loading"),
   "settings/password": () => import("@/app/app/settings/password/loading"),
   "settings/dropped": () => import("@/app/app/settings/dropped/loading"),
@@ -241,7 +241,7 @@ describe("loading screens under /app", () => {
   });
 
   it.each(SCREENS)("/app/%s has a loading.tsx drawn with the shared skeleton", (route) => {
-    const file = path.join(appDir, route, "loading.tsx");
+    const file = path.join(appDir, route === "settings" ? "settings/(list)" : route, "loading.tsx");
     expect(existsSync(file), file).toBe(true);
     expect(readFileSync(file, "utf8")).toMatch(/<SkeletonScreen\b/);
   });

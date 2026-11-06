@@ -57,7 +57,7 @@ beforeEach(() => {
 
 /** The 設定 page that holds the part under test (each part has its own page now). */
 const PAGES = {
-  list: () => import("@/app/app/settings/page"),
+  list: () => import("@/app/app/settings/(list)/page"),
   forwarding: () => import("@/app/app/settings/forwarding/page"),
   password: () => import("@/app/app/settings/password/page"),
   demo: () => import("@/app/app/settings/demo/page"),

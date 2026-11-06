@@ -112,7 +112,7 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
 /** The way on after stale_session or signed_out: the login, back to 設定. */
 function LogInAgain() {
   return (
-    <Link href="/login?next=%2Fapp%2Fsettings" className="mt-1 inline-block font-medium underline underline-offset-4">
+    <Link href="/login?next=%2Fapp%2Fsettings%2Fpassword" className="mt-1 inline-block font-medium underline underline-offset-4">
       ログイン
     </Link>
   );

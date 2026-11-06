@@ -99,7 +99,7 @@ describe("the empty list's 「設定で承認する」 reaches the approval in �
 
   it("whichever loading screen stands in on the way (設定's own, or /app's), it scrolls once the page is in", async () => {
     expect(scrollsOnceIn((await import("@/app/app/settings/forwarding/loading")).default as () => ReactNode)).toBe(true);
-    expect(scrollsOnceIn((await import("@/app/app/settings/loading")).default as () => ReactNode)).toBe(true);
+    expect(scrollsOnceIn((await import("@/app/app/settings/(list)/loading")).default as () => ReactNode)).toBe(true);
     expect(scrollsOnceIn((await import("@/app/app/loading")).default as () => ReactNode)).toBe(true);
   });
 

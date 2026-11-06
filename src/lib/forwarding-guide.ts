@@ -201,7 +201,7 @@ export const FORWARDING_PITFALLS: ForwardingPitfall[] = [
   },
 ];
 
-export const FORWARDING_CHECK_ACTION = "設定を開く";
+export const FORWARDING_CHECK_ACTION = "「うまく届かないとき」を開く";
 export const FORWARDING_CHECK: { heading: string; lines: string[] } = {
   heading: "設定できたか確かめる",
   lines: [
