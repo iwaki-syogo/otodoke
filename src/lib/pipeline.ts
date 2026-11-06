@@ -24,6 +24,7 @@ import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
 import type { MailPlaintext } from "@/lib/crypto/envelope";
 import { PENDING_GRACE_MS } from "@/lib/unread";
 import { screenMail, type ScreenResult } from "@/lib/screen";
+import { isRememberableDomain } from "@/lib/screen-senders";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import { withDefaults, type Extraction } from "@/lib/extract/schema";
 import type { Json } from "@/lib/db/database.types";
@@ -192,21 +193,13 @@ function plaintextOf(mail: InboundEmail): MailPlaintext {
 }
 
 /**
- * A dropped mail still goes on when the user has marked this sender as wrongly dropped,
- * or when a cheap Claude check says it is a purchase notice.
+ * A mail the free rules would drop still goes on when a cheap Claude check (Haiku) says it is a
+ * purchase notice. The check runs for a mail the rules were unsure about, and for every mail from
+ * a sender the user marked 「これは荷物」. A mark never skips the check: anyone can write a From
+ * line, and a shop sends its ads from the same domain as its notices.
  */
 async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<boolean> {
-  const domain = domainOf(mail.from);
-  if (domain) {
-    const { count } = await db
-      .from("screen_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", mail.userId)
-      .eq("from_domain", domain)
-      .not("flagged_at", "is", null);
-    if (count) return true;
-  }
-  if (!screen.borderline) return false;
+  if (!screen.borderline && !(await senderMarked(db, mail))) return false;
 
   const { OTODOKE_USER_DAILY_LIMIT, OTODOKE_GLOBAL_DAILY_LIMIT } = env();
   const { data: claim, error } = await db.rpc("claim_claude_call", {
@@ -217,6 +210,27 @@ async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenRes
   // Over the limit or unable to tell: keep it. The next step stores it as unread instead of losing it.
   if (error || claim !== "ok") return true;
   return isPurchaseMail(mail);
+}
+
+/**
+ * The user marked mail from this sender's domain 「これは荷物」. A domain many people have their
+ * own address on is never taken as marked (src/lib/screen-senders.ts), even by a mark made before
+ * that rule. Unable to tell counts as marked: the cheap check then decides, not a database error.
+ */
+async function senderMarked(db: AdminClient, mail: InboundEmail): Promise<boolean> {
+  const domain = domainOf(mail.from);
+  if (!isRememberableDomain(domain)) return false;
+  const { count, error } = await db
+    .from("screen_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", mail.userId)
+    .eq("from_domain", domain)
+    .not("flagged_at", "is", null);
+  if (error) {
+    console.error("screen_events lookup failed:", error.message);
+    return true;
+  }
+  return Boolean(count);
 }
 
 /**
