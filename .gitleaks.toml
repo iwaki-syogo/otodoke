@@ -19,4 +19,6 @@ paths = [
   '''package-lock\.json''',
   # Made-up keys for the envelope test vectors (scripts/crypto-vectors.ts). They protect nothing.
   '''^fixtures/crypto/envelope-v1\.json$''',
+  # Made-up secrets for the password-v1 test vectors (scripts/crypto-password-v1-vectors.ts). They protect nothing.
+  '''^fixtures/crypto/password-v1\.json$''',
 ]
