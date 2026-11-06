@@ -77,6 +77,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Everything except static assets and the inbound webhook (which has no user session).
-    "/((?!_next/static|_next/image|favicon.ico|api/inbound|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/inbound|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|mp4|txt|xml)$).*)",
   ],
 };

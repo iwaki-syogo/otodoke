@@ -47,19 +47,22 @@ describe("/auth/confirmed (screen 2)", () => {
     expect(source).not.toMatch(/supabase|cookies|headers|searchParams/);
   });
 
-  it("「この画面でログインする」: the login's `confirmed` words, and after the login the first-run guide", async () => {
+  it("「この画面でログインする」: the login with its `confirmed` words and no next (the form goes where every login goes)", async () => {
+    expect(CONFIRMED_LOGIN_PATH).toBe("/login?confirmed=1");
     const url = new URL(CONFIRMED_LOGIN_PATH, "https://otodoke.example");
     expect(url.pathname).toBe("/login");
     expect(url.searchParams.get("confirmed")).toBe("1");
-    expect(safeNextPath(url.searchParams.get("next"))).toBe(WELCOME_PATH);
+    expect(url.searchParams.has("next")).toBe(false);
 
-    const page = await LoginPage({ searchParams: Promise.resolve({ confirmed: "1", next: url.searchParams.get("next")! }) });
+    const page = await LoginPage({ searchParams: Promise.resolve({ confirmed: "1" }) });
     const text = textOf(parseHtml(renderToStaticMarkup(page)));
     expect(text).toContain(LOGIN_MESSAGES.confirmed);
     expect(LOGIN_MESSAGES.confirmed).toBe("メールアドレスを確認しました。パスワードでログインしてください。");
-    // The login form is handed the guide as its next.
+    // The login form gets the usual next: the list. The first key's sign-in goes to the guide by
+    // itself (login-form.test.ts).
     const form = (page as ReactElement<{ children: unknown[] }>).props.children.flat().find((c) => isValidElement(c) && typeof (c.props as { next?: unknown }).next === "string") as ReactElement<{ next: string }>;
-    expect(form.props.next).toBe(WELCOME_PATH);
+    expect(form.props.next).toBe("/app");
+    expect(form.props.next).not.toBe(WELCOME_PATH);
   });
 });
 

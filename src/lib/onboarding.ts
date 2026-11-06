@@ -52,8 +52,12 @@ export const AFTER_WELCOME_PATH = "/app";
 /** Screen 2's path: where POST /auth/confirm sends a sign-up's confirmation link it accepted. */
 export const SIGNUP_CONFIRMED_PATH = "/auth/confirmed";
 
-/** Screen 2's 「この画面でログインする」: the login with its `confirmed` words, then screen 3. */
-export const CONFIRMED_LOGIN_PATH = `${CONFIRMED_PATH}&next=${encodeURIComponent(WELCOME_PATH)}`;
+/**
+ * Screen 2's 「この画面でログインする」: the login with its `confirmed` words, and no next. The sign-in
+ * that makes the first key goes to screen 3 by itself (landingAfterSignIn); one that finds a key goes
+ * where every login does.
+ */
+export const CONFIRMED_LOGIN_PATH = CONFIRMED_PATH;
 
 /**
  * Where a sign-in that opened the key goes: screen 3 when this sign-in made the user's first key

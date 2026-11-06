@@ -157,7 +157,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
 ];
 
 export const VIDEO_LABEL = "動画で見る";
-export const VIDEO_CREDIT = "動画の画面はイメージです。声は AivisSpeech（まお）、曲は Mixkit を使っています。";
+export const VIDEO_CREDIT = "動画の画面はイメージです。声は AivisSpeech のまお、曲は Mixkit の素材です。";
 
 export const PITFALLS_HEADING = "届かない人が多い落とし穴（必ず確かめてください）";
 export const PITFALLS_LEAD = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。";

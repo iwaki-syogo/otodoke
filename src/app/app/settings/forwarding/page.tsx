@@ -23,20 +23,18 @@ export default async function ForwardingPage() {
         {keyError ? (
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">メールの鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。</p>
         ) : key ? (
-          <>
-            <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
-            <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
-              {address ? (
-                <>
-                  <code className="min-w-0 flex-1 break-all text-sm">{address}</code>
-                  <CopyButton text={address} />
-                </>
-              ) : (
-                <p className="min-w-0 flex-1 text-sm">受信ドメインがまだ設定されていません。</p>
-              )}
-            </div>
-            <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
-          </>
+          address ? (
+            <>
+              <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
+              <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
+                <code className="min-w-0 flex-1 break-all text-sm">{address}</code>
+                <CopyButton text={address} />
+              </div>
+              <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
+            </>
+          ) : (
+            <p className="mt-1 text-sm leading-6 text-neutral-600">受信ドメインがまだ設定されていません。</p>
+          )
         ) : (
           <p className="mt-1 text-sm leading-6 text-neutral-600">メールの鍵を作ると、ここに出ます。サンプルは鍵なしで試せます。</p>
         )}
