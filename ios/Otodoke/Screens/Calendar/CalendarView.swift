@@ -55,7 +55,7 @@ struct CalendarView<Detail: View>: View {
                 }
                 .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         }
         .background(Color(.systemGroupedBackground))
     }

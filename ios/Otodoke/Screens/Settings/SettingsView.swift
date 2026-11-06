@@ -53,7 +53,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 20)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         }
     }
 

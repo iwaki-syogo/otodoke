@@ -29,7 +29,7 @@ struct SpendView<Detail: View>: View {
                 }
                 .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("支出")
             .navigationBarTitleDisplayMode(.inline)

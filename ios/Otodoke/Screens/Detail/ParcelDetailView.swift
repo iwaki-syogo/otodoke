@@ -51,7 +51,7 @@ struct ParcelDetailView: View {
                 ErrorBox()
                     .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         case .loaded(nil)?:
             ScrollView {
                 Text("見つかりません")
@@ -60,7 +60,7 @@ struct ParcelDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         case let .loaded(p?)?:
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -73,7 +73,7 @@ struct ParcelDetailView: View {
                 }
                 .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         }
     }
 

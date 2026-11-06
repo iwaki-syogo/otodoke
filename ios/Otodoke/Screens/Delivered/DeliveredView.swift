@@ -15,7 +15,7 @@ struct DeliveredView<Detail: View>: View {
             }
             .padding(16)
         }
-        .refreshable { await model.load() }
+        .refreshableToTheEnd { await model.load() }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(DeliveredModel.title)
         .navigationBarTitleDisplayMode(.inline)

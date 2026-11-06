@@ -114,7 +114,7 @@ struct ParcelListView<Detail: View>: View {
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
-        .refreshable { await model.load() }
+        .refreshableToTheEnd { await model.load() }
         .overlay(alignment: .bottom) { toast }
         .animation(.default, value: model.rows)
     }
