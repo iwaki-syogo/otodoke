@@ -19,6 +19,16 @@ export interface MailKeyState {
   oldKeyCount: number;
 }
 
+/**
+ * Decision 7 (2026-11-06): the plaintext subject, sender and body of read mail of a user with no
+ * key in use are removed on 2026-11-14 (supabase/pending/20261114090000). Told here and in
+ * 「あなたのメールの扱い」 (mail-handling.tsx) until then; reword both once it has run.
+ */
+const PLAINTEXT_DROP_NOTICE = "決めないままだと、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。";
+
+/** Not knowing how many mails are in plaintext is said as such, with or without a key: never as "none". */
+const PLAIN_COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
+
 const input = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base";
 const primary = "rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white disabled:opacity-60";
 
@@ -33,9 +43,10 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
         <p className="mt-1 text-sm leading-6">読み取った後のメールの件名・差出人・本文は、この合言葉でしか開けない形で保存します。運営者もデータベースからは読めません。</p>
         {plainCount ? (
           <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold leading-6">
-            暗号化されていない保存済みのメール {plainCount} 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。
+            暗号化されていない保存済みのメール {plainCount} 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。{PLAINTEXT_DROP_NOTICE}
           </p>
         ) : null}
+        {plainCount === null ? <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{PLAIN_COUNT_FAILED}</p> : null}
         <NewKeyForm userId={userId} expectedKeyId={null} button="決める" busyLabel="準備しています…" acknowledge="忘れたら、前のメールは誰にも戻せない（荷物は残る）" />
       </section>
     );
@@ -45,7 +56,7 @@ export function MailKeyPanel({ state }: { state: MailKeyState }) {
     <section className="flex flex-col gap-3">
       <h2 className="text-base font-bold">合言葉</h2>
       {plainCount ? <SealBanner count={plainCount} /> : null}
-      {plainCount === null ? <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">暗号化されていないメールの数を読み込めませんでした</p> : null}
+      {plainCount === null ? <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{PLAIN_COUNT_FAILED}</p> : null}
       {oldKeyCount > 0 ? <p className="text-sm leading-6 text-neutral-600">前の合言葉で暗号化したメールが {oldKeyCount} 通あります。前の合言葉を覚えていれば、メールの画面から開けます。荷物は残っています。</p> : null}
       <div className="rounded-2xl border border-neutral-200 bg-white p-4">
         {opened ? (

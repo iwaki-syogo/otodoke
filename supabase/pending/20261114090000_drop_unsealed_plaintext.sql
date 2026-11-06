@@ -5,7 +5,10 @@
 -- 🚨 Not applied yet, and not to be applied without the owner's YES on the day. Before running:
 --   1. supabase/verify/20261114090000_drop_unsealed_plaintext.sql, part "before": the counts of
 --      what this removes, by user state. Look at them; nothing here can be undone.
---   2. Tell the users it will happen (the settings screen / README say so) before the day.
+--   2. Users must have been told, with the date. 設定 says so since the review fixes of 2026-11-06:
+--      src/app/app/settings/mail-key-panel.tsx (to a user with plaintext mail and no passphrase)
+--      and mail-handling.tsx (「あなたのメールの扱い」). README.md's 「あなたのメールの扱い」 needs
+--      the same sentence. Check that both are in production well before the day.
 -- Run with `supabase db query --linked -f` (or move to supabase/migrations/ renamed with a fresh
 -- timestamp, supabase/pending/README.md). Then the verify file's part "after".
 --

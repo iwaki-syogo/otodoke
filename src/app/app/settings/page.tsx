@@ -127,7 +127,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       {/* Which account this is, next to the passphrase and the address: a page signed in to someone
           else's account (a crafted login link) shows it here before anything is set up. */}
       <p className="-mt-6 text-xs text-neutral-500">
-        ログイン中: <span className="break-all font-medium text-neutral-700">{user.email}</span>（自分のアドレスでなければ、何も設定せずにログアウトしてください）
+        ログイン中: <span className="break-all font-medium text-neutral-700">{user.email}</span>
       </p>
 
       <section>
