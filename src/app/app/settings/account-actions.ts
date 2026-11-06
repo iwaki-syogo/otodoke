@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ACCOUNT_DELETE_CONFIRM, ACCOUNT_DELETE_FAILED, ACCOUNT_DELETED_PATH, deleteAuthUser, type DeleteAccountState } from "@/lib/account-deletion";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { forgetLogin } from "@/lib/login-email-cookie";
 
 /**
  * 「削除する」 in the confirmation step of 設定「アカウントを削除」: deletes the signed-in user's
@@ -17,7 +18,8 @@ import { createClient } from "@/lib/supabase/server";
  *   2. the confirmation step's field. Without it, nothing is deleted.
  *   3. the auth user, with the service role. The rows go with it in one transaction, so a failure
  *      leaves everything as it was: the person stays signed in and sees fixed words to try again.
- *   4. only then this browser's session cookies (the sessions themselves went with the user).
+ *   4. only then this browser's session cookies (the sessions themselves went with the user), and
+ *      the address the login form kept in this browser (login-email-cookie.ts).
  *   5. the page after it, replacing this one in the history: Back does not come here again.
  */
 export async function deleteAccount(_previous: DeleteAccountState, formData: FormData): Promise<DeleteAccountState> {
@@ -45,6 +47,8 @@ export async function deleteAccount(_previous: DeleteAccountState, formData: For
   } catch (err) {
     console.warn("deleteAccount (sign out):", err instanceof Error ? err.message : "unknown error");
   }
+  // The address the login form kept for this browser goes too (never throws).
+  await forgetLogin();
   revalidatePath("/", "layout");
   redirect(ACCOUNT_DELETED_PATH, "replace");
 }

@@ -9,6 +9,17 @@
 export const TURNSTILE_SITEKEY = "0x4AAAAAAF1bMWXBw0RF-dvv";
 
 /**
+ * Whether Supabase refuses a login mail without a Turnstile token (Authentication > Bot and Abuse
+ * Protection > CAPTCHA). Off on 2026-11-06: a press without a token still sends the mail.
+ *
+ * It decides what the login form says and how long it waits when the check gives no token: while
+ * it is false, nobody is told to reload or try another browser (the mail goes out anyway), and a
+ * press waits at most TURNSTILE_WAIT_MS. Turning CAPTCHA on in the dashboard needs a commit that
+ * sets this to true, released with it (not an env var: a code change, reviewed like one).
+ */
+export const CAPTCHA_ENFORCED = false;
+
+/**
  * Cloudflare requires this exact URL (no proxying or caching). `render=explicit`: the widget is
  * drawn by the login form's client component, not by scanning the page for `.cf-turnstile`.
  */
@@ -20,14 +31,57 @@ export const TURNSTILE_RESPONSE_FIELD = "cf-turnstile-response";
 /** Cloudflare's documented maximum token length. Anything longer is not a token. */
 export const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 
-/** How long a press of the login button waits for the token before sending without one. */
+/**
+ * How long a press of the login button waits for the token before sending without one, while
+ * CAPTCHA is not enforced (the mail goes out without a token anyway).
+ */
 export const TURNSTILE_WAIT_MS = 10_000;
 
 /**
- * The token field's `data-turnstile` when the check's script could not load: no token will come,
- * so the login button sends at once instead of waiting.
+ * The same once CAPTCHA is enforced: a press without a token can only fail then, so the button
+ * waits as long as Turnstile is still working on a token (no token, no error it does not retry).
+ * A slow phone can need more than 10 s for the challenge, and a failed send draws the form anew,
+ * which starts the challenge over: waiting 10 s from the press sent it round in circles. Counting
+ * from the widget's start would not help (it is shorter still). One minute bounds a widget that
+ * never answers; then the press is sent and Supabase's answer (captcha_missing) says what to do.
+ */
+export const TURNSTILE_ENFORCED_WAIT_MS = 60_000;
+
+/** How long a press waits for the token, by whether Supabase enforces the check. */
+export function tokenWaitMs(captchaEnforced: boolean): number {
+  return captchaEnforced ? TURNSTILE_ENFORCED_WAIT_MS : TURNSTILE_WAIT_MS;
+}
+
+/**
+ * The token field's `data-turnstile` when no token will come: the check's script could not load,
+ * Turnstile does not support the browser, or it stopped with an error it does not retry. The
+ * login button then sends at once instead of waiting.
  */
 export const TURNSTILE_UNAVAILABLE = "unavailable";
+
+/**
+ * Turnstile's client-side error codes after which it does not retry, so no token will come
+ * (Cloudflare's error code table, the rows marked "Retry: No"): 110100 invalid sitekey, 110110
+ * sitekey not found, 110200 domain not authorized, 200100 clock or cache problem, 400020 invalid
+ * sitekey, 400021 sitekey domain mismatch, 400070 sitekey disabled.
+ *
+ * Every other code (300xxx/600xxx challenge failures, 110600/110620 timeouts, 200500 iframe load
+ * error, and any code not in the table) is retried by Turnstile itself (retry: auto, every 8 s),
+ * so a token can still come and the button keeps waiting for it.
+ */
+export const TURNSTILE_FATAL_ERRORS: readonly string[] = ["110100", "110110", "110200", "200100", "400020", "400021", "400070"];
+
+/** Whether the error-callback's code (its first argument) is one Turnstile does not retry. */
+export function turnstileErrorIsFatal(code: unknown): boolean {
+  return (typeof code === "string" || typeof code === "number") && TURNSTILE_FATAL_ERRORS.includes(String(code));
+}
+
+/**
+ * The token field's `data-turnstile` while Turnstile waits for the visitor to tick its checkbox:
+ * Managed mode shows one to some visitors, between before-interactive-callback and
+ * after-interactive-callback. No token comes until it is ticked.
+ */
+export const TURNSTILE_INTERACTIVE = "interactive";
 
 /** The token field as the login button reads it. */
 type TokenField = { value: string; dataset: Record<string, string | undefined> };
@@ -37,25 +91,55 @@ export function tokenSettled(field: TokenField): boolean {
   return field.value !== "" || field.dataset.turnstile === TURNSTILE_UNAVAILABLE;
 }
 
+/** Turnstile is waiting for the visitor to tick its checkbox. */
+export function tokenNeedsTick(field: TokenField): boolean {
+  return field.dataset.turnstile === TURNSTILE_INTERACTIVE;
+}
+
 /**
- * Resolves true as soon as `done()` holds, or false once `timeoutMs` has passed without it.
- * The login button holds a press on this until the token field is settled.
+ * Holds a press until the token field is settled: resolves true when it is, false once `limitMs`
+ * of waiting have passed. `onNeedsTick` hears whenever the checkbox appears or goes, so the button
+ * can ask for the tick. With `pauseForTick` (CAPTCHA enforced) the clock stops while the checkbox
+ * waits: no token comes without the tick, and a send without one would fail. Without it (CAPTCHA
+ * off) the press is sent at the limit anyway, and the mail goes out.
+ *
+ * The clock is the wall clock between polls, not the number of polls: a browser runs the timers of
+ * a page it does not show about once a second (or less), and counting polls stretched 10 s to 100.
  */
-export function waitUntil(done: () => boolean, timeoutMs = TURNSTILE_WAIT_MS, intervalMs = 100): Promise<boolean> {
+export function waitForToken(
+  field: TokenField,
+  { limitMs, pauseForTick, onNeedsTick, intervalMs = 100 }: { limitMs: number; pauseForTick: boolean; onNeedsTick?: (needsTick: boolean) => void; intervalMs?: number },
+): Promise<boolean> {
   return new Promise((resolve) => {
-    if (done()) {
+    if (tokenSettled(field)) {
       resolve(true);
       return;
     }
-    const finish = (ok: boolean) => {
-      clearInterval(poll);
-      clearTimeout(limit);
-      resolve(ok);
-    };
+    let needsTick = tokenNeedsTick(field);
+    onNeedsTick?.(needsTick);
+    let waited = 0;
+    let last = Date.now();
     const poll = setInterval(() => {
-      if (done()) finish(true);
+      const now = Date.now();
+      const elapsed = Math.max(0, now - last);
+      last = now;
+      if (tokenSettled(field)) {
+        clearInterval(poll);
+        resolve(true);
+        return;
+      }
+      // The time since the last poll counts as it was before this poll looked: waiting for the
+      // tick (paused) or Turnstile working on its own.
+      if (!(pauseForTick && needsTick)) waited += elapsed;
+      if (tokenNeedsTick(field) !== needsTick) {
+        needsTick = !needsTick;
+        onNeedsTick?.(needsTick);
+      }
+      if (waited >= limitMs) {
+        clearInterval(poll);
+        resolve(false);
+      }
     }, intervalMs);
-    const limit = setTimeout(() => finish(done()), timeoutMs);
   });
 }
 

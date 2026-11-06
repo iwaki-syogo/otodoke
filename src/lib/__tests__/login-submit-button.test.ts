@@ -3,7 +3,8 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_WAIT_MS } from "@/lib/turnstile";
+import { TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
+import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_RESPONSE_FIELD, TURNSTILE_WAIT_MS, waitForToken } from "@/lib/turnstile";
 import { fakeEvent } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
@@ -40,7 +41,7 @@ const TOKEN = "0.token-from-cloudflare";
  * whether the press was cancelled. `selfClicks` are the clicks the button made itself, each
  * recorded as cancelled or not (not = the browser goes on to send the form).
  */
-function setup({ token = "", unavailable = false, valid = true } = {}) {
+function setup({ token = "", unavailable = false, valid = true, enforced = false } = {}) {
   const field = { value: token, dataset: (unavailable ? { turnstile: "unavailable" } : {}) as Record<string, string> };
   const form = {
     elements: { namedItem: vi.fn((name: string) => (name === TURNSTILE_RESPONSE_FIELD ? field : null)) },
@@ -48,7 +49,7 @@ function setup({ token = "", unavailable = false, valid = true } = {}) {
   };
   const selfClicks: boolean[] = [];
   const button = { form, isConnected: true, click: vi.fn(() => selfClicks.push(press())) };
-  const view: Mounted = mount(() => LoginSubmitButton());
+  const view: Mounted = mount(() => LoginSubmitButton({ captchaEnforced: enforced }));
   function press(): boolean {
     const event = fakeEvent(button);
     (view.host((h) => h.type === "button").props.onClick as (e: unknown) => void)(event);
@@ -202,5 +203,136 @@ describe("a press before the bot check has its token", () => {
     s.field.value = TOKEN;
     await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS);
     expect(s.button.click).not.toHaveBeenCalled();
+  });
+});
+
+describe("once CAPTCHA is enforced, a slow check is waited for (review R2b-4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("waits up to a minute while Turnstile is still working, not 10 seconds", async () => {
+    expect(TURNSTILE_ENFORCED_WAIT_MS).toBe(60_000);
+    const s = setup({ enforced: true });
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 5_000);
+    expect(s.button.click).not.toHaveBeenCalled();
+    expect(s.view.text()).toContain("送信中…");
+    // A slow phone's token after 30 s: sent then, with it.
+    await vi.advanceTimersByTimeAsync(15_000);
+    s.field.value = TOKEN;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+    expect(s.selfClicks).toEqual([false]);
+  });
+
+  it("sends without a token after a minute of nothing (Supabase's answer then says what to do)", async () => {
+    const s = setup({ enforced: true });
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS - 100);
+    expect(s.button.click).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+    expect(s.field.value).toBe("");
+  });
+
+  it("still sends at once when no token will come (unavailable)", () => {
+    const s = setup({ enforced: true, unavailable: true });
+    expect(s.press()).toBe(false);
+  });
+});
+
+describe("when the check shows its checkbox (review R2b-1)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("asks for the tick instead of spinning, and once CAPTCHA is enforced waits for it as long as it takes", async () => {
+    const s = setup({ enforced: true });
+    s.field.dataset.turnstile = "interactive";
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.view.text()).toBe(TURNSTILE_TICK_PROMPT);
+    expect(s.view.text()).not.toContain("送信中");
+    expect(s.view.hosts((h) => h.type === "span")).toHaveLength(0);
+    expect(buttonProps(s.view)["aria-busy"]).toBe(true);
+    // Two minutes without the tick: still waiting (a send without a token would fail).
+    await vi.advanceTimersByTimeAsync(2 * TURNSTILE_ENFORCED_WAIT_MS);
+    expect(s.button.click).not.toHaveBeenCalled();
+    // The tick: Turnstile leaves interactive mode and gives the token, which is sent.
+    delete s.field.dataset.turnstile;
+    s.field.value = TOKEN;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+    expect(s.selfClicks).toEqual([false]);
+  });
+
+  it("switches the words when the checkbox appears during the hold, and back when it goes", async () => {
+    const s = setup({ enforced: true });
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(s.view.text()).toContain("送信中…");
+    s.field.dataset.turnstile = "interactive";
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.view.text()).toBe(TURNSTILE_TICK_PROMPT);
+    delete s.field.dataset.turnstile;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.view.text()).toContain("送信中…");
+  });
+
+  it("does not count the time the checkbox waits toward the minute (CAPTCHA enforced)", async () => {
+    const s = setup({ enforced: true });
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(20_000);
+    s.field.dataset.turnstile = "interactive";
+    await vi.advanceTimersByTimeAsync(100_000);
+    delete s.field.dataset.turnstile;
+    // 20 s + 30 s of Turnstile working on its own: 50 s of the minute.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(s.button.click).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10_200);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+  });
+
+  it("while CAPTCHA is off, asks for the tick but still sends after 10 seconds (the mail goes out without a token)", async () => {
+    const s = setup();
+    s.field.dataset.turnstile = "interactive";
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.view.text()).toBe(TURNSTILE_TICK_PROMPT);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+    expect(s.selfClicks).toEqual([false]);
+  });
+
+  it("keeps to the wall clock when the browser runs the page's timers only once a second (a tab it does not show)", async () => {
+    // Found on the real widget in a background tab: counting polls as 100 ms stretched 10 s to 100 s.
+    const fakeSetInterval = globalThis.setInterval;
+    vi.spyOn(globalThis, "setInterval").mockImplementation(((fn: () => void) => fakeSetInterval(fn, 1_000)) as unknown as typeof setInterval);
+    const field = { value: "", dataset: { turnstile: "interactive" } as Record<string, string | undefined> };
+    let result: boolean | null = null;
+    void waitForToken(field, { limitMs: TURNSTILE_WAIT_MS, pauseForTick: false }).then((ok) => (result = ok));
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS - 1_000);
+    expect(result).toBeNull();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(result).toBe(false);
+
+    // Paused for the tick, the slow polls still count only the time Turnstile works on its own.
+    result = null;
+    void waitForToken(field, { limitMs: TURNSTILE_ENFORCED_WAIT_MS, pauseForTick: true }).then((ok) => (result = ok));
+    await vi.advanceTimersByTimeAsync(5 * TURNSTILE_ENFORCED_WAIT_MS);
+    expect(result).toBeNull();
+    delete field.dataset.turnstile;
+    await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS + 1_000);
+    expect(result).toBe(false);
+  });
+
+  it("is back to 「リンクを送る」 once the hold is over", async () => {
+    const s = setup({ enforced: true });
+    s.field.dataset.turnstile = "interactive";
+    s.press();
+    s.field.value = TOKEN;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(s.view.text()).toBe("リンクを送る");
   });
 });

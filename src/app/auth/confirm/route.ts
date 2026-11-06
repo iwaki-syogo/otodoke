@@ -4,10 +4,21 @@ import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safe-next";
 import { loginErrorPath, loginLinkErrorCode } from "@/lib/login-errors";
 import { fromThisSite } from "@/lib/request-origin";
+import { forgetLogin } from "@/lib/login-email-cookie";
 
 /** A relative Location keeps the visitor on the host they opened, whatever host the server thinks it has. */
 function go(path: string, status: number) {
   return new NextResponse(null, { status, headers: { Location: path } });
+}
+
+/** Whether this browser has a signed-in user (Supabase checks the token). False when that cannot be read. */
+async function signedIn(supabase: Awaited<ReturnType<typeof createClient>>): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return !!data.user;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -41,11 +52,23 @@ export async function POST(request: NextRequest) {
       console.warn("[auth] verifyOtp threw:", thrown instanceof Error ? thrown.message : String(thrown));
       return go(loginErrorPath(loginLinkErrorCode(null)), 303);
     }
-    if (!error) return go(safeNextPath(typeof next === "string" ? next : null), 303);
+    if (!error) {
+      // Signed in: the address the login form kept for this browser (if it sent from here) is done.
+      await forgetLogin();
+      return go(safeNextPath(typeof next === "string" ? next : null), 303);
+    }
     // The reason goes to the log only: the login page shows fixed wording for the code. A limit
     // or an outage is told apart from a refused token (the same link works again later).
     console.warn("[auth] verifyOtp failed:", error.status, error.code, error.message);
-    return go(loginErrorPath(loginLinkErrorCode(error)), 303);
+    const code = loginLinkErrorCode(error);
+    // A refused link in a browser that is signed in already (an old link pressed in another tab,
+    // or one used up by this very sign-in): the continue page says who is signed in and leads to
+    // the parcels, instead of a red error on the login page.
+    if (code === "link_invalid" && (await signedIn(supabase))) {
+      const target = safeNextPath(typeof next === "string" ? next : null);
+      return go(target === "/app" ? "/auth/continue" : `/auth/continue?next=${encodeURIComponent(target)}`, 303);
+    }
+    return go(loginErrorPath(code), 303);
   }
   return go(loginErrorPath("link_incomplete"), 303);
 }

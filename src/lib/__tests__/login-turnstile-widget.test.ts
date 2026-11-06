@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY } from "@/lib/turnstile";
+import {
+  CAPTCHA_ENFORCED,
+  TURNSTILE_FATAL_ERRORS,
+  TURNSTILE_RESPONSE_FIELD,
+  TURNSTILE_SCRIPT_URL,
+  TURNSTILE_SITEKEY,
+  tokenSettled,
+  turnstileErrorIsFatal,
+} from "@/lib/turnstile";
 import { mount, type Mounted, type NodeFactory } from "./hook-harness";
 
 /**
@@ -74,7 +82,9 @@ function fakeDocument() {
 }
 
 const nodes: NodeFactory = (type) => (type === "input" ? { value: "", dataset: {} } : { dataset: {} });
-const widget = (node: NodeFactory = nodes) => mount(() => TurnstileWidget(), node);
+// The widget as it will run once Supabase enforces the check (CAPTCHA_ENFORCED = true): the notice
+// shows. While it is off (the default) the notice stays hidden: see "while CAPTCHA is off" below.
+const widget = (node: NodeFactory = nodes, props: Parameters<typeof TurnstileWidget>[0] = { captchaEnforced: true }) => mount(() => TurnstileWidget(props), node);
 const fieldHost = (view: Mounted) => view.host((h) => h.type === "input" && h.props.name === TURNSTILE_RESPONSE_FIELD);
 const fieldOf = (view: Mounted) => view.nodeOf<Field>(fieldHost(view));
 const slotOf = (view: Mounted) => view.host((h) => h.type === "div" && "data-turnstile-widget" in h.props);
@@ -209,7 +219,7 @@ describe("when Cloudflare's script cannot load", () => {
   it("shows no notice of its own when the page already says the same (captcha_missing), and still marks the field", async () => {
     vi.stubGlobal("window", {});
     const { scripts } = fakeDocument();
-    const view = mount(() => TurnstileWidget({ hideUnavailableNotice: true }), nodes);
+    const view = mount(() => TurnstileWidget({ hideUnavailableNotice: true, captchaEnforced: true }), nodes);
     scripts[0].onerror!();
     await settle();
     expect(view.text()).toBe("");
@@ -241,5 +251,159 @@ describe("when Cloudflare's script cannot load", () => {
     expect(second.text()).not.toContain(TURNSTILE_UNAVAILABLE_MESSAGE);
     expect(slotOf(second).props.hidden).toBe(false);
     expect(fieldOf(second).dataset.turnstile).toBeUndefined();
+  });
+});
+
+describe("when Turnstile itself answers with an error (review R2b-2)", () => {
+  it.each(["110100", "110110", "110200", "200100", "400020", "400021", "400070"])(
+    "treats %s (Cloudflare's table: Retry No) like a script that cannot load: the button sends at once",
+    async (code) => {
+      const t = fakeTurnstile();
+      vi.stubGlobal("window", { turnstile: t.api });
+      const view = widget();
+      await settle();
+      t.last().options.callback(TOKEN);
+      t.last().options["error-callback"](code);
+      await settle();
+      expect(fieldOf(view).value).toBe("");
+      expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+      expect(tokenSettled(fieldOf(view))).toBe(true);
+      expect(slotOf(view).props.hidden).toBe(true);
+      expect(view.text()).toBe(TURNSTILE_UNAVAILABLE_MESSAGE);
+    },
+  );
+
+  it("reads the code whether Turnstile passes it as a string or a number", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    (t.last().options["error-callback"] as (code: unknown) => unknown)(110200);
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
+  it.each(["300030", "600010", "110600", "110620", "200500", "999999", undefined])(
+    "keeps waiting after %s: Turnstile retries it itself, so a token can still come",
+    async (code) => {
+      const t = fakeTurnstile();
+      vi.stubGlobal("window", { turnstile: t.api });
+      const view = widget();
+      await settle();
+      t.last().options["error-callback"](code);
+      await settle();
+      expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+      expect(tokenSettled(fieldOf(view))).toBe(false);
+      expect(view.text()).toBe("");
+      // The retry's token is the one the press sends.
+      t.last().options.callback(TOKEN_2);
+      expect(fieldOf(view).value).toBe(TOKEN_2);
+    },
+  );
+
+  it("treats a browser Turnstile does not support the same way (unsupported-callback)", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    (t.last().options["unsupported-callback"] as () => void)();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
+  it("follows Cloudflare's table and nothing else", () => {
+    expect([...TURNSTILE_FATAL_ERRORS]).toEqual(["110100", "110110", "110200", "200100", "400020", "400021", "400070"]);
+    expect(turnstileErrorIsFatal("300030")).toBe(false);
+    expect(turnstileErrorIsFatal(null)).toBe(false);
+    expect(turnstileErrorIsFatal({ code: "110200" })).toBe(false);
+  });
+});
+
+describe("when Turnstile asks for a tick (review R2b-1)", () => {
+  type Interactive = { "before-interactive-callback": () => void; "after-interactive-callback": () => void };
+  const opts = (t: ReturnType<typeof fakeTurnstile>) => t.last().options as unknown as Options & Interactive;
+
+  it("marks the field while the checkbox waits, and clears it when it is left, ticked or timed out", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("interactive");
+    expect(tokenSettled(fieldOf(view))).toBe(false);
+    opts(t)["after-interactive-callback"]();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t).callback(TOKEN);
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    expect(fieldOf(view).value).toBe(TOKEN);
+
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t)["timeout-callback"]();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    expect(fieldOf(view).value).toBe("");
+  });
+
+  it("clears it on a retried error, and turns it into unavailable on one Turnstile does not retry", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t)["error-callback"]("600010");
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    opts(t)["error-callback"]("110200");
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
+  it("starts the next press without a tick to wait for, after a send that stayed on the page", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    opts(t)["before-interactive-callback"]();
+    await settle();
+    status.pending = true;
+    view.rerender();
+    status.pending = false;
+    view.rerender();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+    expect(t.api.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("while CAPTCHA is off (review R2b-3)", () => {
+  it("is off today: turning it on in Supabase needs a commit that sets CAPTCHA_ENFORCED", () => {
+    expect(CAPTCHA_ENFORCED).toBe(false);
+  });
+
+  it("says nothing when the script cannot load (the mail goes out without a token), and still lets the button send at once", async () => {
+    vi.stubGlobal("window", {});
+    const { scripts } = fakeDocument();
+    // A fresh module: the script promise of an earlier test (one that loaded) is not reused.
+    vi.resetModules();
+    const fresh = (await import("@/app/login/turnstile-widget")).TurnstileWidget;
+    const view = mount(() => fresh(), nodes);
+    scripts[0].onerror!();
+    await settle();
+    expect(view.text()).toBe("");
+    expect(view.hosts((h) => h.type === "p")).toHaveLength(0);
+    expect(slotOf(view).props.hidden).toBe(true);
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
   });
 });
