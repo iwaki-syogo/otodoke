@@ -157,12 +157,14 @@ describe("the press", () => {
     expect(input(view, "login-password").props.value).toBe("");
   });
 
-  it("moves on after the first key was made as well", async () => {
+  it("moves on to the first-run guide, whatever ?next= says, after the sign-in that made the first key", async () => {
     flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "made" });
     const view = await filled();
     await press(view);
     await drawn();
-    expect(nav.to).toEqual([NEXT]);
+    expect(nav.to).toEqual(["/app/welcome"]);
+    expect(textOfHost(button(view))).toBe("ログインしています…");
+    expect(input(view, "login-password").props.value).toBe("");
   });
 
   it("signed in but the key does not open: says so, offers another password, the reset and a way on", async () => {

@@ -215,8 +215,8 @@ afterEach(() => {
 const EVERY_NEXT: Array<[string, string]> = [...HOSTILE, ...INTO_AUTH, ...LEGIT.map(([what, value]): [string, string] => [what, value])];
 
 describe("a next from a link is never followed", () => {
-  it.each(EVERY_NEXT)("POST /auth/confirm answers the login for a confirmation, whatever the next: %s", async (_what, value) => {
-    expect(await postConfirm({ token_hash: TOKEN, type: "email", next: value })).toBe("/login?confirmed=1");
+  it.each(EVERY_NEXT)("POST /auth/confirm answers 「確認できました」 for a confirmation, whatever the next: %s", async (_what, value) => {
+    expect(await postConfirm({ token_hash: TOKEN, type: "email", next: value })).toBe("/auth/confirmed");
   });
 
   it.each(EVERY_NEXT)("POST /auth/confirm answers the reset page for a reset link, whatever the next: %s", async (_what, value) => {
@@ -236,7 +236,7 @@ describe("a next from a link is never followed", () => {
       const continueUrl = new URL(opened, SITE);
       expect(continueUrl.pathname).toBe("/auth/continue");
       const location = await postConfirm(await posted(Object.fromEntries(continueUrl.searchParams)));
-      expect(location).toBe(type === "recovery" ? "/reset-password" : "/login?confirmed=1");
+      expect(location).toBe(type === "recovery" ? "/reset-password" : "/auth/confirmed");
       expect(lands(location!)).toBe(SITE);
     }
   });

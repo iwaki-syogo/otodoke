@@ -85,7 +85,7 @@ describe("POST /auth/confirm takes from the client IP's allowance before Supabas
       expect(verified()).toBe(0);
       return { data: claimLoginMail(args), error: null };
     });
-    expect(await post(confirmLink())).toEqual({ status: 303, location: "/login?confirmed=1" });
+    expect(await post(confirmLink())).toEqual({ status: 303, location: "/auth/confirmed" });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     const [fn, args] = mocks.rpc.mock.calls[0] as [string, Record<string, unknown>];
     expect(fn).toBe("claim_login_mail");
@@ -118,7 +118,7 @@ describe("POST /auth/confirm takes from the client IP's allowance before Supabas
 
     // Another visitor is not held back by it.
     mocks.throwawayVerify.mockResolvedValue({ data: { session: { access_token: "a.b.c" } }, error: null });
-    expect(await post(confirmLink(), { ip: "198.51.100.23" })).toEqual({ status: 303, location: "/login?confirmed=1" });
+    expect(await post(confirmLink(), { ip: "198.51.100.23" })).toEqual({ status: 303, location: "/auth/confirmed" });
 
     // Ten minutes after the first: the same visitor's link is checked again (its token was never sent).
     vi.setSystemTime(NOW + 10 * MINUTE + 1000);
@@ -142,7 +142,7 @@ describe("what is not counted", () => {
   });
 
   it("without a client IP there is nothing to count by: the link is checked", async () => {
-    expect(await post(confirmLink(), { ip: null })).toEqual({ status: 303, location: "/login?confirmed=1" });
+    expect(await post(confirmLink(), { ip: null })).toEqual({ status: 303, location: "/auth/confirmed" });
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(verified()).toBe(1);
   });

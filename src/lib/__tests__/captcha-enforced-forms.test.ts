@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { readStoredKey, registerKey } from "@/lib/mail-keys";
 import { CAPTCHA_ENFORCED, CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField } from "@/lib/turnstile";
-import { fakeEvent } from "./element-tree";
+import { CONFIRM_WAIT } from "@/lib/onboarding";
+import { fakeEvent, hostText } from "./element-tree";
 import { FakeDb } from "./fake-db";
 import { mount, type Mounted } from "./hook-harness";
 import { asAdmin } from "./pipeline-fixtures";
@@ -11,8 +12,8 @@ import { asAdmin } from "./pipeline-fixtures";
  * Every press that asks Supabase Auth for something, with CAPTCHA enforced as in production:
  * CAPTCHA_ENFORCED is true in src/lib/turnstile.ts, released with Supabase's CAPTCHA (nothing here
  * sets it: the forms run with the real value). Supabase then wants a Turnstile token for the
- * sign-in (/login, and 設定's 「鍵を作る」), the signup and its 「送り直す」, the reset mail, and
- * 「パスワードを変える」 (changeLoginSecret checks the current password with a sign-in).
+ * sign-in (/login, 設定's 「鍵を作る」, and /signup's 「確認しました」), the signup and its 「送り直す」,
+ * the reset mail, and 「パスワードを変える」 (changeLoginSecret checks the current password with a sign-in).
  *
  *  - A press waits for the token, past the TURNSTILE_WAIT_MS after which it goes without one while
  *    CAPTCHA is off, and the Action gets it.
@@ -130,6 +131,21 @@ interface Press {
   press: (view: Mounted) => void;
 }
 
+/** /signup with its mail sent (with a token of its own): the screen that waits for the confirmation. */
+async function signedUp(): Promise<Mounted> {
+  actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
+  const view = mount(() => SignupForm());
+  type(view, byId("signup-email"), EMAIL);
+  type(view, byId("signup-password"), PASSWORD);
+  type(view, byId("signup-password-again"), PASSWORD);
+  await drawn();
+  widget.token!.current.value = "0.token-of-the-signup";
+  submit(view);
+  await vi.waitFor(() => expect(view.text()).toContain(CONFIRM_WAIT.title));
+  expect(actions.signUp.mock.calls[0][0].captchaToken).toBe("0.token-of-the-signup");
+  return view;
+}
+
 const PRESSES: Press[] = [
   {
     name: "/login: ログイン",
@@ -160,21 +176,15 @@ const PRESSES: Press[] = [
     name: "/signup: 送り直す",
     action: actions.resend,
     pending: "送っています…",
-    open: async () => {
-      // Sent first, with a token of its own.
-      actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
-      const view = mount(() => SignupForm());
-      type(view, byId("signup-email"), EMAIL);
-      type(view, byId("signup-password"), PASSWORD);
-      type(view, byId("signup-password-again"), PASSWORD);
-      await drawn();
-      widget.token!.current.value = "0.token-of-the-signup";
-      submit(view);
-      await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.signup_exists_or_sent));
-      expect(actions.signUp.mock.calls[0][0].captchaToken).toBe("0.token-of-the-signup");
-      return view;
-    },
-    press: (view) => (view.host((h) => h.type === "button").props.onClick as (e: unknown) => void)(fakeEvent()),
+    open: signedUp,
+    press: (view) => (view.host((h) => h.type === "button" && hostText(h) === CONFIRM_WAIT.resend).props.onClick as (e: unknown) => void)(fakeEvent()),
+  },
+  {
+    name: "/signup: 確認しました",
+    action: actions.signIn,
+    pending: "ログインしています…",
+    open: signedUp,
+    press: (view) => (view.host((h) => h.type === "button" && hostText(h) === CONFIRM_WAIT.done).props.onClick as (e: unknown) => void)(fakeEvent()),
   },
   {
     name: "/login/forgot: 再設定のメールを送る",

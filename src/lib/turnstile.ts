@@ -187,3 +187,25 @@ export async function tokenForPress(field: TokenField, { captchaEnforced = CAPTC
   return token && token.length <= TURNSTILE_TOKEN_MAX_LENGTH ? token : undefined;
 }
 
+
+/**
+ * The token for a sign-in the screen tries by itself (/signup's waiting screen, when its tab is
+ * shown again), never one a person pressed for: `send: false` when it is not to be tried now, and
+ * the screen waits for its next trigger (the tab shown again, or 「確認しました」). No loop.
+ *
+ * - The checkbox waits for its tick: nobody is asked to tick for a try they did not press for.
+ * - Otherwise a token being made is waited for (at most `limitMs`, as long as a press waits with
+ *   CAPTCHA off): the widget makes a new one after each try, and Turnstile renews an expired one.
+ * - No token came: with CAPTCHA enforced a send without one can only be refused, so nothing is sent
+ *   (the widget shows its own notice when none will come); with it off, the send goes without one.
+ */
+export async function tokenForAutoAttempt(
+  field: TokenField,
+  { captchaEnforced = CAPTCHA_ENFORCED, limitMs = TURNSTILE_WAIT_MS }: { captchaEnforced?: boolean; limitMs?: number } = {},
+): Promise<{ send: true; token: string | undefined } | { send: false }> {
+  if (tokenNeedsTick(field)) return { send: false };
+  await waitForToken(field, { limitMs, pauseForTick: false });
+  const token = field.value.trim();
+  if (token && token.length <= TURNSTILE_TOKEN_MAX_LENGTH) return { send: true, token };
+  return captchaEnforced ? { send: false } : { send: true, token: undefined };
+}

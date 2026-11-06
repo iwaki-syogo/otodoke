@@ -205,6 +205,13 @@ const SCREENS: Array<[string, (root: HtmlNode) => void]> = [
       expect(textOf(root)).toContain("‹ 設定");
     },
   ],
+  [
+    "welcome",
+    (root) => {
+      expect(h1(root)).toEqual(["最後に、メールの自動転送を設定しますか？"]);
+      expect(findAll(root, (n) => n.tag === "a")).toHaveLength(0);
+    },
+  ],
 ];
 
 /** Imported one by one: the bundler needs each path whole. */
@@ -225,6 +232,7 @@ const LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   "settings/trouble": () => import("@/app/app/settings/trouble/loading"),
   "settings/demo": () => import("@/app/app/settings/demo/loading"),
   "settings/delete": () => import("@/app/app/settings/delete/loading"),
+  welcome: () => import("@/app/app/welcome/loading"),
 };
 
 describe("loading screens under /app", () => {

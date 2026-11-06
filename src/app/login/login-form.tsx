@@ -4,20 +4,16 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { LeaveFor } from "@/components/leave-for";
 import { PendingSubmitButton } from "@/components/pending-button";
-import { flowMessage, signInAndOpenKey, type OpenWithAnother, type SignInPorts } from "@/lib/crypto/password-flows";
+import { flowMessage, signInAndOpenKey, type OpenWithAnother } from "@/lib/crypto/password-flows";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { landingAfterSignIn } from "@/lib/onboarding";
 import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
-import { readMailKey, registerMailKey, activateMailKey, rewrapMailKey } from "@/app/app/settings/key-actions";
-import { signInWithAuthSecret } from "./actions";
 import { inputClass, submitClass } from "./form-style";
 import { OtherPasswordForm } from "./other-password-form";
-import { readSignedInAddress } from "./session-actions";
+import { signInPorts } from "./sign-in-ports";
 import { TurnstileWidget } from "./turnstile-widget";
-
-/** The Actions a sign-in calls, read when a press needs them. */
-const ports = (): SignInPorts => ({ signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey, rewrapMailKey });
 
 /**
  * What the form says after a press. The sign-in went through but the key did not open
@@ -34,6 +30,9 @@ type Notice = { kind: "error"; text: string } | { kind: "not_opened"; openWithAn
  * No field has a `name` and the form is POST without an action: a press before the page's script
  * runs sends an empty body to this page, never the password (password-forms.test.ts). The
  * autocomplete hints let a password manager fill and keep both.
+ *
+ * After the sign-in the tab goes on to `next`, or to the first-run guide when this sign-in made the
+ * user's first key (landingAfterSignIn).
  */
 export function LoginForm({ next }: { next: string }) {
   const [email, setEmail] = useState("");
@@ -62,7 +61,7 @@ export function LoginForm({ next }: { next: string }) {
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
-      const result = await signInAndOpenKey({ email, password, captchaToken }, ports());
+      const result = await signInAndOpenKey({ email, password, captchaToken }, signInPorts());
       if (!result.ok) {
         setNotice({ kind: "error", text: pressText(result.code, captchaToken, flowMessage(result.code)) });
         return;
@@ -70,7 +69,8 @@ export function LoginForm({ next }: { next: string }) {
       if (result.key === "opened" || result.key === "made") {
         leaving = true;
         setPassword("");
-        setLeaveFor(next);
+        // The sign-in that made the first key goes to the first-run guide (/app/welcome).
+        setLeaveFor(landingAfterSignIn(result.key, next));
         return;
       }
       if (result.key === "not_opened") {

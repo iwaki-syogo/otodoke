@@ -9,7 +9,8 @@ import { mount, type Mounted } from "./hook-harness";
 
 /**
  * /signup (src/app/signup/): the address and the password twice. Only the login secret is sent;
- * the address must be ASCII (decision 9); once sent, the same screen says so and offers 「送り直す」.
+ * the address must be ASCII (decision 9); once sent, the same tab waits for the confirmation
+ * (onboarding screen 1: signup-confirm-wait.test.ts) and offers 「メールを送り直す」.
  * The press is shown at once.
  */
 
@@ -37,7 +38,7 @@ vi.mock("@/app/login/turnstile-widget", () => ({
 }));
 vi.mock("@/app/login/actions", () => ({ signUpWithAuthSecret: actions.signUp, resendConfirmation: actions.resend, signInWithAuthSecret: vi.fn() }));
 vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: vi.fn() }));
-vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn() }));
 // The steps are password-flows.test.ts's; here master is made quickly.
 vi.mock("@/lib/crypto/password-v1", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/crypto/password-v1")>();
@@ -53,6 +54,8 @@ const TOKEN = "0.token";
 
 const textOfHost = (h: Host | string): string => (typeof h === "string" ? h : h.children.map(textOfHost).join(""));
 const button = (view: Mounted) => view.host((h) => h.type === "button");
+/** The waiting screen's 「メールを送り直す」 (it has 「確認しました」 too). */
+const resendButton = (view: Mounted) => view.hosts((h) => h.type === "button").at(-1)!;
 const type = (view: Mounted, id: string, value: string) => (view.host((h) => h.type === "input" && h.props.id === id).props.onChange as (e: unknown) => void)({ target: { value } });
 const press = (view: Mounted) => (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
 const drawn = () => new Promise<void>((resolve) => queueMicrotask(() => queueMicrotask(resolve)));
@@ -93,26 +96,29 @@ describe("making the account", () => {
     answer({ ok: true, code: "signup_exists_or_sent" });
     await done;
     await drawn();
-    expect(view.text()).toContain(LOGIN_MESSAGES.signup_exists_or_sent);
+    expect(view.text()).toContain("確認のメールを送りました");
+    expect(view.text()).toContain(EMAIL);
     expect(view.hosts((h) => h.type === "input")).toHaveLength(0);
-    expect(textOfHost(button(view))).toBe("送り直す");
+    expect(view.hosts((h) => h.type === "button").map(textOfHost)).toEqual(["確認しました", "メールを送り直す"]);
     expect(widget.round).toBe(1);
   });
 
-  it("「送り直す」 asks for the confirmation mail again, to the same address, and says what came back", async () => {
+  it("「メールを送り直す」 asks for the confirmation mail again, to the same address, and says what came back", async () => {
     actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
     actions.resend.mockResolvedValue({ ok: true, code: "confirmation_sent" });
     const view = await filled();
     await press(view);
     await drawn();
-    const click = () => (button(view).props.onClick as (e: unknown) => void)(fakeEvent());
+    const click = () => (resendButton(view).props.onClick as (e: unknown) => void)(fakeEvent());
     widget.token!.current.value = "0.second-token";
     click();
     await drawn();
-    expect(textOfHost(button(view))).toBe("送っています…");
-    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.confirmation_sent));
+    expect(textOfHost(resendButton(view))).toBe("送っています…");
+    // The toast of the onboarding words.
+    await vi.waitFor(() => expect(view.text()).toContain("送り直しました"));
+    expect(view.hosts((h) => h.props.role === "status").map(textOfHost)).toContain("送り直しました");
     expect(actions.resend).toHaveBeenCalledWith({ email: EMAIL, captchaToken: "0.second-token" });
-    await vi.waitFor(() => expect(textOfHost(button(view))).toBe("送り直す"));
+    await vi.waitFor(() => expect(textOfHost(resendButton(view))).toBe("メールを送り直す"));
 
     actions.resend.mockResolvedValue({ ok: false, code: "rate" });
     click();
