@@ -65,6 +65,9 @@ final class UnlockModel {
     }
 
     static let openingText = "開いています…"
+    /// unlock-form.tsx: the field's placeholder and the button.
+    static let placeholder = "合言葉"
+    static let openText = "開く"
     static let wrongPassphraseText = "合言葉が違います"
     static let readFailedText = "読み込めませんでした"
     static let failedText = "開けませんでした"

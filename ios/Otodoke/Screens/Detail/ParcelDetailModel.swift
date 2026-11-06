@@ -34,11 +34,11 @@ struct TimelineEntry: Equatable, Sendable, Identifiable {
     /// MailBody.display(email) of this mail: what the row shows, by body_state. The fields above are the
     /// plain mail's (a sealed or dropped mail has them null); the screen goes by this.
     var mail: MailDisplay? = nil
-    /// TDD-STUB(task 18): emails.id of this mail (the sealed mail's AAD and its body_envelope read).
+    /// emails.id of this mail (the sealed mail's AAD and its body_envelope read).
     var emailID: String? = nil
 }
 
-/// TDD-STUB(task 18): a sealed mail in 「メールの履歴」, by what opening it came to.
+/// A sealed mail in 「メールの履歴」, by what opening it came to.
 enum SealedState: Equatable, Sendable {
     /// 「🔒 暗号化されたメール」, not opened yet.
     case closed
@@ -179,39 +179,111 @@ final class ParcelDetailModel {
         self.today = today
     }
 
-    /// TDD-STUB(task 18): opening sealed mail. Set by MainScreens.detail(_:) (the one UnlockModel of the
-    /// session and its reader of body_envelope).
+    /// Opening sealed mail. Set by MainScreens.detail(_:) (the one UnlockModel of the session and its
+    /// reader of body_envelope).
     @ObservationIgnored var unlock: UnlockModel?
     @ObservationIgnored var mailKeys: (any MailKeyReading)?
 
-    /// TDD-STUB(task 18): scenePhase inactive (or background) hides every opened body; active shows it again.
+    /// scenePhase inactive (or background) hides every opened body; active shows it again.
     private(set) var isBodyHidden = false
 
-    /// TDD-STUB(task 18): what a sealed mail of this detail shows now (closed when never opened, and again
-    /// once the key's front period or the session moved on).
+    /// Each sealed mail that was pressed, with the key's period and session it was pressed in. Only in
+    /// memory; dropped in the background and at sign-out (OpenKeyStore → dropPlaintext).
+    private var sealed: [String: (state: SealedState, stamp: UnlockStamp)] = [:]
+
+    /// What a sealed mail of this detail shows now (closed when never opened, and again once the key's
+    /// front period or the session moved on).
     func sealedState(emailID: String) -> SealedState {
-        .closed // TDD-STUB(task 18)
+        guard let entry = sealed[emailID], let store = unlock?.store, store.isCurrent(entry.stamp) else { return .closed }
+        return entry.state
     }
 
-    /// TDD-STUB(task 18): 「元メールを見る」 on a sealed mail: the key (memory, Face ID, else .unlocking), then
-    /// body_envelope read and opened; the kid differing goes through UnlockModel.recipient(forKid:).
+    /// 「元メールを見る」 from the screen: openSealed in a task the key's store cancels in the background.
+    func startOpeningSealed(emailID: String) {
+        guard let store = unlock?.store else { return }
+        let task = Task { [weak self] () -> Void in
+            guard let self else { return }
+            await self.openSealed(emailID: emailID)
+        }
+        store.track(task)
+    }
+
+    /// 「元メールを見る」 on a sealed mail: the key (memory, Face ID, else .unlocking), then body_envelope read
+    /// and opened; the kid differing goes through UnlockModel.recipient(forKid:).
     func openSealed(emailID: String) async {
-        // TDD-STUB(task 18)
+        guard let unlock, let mailKeys, let stamp = unlock.store.stamp() else { return }
+        unlock.store.hold(self)
+        if case .opened = sealedState(emailID: emailID) { return }
+        setSealed(emailID, .opening, stamp)
+        guard let key = await unlock.key() else {
+            setSealed(emailID, .unlocking, stamp)
+            return
+        }
+        // Read only now, and only this mail's envelope.
+        let read = await mailKeys.envelope(emailID: emailID)
+        guard unlock.store.isCurrent(stamp) else { return }
+        guard case let .loaded(data?) = read, let kid = Envelope.kidOf(jsonData: data) else {
+            setSealed(emailID, .failed, stamp)
+            return
+        }
+        var recipient = key
+        if kid != key.keyID {
+            switch await unlock.recipient(forKid: kid) {
+            case let .key(other): recipient = other
+            case .needsPassphrase:
+                setSealed(emailID, .unlocking, stamp)
+                return
+            case .readFailed:
+                setSealed(emailID, .readFailed, stamp)
+                return
+            case .oldKey:
+                setSealed(emailID, .oldKey, stamp)
+                return
+            }
+            guard unlock.store.isCurrent(stamp) else { return }
+        }
+        let opened = await Self.open(recipient, emailID: emailID, envelopeJSON: data)
+        // The background, a sign-out or another account meanwhile: nothing is shown or kept (CX2).
+        guard unlock.store.isCurrent(stamp) else { return }
+        switch opened {
+        case let .success(mail): setSealed(emailID, .opened(mail), stamp)
+        case .failure(.wrongKey): setSealed(emailID, .oldKey, stamp)
+        case .failure: setSealed(emailID, .failed, stamp)
+        }
     }
 
-    /// TDD-STUB(task 18): the passphrase typed in UnlockView for this mail; opens it when the key opened.
+    /// openMail and the text to show, off the main thread (htmlToText may be long).
+    nonisolated private static func open(_ key: OpenedKey, emailID: String, envelopeJSON: Data) async -> Result<OpenedMail, CryptoError> {
+        await Task.detached(priority: .userInitiated) { () -> Result<OpenedMail, CryptoError> in
+            do throws(CryptoError) {
+                let mail = try EnvelopeCrypto.openMail(key.recipient, userID: key.userID, emailID: emailID, envelopeJSON: envelopeJSON)
+                return .success(MailBody.opened(mail))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+    }
+
+    private func setSealed(_ emailID: String, _ state: SealedState, _ stamp: UnlockStamp) {
+        guard unlock?.store.isCurrent(stamp) == true else { return }
+        sealed[emailID] = (state, stamp)
+    }
+
+    /// The passphrase typed in UnlockView for this mail; opens it when the key opened.
     func submitPassphrase(_ passphrase: String, emailID: String) async {
-        // TDD-STUB(task 18)
+        guard let unlock else { return }
+        guard await unlock.submit(passphrase: passphrase) else { return }
+        await openSealed(emailID: emailID)
     }
 
-    /// TDD-STUB(task 18): scenePhase changed (inactive / background hide the bodies; active shows them).
+    /// scenePhase changed (inactive / background hide the bodies; active shows them).
     func sceneChanged(_ phase: ScenePhase) {
-        // TDD-STUB(task 18)
+        isBodyHidden = phase != .active
     }
 
-    /// TDD-STUB(task 18): how many opened mails are held in memory (for the tests of dropping them).
+    /// How many opened mails are held in memory (for the tests of dropping them).
     var heldPlaintextCount: Int {
-        0 // TDD-STUB(task 18)
+        sealed.values.filter { if case .opened = $0.state { return true } else { return false } }.count
     }
 
     /// 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads again when it
@@ -536,7 +608,8 @@ final class ParcelDetailModel {
                 confidenceText: confidence,
                 body: body,
                 notes: x.notes.jsTruthy,
-                mail: MailBody.display(email)
+                mail: MailBody.display(email),
+                emailID: email.id
             )
         }
     }
@@ -583,9 +656,9 @@ extension ParcelDetailModel {
 }
 #endif
 
-/// TDD-STUB(task 16, task 18): the detail holds opened mail; OpenKeyStore tells it to drop it.
+/// The detail holds opened mail; OpenKeyStore tells it to drop it (the background, sign-out).
 extension ParcelDetailModel: PlaintextHolder {
     func dropPlaintext() {
-        // TDD-STUB(task 18)
+        sealed = [:]
     }
 }

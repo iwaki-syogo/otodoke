@@ -96,6 +96,9 @@ final class MainScreens {
     func detail(_ id: String) -> ParcelDetailModel {
         let model = makeDetail(id)
         model.changes = changes
+        // Sealed mail opens with the session's one UnlockModel (task 18).
+        model.unlock = unlock
+        model.mailKeys = MailKeyReader(provider: model.reader.provider)
         return model
     }
 }
