@@ -23,7 +23,9 @@ struct RootView: View {
     var body: some View {
         #if DEBUG
         if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
-            if let login = preview.makeLoginModel() {
+            if preview.showsWelcome {
+                WelcomeView(auth: preview.previewAuth())
+            } else if let login = preview.makeLoginModel() {
                 LoginView(model: login)
             } else {
                 MainTabView(listModel: preview.makeModel(), detailModel: preview.detailModelMaker())
@@ -42,12 +44,18 @@ struct RootView: View {
             case .loading:
                 ProgressView()
             case .login:
-                LoginView(auth: auth)
+                WelcomeView(auth: auth)
             case .main:
-                MainTabView(reader: ParcelReader(provider: auth.provider), writer: ParcelWriter(provider: auth.provider))
+                // N-2: the tabs live as long as one signed-in generation.
+                MainTabView(auth: auth)
+                    .id(auth.session.value)
             }
         }
         .task { await auth.start() }
+        // CX2: in front or not, from launch on (before any sign-in): each generation's key store reads it.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .background { auth.front.wentToBackground() } else { auth.front.cameToFront() }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, auth.state != .unknown else { return }
             Task { await auth.checkSession() }

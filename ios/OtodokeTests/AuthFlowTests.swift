@@ -4,42 +4,47 @@ import Testing
 @testable import Otodoke
 
 /// [Task 3, implementer's own] How the Supabase client is wired: implicit flow, one request per press
-/// on the login calls, the user's JWT on PostgREST, and where the Keychain keeps the session.
+/// on the login calls (password-v1: sign-up, the password sign-in, the confirmation mail again), the user's JWT on PostgREST, and where the Keychain keeps the session.
 @Suite("Auth wiring (task 3)")
 @MainActor
 struct AuthFlowTests {
     private func make(_ fake: FakeSupabase) -> AuthService {
-        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()))
+        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
     }
 
-    @Test func sendsTheCodeInTheImplicitFlow() async throws {
-        // PKCE would add a code challenge, and a login link opened in another browser would then fail.
+    @Test func signUpAndResendUseTheImplicitFlow() async throws {
+        // PKCE would add a code challenge, and a confirmation link opened in another browser would then fail.
         let fake = FakeSupabase.make()
-        try await make(fake).sendCode(email: FakeSupabase.email)
-        let body = try #require(await fake.requests("POST", "otp").first?.jsonDictionary)
-        #expect(body["code_challenge"] == nil)
-        #expect(body["code_challenge_method"] == nil)
+        let auth = make(fake)
+        try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        try await auth.resendConfirmation(email: FakeSupabase.email, captchaToken: nil)
+        for endpoint in ["signup", "resend"] {
+            let body = try #require(await fake.requests("POST", endpoint).first?.jsonDictionary)
+            #expect(body["code_challenge"] == nil, "\(endpoint)")
+            #expect(body["code_challenge_method"] == nil, "\(endpoint)")
+        }
     }
 
     @Test func noAnswerOnSendingIsNotSentAgain() async {
         let fake = FakeSupabase.make()
-        await fake.fail("POST", "otp", with: .transport(.networkConnectionLost))
-        await #expect(throws: LoginError.network) { try await make(fake).sendCode(email: FakeSupabase.email) }
-        #expect(await fake.count("POST", "otp") == 1)
+        await fake.fail("POST", "signup", with: .transport(.networkConnectionLost))
+        await #expect(throws: LoginFailure.network) { try await make(fake).signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) }
+        #expect(await fake.count("POST", "signup") == 1)
     }
 
     @Test func aServerErrorOnSendingIsNotSentAgain() async {
+        // A 5xx is an outage (login-errors.ts isOutage): the network words, as on the Web.
         let fake = FakeSupabase.make()
-        await fake.fail("POST", "otp", with: .http(503))
-        await #expect(throws: LoginError.other) { try await make(fake).sendCode(email: FakeSupabase.email) }
-        #expect(await fake.count("POST", "otp") == 1)
+        await fake.fail("POST", "signup", with: .http(503))
+        await #expect(throws: LoginFailure.network) { try await make(fake).signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) }
+        #expect(await fake.count("POST", "signup") == 1)
     }
 
     @Test func noAnswerOnVerifyingIsNotSentAgain() async {
         let fake = FakeSupabase.make()
-        await fake.fail("POST", "verify", with: .transport(.timedOut))
-        await #expect(throws: LoginError.network) { try await make(fake).verifyCode(email: FakeSupabase.email, code: FakeSupabase.goodCode) }
-        #expect(await fake.count("POST", "verify") == 1)
+        await fake.fail("POST", "token", with: .transport(.timedOut))
+        await #expect(throws: LoginFailure.network) { try await make(fake).signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil) }
+        #expect(await fake.count("POST", "token") == 1)
     }
 
     @Test func postgrestCarriesTheUsersToken() async throws {

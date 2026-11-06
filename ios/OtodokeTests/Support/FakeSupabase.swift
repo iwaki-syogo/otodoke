@@ -1,4 +1,5 @@
 import Foundation
+import ObjectiveC
 @testable import Otodoke
 
 /// A small stand-in for Supabase that keeps database state, reached through StubURLProtocol.
@@ -30,7 +31,9 @@ actor FakeSupabase {
     nonisolated let config: AppConfig
     nonisolated let urlSession: URLSession
 
-    enum OTPMode: Sendable { case ok, rateLimited }
+    /// captchaFailed: GoTrue's 400 captcha_failed (CAPTCHA on, the token missing or refused).
+    /// cloudflareDown: the captcha check itself failed (500, no error code), as GoTrue answers then.
+    enum OTPMode: Sendable { case ok, rateLimited, captchaFailed, cloudflareDown }
     enum VerifyMode: Sendable { case ok, rejected, rateLimited }
     enum RefreshMode: Sendable { case ok, invalidGrant }
 
@@ -83,6 +86,13 @@ actor FakeSupabase {
     }
 
     private var otpMode = OTPMode.ok
+    /// [password-v1] Accounts by address (as Supabase keeps it): the password Supabase was given (auth_secret)
+    /// and whether the address was confirmed.
+    private var passwordAccounts: [String: (secret: String, confirmed: Bool)] = [:]
+    /// [password-v1] Answers forced on signup / token?grant_type=password / resend: (status, error code or nil).
+    private var forcedAuth: [String: (status: Int, code: String?)] = [:]
+    /// [password-v1] The address in the user object (Supabase's own form of it).
+    private var userEmail = FakeSupabase.email
     private var verifyMode = VerifyMode.ok
     private var refreshMode = RefreshMode.ok
     private var sessionLifetime = 3600
@@ -127,6 +137,26 @@ actor FakeSupabase {
     func setSessionLifetime(_ seconds: Int) { sessionLifetime = seconds }
     func setUnreadEmails(_ n: Int) { unreadEmails = n }
 
+    // MARK: password-v1 accounts
+
+    /// An account that signs in with `secret` (the auth_secret Supabase keeps as the password).
+    func addPasswordAccount(email: String, secret: String, confirmed: Bool = true) {
+        passwordAccounts[email] = (secret, confirmed)
+    }
+
+    /// The account of `email` as signUp left it (nil when none).
+    func passwordAccount(_ email: String) -> (secret: String, confirmed: Bool)? { passwordAccounts[email] }
+
+    /// The next answers of `endpoint` ("signup", "password" for token?grant_type=password, "resend") are this
+    /// status with GoTrue's error `code` (nil: no code, e.g. a bare 429 or Cloudflare's 500).
+    func forceAuth(_ endpoint: String, status: Int, code: String?) { forcedAuth[endpoint] = (status, code) }
+
+    /// The address Supabase answers in user.email (its own form of the address).
+    func setUserEmail(_ email: String) { userEmail = email }
+
+    /// An access token this fake issued (for a fake web endpoint that checks the Bearer).
+    func isAccessToken(_ token: String) -> Bool { accessTokens.contains(token) }
+
     /// The nth (1-based) request of this method to this resource ("parcels", "otp", ...) gets `kind`.
     func fail(_ method: String, _ resource: String, nth: Int = 1, with kind: FaultKind) {
         faults.append(Fault(method: method, resource: resource, nth: nth, kind: kind))
@@ -150,6 +180,11 @@ actor FakeSupabase {
     }
 
     func rows(_ table: String) -> [Row] { tables[table] ?? [] }
+
+    /// Another writer (the Web's key endpoints) changes the tables directly.
+    func mutate(_ change: @Sendable (inout [String: [Row]]) -> Void) {
+        change(&tables)
+    }
 
     func row(_ table: String, id: String) -> Row? {
         tables[table]?.first { $0["id"] == .string(id) }
@@ -251,6 +286,8 @@ actor FakeSupabase {
             switch otpMode {
             case .ok: return .json(200, [String: Any]())
             case .rateLimited: return Self.gotrueError(request, 429, "over_email_send_rate_limit", "email rate limit exceeded")
+            case .captchaFailed: return Self.gotrueError(request, 400, "captcha_failed", "captcha protection: request disallowed")
+            case .cloudflareDown: return .json(500, ["code": 500, "msg": "Internal Server Error"])
             }
         case ("POST", "verify"):
             if verifyMode == .rateLimited {
@@ -261,19 +298,45 @@ actor FakeSupabase {
                 return Self.gotrueError(request, 403, "otp_expired", "Token has expired or is invalid")
             }
             return .json(200, newSession())
+        case ("POST", "token") where request.query("grant_type").first == "password":
+            if let forced = forcedAuth["password"] { return forcedReply(request, forced) }
+            let body = request.jsonDictionary ?? [:]
+            guard let address = body["email"] as? String, let secret = body["password"] as? String,
+                  let account = passwordAccounts[address], account.secret == secret
+            else {
+                return Self.gotrueError(request, 400, "invalid_credentials", "Invalid login credentials")
+            }
+            guard account.confirmed else { return Self.gotrueError(request, 400, "email_not_confirmed", "Email not confirmed") }
+            return .json(200, newSession())
         case ("POST", "token"):
             let refresh = request.jsonDictionary?["refresh_token"] as? String
             guard request.query("grant_type").first == "refresh_token", refreshMode == .ok, let refresh, refreshTokens.contains(refresh) else {
                 return Self.gotrueError(request, 400, "refresh_token_not_found", "Invalid Refresh Token: Refresh Token Not Found")
             }
             return .json(200, newSession())
+        case ("POST", "signup"):
+            if let forced = forcedAuth["signup"] { return forcedReply(request, forced) }
+            let body = request.jsonDictionary ?? [:]
+            guard let address = body["email"] as? String, let secret = body["password"] as? String else {
+                return Self.gotrueError(request, 400, "validation_failed", "missing email or password")
+            }
+            if passwordAccounts[address] == nil { passwordAccounts[address] = (secret, false) }
+            // Confirm email is on: the user object only, no session (also for an address that has an account).
+            var u = user()
+            u["email"] = address
+            u["email_confirmed_at"] = NSNull()
+            u["confirmed_at"] = NSNull()
+            return .json(200, u)
+        case ("POST", "resend"):
+            if let forced = forcedAuth["resend"] { return forcedReply(request, forced) }
+            return .json(200, [String: Any]())
         case ("POST", "logout"):
             return .empty(204)
         case ("GET", "user"):
             guard bearerIsValid(request) else {
                 return Self.gotrueError(request, 401, "bad_jwt", "invalid JWT")
             }
-            return .json(200, Self.user())
+            return .json(200, user())
         default:
             return Self.gotrueError(request, 404, "not_found", "not found")
         }
@@ -287,6 +350,11 @@ actor FakeSupabase {
             return .json(status, ["code": errorCode, "msg": msg], headers: ["X-Supabase-Api-Version": "2024-01-01"])
         }
         return .json(status, ["code": status, "error_code": errorCode, "msg": msg])
+    }
+
+    private func forcedReply(_ request: StubRequest, _ forced: (status: Int, code: String?)) -> StubReply {
+        guard let code = forced.code else { return .json(forced.status, ["code": forced.status, "msg": "error"]) }
+        return Self.gotrueError(request, forced.status, code, "error")
     }
 
     private func bearerIsValid(_ request: StubRequest) -> Bool {
@@ -307,8 +375,15 @@ actor FakeSupabase {
             "expires_in": sessionLifetime,
             "expires_at": now + sessionLifetime,
             "refresh_token": refresh,
-            "user": Self.user(),
+            "user": user(),
         ]
+    }
+
+    /// The user object with the address of setUserEmail.
+    private func user() -> [String: Any] {
+        var u = Self.user()
+        u["email"] = userEmail
+        return u
     }
 
     /// GoTrue's user object. If the client's decoder needs more fields, add them here (a server
@@ -462,9 +537,22 @@ actor FakeSupabase {
 
     private func matches(_ row: Row, _ request: StubRequest) -> Bool {
         for (name, expression) in request.queryPairs where !Self.reserved.contains(name) {
-            if !Self.test(row[name] ?? .null, expression) { return false }
+            if !Self.test(Self.value(row, name), expression) { return false }
         }
         return true
+    }
+
+    /// A column, or `column->>key` (a JSON object's value as text, null when absent), as PostgREST reads it.
+    static func value(_ row: Row, _ name: String) -> JSONValue {
+        guard let arrow = name.range(of: "->>") else { return row[name] ?? .null }
+        let column = String(name[..<arrow.lowerBound])
+        let key = String(name[arrow.upperBound...])
+        guard case let .object(object)? = row[column], let inner = object[key] else { return .null }
+        switch inner {
+        case .null: return .null
+        case .string: return inner
+        default: return inner.text.map(JSONValue.string) ?? .null
+        }
     }
 
     /// One PostgREST filter, with SQL's null semantics (a null value matches only `is.null`).
@@ -472,7 +560,16 @@ actor FakeSupabase {
         guard let dot = expression.firstIndex(of: ".") else { return false }
         let op = String(expression[..<dot])
         let arg = String(expression[expression.index(after: dot)...])
+        // not.<op>.<arg>: SQL's NOT, so a null value still matches neither side (except not.is.null).
+        if op == "not" {
+            if arg.hasPrefix("is.") { return !test(value, arg) }
+            guard value != .null else { return false }
+            return !test(value, arg)
+        }
         switch op {
+        case "like", "ilike":
+            guard case let .string(s) = value else { return false }
+            return likeMatches(s, arg, caseInsensitive: op == "ilike")
         case "is":
             switch arg {
             case "null": return value == .null
@@ -519,6 +616,21 @@ actor FakeSupabase {
             guard let a = Bool(arg) else { return nil }
             return b == a ? .orderedSame : (b ? .orderedDescending : .orderedAscending)
         }
+    }
+
+    /// LIKE with % (or PostgREST's *) for any run and _ for one character.
+    static func likeMatches(_ s: String, _ pattern: String, caseInsensitive: Bool) -> Bool {
+        var regex = "^"
+        for ch in pattern {
+            switch ch {
+            case "%", "*": regex += ".*"
+            case "_": regex += "."
+            default: regex += NSRegularExpression.escapedPattern(for: String(ch))
+            }
+        }
+        regex += "$"
+        let options: String.CompareOptions = caseInsensitive ? [.regularExpression, .caseInsensitive] : [.regularExpression]
+        return s.range(of: regex, options: options) != nil
     }
 
     static func parseList(_ arg: String) -> [String] {
@@ -623,10 +735,18 @@ final class InMemorySessionStorage: SessionStorage, @unchecked Sendable {
 /// Signs in through the app's own AuthService against the fake (verify with the good code).
 @MainActor
 enum TestSession {
+    private nonisolated(unsafe) static let keptFakeKey = UnsafeRawPointer(UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1))
+
     static func signedIn(_ fake: FakeSupabase, storage: InMemorySessionStorage = InMemorySessionStorage()) async throws -> (provider: SupabaseProvider, auth: AuthService) {
         let provider = SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage)
+        // The provider keeps its fake alive: a test that lets go of the fake but keeps a writer or a
+        // model made from this provider still reaches it (the fake's deinit unregisters its host).
+        objc_setAssociatedObject(provider, keptFakeKey, fake, .OBJC_ASSOCIATION_RETAIN)
+        // Signed in through supabase-swift itself (the fake's code endpoint; the app has no code login any more),
+        // then the app's AuthService reads the session.
+        _ = try await provider.auth.verifyOTP(email: FakeSupabase.email, token: FakeSupabase.goodCode, type: .email)
         let auth = AuthService(provider: provider)
-        try await auth.verifyCode(email: FakeSupabase.email, code: FakeSupabase.goodCode)
+        await auth.checkSession()
         return (provider, auth)
     }
 }

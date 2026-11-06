@@ -20,10 +20,16 @@ enum TrackingLink: Equatable, Sendable {
 }
 
 enum Carriers {
-    /// Keep letters and digits only (ASCII, as `[^0-9A-Za-z]`), upper-cased.
+    /// normalizeTracking of src/lib/carriers (ded1789): full-width ASCII forms (U+FF01–U+FF5E) read as
+    /// half-width first (not all of NFKC, which spells № as "No" and ① as "1"), a leading "No." / "No:"
+    /// label dropped (`/^[^0-9A-Za-z]*no\s*[.:]/i`), then ASCII letters and digits only, upper-cased.
     static func normalizeTracking(_ raw: String) -> String {
+        var scalars = raw.unicodeScalars.map { s in
+            (0xFF01...0xFF5E).contains(s.value) ? Unicode.Scalar(s.value - 0xFEE0)! : s
+        }
+        scalars.removeFirst(numberLabelLength(scalars))
         var out = ""
-        for s in raw.unicodeScalars {
+        for s in scalars {
             switch s.value {
             case 0x30...0x39, 0x41...0x5A: out.unicodeScalars.append(s)
             case 0x61...0x7A: out.unicodeScalars.append(Unicode.Scalar(s.value - 0x20)!)
@@ -31,6 +37,33 @@ enum Carriers {
             }
         }
         return out
+    }
+
+    /// The length of a match of `/^[^0-9A-Za-z]*no\s*[.:]/i` at the start (0 when none): marks, then
+    /// ASCII N/n and O/o, JavaScript's `\s`, and "." or ":". "No123…" without the "." or ":" is kept.
+    private static func numberLabelLength(_ s: [Unicode.Scalar]) -> Int {
+        var i = 0
+        while i < s.count, !isASCIIAlphanumeric(s[i]) { i += 1 }
+        guard i + 1 < s.count, s[i] == "N" || s[i] == "n", s[i + 1] == "O" || s[i + 1] == "o" else { return 0 }
+        i += 2
+        while i < s.count, isJSWhitespace(s[i]) { i += 1 }
+        guard i < s.count, s[i] == "." || s[i] == ":" else { return 0 }
+        return i + 1
+    }
+
+    private static func isASCIIAlphanumeric(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: true
+        default: false
+        }
+    }
+
+    /// `\s` of a JavaScript regex.
+    private static func isJSWhitespace(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x09...0x0D, 0x20, 0xA0, 0x1680, 0x2000...0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF: true
+        default: false
+        }
     }
 
     /// Decide the carrier from the number's shape and, where the shape is ambiguous, from the hint.

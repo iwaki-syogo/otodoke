@@ -47,6 +47,12 @@ enum ParcelRules {
         p.requiresPresence ?? (p.shopKey == "amazon" ? nil : true)
     }
 
+    /// faceToFaceAssumed (src/lib/match): face-to-face only by the default, with nothing stored. Worded
+    /// apart on screen (念のため対面) so a guess never reads like what a mail said; still face-to-face.
+    static func faceToFaceAssumed(_ p: ParcelRow) -> Bool {
+        faceToFace(p) == true && p.requiresPresence != true
+    }
+
     /// parcelSections(parcels, today), given parcels in the database's order.
     static func sections(_ parcels: [ParcelRow], today: String) -> ParcelSections {
         let open = parcels.filter { !isClosed($0) }

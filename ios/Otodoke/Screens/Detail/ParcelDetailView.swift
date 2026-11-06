@@ -10,6 +10,8 @@ struct ParcelDetailView: View {
     private let initiallyOpen: Set<String>
     /// At the accessibility text sizes each label goes above its value.
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// Inactive (the app switcher, a system sheet) hides every opened sealed mail.
+    @Environment(\.scenePhase) private var scenePhase
 
     init(model: ParcelDetailModel, initiallyOpen: Set<String> = []) {
         _model = State(initialValue: model)
@@ -33,8 +35,9 @@ struct ParcelDetailView: View {
                     }
                 }
             }
-            .task {
-                if model.parcel == nil { await model.load() }
+            .task { await model.onAppear() }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                model.sceneChanged(phase)
             }
     }
 
@@ -48,7 +51,7 @@ struct ParcelDetailView: View {
                 ErrorBox()
                     .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         case .loaded(nil)?:
             ScrollView {
                 Text("見つかりません")
@@ -57,7 +60,7 @@ struct ParcelDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         case let .loaded(p?)?:
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -70,7 +73,7 @@ struct ParcelDetailView: View {
                 }
                 .padding(16)
             }
-            .refreshable { await model.load() }
+            .refreshableToTheEnd { await model.load() }
         }
     }
 
@@ -87,7 +90,7 @@ struct ParcelDetailView: View {
                 .padding(.top, 4)
             WrappingRow {
                 StatusBadge(status: p.status)
-                PresenceBadge(faceToFace: ParcelRules.faceToFace(p))
+                PresenceBadge(parcel: p)
                 if f.needsReview { ReviewBadge() }
             }
             .padding(.top, 12)
@@ -149,7 +152,9 @@ struct ParcelDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(f.presence)
                         .foregroundStyle(ParcelRules.faceToFace(p) == nil ? .secondary : .primary)
-                    if let evidence = f.presenceEvidence {
+                    if let note = f.presenceAssumedNote {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
+                    } else if let evidence = f.presenceEvidence {
                         Text("根拠: 「\(evidence)」").font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -297,7 +302,7 @@ struct ParcelDetailView: View {
             case let .loaded(entries)?:
                 VStack(spacing: 8) {
                     ForEach(entries) { entry in
-                        MailCard(entry: entry, startsOpen: initiallyOpen.contains(entry.id))
+                        MailCard(entry: entry, model: model, startsOpen: initiallyOpen.contains(entry.id))
                     }
                 }
             case nil:
@@ -325,14 +330,32 @@ struct ErrorBox: View {
     }
 }
 
-/// One mail: its kind and time, subject, sender, confidence, and 「元メールを見る」 with the text.
+/// One mail: its kind and time, subject, sender, confidence, and 「元メールを見る」 with the text, by
+/// body_state (MailBody): a sealed mail is opened here with Face ID or the passphrase (sealed-mail.tsx), a
+/// dropped one says what was not kept, a state this version does not know is not opened.
 private struct MailCard: View {
     let entry: TimelineEntry
+    let model: ParcelDetailModel
     @State private var isOpen: Bool
 
-    init(entry: TimelineEntry, startsOpen: Bool) {
+    init(entry: TimelineEntry, model: ParcelDetailModel, startsOpen: Bool) {
         self.entry = entry
+        self.model = model
         _isOpen = State(initialValue: startsOpen)
+    }
+
+    private var kind: MailDisplay.Kind { entry.mail?.kind ?? .plain }
+
+    /// What this sealed mail came to (closed for every other kind).
+    private var sealedState: SealedState {
+        guard kind == .sealed, let emailID = entry.emailID else { return .closed }
+        return model.sealedState(emailID: emailID)
+    }
+
+    /// The opened sealed mail, while it may be shown (not when the scene is inactive).
+    private var openedMail: OpenedMail? {
+        guard !model.isBodyHidden, case let .opened(mail) = sealedState else { return nil }
+        return mail
     }
 
     var body: some View {
@@ -346,49 +369,154 @@ private struct MailCard: View {
                     .foregroundStyle(.secondary)
             }
             .font(.caption)
-            if let subject = entry.subject {
-                Text(subject)
-                    .font(.subheadline)
-                    .padding(.top, 4)
-            }
-            if let from = entry.fromText {
-                Text(from)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.top, 2)
-            }
-            if let confidence = entry.confidenceText {
-                Text(confidence)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 4)
-            }
-            Button {
-                isOpen.toggle()
-            } label: {
-                Text("元メールを見る")
-                    .font(.caption)
-                    .foregroundStyle(OtodokeColor.link)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-            if isOpen {
-                if let notes = entry.notes {
-                    Text("読み取りメモ: \(notes)")
+            if kind == .plain {
+                if let subject = entry.subject {
+                    Text(subject)
+                        .font(.subheadline)
+                        .padding(.top, 4)
+                }
+                if let from = entry.fromText {
+                    Text(from)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .padding(.top, 8)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, 2)
                 }
-                MailText(text: entry.body.isEmpty ? "（本文なし）" : entry.body)
-                    .padding(.top, 8)
+            } else if let opened = openedMail {
+                // sealed-mail.tsx: once open, the subject and the sender instead of the lock.
+                if let subject = opened.subject {
+                    Text(subject)
+                        .font(.subheadline)
+                        .padding(.top, 4)
+                }
+                if let from = opened.fromText {
+                    Text(from)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, 2)
+                }
+            } else if let mail = entry.mail {
+                if let headline = mail.headline {
+                    Text(headline)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+                if let domain = mail.fromDomain {
+                    Text(domain)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.top, 2)
+                }
+            }
+            if kind != .unopenable {
+                details
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .onChange(of: sealedState == .closed) { _, closed in
+            // Dropped (the background, sign-out): folded again; the next press asks for the key again.
+            if closed && kind == .sealed { isOpen = false }
+        }
+    }
+
+    /// The confidence and 「元メールを見る」.
+    @ViewBuilder private var details: some View {
+        if let confidence = entry.confidenceText {
+            Text(confidence)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 4)
+        }
+        Button {
+            isOpen.toggle()
+            if isOpen, kind == .sealed, let emailID = entry.emailID, model.startsOpening(emailID: emailID) {
+                model.startOpeningSealed(emailID: emailID)
+            }
+        } label: {
+            Text("元メールを見る")
+                .font(.caption)
+                .foregroundStyle(OtodokeColor.link)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        if isOpen {
+            if let notes = entry.notes {
+                Text("読み取りメモ: \(notes)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            }
+            switch kind {
+            case .plain:
+                MailText(text: entry.mail?.detail ?? (entry.body.isEmpty ? MailBody.noBody : entry.body))
+                    .padding(.top, 8)
+            case .dropped:
+                Text(entry.mail?.detail ?? MailBody.droppedDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            case .sealed:
+                sealedDetail
+                    .padding(.top, 8)
+            case .unopenable:
+                EmptyView()
+            }
+        }
+    }
+}
+
+extension MailCard {
+    /// Inside 「元メールを見る」 of a sealed mail, by what opening it came to (sealed-mail.tsx).
+    @ViewBuilder fileprivate var sealedDetail: some View {
+        switch sealedState {
+        case .closed where model.unlock == nil:
+            Text(UnlockModel.failedText)
+                .font(.caption)
+                .foregroundStyle(OtodokeColor.errorText)
+        case .closed, .opening:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(UnlockModel.openingText)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        case .unlocking:
+            if let unlock = model.unlock, let emailID = entry.emailID {
+                UnlockView(model: unlock) { model.startOpeningSealed(emailID: emailID) }
+            }
+        case let .opened(mail):
+            if !model.isBodyHidden {
+                VStack(alignment: .leading, spacing: 8) {
+                    MailText(text: mail.body.isEmpty ? MailBody.noBody : mail.body)
+                    if model.unlock?.saveResult == .memoryOnly {
+                        Text(FaceIDText.cannotSave(model.unlock?.biometry))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        case .failed:
+            Text(UnlockModel.failedText)
+                .font(.caption)
+                .foregroundStyle(OtodokeColor.errorText)
+        case .oldKey:
+            Text(UnlockModel.oldKeyText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .readFailed:
+            Text(UnlockModel.readFailedText)
+                .font(.caption)
+                .foregroundStyle(OtodokeColor.errorText)
+        }
     }
 }
 

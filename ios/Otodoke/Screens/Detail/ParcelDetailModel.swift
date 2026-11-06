@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 /// How the tracking row opens the carrier's page. Every URL here is https.
 enum TrackingAction: Equatable, Sendable {
@@ -30,6 +31,28 @@ struct TimelineEntry: Equatable, Sendable, Identifiable {
     /// text_body trimmed if not empty, else htmlToText(html_body), else "".
     let body: String
     let notes: String?
+    /// MailBody.display(email) of this mail: what the row shows, by body_state. The fields above are the
+    /// plain mail's (a sealed or dropped mail has them null); the screen goes by this.
+    var mail: MailDisplay? = nil
+    /// emails.id of this mail (the sealed mail's AAD and its body_envelope read).
+    var emailID: String? = nil
+}
+
+/// A sealed mail in 「メールの履歴」, by what opening it came to.
+enum SealedState: Equatable, Sendable {
+    /// 「🔒 暗号化されたメール」, not opened yet.
+    case closed
+    /// The key is needed: UnlockView (Face ID or the passphrase).
+    case unlocking
+    /// 「開いています…」
+    case opening
+    case opened(OpenedMail)
+    /// 「開けませんでした」: the envelope could not be read, was null, or was not an envelope (or did not open).
+    case failed
+    /// UnlockModel.oldKeyText.
+    case oldKey
+    /// 「読み込めませんでした」: the key row could not be read again.
+    case readFailed
 }
 
 /// The fields of the detail card, as the Web words them.
@@ -38,14 +61,14 @@ struct ParcelDetailFields: Equatable, Sendable {
     /// title ?? "品名の記載なし"
     let title: String
     let statusLabel: String
-    /// BadgeText.presence(faceToFace, compact: false)
+    /// BadgeText.presence(for: parcel, compact: false)
     let presenceBadge: String?
     let needsReview: Bool
     /// "11/5(木)〜11/7(土) 午前中"; nil when there is no date (shown as 未定).
     let expected: String?
     /// expected_text as stored (shown as 原文).
     let expectedOriginal: String?
-    /// 対面受け取りが必要 / 置き配・投函でOK / メールに記載なし
+    /// 対面受け取りが必要 / 念のため対面 / 置き配・投函でOK / メールに記載なし
     let presence: String
     let presenceEvidence: String?
     /// formatDateJa(ordered_at, withYear: true); nil when unknown (shown as 不明).
@@ -53,9 +76,13 @@ struct ParcelDetailFields: Equatable, Sendable {
     let orderNumber: String?
     /// yen(total_amount)
     let amount: String
+    /// When faceToFaceAssumed, the line where the evidence would be: 「指定なし」 (source = manual) or
+    /// 「メールに記載なし」; nil otherwise. The evidence (presenceEvidence) is nil then.
+    var presenceAssumedNote: String? = nil
 
     static func make(_ p: ParcelRow, today: String) -> ParcelDetailFields {
         let face = ParcelRules.faceToFace(p)
+        let assumed = ParcelRules.faceToFaceAssumed(p)
         let expected: String? = {
             guard let start = p.expectedDate.jsTruthy else { return nil }
             var text = Format.formatDateJa(start, today: today)
@@ -66,7 +93,7 @@ struct ParcelDetailFields: Equatable, Sendable {
         }()
         let presence: String
         switch face {
-        case true?: presence = "対面受け取りが必要"
+        case true?: presence = assumed ? BadgeText.assumedFaceToFace : "対面受け取りが必要"
         case false?: presence = "置き配・投函でOK"
         case nil: presence = "メールに記載なし"
         }
@@ -74,15 +101,17 @@ struct ParcelDetailFields: Equatable, Sendable {
             shop: p.shop,
             title: p.title ?? "品名の記載なし",
             statusLabel: BadgeText.status(p.status),
-            presenceBadge: BadgeText.presence(face, compact: false),
+            presenceBadge: BadgeText.presence(for: p, compact: false),
             needsReview: p.needsReview,
             expected: expected,
             expectedOriginal: p.expectedText.jsTruthy,
             presence: presence,
-            presenceEvidence: p.presenceEvidence.jsTruthy,
+            // The default rests on nothing being said, so that fact stands where evidence would.
+            presenceEvidence: assumed ? nil : p.presenceEvidence.jsTruthy,
             ordered: p.orderedAt.jsTruthy.map { Format.formatDateJa($0, withYear: true, today: today) },
             orderNumber: p.orderNumber.jsTruthy,
-            amount: Format.yen(p.totalAmount)
+            amount: Format.yen(p.totalAmount),
+            presenceAssumedNote: assumed ? (p.source == "manual" ? "指定なし" : "メールに記載なし") : nil
         )
     }
 }
@@ -150,9 +179,145 @@ final class ParcelDetailModel {
         self.today = today
     }
 
+    /// Opening sealed mail. Set by MainScreens.detail(_:) (the one UnlockModel of the session and its
+    /// reader of body_envelope).
+    @ObservationIgnored var unlock: UnlockModel?
+    @ObservationIgnored var mailKeys: (any MailKeyReading)?
+
+    /// scenePhase inactive (or background) hides every opened body; active shows it again.
+    private(set) var isBodyHidden = false
+
+    /// Each sealed mail that was pressed, with the key's period and session it was pressed in. Only in
+    /// memory; dropped in the background and at sign-out (OpenKeyStore → dropPlaintext).
+    private var sealed: [String: (state: SealedState, stamp: UnlockStamp)] = [:]
+
+    /// What a sealed mail of this detail shows now (closed when never opened, and again once the key's
+    /// front period or the session moved on).
+    func sealedState(emailID: String) -> SealedState {
+        guard let entry = sealed[emailID], let store = unlock?.store, store.isCurrent(entry.stamp) else { return .closed }
+        return entry.state
+    }
+
+    /// Whether a press of 「元メールを見る」 starts opening this sealed mail: never opened (closed), or the last
+    /// try failed on a read (.failed: the envelope; .readFailed: the key row), so a lost read is tried again
+    /// once the network is back (B1-2). Not while it is opening (no second start), once opened, while the key
+    /// is asked for (UnlockView opens it), nor for an older passphrase's mail.
+    func startsOpening(emailID: String) -> Bool {
+        switch sealedState(emailID: emailID) {
+        case .closed, .failed, .readFailed: return true
+        case .unlocking, .opening, .opened, .oldKey: return false
+        }
+    }
+
+    /// 「元メールを見る」 from the screen: openSealed in a task the key's store cancels in the background.
+    func startOpeningSealed(emailID: String) {
+        guard let store = unlock?.store else { return }
+        let task = Task { [weak self] () -> Void in
+            guard let self else { return }
+            await self.openSealed(emailID: emailID)
+        }
+        store.track(task)
+    }
+
+    /// 「元メールを見る」 on a sealed mail: the key (memory, Face ID, else .unlocking), then body_envelope read
+    /// and opened; the kid differing goes through UnlockModel.recipient(forKid:).
+    func openSealed(emailID: String) async {
+        guard let unlock, let mailKeys, let stamp = unlock.store.stamp() else { return }
+        unlock.store.hold(self)
+        // [B1-2] Opened, or being opened in this period of the key: nothing more is started.
+        switch sealedState(emailID: emailID) {
+        case .opened, .opening: return
+        default: break
+        }
+        setSealed(emailID, .opening, stamp)
+        guard let key = await unlock.key() else {
+            setSealed(emailID, .unlocking, stamp)
+            return
+        }
+        // Read only now, and only this mail's envelope.
+        let read = await mailKeys.envelope(emailID: emailID)
+        guard unlock.store.isCurrent(stamp) else { return }
+        guard case let .loaded(data?) = read, let kid = Envelope.kidOf(jsonData: data) else {
+            setSealed(emailID, .failed, stamp)
+            return
+        }
+        var recipient = key
+        if kid != key.keyID {
+            switch await unlock.recipient(forKid: kid) {
+            case let .key(other): recipient = other
+            case .needsPassphrase:
+                setSealed(emailID, .unlocking, stamp)
+                return
+            case .readFailed:
+                setSealed(emailID, .readFailed, stamp)
+                return
+            case .oldKey:
+                setSealed(emailID, .oldKey, stamp)
+                return
+            }
+            guard unlock.store.isCurrent(stamp) else { return }
+        }
+        let opened = await Self.open(recipient, emailID: emailID, envelopeJSON: data)
+        // The background, a sign-out or another account meanwhile: nothing is shown or kept (CX2).
+        guard unlock.store.isCurrent(stamp) else { return }
+        switch opened {
+        case let .success(mail): setSealed(emailID, .opened(mail), stamp)
+        case .failure(.wrongKey): setSealed(emailID, .oldKey, stamp)
+        case .failure: setSealed(emailID, .failed, stamp)
+        }
+    }
+
+    /// openMail and the text to show, off the main thread (htmlToText may be long).
+    nonisolated private static func open(_ key: OpenedKey, emailID: String, envelopeJSON: Data) async -> Result<OpenedMail, CryptoError> {
+        await Task.detached(priority: .userInitiated) { () -> Result<OpenedMail, CryptoError> in
+            do throws(CryptoError) {
+                let mail = try EnvelopeCrypto.openMail(key.recipient, userID: key.userID, emailID: emailID, envelopeJSON: envelopeJSON)
+                return .success(MailBody.opened(mail))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+    }
+
+    private func setSealed(_ emailID: String, _ state: SealedState, _ stamp: UnlockStamp) {
+        guard unlock?.store.isCurrent(stamp) == true else { return }
+        sealed[emailID] = (state, stamp)
+    }
+
+    /// The passphrase typed in UnlockView for this mail; opens it when the key opened.
+    func submitPassphrase(_ passphrase: String, emailID: String) async {
+        guard let unlock else { return }
+        guard await unlock.submit(password: passphrase) else { return }
+        await openSealed(emailID: emailID)
+    }
+
+    /// scenePhase changed (inactive / background hide the bodies; active shows them).
+    func sceneChanged(_ phase: ScenePhase) {
+        isBodyHidden = phase != .active
+    }
+
+    /// How many opened mails are held in memory (for the tests of dropping them).
+    var heldPlaintextCount: Int {
+        sealed.values.filter { if case .opened = $0.state { return true } else { return false } }.count
+    }
+
+    /// 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads again when it
+    /// moved since this screen's last read.
+    @ObservationIgnored var changes: DataChanges? {
+        didSet { mark = ChangeMark(changes) }
+    }
+    @ObservationIgnored private var mark = ChangeMark(nil)
+
+    /// Shown: reads the first time, and again when DataChanges moved since the last read (and does
+    /// nothing otherwise).
+    func onAppear() async {
+        if parcel == nil || mark.isStale { await load() }
+    }
+
     /// The three reads at once (parcel, items, mails), each kept apart. The mails' text is made off the
     /// main thread. A parcel read that a write overlapped is not shown but read again.
     func load() async {
+        mark.markRead()
         parcelReadNumber += 1
         restReadNumber += 1
         let parcelNumber = parcelReadNumber
@@ -448,8 +613,7 @@ final class ParcelDetailModel {
                 // Math.round: halves go up.
                 return "確信度 \(Int((c * 100 + 0.5).rounded(.down)))%"
             }
-            let text = JSText.trim(email.textBody ?? "")
-            let body = !text.isEmpty ? text : (email.htmlBody.jsTruthy.map(HtmlText.htmlToText) ?? "")
+            let body = MailBody.plainBody(email)
             return TimelineEntry(
                 id: x.id,
                 label: label,
@@ -458,7 +622,9 @@ final class ParcelDetailModel {
                 fromText: from,
                 confidenceText: confidence,
                 body: body,
-                notes: x.notes.jsTruthy
+                notes: x.notes.jsTruthy,
+                mail: MailBody.display(email),
+                emailID: email.id
             )
         }
     }
@@ -504,3 +670,10 @@ extension ParcelDetailModel {
     }
 }
 #endif
+
+/// The detail holds opened mail; OpenKeyStore tells it to drop it (the background, sign-out).
+extension ParcelDetailModel: PlaintextHolder {
+    func dropPlaintext() {
+        sealed = [:]
+    }
+}

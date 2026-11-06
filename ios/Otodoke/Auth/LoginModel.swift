@@ -1,23 +1,16 @@
-// The view model of LoginView: e-mail → 8-digit code, the error texts, the 60-second resend wait,
-// the spinner flag. LaunchOptions reads the DEBUG-only argument that starts at code entry.
+// The view model of LoginView (password-v1): sign in with the password, or make an account; the Web's words
+// for each answer (LoginText); 「確認のメールを送りました。…」 after making an account; after not_confirmed, the
+// confirmation mail again; the rule of a new password on the password as typed; one press at a time; the
+// Turnstile token of each press (taken once, the widget reset after every press, sent without one when none
+// came in time: Supabase decides while its CAPTCHA is off). The password stays in this model's memory only and
+// is cleared after every press that reached Supabase.
 
 import Foundation
 import Observation
 
+/// The launch arguments the login screen reads. None since the code login went; kept so the callers stay put.
 struct LaunchOptions: Equatable, Sendable {
-    /// Set only in DEBUG builds, from the launch argument (the e-mail that follows it).
-    var startAtCodeEntryEmail: String?
-
-    init(arguments: [String]) {
-        startAtCodeEntryEmail = nil
-        #if DEBUG
-        // UI tests start at code entry with a code made on the server, so no login mail is sent.
-        if let i = arguments.firstIndex(of: "-otodoke-start-at-code"), arguments.indices.contains(i + 1) {
-            let address = AuthService.normalizeEmail(arguments[i + 1])
-            startAtCodeEntryEmail = address.isEmpty ? nil : address
-        }
-        #endif
-    }
+    init(arguments: [String]) {}
 
     static var current: LaunchOptions { LaunchOptions(arguments: ProcessInfo.processInfo.arguments) }
 }
@@ -25,115 +18,175 @@ struct LaunchOptions: Equatable, Sendable {
 @MainActor
 @Observable
 final class LoginModel {
-    enum Step: Equatable, Sendable {
-        case email
-        case code(email: String)
+    /// The form shown: sign in with the password, or make an account.
+    enum Mode: Equatable, Sendable {
+        case signIn
+        case signUp
     }
 
-    /// Supabase's max_frequency for the login mail.
-    static let resendInterval: TimeInterval = 60
-    static let codeLength = 8
-
-    var step: Step = .email
-    var email = ""
-    var code = ""
+    var mode: Mode = .signIn
+    /// N6: an address changed after not_confirmed drops the resend offer (it was for the address before).
+    var email = "" {
+        didSet {
+            guard canResendConfirmation, PasswordV1.emailNorm(email) != unconfirmedAddress else { return }
+            canResendConfirmation = false
+            unconfirmedAddress = nil
+        }
+    }
+    /// Only in this model's memory; cleared after every press, and when the form changes.
+    var password = ""
+    /// The sign-up form's second field.
+    var passwordAgain = ""
     private(set) var isWorking = false
     private(set) var errorMessage: String?
+    /// 「確認のメールを送りました。…」 (not an error).
+    private(set) var notice: String?
+    /// true after a not_confirmed sign-in: the confirmation mail can be sent again.
+    private(set) var canResendConfirmation = false
 
     let auth: AuthService
-    @ObservationIgnored private let now: @Sendable () -> Date
-    private var lastSentAt: Date?
-    /// The address the last code went to (normalized).
-    private var lastSentTo: String?
+    /// The Turnstile token of this screen (taken at each press, then reset), and how long a press waits for it
+    /// (Turnstile.waitForToken; tests pass a short one). nil: no widget (a press sends at once, without a token).
+    /// LoginView always has one.
+    private(set) var turnstile: TurnstileToken?
+    @ObservationIgnored let tokenWait: Duration
+    /// The address the last not_confirmed sign-in was for (email_norm).
+    @ObservationIgnored private var unconfirmedAddress: String?
 
-    init(auth: AuthService, launch: LaunchOptions = .current, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        auth: AuthService,
+        launch: LaunchOptions = .current,
+        now: @escaping @Sendable () -> Date = { Date() },
+        turnstile: TurnstileToken? = nil,
+        tokenWait: Duration = Turnstile.waitForToken
+    ) {
         self.auth = auth
-        self.now = now
-        if let address = launch.startAtCodeEntryEmail {
-            email = address
-            step = .code(email: address)
-        }
+        self.turnstile = turnstile
+        self.tokenWait = tokenWait
     }
 
-    /// True when `code` is exactly 8 ASCII digits.
-    var canVerify: Bool {
-        code.utf8.count == Self.codeLength && code.utf8.allSatisfy { (0x30...0x39).contains($0) }
+    /// https://otodoke.app/login/forgot, opened in Safari.
+    var forgotPasswordURL: URL { LoginText.forgotPasswordURL }
+
+    /// Switches the form: the error, the notice, both password fields and the resend offer are cleared, the
+    /// address is kept, the widget is reset.
+    func setMode(_ mode: Mode) {
+        guard !isWorking else { return }
+        self.mode = mode
+        password = ""
+        passwordAgain = ""
+        errorMessage = nil
+        notice = nil
+        canResendConfirmation = false
+        unconfirmedAddress = nil
+        turnstile?.reset()
     }
 
-    /// Whole seconds left before the code may be sent again (rounded up); 0 when it may.
-    func resendWaitSeconds() -> Int {
-        guard let lastSentAt else { return 0 }
-        let left = Self.resendInterval - now().timeIntervalSince(lastSentAt)
-        return left > 0 ? Int(left.rounded(.up)) : 0
+    /// The new password's problem on the sign-up form (PasswordRule on the password as typed); nil on the
+    /// sign-in form and while the password is empty.
+    var passwordProblem: String? {
+        guard mode == .signUp, !password.isEmpty else { return nil }
+        return PasswordRule.problem(password: password, again: passwordAgain)
     }
 
-    /// Sends the code. Back on the address field with the same address before the 60 seconds are
-    /// over, nothing is sent: the code already sent is asked for again (Supabase would refuse anyway).
-    func sendCode() async {
-        let address = AuthService.normalizeEmail(email)
-        if address == lastSentTo, resendWaitSeconds() > 0 {
-            guard !isWorking else { return }
-            errorMessage = nil
-            code = ""
-            step = .code(email: address)
+    /// The button can be pressed: an address and a password (and on the sign-up form, no passwordProblem).
+    var canSubmit: Bool {
+        guard !isWorking, !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !password.isEmpty else { return false }
+        return mode == .signIn || passwordProblem == nil
+    }
+
+    /// Signs in or makes the account, one press at a time, with the Turnstile token of this press.
+    func submit() async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        errorMessage = nil
+        notice = nil
+        let mode = self.mode
+        let address = PasswordV1.emailNorm(email)
+        guard AuthService.isValidEmail(address) else {
+            errorMessage = LoginText.invalidEmail
             return
         }
-        await send(to: email)
+        if mode == .signUp {
+            guard AuthService.isASCIIAddress(address) else {
+                errorMessage = LoginText.emailNotAscii
+                return
+            }
+            if let problem = PasswordRule.problem(password: password, again: passwordAgain) {
+                errorMessage = problem
+                return
+            }
+        }
+        let typed = password
+        let captchaToken = await takeToken()
+        password = ""
+        passwordAgain = ""
+        do {
+            switch mode {
+            case .signIn:
+                try await auth.signIn(email: address, password: typed, captchaToken: captchaToken)
+                canResendConfirmation = false
+                unconfirmedAddress = nil
+            case .signUp:
+                try await auth.signUp(email: address, password: typed, captchaToken: captchaToken)
+                notice = LoginText.signupExistsOrSent
+            }
+        } catch {
+            errorMessage = error.message
+            if mode == .signIn, error == .notConfirmed {
+                canResendConfirmation = true
+                unconfirmedAddress = address
+            }
+        }
+        turnstile?.reset()
     }
 
-    func verify() async {
-        guard case let .code(address) = step, canVerify, !isWorking else { return }
+    /// After not_confirmed: the confirmation mail again (the same answer for every address).
+    func resendConfirmation() async {
+        guard canResendConfirmation, let address = unconfirmedAddress, !isWorking else { return }
         isWorking = true
-        errorMessage = nil
         defer { isWorking = false }
+        errorMessage = nil
+        notice = nil
+        let captchaToken = await takeToken()
         do {
-            try await auth.verifyCode(email: address, code: code)
+            try await auth.resendConfirmation(email: address, captchaToken: captchaToken)
+            notice = LoginText.confirmationSent
         } catch {
             errorMessage = error.message
         }
+        turnstile?.reset()
     }
 
-    /// Sends the code again to the same address, only once the wait is over.
-    func resend() async {
-        guard case let .code(address) = step, resendWaitSeconds() == 0 else { return }
-        await send(to: address)
-    }
-
-    /// Back to the address field (a typo in the address).
-    func changeAddress() {
-        guard !isWorking else { return }
-        step = .email
-        code = ""
-        errorMessage = nil
-    }
-
-    private func send(to raw: String) async {
-        guard !isWorking else { return }
-        isWorking = true
-        errorMessage = nil
-        defer { isWorking = false }
-        do {
-            try await auth.sendCode(email: raw)
-            lastSentAt = now()
-            lastSentTo = AuthService.normalizeEmail(raw)
-            code = ""
-            step = .code(email: AuthService.normalizeEmail(raw))
-        } catch {
-            errorMessage = error.message
+    /// The token of this press: waits for one (at most `tokenWait`) unless the widget could not load, then takes
+    /// it (each token is sent once). nil without a widget.
+    private func takeToken() async -> String? {
+        guard let turnstile else { return nil }
+        if !turnstile.isSettled {
+            _ = await turnstile.waitUntilSettled(timeout: tokenWait)
         }
+        return turnstile.take()
     }
 }
 
 #if DEBUG
 extension LoginModel {
-    /// DEBUG only: a given step, for checking the screen on the simulator (nothing is sent).
-    func debugShow(step: Step, email: String, code: String = "", sentSecondsAgo: TimeInterval? = nil, error: String? = nil) {
-        self.step = step
+    /// DEBUG only: the screen check's model gets a widget too (nothing it sends reaches a server).
+    func debugUseTurnstile() {
+        if turnstile == nil { turnstile = TurnstileToken() }
+    }
+
+    /// DEBUG only: a given state, for checking the screen on the simulator (nothing is sent).
+    func debugShow(mode: Mode, email: String, password: String = "", again: String = "", error: String? = nil, notice: String? = nil, canResend: Bool = false) {
+        self.mode = mode
         self.email = email
-        self.code = code
-        lastSentAt = sentSecondsAgo.map { now().addingTimeInterval(-$0) }
-        lastSentTo = sentSecondsAgo == nil ? nil : AuthService.normalizeEmail(email)
+        self.password = password
+        passwordAgain = again
         errorMessage = error
+        self.notice = notice
+        canResendConfirmation = canResend
+        unconfirmedAddress = canResend ? PasswordV1.emailNorm(email) : nil
     }
 }
 #endif

@@ -2,62 +2,6 @@ import Foundation
 import Testing
 @testable import Otodoke
 
-/// [Fix N7] Back on the address field, the same address still waits out the 60 seconds.
-@Suite("LoginModel resend wait (fix N7)")
-@MainActor
-struct LoginResendWaitTests {
-    private let start = Date(timeIntervalSince1970: 1_793_000_000)
-
-    private func make(_ fake: FakeSupabase, clock: TestClock) -> LoginModel {
-        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()))
-        return LoginModel(auth: auth, launch: LaunchOptions(arguments: ["Otodoke"]), now: clock.function)
-    }
-
-    @Test func theSameAddressAgainWithinSixtySecondsSendsNothing() async {
-        let fake = FakeSupabase.make()
-        let clock = TestClock(start)
-        let model = make(fake, clock: clock)
-        model.email = "qa@example.com"
-        await model.sendCode()
-        model.changeAddress()
-        #expect(model.step == .email)
-        clock.advance(seconds: 20)
-        model.email = " QA@example.com "
-        await model.sendCode()
-        #expect(await fake.count("POST", "otp") == 1)
-        // Back to the code already sent, with the wait still running.
-        #expect(model.step == .code(email: "qa@example.com"))
-        #expect(model.resendWaitSeconds() == 40)
-        #expect(model.errorMessage == nil)
-    }
-
-    @Test func theSameAddressAfterSixtySecondsSends() async {
-        let fake = FakeSupabase.make()
-        let clock = TestClock(start)
-        let model = make(fake, clock: clock)
-        model.email = "qa@example.com"
-        await model.sendCode()
-        model.changeAddress()
-        clock.advance(seconds: 60)
-        await model.sendCode()
-        #expect(await fake.count("POST", "otp") == 2)
-    }
-
-    @Test func anotherAddressSendsAtOnce() async {
-        let fake = FakeSupabase.make()
-        let clock = TestClock(start)
-        let model = make(fake, clock: clock)
-        model.email = "qa@example.com"
-        await model.sendCode()
-        model.changeAddress()
-        clock.advance(seconds: 5)
-        model.email = "qa2@example.com"
-        await model.sendCode()
-        #expect(await fake.count("POST", "otp") == 2)
-        #expect(model.step == .code(email: "qa2@example.com"))
-    }
-}
-
 /// [Fix N6] The status pills keep the Web's colours in light mode and read well in dark mode.
 @Suite("Badge colours (fix N6)")
 @MainActor

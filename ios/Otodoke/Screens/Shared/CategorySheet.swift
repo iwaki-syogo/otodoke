@@ -44,7 +44,7 @@ struct CategoryChip: View {
         .buttonStyle(.plain)
         // Not reopened while a choice is being saved.
         .disabled(isSaving)
-        .accessibilityLabel("分類: \(ParcelCategory.label(for: shown?.rawValue))（変える）")
+        .accessibilityLabel("分類を変える: \(ParcelCategory.label(for: shown?.rawValue))")
         .sheet(isPresented: $isOpen) {
             CategorySheet(current: current, picked: picked, isSaving: isSaving, error: error) { category in
                 picked = category

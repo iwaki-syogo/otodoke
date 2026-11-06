@@ -151,13 +151,13 @@ describe("the matcher", () => {
   const runs = (url: string) => unstable_doesMiddlewareMatch({ config, url });
 
   it("runs the proxy for pages, auth and other API routes", () => {
-    for (const url of ["/", "/app", "/app/calendar?m=2026-11", "/login", "/auth/confirm", "/auth/continue", "/auth/turnstile-app", "/api/other"]) {
+    for (const url of ["/", "/app", "/app/calendar?m=2026-11", "/login", "/auth/confirm", "/auth/continue", "/auth/turnstile-app", "/api/other", "/app/settings"]) {
       expect(runs(url), url).toBe(true);
     }
   });
 
   it("skips static files and the inbound webhook, which then stay on any host (nothing breaks: pages are sent on)", () => {
-    for (const url of ["/_next/static/chunks/main.js", "/_next/image?url=%2Fa.png&w=64&q=75", "/favicon.ico", "/icon.svg", "/apple-icon.png", "/robots.txt", "/sitemap.xml", "/api/inbound"]) {
+    for (const url of ["/_next/static/chunks/main.js", "/_next/image?url=%2Fa.png&w=64&q=75", "/favicon.ico", "/icon.svg", "/apple-icon.png", "/robots.txt", "/sitemap.xml", "/guide/videos/x.mp4", "/api/inbound"]) {
       expect(runs(url), url).toBe(false);
     }
   });

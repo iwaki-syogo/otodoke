@@ -134,23 +134,27 @@ private struct SessionStorageBridge: AuthLocalStorage {
 final class SupabaseProvider: Sendable {
     let config: AppConfig
     let storage: any SessionStorage
-    /// GoTrue (implicit flow: a login link opened in any browser works, the 8-digit code is unaffected).
+    /// GoTrue (implicit flow: a confirmation link opened in any browser works).
     let auth: AuthClient
     /// PostgREST, always with the signed-in user's JWT (never the anon key alone). No automatic
     /// retries: a failed read shows 「読み込めませんでした」 and a write is never sent twice.
     let database: PostgrestClient
 
     /// A login request that got no answer, or a server error, on a call that must not be sent twice
-    /// (sending the code, verifying it, signing out). supabase-swift retries POST requests on
+    /// (making an account, the password sign-in, the confirmation mail again, signing out). supabase-swift retries POST requests on
     /// URLErrors and 5xx; this error type is not retried, so one press is one mail.
     enum NoRetry: Error, Equatable, Sendable {
         case noAnswer(URLError.Code)
         case server(status: Int)
     }
 
+    /// The session every request of this provider goes through (also the Web's key endpoints, KeyAPIClient).
+    let urlSession: URLSession
+
     init(config: AppConfig, urlSession: URLSession = .shared, storage: any SessionStorage) {
         self.config = config
         self.storage = storage
+        self.urlSession = urlSession
         let auth = AuthClient(
             url: config.supabaseURL.appending(path: "auth/v1"),
             headers: ["apikey": config.anonKey],
@@ -177,9 +181,21 @@ final class SupabaseProvider: Sendable {
         ))
     }
 
-    /// The app's provider: URLSession.shared and the Keychain.
+    /// iOS-10: the session the app's provider uses for PostgREST and Auth. Mail bodies come back in its
+    /// answers, so nothing of them may stay in a disk cache: ephemeral (memory only), with no cache at
+    /// all on top. Made once, so every provider shares one connection pool.
+    static func liveURLSession() -> URLSession { liveSession }
+
+    private static let liveSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration)
+    }()
+
+    /// The app's provider: the session without a disk cache and the Keychain.
     static func live(config: AppConfig) -> SupabaseProvider {
-        SupabaseProvider(config: config, storage: KeychainSessionStorage())
+        SupabaseProvider(config: config, urlSession: liveURLSession(), storage: KeychainSessionStorage())
     }
 
     /// The signed-in user's id (lowercase UUID text), or nil when signed out.
@@ -198,10 +214,11 @@ final class SupabaseProvider: Sendable {
         return "sb-\(ref)-auth-token"
     }
 
-    /// Token refreshes keep supabase-swift's retries; other POSTs (code, verify, logout) are sent once.
+    /// Token refreshes keep supabase-swift's retries; other POSTs (sign-up, the password sign-in, resend, logout)
+    /// are sent once.
     private static func authFetch(_ urlSession: URLSession) -> AuthClient.FetchHandler {
         { request in
-            let once = request.httpMethod == "POST" && request.url?.lastPathComponent != "token"
+            let once = request.httpMethod == "POST" && !isRefresh(request)
             let answer: (Data, URLResponse)
             do {
                 answer = try await urlSession.data(for: request)
@@ -213,5 +230,12 @@ final class SupabaseProvider: Sendable {
             }
             return answer
         }
+    }
+
+    /// POST /token?grant_type=refresh_token.
+    private static func isRefresh(_ request: URLRequest) -> Bool {
+        guard let url = request.url, url.lastPathComponent == "token" else { return false }
+        let grant = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "grant_type" }?.value
+        return grant == "refresh_token"
     }
 }

@@ -110,6 +110,12 @@ export function axisTicks(max: number): number[] {
   return ticks;
 }
 
+/** "5万" / "8,000": short ticks for the y axis. */
+export function tickLabel(v: number): string {
+  if (v >= 10_000) return `${(v / 10_000).toLocaleString("ja-JP", { maximumFractionDigits: 1 })}万`;
+  return v.toLocaleString("ja-JP");
+}
+
 type SlicedParcel = SpendParcel & { shop: string; shop_key: string | null };
 
 /**

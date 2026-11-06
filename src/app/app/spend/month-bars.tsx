@@ -1,6 +1,6 @@
 import { CATEGORIES, categoryColor, categoryLabel, type Category } from "@/lib/category";
 import { yen } from "@/lib/format";
-import { axisTicks, type spendByMonth } from "@/lib/spend";
+import { axisTicks, tickLabel, type spendByMonth } from "@/lib/spend";
 import { FilterLink } from "./filter-link";
 
 type Month = ReturnType<typeof spendByMonth>[number];
@@ -8,12 +8,6 @@ type Month = ReturnType<typeof spendByMonth>[number];
 const PLOT = 160; // px, the bars' area; month labels sit below it
 const BAR = 20; // px, under the 24px cap
 const SLOT = 32; // px, each bar's tap target
-
-/** "5万" / "8,000": short ticks for the y axis. */
-function tickLabel(v: number): string {
-  if (v >= 10_000) return `${(v / 10_000).toLocaleString("ja-JP", { maximumFractionDigits: 1 })}万`;
-  return v.toLocaleString("ja-JP");
-}
 
 /**
  * Spending per order month as stacked columns, one colour per category in a fixed order.

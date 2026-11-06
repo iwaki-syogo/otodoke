@@ -442,7 +442,10 @@ struct ParcelCardContentTests {
         #expect(c.shop == "テスト店")
         #expect(c.statusLabel == "不在・再配達")
         #expect(c.needsReview == true)
-        #expect(c.presenceBadge == "🤝 対面受け取り")
+        // Batch 2, task 27 (Web 5b032f2, in 2541793): nothing stored is face-to-face only by the default,
+        // worded 念のため対面; a stated one keeps 対面受け取り.
+        #expect(c.presenceBadge == "🤝 念のため対面")
+        #expect(try card(["requires_presence": true]).presenceBadge == "🤝 対面受け取り")
         #expect(try card(["requires_presence": false]).presenceBadge == "置き配・投函OK")
         #expect(try card(["shop_key": "amazon"]).presenceBadge == nil)
     }

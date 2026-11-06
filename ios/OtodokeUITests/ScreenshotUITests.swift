@@ -41,7 +41,7 @@ final class ScreenshotUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 5))
         try shoot("detail-nav")
 
-        let chip = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "分類:")).firstMatch
+        let chip = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "分類を変える")).firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         chip.tap()
         XCTAssertTrue(app.buttons["閉じる"].waitForExistence(timeout: 5))
@@ -75,10 +75,33 @@ final class ScreenshotUITests: XCTestCase {
         try shoot("checking-toast-note")
     }
 
+    /// The first screen, and the form each of its two buttons opens, in light and dark.
+    func testTheWelcomeScreen() throws {
+        for style in ["Light", "Dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-otodoke-ui-preview", "welcome", "-AppleInterfaceStyle", style]
+            app.launch()
+            XCTAssertTrue(app.buttons["welcome.signUp"].waitForExistence(timeout: 10), style)
+            XCTAssertTrue(app.buttons["welcome.signIn"].exists, style)
+            try shoot("welcome-\(style)")
+            app.buttons["welcome.signUp"].tap()
+            XCTAssertTrue(app.secureTextFields["パスワード（もう一度）"].waitForExistence(timeout: 10), style)
+            try shoot("welcome-signup-\(style)")
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.buttons["welcome.signIn"].waitForExistence(timeout: 10), "back to the first screen")
+            app.buttons["welcome.signIn"].tap()
+            XCTAssertTrue(app.secureTextFields["パスワード"].waitForExistence(timeout: 10), style)
+            XCTAssertFalse(app.secureTextFields["パスワード（もう一度）"].exists)
+            try shoot("welcome-signin-\(style)")
+            app.terminate()
+        }
+    }
+
     func testTheLoginScreens() throws {
-        for scenario in ["login", "login-code", "login-error"] {
+        for scenario in ["login", "login-signup", "login-error", "login-sent"] {
             let app = launch(scenario)
-            XCTAssertTrue(app.staticTexts["ログイン"].waitForExistence(timeout: 10), scenario)
+            let title = scenario == "login-signup" || scenario == "login-sent" ? "アカウントを作る" : "ログイン"
+            XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 10), scenario)
             try shoot(scenario)
             app.terminate()
         }

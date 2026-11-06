@@ -108,14 +108,20 @@ struct EmailSummary: Decodable, Equatable, Sendable {
     var classification: String?
     var textBody: String?
     var htmlBody: String?
+    /// emails.body_state ("plain" / "sealed" / "dropped", any other value kept as it came; null is plain)
+    /// and emails.from_domain. A sealed or dropped mail has subject, from_*, text_body and html_body null.
+    var bodyState: String? = nil
+    var fromDomain: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
         case subject
         case fromAddress = "from_address"
         case fromName = "from_name"
+        case fromDomain = "from_domain"
         case sentAt = "sent_at"
         case classification
+        case bodyState = "body_state"
         case textBody = "text_body"
         case htmlBody = "html_body"
     }

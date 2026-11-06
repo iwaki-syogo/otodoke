@@ -27,6 +27,8 @@ struct ParcelListView<Detail: View>: View {
     @State private var showsRest = false
     @State private var confirmingDeliverAll = false
     @Environment(\.openURL) private var openURL
+    /// The delivered and cancelled pages (MainTabView hands them down).
+    @Environment(\.statusPages) private var pages
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -42,14 +44,22 @@ struct ParcelListView<Detail: View>: View {
                 .navigationDestination(for: ParcelRoute.self) { route in
                     switch route {
                     case let .parcel(id): detail(id)
-                    case .delivered: PlaceholderScreen(title: "届いた荷物")
-                    case .cancelled: PlaceholderScreen(title: "キャンセルした荷物")
+                    case .delivered:
+                        if let pages {
+                            StatusPage(pages.delivered, .delivered, pages.refresher, in: .parcels, refresh: { await $0.sceneBecameActive() }) { model in
+                                DeliveredView(model: model, detail: detail)
+                            }
+                        }
+                    case .cancelled:
+                        if let pages {
+                            StatusPage(pages.cancelled, .cancelled, pages.refresher, in: .parcels, refresh: { await $0.sceneBecameActive() }) { model in
+                                CancelledView(model: model, detail: detail)
+                            }
+                        }
                     }
                 }
         }
-        .task {
-            if model.loadState == .idle { await model.load() }
-        }
+        .task { await model.onAppear() }
     }
 
     @ViewBuilder
@@ -104,7 +114,7 @@ struct ParcelListView<Detail: View>: View {
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
-        .refreshable { await model.load() }
+        .refreshableToTheEnd { await model.load() }
         .overlay(alignment: .bottom) { toast }
         .animation(.default, value: model.rows)
     }
