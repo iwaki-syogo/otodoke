@@ -11,7 +11,7 @@
 --   callers_refused         anon and authenticated cannot call the purge
 --   rescued_with_subject    must be 0 (the one-off change cleared them)
 --   shared_marks            must be 0 (the one-off change cleared them)
---   shared_rule             is_shared_mail_domain: gmail.com and a provider's subdomain yes, a shop's
+--   shared_rule             is_shared_mail_domain: gmail.com, duck.com and a provider's subdomain yes, a shop's
 --                           subdomain of a free-mail provider and a look-alike no
 --   behaviour               'OK': a 15-day-old unmarked row and a 15-day-old mark on gmail.com went, a
 --                           15-day-old marked row and a 13-day-old unmarked row stayed ('skipped: ...'
@@ -67,6 +67,7 @@ with checks as (
     (select count(*) from public.screen_events where decision is distinct from 'dropped' and subject is not null) as rescued_with_subject,
     (select count(*) from public.screen_events where flagged_at is not null and public.is_shared_mail_domain(from_domain)) as shared_marks,
     public.is_shared_mail_domain('gmail.com') and public.is_shared_mail_domain('sea.plala.or.jp') and public.is_shared_mail_domain(' GMail.com. ')
+      and public.is_shared_mail_domain('duck.com')
       and not public.is_shared_mail_domain('mail.yahoo.co.jp') and not public.is_shared_mail_domain('shop.example.test')
       and not public.is_shared_mail_domain('notplala.or.jp') and not public.is_shared_mail_domain(null) as shared_rule,
     coalesce(current_setting('otodoke.verify_purge', true), 'FAILED: the behaviour block did not run') as behaviour,
