@@ -139,6 +139,8 @@ describe("/privacy: what it says", () => {
     const record = said["メールの送信とログインを試した記録"];
     expect(record).toContain("ハッシュ値に変えて");
     expect(record).toContain("ログインを試したときも、続けて試されるのを防ぐため、メールアドレスと接続元の IP アドレスのハッシュ値と日時を記録します。");
+    // The mail's links (/auth/confirm, claimLoginLink): the IP only, as a hash.
+    expect(record).toContain("確認や再設定のリンクを使ったときも、混み合うのを防ぐため、接続元の IP アドレスのハッシュ値と日時を記録します。");
     expect(record).toContain("どちらのアドレスも、そのままでは記録しません");
     expect(record).toContain("1 時間を過ぎた記録は、次に記録するときに消します。");
     expect(record).not.toContain("次に送るとき");
@@ -303,14 +305,15 @@ describe("/privacy: what it says matches the code it describes", () => {
   });
 
   it("「ログインを試したときも…記録します」: every sign-in is claimed in login_mail_sends like a mail, with hashes only", async () => {
-    const { claimLoginAttempt, claimLoginMail, claimLoginTry } = await import("@/lib/login-mail-limit");
+    const { claimLoginAttempt, claimLoginLink, claimLoginMail, claimLoginTry } = await import("@/lib/login-mail-limit");
     probe.rpc.mockReset();
     probe.rpc.mockResolvedValue({ data: [{ verdict: "ok", claim_id: 1 }], error: null });
     await claimLoginTry("203.0.113.7");
     await claimLoginAttempt("someone@example.com", "203.0.113.7");
     await claimLoginMail("someone@example.com", "203.0.113.7");
-    // One database function for all three: the one that writes login_mail_sends.
-    expect(probe.rpc.mock.calls.map(([fn]) => fn)).toEqual(["claim_login_mail", "claim_login_mail", "claim_login_mail"]);
+    await claimLoginLink("203.0.113.7");
+    // One database function for all four: the one that writes login_mail_sends.
+    expect(probe.rpc.mock.calls.map(([fn]) => fn)).toEqual(["claim_login_mail", "claim_login_mail", "claim_login_mail", "claim_login_mail"]);
     for (const [, args] of probe.rpc.mock.calls as Array<[string, Record<string, unknown>]>) {
       expect(args.p_email_hash).toMatch(/^[0-9a-f]{64}$/);
       expect(args.p_ip_hash === null || /^[0-9a-f]{64}$/.test(String(args.p_ip_hash))).toBe(true);
@@ -323,6 +326,11 @@ describe("/privacy: what it says matches the code it describes", () => {
     // The login steps claim before they ask Supabase (login-auth.ts claimSignIn, for signIn and changeSecret).
     const auth = withoutComments(readFileSync(path.join(process.cwd(), "src/lib/login-auth.ts"), "utf8"));
     for (const claim of ["await claimLoginTry(", "await claimLoginAttempt(", "await claimSignIn(email)"]) expect(auth, claim).toContain(claim);
+    // A link check is claimed by IP only (no address), before /auth/confirm calls verify().
+    expect((probe.rpc.mock.calls[3] as [string, Record<string, unknown>])[1].p_ip_hash).toBeNull();
+    const confirm = withoutComments(readFileSync(path.join(process.cwd(), "src/app/auth/confirm/route.ts"), "utf8"));
+    expect(confirm).toContain("await claimLoginLink(clientIp(request.headers))");
+    expect(confirm.indexOf("await claimLoginLink(")).toBeLessThan(confirm.indexOf("return verify()"));
 
     // claim_login_mail removes the rows older than an hour before it records a new one.
     const sql = readFileSync(path.join(process.cwd(), "supabase/migrations/20261106100000_login_mail_limit.sql"), "utf8").replace(/--.*$/gm, "");

@@ -31,9 +31,10 @@ import { createClient, getUser } from "@/lib/supabase/server";
  * keys and public data: there is no parameter for a secret, and the schemas in
  * src/lib/mail-keys.ts refuse unknown fields.
  *
- * Making, putting in use and rewrapping a key also need a session that signed in, or came from a
- * reset link, in the last 15 minutes (src/lib/auth-session.ts): an older one gets
- * { ok: false, error: KEY_SESSION_STALE }, and the screen asks to log in again. The reads do not.
+ * Putting a key in use and rewrapping it need a sign-in with the password in the last 15 minutes;
+ * registering one takes a reset link's session of the last 15 minutes too, for /reset-password,
+ * whose key finishReset puts in use (src/lib/auth-session.ts, review R3-PW-2). Any other session
+ * gets { ok: false, error: KEY_SESSION_STALE }, and the screen asks to log in again. The reads do not.
  *
  * The browser has no Supabase client (src/lib/__tests__/no-browser-supabase.test.ts): it reads its
  * wrapped keys and sealed mail here. The reads use the user's own session, so RLS applies as well
@@ -50,14 +51,15 @@ function refusal(check: Extract<FreshCheck, { ok: false }>): { ok: false; error:
   return signedOut;
 }
 
+/** A new key, waiting: it seals nothing until it is put in use (activateMailKey, or finishReset). */
 export async function registerMailKey(input: KeyRegistration): Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>> {
-  const check = await freshCookieSession("key");
+  const check = await freshCookieSession("login_or_reset");
   if (!check.ok) return refusal(check);
   return registerKey(createAdminClient(), check.session.userId, input);
 }
 
 export async function activateMailKey(input: KeyActivation): Promise<KeyResult<{ keyId: string }>> {
-  const check = await freshCookieSession("key");
+  const check = await freshCookieSession("login");
   if (!check.ok) return refusal(check);
   const result = await activateKey(createAdminClient(), check.session.userId, input);
   revalidatePath("/app", "layout");
@@ -65,7 +67,7 @@ export async function activateMailKey(input: KeyActivation): Promise<KeyResult<{
 }
 
 export async function rewrapMailKey(input: KeyRewrap): Promise<KeyResult<{ keyId: string }>> {
-  const check = await freshCookieSession("key");
+  const check = await freshCookieSession("login");
   if (!check.ok) return refusal(check);
   return rewrapKey(createAdminClient(), check.session.userId, input);
 }

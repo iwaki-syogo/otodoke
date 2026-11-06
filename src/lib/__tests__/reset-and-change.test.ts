@@ -55,9 +55,11 @@ const { changeSecret } = await import("@/lib/login-auth");
 const OLD = "0".repeat(64);
 const NEW = "1".repeat(64);
 const KEY_ID = "a".repeat(32);
-const RESET = { authSecret: NEW, keyId: KEY_ID, challenge: "Y2hhbGxlbmdl", expectedCurrentKeyId: "b".repeat(32) };
-const STORED = { key_id: KEY_ID, public_key: "P".repeat(88), wrapped_private_key: "T0xEV1JBUA==", wrap_iv: "b2xkaXZvbGRpdm9s", kdf_salt: "b2xkc2FsdG9sZHNhbHQxMg==", kdf_iterations: 600_000 };
-const REWRAP = { keyId: KEY_ID, previousWrappedPrivateKey: STORED.wrapped_private_key, wrappedPrivateKey: "TkVXV1JBUA==", wrapIv: "bmV3aXZuZXdpdm5l", kdfSalt: "bmV3c2FsdG5ld3NhbHQxMg==", kdfIterations: 600_000 };
+// Values of the forms the key steps take (mail-keys.ts): a 32-byte answer, wraps of 154 bytes (a
+// P-256 PKCS#8 and its tag), a 12-byte IV ("oldivoldivol"), a 16-byte salt ("oldsaltoldsalt12").
+const RESET = { authSecret: NEW, keyId: KEY_ID, challenge: Buffer.alloc(32, 7).toString("base64"), expectedCurrentKeyId: "b".repeat(32) };
+const STORED = { key_id: KEY_ID, public_key: "P".repeat(88), wrapped_private_key: Buffer.from("OLDWRAP".repeat(22)).toString("base64"), wrap_iv: "b2xkaXZvbGRpdm9s", kdf_salt: "b2xkc2FsdG9sZHNhbHQxMg==", kdf_iterations: 600_000 };
+const REWRAP = { keyId: KEY_ID, previousWrappedPrivateKey: STORED.wrapped_private_key, wrappedPrivateKey: Buffer.from("NEWWRAP".repeat(22)).toString("base64"), wrapIv: "bmV3aXZuZXdpdm5l", kdfSalt: "bmV3c2FsdG5ld3NhbHQxMg==", kdfIterations: 600_000 };
 const CHANGE = { currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: REWRAP };
 
 function session(method: string | null, agoMs = 60_000, email: string | null = "someone@example.com") {

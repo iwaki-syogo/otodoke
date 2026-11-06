@@ -21,9 +21,12 @@ How the client makes the values (email_norm, auth_secret, KEK, the wrap): `docs/
 - **Body**: a JSON object with exactly the fields below. A missing field, another type, or **any extra field**
   is refused (`400 invalid_input`). Body at most 16 KB.
 - **Freshness (decision 10)**: the session must have signed in with the password in the last 15 minutes
-  (the `amr` claim of the token: `{ "method": "password", "timestamp": ... }`). An older session gets
-  `403 stale_session`: sign in with the password again, then repeat the step. Refreshing the token does not
-  help: the time is when the user signed in, kept across refreshes.
+  (the `amr` claim of the token: `{ "method": "password", "timestamp": ... }`), for every endpoint. Only
+  `password` counts. A session from the 8-digit code, a magic link or a reset link gets `403 stale_session`
+  however new it is: Supabase records `otp` for every mail token it verifies, so such a session only shows
+  that someone read the mailbox, and the app does not reset. An older password session gets the same
+  `403 stale_session`. Either way: sign in with the password, then repeat the step. Refreshing the token does
+  not help: the time is when the user signed in, kept across refreshes.
 - **Answer**: JSON, `Cache-Control: no-store`.
   - Success: `200` and `{ "ok": true, ... }`.
   - Failure: `{ "ok": false, "code": "<code>" }` with the status in the table below. The code is fixed; no
@@ -34,8 +37,8 @@ How the client makes the values (email_norm, auth_secret, KEK, the wrap): `docs/
 | Status | `code` | Meaning | What the app does |
 |---|---|---|---|
 | 401 | `unauthorized` | No Bearer token, not a JWT, or Supabase Auth refused it (expired, signed out, forged). | Sign in again. |
-| 403 | `stale_session` | Signed in more than 15 minutes ago. | Sign in with the password again, then repeat. |
-| 400 | `invalid_input` | The body is not JSON, too long, has an unknown or missing field, or a value of the wrong form (base64, lengths, `kdfIterations` < 600000). | A bug in the app: do not repeat as is. |
+| 403 | `stale_session` | Not signed in with the password in the last 15 minutes: longer ago, or with the 8-digit code or a link. | Sign in with the password again, then repeat. |
+| 400 | `invalid_input` | The body is not JSON, too long, has an unknown or missing field, or a value of the wrong form: not standard base64 with padding, bytes of another size than the request says, a `publicKey` that is not an uncompressed point on P-256, `kdfIterations` < 600000. Also a rewrap whose new wrap is the one it replaces, and a key registered already. | A bug in the app: do not repeat as is. |
 | 409 | `key_in_use_changed` | The key in use is not `expectedCurrentKeyId` (another device made or replaced a key meanwhile). Postgres `P0001` of `activate_user_key_checked`. | Read `user_keys` again and start over. Nothing changed. |
 | 409 | `key_not_pending` | No pending key with this `keyId` and challenge (`P0002`): never registered, replaced by a newer registration, or activated already. | Start over from register. |
 | 409 | `key_wrap_changed` | The stored wrap is not the one the app opened (another device changed the password meanwhile). | Read the key again and start over. Nothing changed. |
@@ -53,8 +56,8 @@ Request:
 
 ```json
 {
-  "publicKey": "<base64, the 65-byte uncompressed P-256 point>",
-  "wrappedPrivateKey": "<base64, AES-256-GCM ciphertext || 16-byte tag of the PKCS#8>",
+  "publicKey": "<base64, the 65-byte uncompressed P-256 point: 0x04 || X || Y>",
+  "wrappedPrivateKey": "<base64, AES-256-GCM ciphertext || 16-byte tag of the PKCS#8: 64 to 512 bytes>",
   "wrapIv": "<base64, 12 bytes>",
   "kdfSalt": "<base64, 16 bytes: the HKDF salt of the KEK>",
   "kdfIterations": 600000,
@@ -71,6 +74,11 @@ Answer `200`:
 `challenge` is an envelope v1 (`src/lib/crypto/envelope.ts`) of 32 random bytes, sealed to the new public key
 with the AAD of a challenge (`challengeAad(userId, keyId)`).
 
+- Sending the same body again while the key waits (its answer was lost) is fine: the waiting key is replaced,
+  with a new `challenge`.
+- `400 invalid_input`: also when this key (the same `publicKey`, so the same `keyId`) is in use or retired
+  already. Nothing changed: read `user_keys`.
+
 ## POST /api/keys/activate
 
 Put the pending key in use. Under one lock the server checks the challenge's hash and that the key in use is
@@ -81,6 +89,9 @@ Request:
 ```json
 { "keyId": "<32 hex>", "challenge": "<base64 of the 32 bytes the app opened>", "expectedCurrentKeyId": "<32 hex or null>" }
 ```
+
+A `challenge` that is not 32 bytes is `400 invalid_input`; 32 bytes that are not the ones sealed are
+`422 key_challenge_failed`.
 
 Answer `200`: `{ "ok": true, "keyId": "<32 hex>" }`.
 
@@ -93,8 +104,8 @@ Request:
 ```json
 {
   "keyId": "<32 hex>",
-  "previousWrappedPrivateKey": "<base64: the wrap the app opened with the old KEK>",
-  "wrappedPrivateKey": "<base64: the new wrap>",
+  "previousWrappedPrivateKey": "<base64: the wrap the app opened with the old KEK, as read>",
+  "wrappedPrivateKey": "<base64: the new wrap, 64 to 512 bytes>",
   "wrapIv": "<base64, 12 bytes, new>",
   "kdfSalt": "<base64, 16 bytes, new>",
   "kdfIterations": 600000
@@ -102,6 +113,9 @@ Request:
 ```
 
 Answer `200`: `{ "ok": true, "keyId": "<32 hex>" }`.
+
+- `400 invalid_input`: also when `wrappedPrivateKey` is the same as `previousWrappedPrivateKey` (a new salt and IV
+  always make another one; the restore after it could not tell the two apart). Nothing changed.
 
 ## POST /api/keys/restore
 
