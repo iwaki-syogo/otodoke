@@ -44,7 +44,8 @@ export const LOGIN_MESSAGES = {
   secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。",
   // Supabase refused the new password; the key opens with the old one again.
   secret_change_refused: "パスワードを変えられませんでした。もう一度お試しください。",
-  // The same, but the key could not be put back: it opens with the new password, the login is the old one.
+  // The same, but the wrap could not be put back: the login is the old password, and the key opens
+  // with the new one, or with another tab's password when that tab wrapped it again meanwhile.
   secret_change_refused_key_new: "パスワードを変えられませんでした。もう一度お試しください。",
 
   // The key steps (src/lib/mail-keys.ts).
