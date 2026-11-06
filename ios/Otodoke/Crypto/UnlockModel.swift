@@ -107,7 +107,8 @@ final class UnlockModel {
 
     /// What the unlock offers besides the field (the owner's decision 11/6 23:4x).
     enum Help: Equatable, Sendable {
-        /// 「Web でログイン」: the key does not open with this password.
+        /// 「Web でログイン」: the key step found the key in use wrapped for another password than the one that
+        /// signed in (KeySetupOutcome.needsWebLogin).
         case webLogin
         /// 「ログインし直す」: no key row (the key step did not finish).
         case signInAgain
@@ -230,11 +231,9 @@ final class UnlockModel {
             recipient = try await deriver.open(row, password: password, email: email, userID: stamp.session.userID)
         } catch {
             lastOpenDuration = clock.now - started
-            if error == .wrongPassword {
-                // A typo, or a key wrapped for another password (a change on the Web stopped half-way).
-                return finish(stamp, message: Self.wrongPassphraseText, help: .webLogin)
-            }
-            return finish(stamp, message: Self.failedText)
+            // A typo as far as this field can tell: no help (the Web's login is offered only by the key step,
+            // after a password the server checked).
+            return finish(stamp, message: error == .wrongPassword ? Self.wrongPassphraseText : Self.failedText)
         }
         lastOpenDuration = clock.now - started
 
