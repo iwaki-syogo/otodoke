@@ -1,7 +1,7 @@
 /**
  * Writes ios/OtodokeTests/Fixtures/web-expected.json: hand-written, made-up inputs run through the
- * Web's own TypeScript functions. The iOS differential tests (WebParity1Tests / WebParity2Tests)
- * check the Swift ports against it. No real mail, order number, tracking number or person here.
+ * Web's own TypeScript functions. The iOS differential tests (WebParity1Tests / WebParity2Tests,
+ * and for batch 2 WebParity3Tests / PresenceAssumedTests) check the Swift ports against it. No real mail, order number, tracking number or person here.
  *
  *   npm run ios:fixtures             write the file
  *   npx tsx scripts/ios-fixtures.ts --stdout   print the same text instead
@@ -13,10 +13,43 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "../src/lib/carriers";
 import { CATEGORIES, UNCATEGORIZED_LABEL, categoryColor, categoryLabel, isCategory } from "../src/lib/category";
-import { RELEVANCE_LABEL, STATUS_LABEL, formatDateJa, formatDateTimeJa, formatWindow, relativeDateJa, todayJst, yen } from "../src/lib/format";
-import { faceToFace, isLate, lastExpectedDay, needsCheck, type ParcelRow } from "../src/lib/match";
+import { upcomingByDay } from "../src/lib/calendar";
+import {
+  RELEVANCE_LABEL,
+  STATUS_LABEL,
+  addDays,
+  daysInMonth,
+  formatDateJa,
+  formatDateTimeJa,
+  formatWindow,
+  monthLabel,
+  monthOf,
+  monthParam,
+  relativeDateJa,
+  shiftMonth,
+  splitDate,
+  todayJst,
+  weekdayOf,
+  yen,
+} from "../src/lib/format";
+import { forwardingConfirmUrl, isForwardingConfirmation } from "../src/lib/forwarding";
+import { faceToFace, faceToFaceAssumed, isLate, lastExpectedDay, needsCheck, type ParcelRow } from "../src/lib/match";
+import { MONTH_MIN, monthMax } from "../src/lib/month-url";
 import { parcelSections } from "../src/lib/parcel-sections";
 import { isHttpsUrl } from "../src/lib/safe-url";
+import { NONE, SHOP_LABEL_MAX, categoryParam, firstParam, normalizeShop, shopLabel } from "../src/lib/shop";
+import {
+  axisTicks,
+  categoryOf,
+  sharePercent,
+  spendByCategory,
+  spendByMonth,
+  spendMonthParam,
+  spendSlices,
+  spendTotal,
+  tickLabel,
+  withEmptyMonths,
+} from "../src/lib/spend";
 import { decodeEntities, htmlToText, stripInvisible } from "../src/lib/text/html-to-text";
 import { undeliveredStatus } from "../src/lib/undelivered";
 import { UNREAD_FILTER } from "../src/lib/unread";
@@ -242,6 +275,325 @@ const faceToFaceCases = [
 ].map((p) => ({ parcel: p, out: faceToFace(p) }));
 
 // ---------------------------------------------------------------------------------------------
+// match: faceToFaceAssumed (iOS batch 2, task 27)
+
+const faceToFaceAssumedCases = [
+  parcel(pid(M, 50), { requires_presence: true }),
+  parcel(pid(M, 51), { requires_presence: false }),
+  parcel(pid(M, 52), { requires_presence: null }),
+  parcel(pid(M, 53), { requires_presence: null, shop_key: "amazon" }),
+  parcel(pid(M, 54), { requires_presence: true, shop_key: "amazon" }),
+  parcel(pid(M, 55), { requires_presence: false, shop_key: "amazon" }),
+  parcel(pid(M, 56), { requires_presence: null, shop_key: "example-shop" }),
+  parcel(pid(M, 57), { requires_presence: null, source: "manual" }),
+].map((p) => ({ parcel: p, out: faceToFaceAssumed(p) }));
+
+// ---------------------------------------------------------------------------------------------
+// calendar (rows in the order the calendar page asks for: expected_date ↑, expected_window_start ↑ nulls last)
+
+const C = 4; // id group for the calendar cases
+const calendarNovember = [
+  parcel(pid(C, 1), { title: "先月からの期間", expected_date: "2026-10-28", expected_date_end: "2026-11-06" }),
+  parcel(pid(C, 2), { title: "先月で終わった期間", expected_date: "2026-10-20", expected_date_end: "2026-10-31" }),
+  parcel(pid(C, 3), { title: "過ぎた日", expected_date: "2026-11-02" }),
+  parcel(pid(C, 4), { title: "届いた", status: "delivered", expected_date: "2026-11-05" }),
+  parcel(pid(C, 5), { title: "今日", status: "out_for_delivery", expected_date: "2026-11-04", expected_window_start: "14:00:00", expected_window_end: "16:00:00" }),
+  parcel(pid(C, 6), { title: "今日（時間なし）", expected_date: "2026-11-04" }),
+  parcel(pid(C, 8), { title: "11/10 の 1 つ目", expected_date: "2026-11-10", expected_window_start: "08:00:00", expected_window_end: "12:00:00" }),
+  parcel(pid(C, 7), { title: "キャンセル", status: "cancelled", expected_date: "2026-11-10" }),
+  parcel(pid(C, 9), { title: "11/10 の 2 つ目", status: "ordered", expected_date: "2026-11-10" }),
+  parcel(pid(C, 10), { title: "11/10 の 3 つ目", status: "unknown", expected_date: "2026-11-10" }),
+  parcel(pid(C, 11), { title: "月末", expected_date: "2026-11-30" }),
+  parcel(pid(C, 12), { title: "月末から来月へ", expected_date: "2026-11-29", expected_date_end: "2026-12-03" }),
+  parcel(pid(C, 13), { title: "来月", expected_date: "2026-12-02" }),
+  parcel(pid(C, 14), { title: "日付なし" }),
+].sort((a, b) => ((a.expected_date ?? "9") < (b.expected_date ?? "9") ? -1 : (a.expected_date ?? "9") > (b.expected_date ?? "9") ? 1 : 0));
+
+const calendarDecember = [
+  parcel(pid(C, 20), { title: "12/20 の荷物", expected_date: "2026-12-20" }),
+  parcel(pid(C, 21), { title: "大晦日", expected_date: "2026-12-31" }),
+  parcel(pid(C, 22), { title: "年をまたぐ期間", expected_date: "2026-12-30", expected_date_end: "2027-01-03" }),
+  parcel(pid(C, 23), { title: "元日", expected_date: "2027-01-01" }),
+].sort((a, b) => ((a.expected_date as string) < (b.expected_date as string) ? -1 : 1));
+
+const calendarJanuary = [
+  parcel(pid(C, 30), { title: "年をまたぐ期間", expected_date: "2026-12-30", expected_date_end: "2027-01-03" }),
+  parcel(pid(C, 31), { title: "元日", expected_date: "2027-01-01" }),
+  parcel(pid(C, 32), { title: "1/15", expected_date: "2027-01-15", status: "ordered" }),
+  parcel(pid(C, 33), { title: "1/31", expected_date: "2027-01-31" }),
+];
+
+const upcomingInputs: Array<{ today: string; first: string; last: string; parcels: ParcelRow[] }> = [
+  { today: "2026-11-04", first: "2026-11-01", last: "2026-11-30", parcels: calendarNovember },
+  // A month ahead: the window from last month is listed on the month's first day.
+  { today: "2026-11-04", first: "2026-12-01", last: "2026-12-31", parcels: calendarNovember },
+  // A month already past: nothing before today is listed.
+  { today: "2026-11-04", first: "2026-10-01", last: "2026-10-31", parcels: calendarNovember },
+  { today: "2026-12-31", first: "2026-12-01", last: "2026-12-31", parcels: calendarDecember },
+  { today: "2026-12-31", first: "2027-01-01", last: "2027-01-31", parcels: calendarJanuary },
+  { today: "2027-01-02", first: "2027-01-01", last: "2027-01-31", parcels: calendarJanuary },
+  { today: "2026-11-04", first: "2026-11-01", last: "2026-11-30", parcels: [] },
+];
+const upcomingByDayCases = upcomingInputs.map((c) => ({
+  ...c,
+  out: Object.fromEntries([...upcomingByDay(c.parcels, c.today, c.first, c.last)].map(([day, ps]) => [day, ps.map((p) => p.id)])),
+}));
+
+// ---------------------------------------------------------------------------------------------
+// spend
+
+const spendMonthParamCases = [
+  { m: "2026-05", today: "2026-11-06" },
+  { m: "2026-12", today: "2026-11-06" },
+  { m: "2026-13", today: "2026-11-06" },
+  { m: "2026-00", today: "2026-11-06" },
+  { m: "2026-1", today: "2026-11-06" },
+  { m: "2026-05-01", today: "2026-11-06" },
+  { m: "", today: "2026-11-06" },
+  { m: null, today: "2027-01-01" },
+].map((c) => ({ ...c, out: spendMonthParam(c.m ?? undefined, c.today) }));
+
+const P = 5; // id group for the spend cases
+const spendRows = [
+  parcel(pid(P, 1), { shop: "テスト食品店", category: "food", total_amount: 3000, ordered_at: "2026-10-03" }),
+  parcel(pid(P, 2), { shop: "テスト食品店", category: "food", total_amount: 1200, ordered_at: "2026-11-01" }),
+  parcel(pid(P, 3), { shop: "Amazon.co.jp", shop_key: "amazon", category: "electronics", total_amount: 4200, ordered_at: "2026-11-02" }),
+  parcel(pid(P, 4), { shop: "Amazon", shop_key: "amazon", category: "daily", total_amount: 4200, ordered_at: "2026-11-03" }),
+  parcel(pid(P, 5), { shop: "Amazonマーケットプレイス", shop_key: "amazon", category: null, total_amount: 980, ordered_at: "2026-11-04" }),
+  parcel(pid(P, 6), { shop: "テスト雑貨店", category: "Food", total_amount: 500, ordered_at: "2026-11-05" }), // outside the seven: 未分類
+  parcel(pid(P, 7), { shop: "テスト雑貨店", category: "hobby", total_amount: null, ordered_at: "2026-11-05" }), // no amount
+  parcel(pid(P, 8), { shop: "テスト雑貨店", category: "beauty", total_amount: 2500, ordered_at: null }), // no order date
+  parcel(pid(P, 9), { shop: "テスト食品店", category: "food", total_amount: 0, ordered_at: "2026-12-24" }),
+  parcel(pid(P, 10), { shop: "テスト服店", category: "fashion", total_amount: 8800, ordered_at: "2025-12-31" }),
+  parcel(pid(P, 11), { shop: "テスト服店", category: null, total_amount: null, ordered_at: null }),
+];
+const spendNovember = spendRows.filter((p) => p.ordered_at?.startsWith("2026-11"));
+// Two categories with the same amount, listed in the fixed order (then kept by the stable sort).
+const spendTies = [
+  parcel(pid(P, 20), { category: "other", total_amount: 1000 }),
+  parcel(pid(P, 21), { category: "food", total_amount: 1000 }),
+  parcel(pid(P, 22), { category: null, total_amount: 1000 }),
+  parcel(pid(P, 23), { category: "beauty", total_amount: 1000 }),
+  parcel(pid(P, 24), { category: "daily", total_amount: 3000 }),
+];
+const spendParcelSets: ParcelRow[][] = [spendRows, spendNovember, spendTies, [parcel(pid(P, 30), { total_amount: null })], []];
+
+const spendTotalCases = spendParcelSets.map((parcels) => ({ parcels, out: spendTotal(parcels) }));
+const categoryOfCases = ["food", "daily", "hobby", "fashion", "electronics", "beauty", "other", "Food", "uncategorized", "未分類", "none", "", null].map(
+  (input) => ({ in: input, out: categoryOf({ category: input }) }),
+);
+const spendByCategoryCases = spendParcelSets.map((parcels) => ({ parcels, out: spendByCategory(parcels) }));
+const sharePercentCases = [0, -0.1, 0.001, 0.004, 0.00499, 0.005, 0.125, 0.285, 0.335, 0.5, 0.994, 0.995, 0.999, 1, 1 / 3, 2 / 3].map((input) => ({
+  in: input,
+  out: sharePercent(input),
+}));
+const spendByMonthCases = [
+  ...spendParcelSets,
+  [
+    parcel(pid(P, 40), { category: "food", total_amount: 100, ordered_at: "2026-02-01" }),
+    parcel(pid(P, 41), { category: "food", total_amount: 200, ordered_at: "2025-02-28" }),
+    parcel(pid(P, 42), { category: "other", total_amount: 300, ordered_at: "2026-02-15" }),
+    parcel(pid(P, 43), { category: null, total_amount: 400, ordered_at: "2026-02-20" }),
+    parcel(pid(P, 44), { category: "daily", total_amount: 0, ordered_at: "2026-03-01" }), // 0 yen: a bar with no segment
+    parcel(pid(P, 45), { category: "food", total_amount: 500, ordered_at: "不明" }), // not a date: not on the bars
+  ],
+].map((parcels) => ({ parcels, out: spendByMonth(parcels) }));
+
+type Bar = ReturnType<typeof spendByMonth>[number];
+const bar = (month: string, total = 1000): Bar => ({ month, total, segments: total > 0 ? [{ category: "food", amount: total }] : [] });
+const withEmptyMonthsCases = (
+  [
+    [],
+    [bar("2026-05")],
+    [bar("2026-10"), bar("2026-11")],
+    [bar("2025-11"), bar("2026-01", 2500), bar("2026-03")], // across the year
+    [bar("2026-12"), bar("2027-02")],
+    [bar("2006-01"), bar("2025-12")], // exactly 240 months: still filled
+    [bar("2006-01"), bar("2026-01")], // 241 months: given back as it is
+    [bar("2000-01"), bar("2010-06"), bar("2025-01")], // far over 240
+  ] as Bar[][]
+).map((input) => ({ in: input, out: withEmptyMonths(input) }));
+
+const axisTicksCases = [0, -5, 1, 3, 4, 5, 7.5, 10, 99, 1000, 1234.5, 4000, 4001, 9999, 12_345, 50_000, 99_999, 100_000, 987_654, 12_345_678, 100_000_000].map(
+  (input) => ({ in: input, out: axisTicks(input) }),
+);
+
+const tickLabelCases = [
+  0, 1, 500, 1000, 1234, 8000, 9999, 10_000, 12_345, 15_000, 15_500, 20_000, 25_000, 50_000, 99_999, 125_000, 999_999, 1_000_000, 12_345_678,
+  100_000_000, 1_234_560_000,
+].map((input) => ({ in: input, out: tickLabel(input) }));
+
+// The category filter as the page gets it: cSet false is no filter (undefined), c null is 未分類.
+const sliceFilters: Array<{ c: string | null; cSet: boolean; s: string | null }> = [
+  { c: null, cSet: false, s: null },
+  { c: null, cSet: true, s: null },
+  { c: "food", cSet: true, s: null },
+  { c: null, cSet: false, s: "Amazon" },
+  { c: "electronics", cSet: true, s: "Amazon" },
+  { c: null, cSet: true, s: "Amazon" },
+  { c: "beauty", cSet: true, s: "テスト雑貨店" },
+  { c: null, cSet: false, s: "Amazon.co.jp" }, // the name as written never matches: compared after normalizeShop
+];
+const spendSlicesCases = [
+  ...sliceFilters.map((f) => ({ parcels: spendRows, all: true, ...f })),
+  ...sliceFilters.map((f) => ({ parcels: spendNovember, all: false, ...f })),
+  { parcels: [] as ParcelRow[], all: true, c: null, cSet: false, s: null },
+].map((c) => {
+  const s = spendSlices(c.parcels, { all: c.all, c: c.cSet ? (c.c as Parameters<typeof spendSlices>[1]["c"]) : undefined, s: c.s ?? undefined });
+  const ids = (xs: ParcelRow[]) => xs.map((p) => p.id);
+  return { ...c, out: { picked: ids(s.picked), orders: ids(s.orders), byCategory: ids(s.byCategory), byShop: ids(s.byShop), undated: s.undated } };
+});
+
+// ---------------------------------------------------------------------------------------------
+// shop
+
+const normalizeShopCases = (
+  [
+    ["Amazon.co.jp", "amazon"],
+    ["Amazon", "amazon"],
+    ["アマゾン", "amazon"],
+    ["テスト店", null],
+    ["テスト店", "test-shop"],
+    ["Amazon", null],
+    ["", null],
+  ] as Array<[string, string | null]>
+).map(([shop, shop_key]) => ({ shop, shop_key, out: normalizeShop({ shop, shop_key }) }));
+
+const shopLabelCases = [
+  "テスト店",
+  "",
+  "あ".repeat(40),
+  "あ".repeat(41),
+  "a".repeat(39) + "𠮷", // 40 code points, 41 UTF-16 units: not cut
+  "𠮷".repeat(40), // 80 UTF-16 units: not cut
+  "𠮷".repeat(41),
+  "a".repeat(39) + "𠮷𠮷", // cut after the first 𠮷, never inside it
+  "が".repeat(20), // 40 code points in 20 characters (a combining mark)
+  "が".repeat(20) + "x", // 41 code points: cut by code points, between か and its mark
+  "店名です。".repeat(10),
+].map((input) => ({ in: input, out: shopLabel(input) }));
+
+const firstParamCases = ["Amazon", "", ["テスト店", "別の店"], ["x"], [], null].map((input) => ({
+  in: input,
+  out: firstParam(input ?? undefined) ?? null,
+}));
+
+const categoryParamCases = ["food", "none", "Food", "NONE", "uncategorized", "", ["beauty", "food"], ["none", "food"], ["x", "food"], [], null].map((input) => {
+  const v = categoryParam(input ?? undefined);
+  return { in: input, out: v ?? null, outSet: v !== undefined };
+});
+
+// ---------------------------------------------------------------------------------------------
+// month (src/lib/month-url.ts and the month parts of src/lib/format.ts)
+
+const monthMaxCases = ["2026-11-06", "2026-12-31", "2027-01-01", "2020-01-01"].map((today) => ({ today, out: monthMax(today) }));
+const monthOfCases = ["2026-11-05", "2026-11-05T10:00:00Z", "2026-1", "2026", ""].map((input) => ({ in: input, out: monthOf(input) }));
+const monthLabelCases = [
+  { ym: "2026-11", today: "2026-11-06" },
+  { ym: "2026-01", today: "2026-11-06" },
+  { ym: "2025-12", today: "2026-11-06" },
+  { ym: "2027-01", today: "2026-12-31" },
+  { ym: "2027-01", today: "2027-01-01" },
+  { ym: "2020-01", today: "2026-11-06" },
+].map((c) => ({ ...c, out: atNoonJst(c.today, () => monthLabel(c.ym)) }));
+const monthParamCases = [
+  { m: "2026-11", today: "2026-11-06" },
+  { m: "2020-01", today: "2026-11-06" },
+  { m: "2026-13", today: "2026-11-06" },
+  { m: "2026-1", today: "2026-11-06" },
+  { m: "2026-00", today: "2026-11-06" },
+  { m: "", today: "2026-11-06" },
+  { m: null, today: "2026-11-06" },
+  { m: " 2026-05", today: "2026-11-06" },
+  { m: "2026-05\n", today: "2026-11-06" },
+  { m: "２０２６-０５", today: "2026-11-06" },
+  { m: null, today: "2027-01-01" },
+].map((c) => ({ ...c, out: monthParam(c.m ?? undefined, c.today) }));
+const shiftMonthCases = (
+  [
+    ["2026-11", 1],
+    ["2026-12", 1],
+    ["2026-01", -1],
+    ["2026-11", 0],
+    ["2026-11", 24],
+    ["2026-11", -25],
+    ["2020-01", -1],
+    ["2027-12", 13],
+  ] as Array<[string, number]>
+).map(([ym, delta]) => ({ ym, delta, out: shiftMonth(ym, delta) }));
+const splitDateCases = ["2026-11-05", "2026-11-05T10:00:00Z", "2026-02-30", "2026-1-5", "未定", ""].map((input) => ({ in: input, out: splitDate(input) }));
+const weekdayOfCases = ["2026-11-06", "2026-11-08", "2027-01-01", "2028-02-29", "2026-02-30", "未定", ""].map((input) => ({ in: input, out: weekdayOf(input) }));
+const addDaysCases = (
+  [
+    ["2026-12-31", 1],
+    ["2027-01-01", -1],
+    ["2026-03-01", -1],
+    ["2028-02-28", 1],
+    ["2026-11-05", 0],
+    ["2026-11-05", 400],
+    ["2026-11-05", -40],
+    ["2026-02-30", 0],
+    ["未定", 3],
+  ] as Array<[string, number]>
+).map(([ymd, days]) => ({ ymd, days, out: addDays(ymd, days) }));
+const daysInMonthCases = (
+  [
+    [2026, 1],
+    [2026, 2],
+    [2028, 2],
+    [2100, 2],
+    [2000, 2],
+    [2026, 4],
+    [2026, 12],
+    [2026, 13],
+    [2026, 0],
+  ] as Array<[number, number]>
+).map(([y, m]) => ({ y, m, out: daysInMonth(y, m) }));
+
+// ---------------------------------------------------------------------------------------------
+// forwarding (src/lib/forwarding.ts and the settings page's choice, CX4)
+
+const isForwardingConfirmationCases = [
+  "forwarding-noreply@google.com",
+  "  Forwarding-NoReply@Google.COM ",
+  "Gmail Team <forwarding-noreply@google.com>",
+  "noreply@shop.example.com",
+  "",
+].map((input) => ({ in: input, out: isForwardingConfirmation(input) }));
+
+const forwardingConfirmUrlCases = [
+  "確認するには次のリンクを開いてください: https://mail-settings.google.com/mail/vf-%5BABC123%5D-xyz",
+  "https://mail-settings.google.com/mail/vf-abc。ご確認ください",
+  "<a href=\"https://mail-settings.google.com/mail/vf-abc\">確認</a>",
+  "(https://mail-settings.google.com/mail/vf-abc)",
+  "https://MAIL-SETTINGS.Google.com/mail/vf-upper",
+  "https://mail-settings.google.com:443/mail/vf-port",
+  "https://example.com/x と https://mail-settings.google.com/mail/vf-first と https://mail-settings.google.com/mail/vf-second",
+  "https://evil.example/mail/vf-abc",
+  "https://mail-settings.google.com.evil.example/mail/vf-abc",
+  "https://mail-settings.google.com/settings/vf-abc",
+  "https://mail-settings.google.com/mailx/vf-abc",
+  "https://mail-settings.google.com/mail",
+  "http://mail-settings.google.com/mail/vf-abc",
+  "https://mail-settings.google.com@evil.example.com/mail/vf-abc",
+  "https://mail-settings.google.com:99999/mail/vf-abc",
+  "https://",
+  "",
+].map((input) => ({ in: input, out: forwardingConfirmUrl(input) }));
+
+const GOOD = "https://mail-settings.google.com/mail/vf-%5BABC%5D-good";
+const confirmUrlCases = [
+  { forwarding_confirm_url: GOOD, text_body: null, html_body: null },
+  { forwarding_confirm_url: "https://evil.example/mail/vf-stored", text_body: `本文 ${GOOD}`, html_body: null },
+  { forwarding_confirm_url: "", text_body: `本文 ${GOOD}`, html_body: null },
+  { forwarding_confirm_url: null, text_body: "", html_body: `<a href="${GOOD}">確認</a>` },
+  { forwarding_confirm_url: null, text_body: null, html_body: `<a href="${GOOD}">確認</a>` },
+  { forwarding_confirm_url: null, text_body: "リンクのない本文", html_body: `<a href="${GOOD}">確認</a>` },
+  { forwarding_confirm_url: "https://mail-settings.google.com.evil.example/mail/vf", text_body: "https://evil.example/mail/vf", html_body: null },
+  { forwarding_confirm_url: null, text_body: null, html_body: null },
+].map((c) => ({ ...c, out: forwardingConfirmUrl(c.forwarding_confirm_url ?? "") ?? forwardingConfirmUrl(c.text_body ?? c.html_body ?? "") }));
+
+// ---------------------------------------------------------------------------------------------
 // sections (rows in the database's order)
 
 const S = 2; // id group for the first section case
@@ -405,6 +757,59 @@ const isCategoryCases = ["food", "other", "beauty", "Food", "uncategorized", "�
 // ---------------------------------------------------------------------------------------------
 // text
 
+/** The KEPT cases of src/lib/__tests__/html-to-text-hostile.test.ts (2541793): quirks the rewrite keeps. */
+function keptHtml(): string[] {
+  return [
+    '<a data-href="https://e.example/a" href="https://e.example/b">two targets</a>',
+    '<a href="https://e.example/c" data-href="https://e.example/d">href first</a>',
+    "<a href=\"\">empty href</a> and <a href=''>empty too</a>",
+    "<A HREF=\"https://e.example/E\">upper case</A> <IMG ALT='Upper alt'>",
+    '<a title="a>b" href="https://e.example/f">a ">" in another value</a>',
+    '<a href="https://e.example/g>h">a ">" in the href</a>',
+    "<a href='https://e.example/i\">mixed quotes</a>",
+    '<a href="https://e.example/j">never closed',
+    '<a href="https://e.example/k"',
+    "<a href=https://e.example/l>unquoted</a>",
+    '<a href = "https://e.example/m">spaces around =</a>',
+    '<abbr title="x">abbr is not a link</abbr> <a_b href="https://e.example/n">a_b</a_b>',
+    '<img src="x.png" alt="一番目" data-alt="二番目"> <img alt=""> <img/alt="slash"> <imgx alt="not an image">',
+    '<img alt="no end"',
+    'line<br/>two<BR>three<hr class="x">four<br2>five<br',
+    "<script>var a = \"<a href='https://e.example/o'>t</a>\";</script>after script",
+    "<header>header text</head>tail",
+    "<scripts>x</script>y <title>T</TITLE>z <style>unclosed",
+    'İİ<a href="https://e.example/p">after a dotted capital I</a>İ<IMG ALT="İ">',
+    '<> <<> a < b > c <<a href="https://e.example/q">t</a>',
+    '<table><tr><td><a href="https://e.example/r"><b>bold</b> link</a></td><td>2</td></tr></table>',
+    '<a href="https://e.example/?a=1&amp;b=2">entities in the href</a>',
+    '<a href="https://e.example/unsubscribe">配信停止</a> <a href="#top">top</a> <a href="mailto:a@b.example">mail</a> <a href="https://e.example/x.png?s=1">image</a>',
+    '<!-- <a href="https://e.example/s">hidden</a> -->visible',
+    '<a href="https://e.example/t"><img src="x.png" alt="picture only"></a>',
+    '<a href="https://e.example/u"></a>empty text',
+    '<a\nhref="https://e.example/v"\n>newline in the tag</a\n>',
+    "<p>一行目</p><div>二行目</div><li>三</li><h2>見出し</h2><td>a</td><th>b</th>&nbsp;&yen;100&hellip;",
+    '<a href="https://e.example/w">one</a><a href="https://e.example/x">two</a></a>',
+    `<a href="https://e.example/${"long/".repeat(70)}">long url</a>`,
+  ];
+}
+
+/** The HOSTILE shapes of html-to-text-hostile.test.ts, 2,000 characters each instead of 512K. */
+function hostileHtml(): string[] {
+  const fill = (unit: string) => unit.repeat(Math.ceil(2000 / unit.length)).slice(0, 2000);
+  return [
+    fill("<"),
+    fill("<a "),
+    fill("<img "),
+    fill("<script"),
+    fill('<a href="x">'),
+    fill("<br "),
+    fill("<style>"),
+    fill('<img alt="x"'),
+    `<a${fill(' href="x"')}>`,
+    `<a href="x">${fill("<")}</a>`,
+  ];
+}
+
 const longUrl = `https://example.com/😀/${"a".repeat(400)}`; // the emoji is two UTF-16 units before the cut
 
 const htmlToTextCases = [
@@ -424,6 +829,8 @@ const htmlToTextCases = [
   "<p>𠮷野家のお弁当 🍱</p>",
   "  空白　と\t\tタブ  <br>  次の行  ",
   "",
+  ...keptHtml(),
+  ...hostileHtml(),
 ].map((input) => ({ in: input, out: htmlToText(input) }));
 
 const decodeEntitiesCases = [
@@ -465,6 +872,7 @@ const expected = {
     needsCheck: needsCheckCases,
     isLate: isLateCases,
     faceToFace: faceToFaceCases,
+    faceToFaceAssumed: faceToFaceAssumedCases,
   },
   sections: sectionsCases,
   undelivered: undeliveredCases,
@@ -488,6 +896,46 @@ const expected = {
     htmlToText: htmlToTextCases,
     decodeEntities: decodeEntitiesCases,
     stripInvisible: stripInvisibleCases,
+  },
+  calendar: {
+    upcomingByDay: upcomingByDayCases,
+  },
+  spend: {
+    spendMonthParam: spendMonthParamCases,
+    spendTotal: spendTotalCases,
+    categoryOf: categoryOfCases,
+    spendByCategory: spendByCategoryCases,
+    sharePercent: sharePercentCases,
+    spendByMonth: spendByMonthCases,
+    withEmptyMonths: withEmptyMonthsCases,
+    axisTicks: axisTicksCases,
+    tickLabel: tickLabelCases,
+    spendSlices: spendSlicesCases,
+  },
+  shop: {
+    none: NONE,
+    labelMax: SHOP_LABEL_MAX,
+    normalizeShop: normalizeShopCases,
+    shopLabel: shopLabelCases,
+    firstParam: firstParamCases,
+    categoryParam: categoryParamCases,
+  },
+  month: {
+    min: MONTH_MIN,
+    monthMax: monthMaxCases,
+    monthOf: monthOfCases,
+    monthLabel: monthLabelCases,
+    monthParam: monthParamCases,
+    shiftMonth: shiftMonthCases,
+    splitDate: splitDateCases,
+    weekdayOf: weekdayOfCases,
+    addDays: addDaysCases,
+    daysInMonth: daysInMonthCases,
+  },
+  forwarding: {
+    isForwardingConfirmation: isForwardingConfirmationCases,
+    forwardingConfirmUrl: forwardingConfirmUrlCases,
+    confirmUrl: confirmUrlCases,
   },
 };
 
