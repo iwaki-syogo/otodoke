@@ -51,16 +51,21 @@ struct ForwardingGuideView: View {
     typealias T = ForwardingGuideText
     @Environment(\.openURL) private var openURL
     @State private var opened: Set<String>
+    /// Only the folding cards of the mail services (the first guide after registering shows nothing around them).
+    private let servicesOnly: Bool
 
     /// `expanded`: every service starts open (the screen check).
-    init(expanded: Bool = false) {
+    init(expanded: Bool = false, servicesOnly: Bool = false) {
+        self.servicesOnly = servicesOnly
         _opened = State(initialValue: expanded ? Set(T.services.map(\.id)) : [])
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            header
-            before
+            if !servicesOnly {
+                header
+                before
+            }
             VStack(spacing: 12) {
                 ForEach(T.services) { service in
                     SettingsDisclosure(title: service.title, isExpanded: binding(service.id)) {
@@ -68,7 +73,9 @@ struct ForwardingGuideView: View {
                     }
                 }
             }
-            verify
+            if !servicesOnly {
+                verify
+            }
         }
     }
 

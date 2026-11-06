@@ -20,6 +20,8 @@ struct ParcelListView<Detail: View>: View {
     @Bindable var model: ParcelListModel
     /// Opens the 設定 tab (the unread-mail notice and 「転送先を見る」).
     let openSettings: () -> Void
+    /// 「転送先を見る」 of the empty list: opens the 「メールの転送」 page (the settings list when nil).
+    var openForwarding: (() -> Void)?
     /// The detail screen of a parcel.
     @ViewBuilder let detail: (String) -> Detail
 
@@ -92,7 +94,7 @@ struct ParcelListView<Detail: View>: View {
             if model.loadState == .failed {
                 pageLinks
             } else if model.isEmpty {
-                EmptyParcels(openSettings: openSettings, openDemo: { openURL(WebLink.settingsDemo) })
+                EmptyParcels(openSettings: openForwarding ?? openSettings, openDemo: { openURL(WebLink.settingsDemo) })
                     .listRowStyle()
                 pageLinks
             } else {

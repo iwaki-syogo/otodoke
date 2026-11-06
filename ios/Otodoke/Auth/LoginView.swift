@@ -2,11 +2,14 @@ import SwiftUI
 
 /// The login screen (password-v1): the address and the password, or, to make an account, the address and the
 /// password twice. The Turnstile widget sits above the button (every press needs a token). 「パスワードを忘れた」
-/// opens the Web's page in Safari (the reset is done on the Web). Every word comes from LoginText.
+/// opens the Web's page in Safari (the reset is done on the Web). Every word comes from LoginText (and, for the
+/// waiting state after making an account, OnboardingText). While the model waits for the confirmation mail's link
+/// the form gives way to the waiting state: coming back to the front, or 「確認しました」, tries the sign-in.
 struct LoginView: View {
     @State private var model: LoginModel
     @FocusState private var focused: Bool
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     /// `startMode`: which form opens first (the first screen's two buttons pick one).
     init(auth: AuthService, startMode: LoginModel.Mode = .signIn) {
@@ -29,23 +32,33 @@ struct LoginView: View {
             VStack(alignment: .leading, spacing: 16) {
                 WordmarkView(size: 28)
                     .padding(.bottom, 12)
-                Text(model.mode == .signIn ? LoginText.signInTitle : LoginText.signUpTitle)
-                    .font(.largeTitle.bold())
-                    .padding(.bottom, 8)
-                emailField
-                switch model.mode {
-                case .signIn:
-                    signInFields
-                case .signUp:
-                    signUpFields
+                if let address = model.confirmationAddress {
+                    waitingHeader(address)
+                } else {
+                    Text(model.mode == .signIn ? LoginText.signInTitle : LoginText.signUpTitle)
+                        .font(.largeTitle.bold())
+                        .padding(.bottom, 8)
+                    emailField
+                    switch model.mode {
+                    case .signIn:
+                        signInFields
+                    case .signUp:
+                        signUpFields
+                    }
                 }
                 if let turnstile = model.turnstile {
                     TurnstileView(token: turnstile)
                 }
-                primaryButton(model.mode == .signIn ? LoginText.signInButton : LoginText.signUpButton, enabled: model.canSubmit) {
-                    await model.submit()
+                if model.isWaitingForConfirmation {
+                    primaryButton(OnboardingText.confirmedButton, enabled: model.canCheckConfirmation) {
+                        await model.checkConfirmation(pressed: true)
+                    }
+                } else {
+                    primaryButton(model.mode == .signIn ? LoginText.signInButton : LoginText.signUpButton, enabled: model.canSubmit) {
+                        await model.submit()
+                    }
                 }
-                if let notice = model.notice {
+                if let notice = model.shownNotice {
                     messageBox(notice, error: false)
                 }
                 if let message = model.errorMessage {
@@ -55,12 +68,16 @@ struct LoginView: View {
                     Button {
                         Task { await model.resendConfirmation() }
                     } label: {
-                        Text(LoginText.resendConfirmation).font(.subheadline).underline()
+                        Text(model.isWaitingForConfirmation ? OnboardingText.resendButton : LoginText.resendConfirmation).font(.subheadline).underline()
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isWorking)
                 }
-                links
+                if model.isWaitingForConfirmation {
+                    startOverLink
+                } else {
+                    links
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 32)
@@ -69,6 +86,40 @@ struct LoginView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
+        // Back in front (from the mail's link in Safari): the sign-in is tried once, never in a quick loop.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, model.isWaitingForConfirmation else { return }
+            Task { await model.checkConfirmation() }
+        }
+    }
+
+    /// The waiting state's top: what to do with the mail, and where it was sent.
+    private func waitingHeader(_ address: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(OnboardingText.waitingTitle)
+                .font(.largeTitle.bold())
+                .fixedSize(horizontal: false, vertical: true)
+            Text(OnboardingText.waitingLead)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: address)
+                .font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.bottom, 8)
+    }
+
+    private var startOverLink: some View {
+        Button {
+            model.startOver()
+        } label: {
+            Text(OnboardingText.startOver).font(.subheadline).underline()
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isWorking)
+        .padding(.top, 8)
     }
 
     private var emailField: some View {

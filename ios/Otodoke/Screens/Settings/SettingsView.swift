@@ -16,19 +16,32 @@ enum SettingsPage: Hashable, CaseIterable {
 struct SettingsView: View {
     let model: SettingsModel
     @Environment(\.openURL) private var openURL
-    @State private var path: [SettingsPage]
+    @State private var ownPath: [SettingsPage]
+    /// The stack held by the caller (the tabs open 「メールの転送」 from the empty list); nil: this view's own.
+    private let outerPath: Binding<[SettingsPage]>?
     private let expands: Bool
+
+    private var path: Binding<[SettingsPage]> { outerPath ?? $ownPath }
 
     /// `expanded`: the closed cards (the guide, the mail that was not read) start open.
     /// `page`: opens that page at once (the screen check).
     init(model: SettingsModel, expanded: Bool = false, page: SettingsPage? = nil) {
         self.model = model
         expands = expanded
-        _path = State(initialValue: page.map { [$0] } ?? [])
+        outerPath = nil
+        _ownPath = State(initialValue: page.map { [$0] } ?? [])
+    }
+
+    /// With the stack held by the caller.
+    init(model: SettingsModel, path: Binding<[SettingsPage]>) {
+        self.model = model
+        expands = false
+        outerPath = path
+        _ownPath = State(initialValue: [])
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack(path: path) {
             content
                 .navigationTitle("設定")
                 .navigationBarTitleDisplayMode(.inline)

@@ -17,7 +17,7 @@ enum SettingsMenuText {
     static let webTitle = "Web で開く"
 
     /// The badge on the key row while there is no key.
-    static let keyNoneBadge = "鍵なし"
+    static let keyNoneBadge = "未設定"
 
     /// The badge on the key row while mail from before the encryption is still readable by the operator.
     static func plainBadge(_ n: Int) -> String {

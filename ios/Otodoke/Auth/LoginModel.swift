@@ -4,6 +4,11 @@
 // Turnstile token of each press (taken once, the widget reset after every press, sent without one when none
 // came in time: Supabase decides while its CAPTCHA is off). The password stays in this model's memory only and
 // is cleared after every press that reached Supabase.
+// After making an account the model waits for the confirmation mail: the address and the typed password are held
+// in this model's memory only (never the Keychain, the defaults or a file, never logged), the screen shows the
+// waiting state, and the existing password sign-in is tried when the app comes back to the front or the button is
+// pressed (checkConfirmation). not_confirmed is a quiet wait. Starting over, or switching the form, drops the
+// password.
 
 import Foundation
 import Observation
@@ -43,6 +48,14 @@ final class LoginModel {
     private(set) var notice: String?
     /// true after a not_confirmed sign-in: the confirmation mail can be sent again.
     private(set) var canResendConfirmation = false
+    /// The address the confirmation mail was sent to after making an account (email_norm); non-nil while the
+    /// screen waits for the confirmation. The password typed with it is held in `heldPassword` (memory only).
+    private(set) var confirmationAddress: String?
+    /// Waiting for the confirmation mail's link (after making an account).
+    var isWaitingForConfirmation: Bool { confirmationAddress != nil }
+    /// The password typed on the sign-up form, for the sign-in after the mail's link. Memory only; never stored,
+    /// logged or sent anywhere but the sign-in; nil once used, and when the wait is dropped.
+    @ObservationIgnored private var heldPassword: String?
 
     let auth: AuthService
     /// The Turnstile token of this screen (taken at each press, then reset), and how long a press waits for it
@@ -79,7 +92,29 @@ final class LoginModel {
         notice = nil
         canResendConfirmation = false
         unconfirmedAddress = nil
+        dropWait()
         turnstile?.reset()
+    }
+
+    /// 「別のアドレスでやり直す」: the wait for the confirmation is dropped (the password with it) and the sign-up form
+    /// is shown again, the address kept.
+    func startOver() {
+        setMode(.signUp)
+    }
+
+    /// The button 「確認しました」 can be pressed: waiting, with the password still held, and nothing in flight.
+    var canCheckConfirmation: Bool {
+        !isWorking && isWaitingForConfirmation && heldPassword != nil
+    }
+
+    /// The notice to draw: while waiting, the sign-up's own sentence gives way to the waiting state's words.
+    var shownNotice: String? {
+        isWaitingForConfirmation && notice == LoginText.signupExistsOrSent ? nil : notice
+    }
+
+    private func dropWait() {
+        confirmationAddress = nil
+        heldPassword = nil
     }
 
     /// The new password's problem on the sign-up form (PasswordRule on the password as typed); nil on the
@@ -131,6 +166,11 @@ final class LoginModel {
             case .signUp:
                 try await auth.signUp(email: address, password: typed, captchaToken: captchaToken)
                 notice = LoginText.signupExistsOrSent
+                // Wait for the mail's link; the mail can be sent again from the waiting screen.
+                confirmationAddress = address
+                heldPassword = typed
+                canResendConfirmation = true
+                unconfirmedAddress = address
             }
         } catch {
             errorMessage = error.message
@@ -142,7 +182,43 @@ final class LoginModel {
         turnstile?.reset()
     }
 
-    /// After not_confirmed: the confirmation mail again (the same answer for every address).
+    /// While waiting for the confirmation (after making an account): tries the existing password sign-in, when the
+    /// app comes back to the front and when 「確認しました」 is pressed. not_confirmed is a quiet wait (no error). The
+    /// address having an account with another password (credentials) ends the wait: the sign-in form with the
+    /// Web's words. One try at a time; the Turnstile token of each try is taken once and the widget reset.
+    /// `pressed`: the button was pressed (not the automatic try): a still unconfirmed address then says so.
+    func checkConfirmation(pressed: Bool = false) async {
+        guard let address = confirmationAddress, let typed = heldPassword, !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        errorMessage = nil
+        notice = nil
+        let captchaToken = await takeToken()
+        do {
+            try await auth.signIn(email: address, password: typed, captchaToken: captchaToken)
+            // Signed in (the screens come up from AuthService's state): the password is not needed any more.
+            heldPassword = nil
+            canResendConfirmation = false
+            unconfirmedAddress = nil
+        } catch {
+            switch error {
+            case .notConfirmed:
+                if pressed { notice = OnboardingText.notConfirmedYet }
+            case .credentials:
+                dropWait()
+                mode = .signIn
+                canResendConfirmation = false
+                unconfirmedAddress = nil
+                errorMessage = error.message
+            default:
+                errorMessage = error.message
+            }
+        }
+        turnstile?.reset()
+    }
+
+    /// After not_confirmed: the confirmation mail again (the same answer for every address). While waiting after
+    /// making an account the notice is 「送り直しました」.
     func resendConfirmation() async {
         guard canResendConfirmation, let address = unconfirmedAddress, !isWorking else { return }
         isWorking = true
@@ -152,7 +228,7 @@ final class LoginModel {
         let captchaToken = await takeToken()
         do {
             try await auth.resendConfirmation(email: address, captchaToken: captchaToken)
-            notice = LoginText.confirmationSent
+            notice = isWaitingForConfirmation ? OnboardingText.resent : LoginText.confirmationSent
         } catch {
             errorMessage = error.message
         }
@@ -175,6 +251,18 @@ extension LoginModel {
     /// DEBUG only: the screen check's model gets a widget too (nothing it sends reaches a server).
     func debugUseTurnstile() {
         if turnstile == nil { turnstile = TurnstileToken() }
+    }
+
+    /// DEBUG only: the waiting state after making an account (nothing is sent; the password held is a stand-in).
+    func debugShowWaiting(email: String, notice: String? = nil, error: String? = nil) {
+        mode = .signUp
+        self.email = email
+        confirmationAddress = PasswordV1.emailNorm(email)
+        heldPassword = "debug-only"
+        canResendConfirmation = true
+        unconfirmedAddress = PasswordV1.emailNorm(email)
+        self.notice = notice
+        errorMessage = error
     }
 
     /// DEBUG only: a given state, for checking the screen on the simulator (nothing is sent).

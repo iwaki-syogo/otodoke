@@ -29,6 +29,23 @@ enum MainTab: CaseIterable, Hashable, Sendable {
     }
 }
 
+/// Which tab is shown, and the 設定 tab's stack: the empty list's 「転送先を見る」 opens 「メールの転送」 straight.
+struct TabRoute: Equatable {
+    var tab: MainTab = .parcels
+    var settingsPath: [SettingsPage] = []
+
+    /// The 設定 tab as it is (the unread-mail notice).
+    mutating func showSettings() {
+        tab = .settings
+    }
+
+    /// The 設定 tab with 「メールの転送」 pushed (replacing what was open there).
+    mutating func showForwarding() {
+        settingsPath = [.forward]
+        tab = .settings
+    }
+}
+
 /// The models of the tabs, made once per sign-in, with one DataChanges and one ScreenRefresher.
 @MainActor
 final class MainScreens {
@@ -107,8 +124,10 @@ final class MainScreens {
 }
 
 struct MainTabView: View {
-    @State private var selection: MainTab
+    @State private var route: TabRoute
     @State private var screens: MainScreens
+    /// The first guide was closed (it is shown once per signed-in generation).
+    @State private var guideClosed = false
     /// The app went to the background since it was last in front.
     @State private var wasInBackground = false
     @Environment(\.scenePhase) private var scenePhase
@@ -138,11 +157,13 @@ struct MainTabView: View {
 
     init(screens: MainScreens, selection: MainTab = .parcels) {
         _screens = State(initialValue: screens)
-        _selection = State(initialValue: selection)
+        _route = State(initialValue: TabRoute(tab: selection))
     }
 
+    private var selection: MainTab { route.tab }
+
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $route.tab) {
             ForEach(MainTab.allCases, id: \.self) { tab in
                 screen(tab)
                     .tabItem { Label(tab.title, systemImage: tab.systemImage) }
@@ -171,6 +192,16 @@ struct MainTabView: View {
         }
         // The delivered and cancelled pages the 荷物 and カレンダー tabs open (StatusPages.swift).
         .environment(\.statusPages, screens.statusPages)
+        // The login that made the first key: the guide over the tabs; both buttons close it onto the 荷物 tab.
+        .fullScreenCover(isPresented: Binding(
+            get: { !guideClosed && OnboardingGate.shouldShow(after: screens.keySetup?.lastOutcome) },
+            set: { if !$0 { guideClosed = true } }
+        )) {
+            OnboardingView(model: screens.settings) {
+                route.tab = .parcels
+                guideClosed = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -179,7 +210,7 @@ struct MainTabView: View {
         switch tab {
         case .parcels:
             let list = screens.list
-            ParcelListView(model: list, openSettings: { selection = .settings }) { id in
+            ParcelListView(model: list, openSettings: { route.showSettings() }, openForwarding: { route.showForwarding() }) { id in
                 TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
             .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }
@@ -197,7 +228,7 @@ struct MainTabView: View {
             .shownScreen(.spend, in: .spend, screens.refresher) { await spend.sceneBecameActive() }
         case .settings:
             let settings = screens.settings
-            SettingsView(model: settings)
+            SettingsView(model: settings, path: $route.settingsPath)
                 .shownScreen(.settings, in: .settings, screens.refresher) { await settings.sceneBecameActive() }
         }
     }

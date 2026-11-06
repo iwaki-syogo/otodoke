@@ -21,6 +21,8 @@ struct ListPreview {
         case loginSent = "login-sent"
         /// The first screen (the two buttons) before the login.
         case welcome
+        /// The waiting screen after making an account.
+        case loginWaiting = "login-waiting"
     }
 
     let scenario: Scenario
@@ -57,6 +59,8 @@ struct ListPreview {
             model.debugShow(mode: .signIn, email: "qa@example.com", error: LoginText.notConfirmed, canResend: true)
         case .loginSent:
             model.debugShow(mode: .signUp, email: "qa@example.com", notice: LoginText.signupExistsOrSent)
+        case .loginWaiting:
+            model.debugShowWaiting(email: "qa@example.com")
         default:
             return nil
         }
@@ -108,7 +112,7 @@ struct ListPreview {
         )
         let counts = ParcelCounts(delivered: .loaded(1234), cancelled: .loaded(2), unread: .loaded(scenario == .list ? 3 : 0))
         switch scenario {
-        case .list, .detail, .login, .loginSignUp, .loginError, .loginSent, .welcome:
+        case .list, .detail, .login, .loginSignUp, .loginError, .loginSent, .loginWaiting, .welcome:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
         case .empty:
             model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded)
