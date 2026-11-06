@@ -139,4 +139,19 @@ describe("a redelivered mail that was read", () => {
     expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
     expect(db.rows("emails")).toHaveLength(0);
   });
+
+  it("a stored mail another delivery took over meanwhile is not removed from under it (review R3-5)", async () => {
+    const mail = promo();
+    const db = new FakeDb({ emails: [{ id: "e-unread", user_id: USER, message_id: mail.messageId, processing_status: "over_limit", created_at: STORED_AT }] });
+    // Another delivery takes the row over (pending, a new created_at) after this one looked it up.
+    let raced = false;
+    db.hooks.push((q: Query) => {
+      if (raced || q.table !== "emails" || q.op !== "delete") return undefined;
+      raced = true;
+      Object.assign(db.find("emails", "e-unread")!, { processing_status: "pending", created_at: "2026-11-03T00:00:00Z" });
+      return undefined;
+    });
+    expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
+    expect(db.rows("emails").map((e) => [e.id, e.processing_status])).toEqual([["e-unread", "pending"]]);
+  });
 });
