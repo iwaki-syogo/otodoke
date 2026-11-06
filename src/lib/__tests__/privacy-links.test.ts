@@ -73,9 +73,9 @@ describe("links to /privacy", () => {
     expect(elementSiblings(link).filter((n) => n.tag === "a").map((a) => a.attrs.href)).toEqual(["https://github.com/iwaki-syogo/otodoke", "/privacy"]);
   });
 
-  it("設定: right under 「あなたのメールの扱い」, outside every section (so not in 「アカウントを削除」)", async () => {
-    const Page = (await import("@/app/app/settings/page")).default;
-    const root = parseHtml(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) })));
+  it("設定 › あなたのメールの扱い: right under 「あなたのメールの扱い」, outside every section", async () => {
+    const Page = (await import("@/app/app/settings/mail-handling/page")).default;
+    const root = parseHtml(renderToStaticMarkup(Page()));
     const link = policyLink(root);
     expect(ancestorsOf(link).some((n) => n.tag === "section")).toBe(false);
     const holder = link.parent!;

@@ -6,7 +6,9 @@ export const metadata = { title: "アカウントを作る" };
 
 /**
  * /signup: a new account with the address and the password (password-v1). Supabase mails the
- * confirmation link; after it, the person signs in with the password and the key is made then.
+ * confirmation link; this tab then waits for it and signs in by itself (SignupForm), and the key is
+ * made at that sign-in. The heading, the privacy policy and the way to log in are the form's: the
+ * waiting screen has its own heading and none of the links.
  * Those who used to sign in by a mail's link have an account already: they set a password from
  * 「パスワードを忘れた」 on /login (decision 7). This page has no word for them: it is the public
  * page of an app made new for the contest.
@@ -17,14 +19,7 @@ export default function SignupPage() {
       <Link href="/" className="mb-8 text-sm text-neutral-500">
         ← <Wordmark className="text-lg" />
       </Link>
-      <h1 className="text-2xl font-bold">アカウントを作る</h1>
       <SignupForm />
-      <Link href="/privacy" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
-        プライバシーポリシー
-      </Link>
-      <Link href="/login" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
-        ログイン
-      </Link>
     </main>
   );
 }

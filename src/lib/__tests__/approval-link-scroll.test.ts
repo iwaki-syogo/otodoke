@@ -7,7 +7,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
 
 /**
  * [Review 2026-11-06] With only Gmail's forwarding confirmation in, the empty list's 「設定で承認する」
- * goes to the approval in 設定: /app/settings#gmail-approval. 設定 first draws a loading screen,
+ * goes to the approval in 設定 › メールの転送: /app/settings/forwarding#gmail-approval. That page first draws a loading screen,
  * where the section is not yet, so the router drops the scroll; the shared skeleton's
  * ScrollToHashOnReady scrolls to the section once the page has replaced the loading screen.
  * Followed here from the button the list draws to the scroll. Until the section carries
@@ -93,12 +93,13 @@ function browserAt(hash: string, ids: string[]) {
 describe("the empty list's 「設定で承認する」 reaches the approval in 設定", () => {
   it("goes to 設定 with the approval's hash", async () => {
     const to = await approvalLink();
-    expect(to.pathname).toBe("/app/settings");
+    expect(to.pathname).toBe("/app/settings/forwarding");
     expect(to.hash).toBe("#gmail-approval");
   });
 
   it("whichever loading screen stands in on the way (設定's own, or /app's), it scrolls once the page is in", async () => {
-    expect(scrollsOnceIn((await import("@/app/app/settings/loading")).default as () => ReactNode)).toBe(true);
+    expect(scrollsOnceIn((await import("@/app/app/settings/forwarding/loading")).default as () => ReactNode)).toBe(true);
+    expect(scrollsOnceIn((await import("@/app/app/settings/(list)/loading")).default as () => ReactNode)).toBe(true);
     expect(scrollsOnceIn((await import("@/app/app/loading")).default as () => ReactNode)).toBe(true);
   });
 

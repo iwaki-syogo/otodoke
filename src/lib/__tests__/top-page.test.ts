@@ -23,12 +23,23 @@ beforeEach(() => {
 });
 
 describe("the top page", () => {
-  it("signed out: 「アカウントを作る」 goes to /signup, and the header's 「ログイン」 to /login", async () => {
+  it("signed out: 「アカウントを作る」 goes to /signup and a 「ログイン」 button under it to /login", async () => {
     const all = await links();
     expect(all).toContainEqual(["/signup", "アカウントを作る"]);
     expect(all).toContainEqual(["/login", "ログイン"]);
     expect(all.filter(([href]) => href === "/signup" || href === "/login")).toHaveLength(2);
     expect(JSON.stringify(all)).not.toContain("メールアドレスで始める");
+  });
+
+  it("signed out: the two buttons are in the page body, in that order, and the header has no 「ログイン」", async () => {
+    const root = parseHtml(renderToStaticMarkup(await Home()));
+    const header = findAll(root, (n) => n.tag === "header")[0];
+    expect(findAll(header, (n) => n.tag === "a")).toEqual([]);
+    const section = findAll(root, (n) => n.tag === "section")[0];
+    expect(findAll(section, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
+      ["/signup", "アカウントを作る"],
+      ["/login", "ログイン"],
+    ]);
   });
 
   it("signed in: both go to the parcels", async () => {
@@ -39,5 +50,6 @@ describe("the top page", () => {
       ["/app", "荷物を見る"],
     ]);
     expect(all.map(([href]) => href)).not.toContain("/signup");
+    expect(all.map(([href]) => href)).not.toContain("/login");
   });
 });

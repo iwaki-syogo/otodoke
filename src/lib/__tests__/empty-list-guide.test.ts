@@ -63,11 +63,12 @@ describe("the empty parcel list", () => {
   it("goes to the settings with 「設定する」 and to the sample with 「サンプルで試す」, as before", async () => {
     const block = emptyState(await renderEmpty());
     expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
-      ["/app/settings", "設定する"],
-      ["/app/settings#demo", "サンプルで試す"],
+      ["/app/settings/forwarding", "設定する"],
+      ["/app/settings/demo", "サンプルで試す"],
     ]);
     // Nothing else on the empty page leads to the settings.
-    expect(linksTo(await renderEmpty(), "/app/settings")).toHaveLength(1);
+    expect(linksTo(await renderEmpty(), "/app/settings/forwarding")).toHaveLength(1);
+    expect(linksTo(await renderEmpty(), "/app/settings")).toHaveLength(0);
   });
 });
 
@@ -116,7 +117,7 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
     expect(textOf(block)).not.toContain("設定しますか");
     expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
       ["/app/settings", "設定を見る"],
-      ["/app/settings#demo", "サンプルで試す"],
+      ["/app/settings/demo", "サンプルで試す"],
     ]);
   });
 
@@ -134,8 +135,8 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
       expect(textOf(block)).not.toContain("届いています");
       expect(textOf(block)).not.toContain("お待ちください");
       expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
-        ["/app/settings#gmail-approval", "設定で承認する"],
-        ["/app/settings#demo", "サンプルで試す"],
+        ["/app/settings/forwarding#gmail-approval", "設定で承認する"],
+        ["/app/settings/demo", "サンプルで試す"],
       ]);
     }
   });

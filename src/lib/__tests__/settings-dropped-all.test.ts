@@ -47,7 +47,7 @@ const failureBoxes = (root: HtmlNode) =>
   findAll(root, (n) => n.tag === "p" && textOf(n) === LOAD_FAILED && hasClasses(n, "rounded-2xl", "border-red-200", "bg-red-50", "text-red-900"));
 
 const droppedSection = (root: HtmlNode) => {
-  const found = findAll(root, (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h) === "読まなかったメール").length > 0);
+  const found = findAll(root, (n) => n.tag === "section");
   expect(found).toHaveLength(1);
   return found[0];
 };
@@ -85,7 +85,7 @@ const seed = (n: number) => {
 };
 
 const render = async () => {
-  const Page = (await import("@/app/app/settings/page")).default;
+  const Page = (await import("@/app/app/settings/dropped/page")).default;
   return parseHtml(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) })));
 };
 

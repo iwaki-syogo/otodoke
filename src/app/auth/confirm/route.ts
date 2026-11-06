@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { throwawayAuthClient } from "@/lib/auth-session";
 import { CONFIRMED_PATH, RESET_PATH, linkFailureCode, loginErrorPath, type AuthFailure, type LoginCode } from "@/lib/login-errors";
 import { claimLoginLink, clientIp } from "@/lib/login-mail-limit";
+import { SIGNUP_CONFIRMED_PATH } from "@/lib/onboarding";
 import { fromThisSite } from "@/lib/request-origin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -35,9 +36,12 @@ export async function GET(request: NextRequest) {
  * in another browser than the one that asked for the mail. By the link's type:
  *
  * - email, signup, magiclink (the confirmation of a new account; an old login link): verified in a
- *   client of its own that writes no cookie, the session it makes is ended at once, and the answer
- *   is the login page, to sign in with the password (decision 6: the key is made then). This
- *   browser's session, if any, is left as it was.
+ *   client of its own that writes no cookie, and the session it makes is ended at once (decision 6:
+ *   the key is made at the sign-in with the password). This browser's session, if any, is left as
+ *   it was. The answer for a new account's confirmation (email, which confirmation.html sends, and
+ *   signup) is SIGNUP_CONFIRMED_PATH: 「確認できました」, the tab that signed up goes on by itself,
+ *   and 「この画面でログインする」 leads to the login here. An old login link (magiclink) still gets
+ *   the login page, as before.
  * - recovery (the reset mail): verified on this browser's cookies, which then hold that session
  *   (any other one signed in here is replaced), and the answer is always RESET_PATH. The link's
  *   next is never read.
@@ -103,7 +107,7 @@ async function confirmOnly(tokenHash: string, type: ConfirmType): Promise<NextRe
       console.warn("[auth] confirm: ending the session threw:", thrown instanceof Error ? thrown.name : typeof thrown);
     }
   }
-  return go(CONFIRMED_PATH, 303);
+  return go(type === "magiclink" ? CONFIRMED_PATH : SIGNUP_CONFIRMED_PATH, 303);
 }
 
 async function recover(tokenHash: string): Promise<NextResponse> {

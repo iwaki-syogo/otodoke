@@ -48,15 +48,17 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - **Supabase のパスワードの強さの設定を上げない**。`minimum_password_length = 6` と `password_requirements = ""` のまま。authSecret は小文字の hex 64 文字なので、大文字や記号を必須にすると誰も登録もログインもできない。パスワードの強さは、ブラウザで生のパスワードに対して確かめる
 - **Preview と本番は同じ Supabase**。project_ref は下の「外部サービス依存」。Preview でのアカウント作成・パスワードの変更・再設定は、本番のアカウントと鍵を変える。再設定は前の鍵を retire するので、前のメールは開けなくなる。試すアカウントに気をつける
 - メールアドレスを変える画面は作らない。salt が変わり、同じパスワードから同じ値が作れなくなるため。ASCII 以外の文字を含むメールアドレスの登録は断る。Web と iOS で email_norm が割れないようにするため
-- CAPTCHA は条件で書く。コードは `src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = true`。2026-11-07 から
-  - Supabase の CAPTCHA を ON にするのは、`CAPTCHA_ENFORCED = true` の版が本番に出て、本番でログイン・アカウント作成・再設定のメールが通るのを確かめてから
-  - ON にした直後に、本番でログイン・アカウント作成・再設定のメールを 1 回ずつ試す。Supabase に入れた secret key と sitekey の組が違うと、トークン付きの押下もすべて断られる
-  - ON にすると、Turnstile に登録していないホストではログイン・作成・再設定が通らない。dev 以外のブランチの Preview も同じ Supabase なので通らない
+- CAPTCHA は本番で ON。2026-11-07 01:58 JST に、Supabase の Attack Protection で Turnstile を有効にした。コードは `src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = true`
+  - ON の直後に本番で試すのは、Web でトークンを送る 6 つの押下と、iOS のログイン 1 回。6 つは、ログイン・アカウント作成・確認メールの送り直し・再設定のメール・設定で鍵を作る・パスワードを変える。新しい試験用アドレス 1 つで、作成 → 送り直す → 確認リンク → ログイン → 鍵を作る → パスワードを変える → 再設定のメール、の順に回すと 1 回ずつ通せる
+  - Supabase に入れた secret key と sitekey の組が違うと、トークン付きの押下もすべて断られる
+  - 2026-11-07 の ON では、この順で通した。鍵は最初のログインで作られたので、設定の「鍵を作る」は押していない
+  - ON にすると、Turnstile に登録していないホストではログイン・作成・再設定が通らない。登録してあるのは otodoke.app・dev のブランチの URL・localhost。dev 以外のブランチの Preview も同じ Supabase なので通らない
   - ON にすると、トークンを送らないクライアントは新しいログイン・作成・再設定のメールが通らない。ログイン済みのセッションは続く
-  - 戻すときは Supabase を先に OFF にする
+  - 戻すときは、まずダッシュボードの Authentication → Attack Protection で CAPTCHA を OFF にする。ウィジェットそのものが原因なら、そのあと `CAPTCHA_ENFORCED = false` の版を本番に出す。逆の順にすると、その間はトークンを送らない版が断られる
+  - もう一度 ON にするのは、`CAPTCHA_ENFORCED = true` の版が本番に出て、本番でログイン・アカウント作成・再設定のメールが通るのを確かめてから
+  - secret key は SMTP と同じ扱いで、ダッシュボードで変える。`supabase config push` はしない。`supabase/config.toml` の `[auth.captcha]` はコメントのままにしてある。本番の設定はダッシュボードにだけあり、ローカルでは secret が要らない
   - トークンを渡すのは `signUp`・`resend`・`resetPasswordForEmail`・`signInWithPassword`。`signInWithPassword` はログイン・鍵を作る・パスワードを変えるの 3 つ。開く・ほかのパスワードで開く・`finishReset` は渡さない
   - iOS は TestFlight の 1.0 (2) 以降が、CAPTCHA の掛かる呼び出しすべてにトークンを送る。1.0 (1) は送らないが、もう使っていない。リポの `ios/` は古い版なので、送るかどうかの根拠にしない
-  - ON にした日時と `supabase/config.toml` の `[auth.captcha]` は、ON にした回にそろえる
 
 ## ディレクトリ
 

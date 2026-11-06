@@ -4,8 +4,8 @@ import { FakeDb } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
 /**
- * 設定 ends with 「アカウントを削除」 (review E-2): the last section of the page, after ログアウト,
- * closed (no form) until it is pressed.
+ * 「アカウントを削除」 (review E-2): on its own page now (設定 › アカウントの削除), closed (no form)
+ * until it is pressed; the 設定 list ends with the row that opens it, after ログアウト.
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
@@ -46,16 +46,25 @@ beforeEach(() => {
   mocks.state.db = db;
 });
 
-describe("/app/settings: 「アカウントを削除」", () => {
-  it("is the last section, after ログアウト, with no form until pressed", async () => {
-    const Page = (await import("@/app/app/settings/page")).default;
-    const root = parseHtml(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) })));
-    const page = findAll(root, (n) => n.tag === "div")[0];
-    const sections = page.children.filter((c): c is Exclude<typeof c, string> => typeof c !== "string" && c.tag === "section");
-    const last = sections.at(-1)!;
-    expect(findAll(last, (n) => n.tag === "button").map(textOf)).toEqual(["アカウントを削除"]);
-    expect(findAll(last, (n) => n.tag === "form")).toEqual([]);
-    const beforeLast = sections.at(-2)!;
-    expect(findAll(beforeLast, (n) => n.tag === "button").map(textOf)).toEqual(["ログアウト"]);
+describe("設定 › アカウントの削除", () => {
+  it("the page holds the section, with no form until pressed", async () => {
+    const Page = (await import("@/app/app/settings/delete/page")).default;
+    const root = parseHtml(renderToStaticMarkup(Page()));
+    const sections = findAll(root, (n) => n.tag === "section");
+    expect(sections).toHaveLength(1);
+    expect(findAll(sections[0], (n) => n.tag === "button").map(textOf)).toEqual(["アカウントを削除"]);
+    expect(findAll(sections[0], (n) => n.tag === "form")).toEqual([]);
+    expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["アカウントの削除"]);
+  });
+
+  it("the list ends with 「アカウントの削除」, after ログアウト, and holds no deletion form", async () => {
+    const Page = (await import("@/app/app/settings/(list)/page")).default;
+    const root = parseHtml(renderToStaticMarkup(await Page()));
+    const cards = findAll(root, (n) => n.tag === "section");
+    const account = cards.at(-1)!;
+    const rows = findAll(account, (n) => n.tag === "a" || n.tag === "button" || (n.tag === "div" && textOf(n).startsWith("ログイン中") && !textOf(n).includes("ログアウト")));
+    expect(rows.map((r) => textOf(r).replace(/qa@example\.com/, "").replace(/›$/, ""))).toEqual(["ログイン中", "ログアウト", "プライバシーポリシー", "アカウントの削除"]);
+    expect(rows.at(-1)!.attrs.href).toBe("/app/settings/delete");
+    expect(findAll(root, (n) => n.tag === "form").length).toBe(1);
   });
 });
