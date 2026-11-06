@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
+import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
 import { UNREAD_FILTER } from "@/lib/unread";
@@ -84,7 +85,7 @@ export default async function ParcelsPage() {
       <div className="flex flex-col gap-4">
         {addLink}
         {waitingNotice}
-        <EmptyState />
+        <EmptyState received={await hasReceivedMail(supabase, user.id)} />
         {pageLinks}
       </div>
     );
@@ -171,19 +172,53 @@ function Section({ title, count, items, empty, swipe = false }: { title: string;
   );
 }
 
-function EmptyState() {
+/**
+ * Whether mail of the person's own has come in: a stored mail other than the public samples, or a
+ * mail the screen dropped (screen_events keeps those 14 days). Read only for the empty list.
+ * The samples never count: clearing them (「すべての荷物を消す」 takes their mails too) brings the
+ * setup question back. A failed read answers false, so the setup question shows, as it did before.
+ */
+async function hasReceivedMail(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<boolean> {
+  const head = { count: "exact", head: true } as const;
+  const [all, samples, screened] = await Promise.all([
+    supabase.from("emails").select("id", head).eq("user_id", userId),
+    supabase.from("emails").select("id", head).eq("user_id", userId).like("provider_email_id", SAMPLE_PROVIDER_ID),
+    supabase.from("screen_events").select("id", head).eq("user_id", userId),
+  ]);
+  for (const [what, r] of [["emails", all], ["samples", samples], ["screen_events", screened]] as const) {
+    if (r.error) {
+      console.error(`parcels page (${what}):`, r.error.message);
+      return false;
+    }
+  }
+  return (all.count ?? 0) - (samples.count ?? 0) > 0 || (screened.count ?? 0) > 0;
+}
+
+/**
+ * The empty list. With no mail of the person's own yet it asks about setting up forwarding (once,
+ * never a mail at a time; the button does not promise the address at once). Once mail has come in,
+ * forwarding is there: asking again would send them to set it up twice, so it says mail arrives.
+ */
+function EmptyState({ received }: { received: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <p className="text-5xl">📬</p>
       <h2 className="mt-4 text-lg font-bold">まだ荷物がありません</h2>
-      {/* Setting up is once, never a mail at a time; the button does not promise the address at once. */}
-      <p className="mt-2 text-sm leading-6 text-neutral-600">
-        メールの自動転送を設定しますか？
-        <br />
-        設定は最初の 1 回だけです。
-      </p>
+      {received ? (
+        <p className="mt-2 text-sm leading-6 text-neutral-600">
+          メールは届いています。
+          <br />
+          荷物のメールが届くまで、お待ちください。
+        </p>
+      ) : (
+        <p className="mt-2 text-sm leading-6 text-neutral-600">
+          メールの自動転送を設定しますか？
+          <br />
+          設定は最初の 1 回だけです。
+        </p>
+      )}
       <Link href="/app/settings" className="mt-6 w-full rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
-        設定する
+        {received ? "設定を見る" : "設定する"}
       </Link>
       <Link href="/app/settings#demo" className="mt-3 w-full rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">
         サンプルで試す
