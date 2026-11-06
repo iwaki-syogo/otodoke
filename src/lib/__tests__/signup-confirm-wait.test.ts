@@ -533,18 +533,53 @@ describe("「別のアドレスでやり直す」", () => {
     expect(JSON.stringify(view.tree)).not.toContain(PASSWORD);
   });
 
-  it("an answer still on its way is left unread: no move on, no words", async () => {
+  it("while a sign-in is on its way: shown pressed, and a refusal's answer then brings the empty form back", async () => {
     let answer!: (v: unknown) => void;
     flows.signIn.mockReturnValue(new Promise((r) => (answer = r)));
     const view = await waiting();
     pressDone(view);
     await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
     pressRestart(view);
-    answer({ ok: true, userId: "u", key: "made" });
     await drawn();
-    await drawn();
+    // Still the waiting screen, the restart shown pressed.
+    expect(view.text()).toContain(WORDS.title);
+    const restart = buttons(view)[2];
+    expect(restart.props["aria-busy"]).toBe(true);
+    expect(textOfHost(restart)).toBe(WORDS.restart);
+    answer({ ok: false, code: "not_confirmed" });
+    await vi.waitFor(() => expect(view.hosts((h) => h.type === "h1").map(textOfHost)).toEqual(["アカウントを作る"]));
+    expect(view.hosts((h) => h.type === "input").map((i) => i.props.value)).toEqual(["", "", ""]);
     expect(nav.to).toEqual([]);
-    expect(view.hosts((h) => h.type === "h1").map(textOfHost)).toEqual(["アカウントを作る"]);
+    expect(view.text()).not.toContain(WORDS.notYet);
+  });
+
+  it.each([
+    ["made", "/app/welcome"],
+    ["opened", "/app"],
+  ] as const)("while a sign-in is on its way, and it went through (key %s): on to %s, never the form to a signed-in tab", async (key, landing) => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValue(new Promise((r) => (answer = r)));
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    pressRestart(view);
+    answer({ ok: true, userId: "u", key });
+    await vi.waitFor(() => expect(nav.to).toEqual([landing]));
+    expect(view.hosts((h) => h.type === "h1").map(textOfHost)).toEqual([WORDS.title]);
+    expect(view.hosts((h) => h.type === "input")).toEqual([]);
+  });
+
+  it("while a try by itself is on its way: the same (it waits for the answer)", async () => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValue(new Promise((r) => (answer = r)));
+    const view = await waiting();
+    tab.show();
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    pressRestart(view);
+    await drawn();
+    expect(view.text()).toContain(WORDS.title);
+    answer({ ok: true, userId: "u", key: "made" });
+    await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
   });
 
   it("a new account made after it waits again for its own address", async () => {
@@ -563,6 +598,129 @@ describe("「別のアドレスでやり直す」", () => {
     later();
     await shownAndTried(1);
     expect(flows.signIn.mock.calls[0][0].email).toBe("other@example.test");
+  });
+});
+
+describe("[review 2] a press is never sent twice, nor for a screen left behind", () => {
+  /** /signup's form, filled in, with a token ready. */
+  async function form(): Promise<Mounted> {
+    const view = mount(() => SignupForm());
+    fresh("0.token-of-the-signup");
+    type(view, "signup-email", EMAIL);
+    type(view, "signup-password", PASSWORD);
+    type(view, "signup-password-again", PASSWORD);
+    await drawn();
+    return view;
+  }
+  const submitForm = (view: Mounted) => (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void> | undefined)(fakeEvent());
+
+  it("「アカウントを作る」 pressed twice before it is drawn (a double tap, Enter): one sign-up, and none after the waiting screen", async () => {
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
+    const view = await form();
+    void submitForm(view);
+    void submitForm(view);
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.title));
+    // A new token for a second one to take, if one were waiting.
+    fresh("0.would-be-second");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(actions.signUp).toHaveBeenCalledTimes(1);
+    expect(widget.token!.current.value).toBe("0.would-be-second");
+  });
+
+  it("「メールを送り直す」 pressed twice before it is drawn: one mail", async () => {
+    actions.resend.mockResolvedValue({ ok: true, code: "confirmation_sent" });
+    const view = await waiting();
+    pressResend(view);
+    pressResend(view);
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.resent));
+    fresh("0.would-be-second");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(actions.resend).toHaveBeenCalledTimes(1);
+  });
+
+  it("a press waiting for its turn, pressed again: still one (「メールを送り直す」 behind a sign-in, 「確認しました」 behind a resend)", async () => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    actions.resend.mockResolvedValue({ ok: true, code: "confirmation_sent" });
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    pressResend(view);
+    pressResend(view);
+    answer({ ok: false, code: "not_confirmed" });
+    await vi.waitFor(() => expect(widget.token!.current.value).toBe(""));
+    fresh("0.for-the-resend");
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(1));
+    fresh("0.would-be-second");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(actions.resend).toHaveBeenCalledTimes(1);
+
+    let sent!: (v: unknown) => void;
+    actions.resend.mockReturnValueOnce(new Promise((r) => (sent = r)));
+    pressResend(view);
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(2));
+    pressDone(view);
+    pressDone(view);
+    sent({ ok: true, code: "confirmation_sent" });
+    await vi.waitFor(() => expect(widget.token!.current.value).toBe(""));
+    fresh("0.for-the-sign-in");
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    fresh("0.would-be-third");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+  });
+
+  it("「確認しました」 waiting for its token, then 「別のアドレスでやり直す」: the old account is not signed in with the new form's token, and the new form is not held up", async () => {
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
+    const view = await waiting();
+    widget.token!.current.value = "";
+    pressDone(view);
+    await drawn();
+    pressRestart(view);
+    await drawn();
+    // The new form's own token, and its press.
+    type(view, "signup-email", "other@example.test");
+    type(view, "signup-password", PASSWORD);
+    type(view, "signup-password-again", PASSWORD);
+    await drawn();
+    fresh("0.token-of-the-new-form");
+    void submitForm(view);
+    await vi.waitFor(() => expect(actions.signUp).toHaveBeenCalledTimes(2));
+    expect(actions.signUp.mock.calls[1][0]).toMatchObject({ email: "other@example.test", captchaToken: "0.token-of-the-new-form" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(flows.signIn).not.toHaveBeenCalled();
+  });
+
+  it("「メールを送り直す」 waiting for its token, then 「別のアドレスでやり直す」: no mail to the address let go", async () => {
+    const view = await waiting();
+    widget.token!.current.value = "";
+    pressResend(view);
+    await drawn();
+    pressRestart(view);
+    await drawn();
+    fresh("0.token-of-the-new-form");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(actions.resend).not.toHaveBeenCalled();
+    // The token stays for the new form.
+    expect(widget.token!.current.value).toBe("0.token-of-the-new-form");
+  });
+
+  it.each(["確認しました", "メールを送り直す"] as const)("a press of 「%s」 with a token past 280 s (a tab frozen in the background): not sent, the widget makes a new one, and that one goes", async (which) => {
+    actions.resend.mockResolvedValue({ ok: true, code: "confirmation_sent" });
+    const view = await waiting();
+    widget.token!.current.value = "0.old-token";
+    widget.token!.current.dataset.tokenAt = String(Date.now() - TURNSTILE_TOKEN_STALE_MS - 10_000);
+    const round = widget.round;
+    const action = which === "確認しました" ? flows.signIn : actions.resend;
+    if (which === "確認しました") pressDone(view);
+    else pressResend(view);
+    await drawn();
+    await drawn();
+    expect(action).not.toHaveBeenCalled();
+    expect(widget.round).toBe(round + 1);
+    fresh("0.new-token");
+    await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect(action.mock.calls[0][0].captchaToken).toBe("0.new-token");
   });
 });
 
