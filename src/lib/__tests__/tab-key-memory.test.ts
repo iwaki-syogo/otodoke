@@ -8,7 +8,8 @@ import path from "node:path";
  *  - one key, for the user it was opened for: another account in the tab gets nothing;
  *  - nothing is written to storage, and nothing but the opened key is kept;
  *  - the logout is a native POST to /auth/signout, answered with a redirect: a new page, so the
- *    tab's memory goes with the old one (a reload does the same).
+ *    tab's memory goes with the old one (a reload does the same); the press forgets the key first,
+ *    for a browser that keeps the old page in its back/forward cache (leave-forgets-key.test.ts).
  * A sign-in and a reset forget it before anything else: password-flows.test.ts.
  */
 
@@ -35,11 +36,18 @@ const key = (keyId: string) => ({ keyId, privateKey: {} as CryptoKey, publicKey:
 
 const source = (rel: string) => read(path.join(SRC, rel));
 
-/** The forms of a page's source that post to /auth/signout, with what is wrong with each. */
+/**
+ * What is wrong with the logout form of a source: it must post to /auth/signout itself (POST), and
+ * nothing in the file may stop that or send it another way. An onSubmit that only forgets the key
+ * leaves the POST to the browser.
+ */
 function logoutFormProblems(code: string): string[] {
-  const forms = withoutComments(code).match(/<form\b[^>]*\baction="\/auth\/signout"[^>]*>/g) ?? [];
+  const source = withoutComments(code);
+  const forms = source.match(/<form\b[^>]*\baction="\/auth\/signout"[^>]*>/g) ?? [];
   if (forms.length === 0) return ["no logout form"];
-  return forms.flatMap((form) => [...(/\smethod="post"/.test(form) ? [] : ["not POST"]), ...(/\sonSubmit=/.test(form) ? ["sent in code"] : [])]);
+  const problems = forms.flatMap((form) => (/\smethod="post"/.test(form) ? [] : ["not POST"]));
+  if (/preventDefault|fetch\(|sendBeacon|requestSubmit|router\./.test(source)) problems.push("sent in code");
+  return problems;
 }
 
 describe("the key in this tab's memory", () => {
@@ -66,10 +74,12 @@ describe("the key in this tab's memory", () => {
 });
 
 describe("the logout leaves the page", () => {
-  it("設定's logout is a native POST to /auth/signout, in a page drawn by the server", () => {
+  it("設定's logout is a native POST to /auth/signout (LogoutForm, on a page drawn by the server)", () => {
     const page = source("app/app/settings/page.tsx");
     expect(/^\s*["']use client["']/.test(withoutComments(page))).toBe(false);
-    expect(logoutFormProblems(page)).toEqual([]);
+    expect(withoutComments(page)).toContain("<LogoutForm />");
+    expect(withoutComments(page)).not.toContain("/auth/signout");
+    expect(logoutFormProblems(source("app/app/settings/logout-form.tsx"))).toEqual([]);
   });
 
   it("/auth/signout signs out and answers with a redirect to the top page (a new document)", async () => {
@@ -84,5 +94,7 @@ describe("the logout leaves the page", () => {
     expect(logoutFormProblems('<form action="/auth/signout" method="post" onSubmit={(e) => { e.preventDefault(); fetch("/auth/signout"); }}>')).toEqual(["sent in code"]);
     expect(logoutFormProblems('<form action="/auth/signout">')).toEqual(["not POST"]);
     expect(logoutFormProblems("<button onClick={signOut}>ログアウト</button>")).toEqual(["no logout form"]);
+    // Positive control: forgetting the key at the press leaves the POST to the browser.
+    expect(logoutFormProblems('<form action="/auth/signout" method="post" onSubmit={() => forgetTabKey()}>')).toEqual([]);
   });
 });

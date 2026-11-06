@@ -10,6 +10,7 @@ import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
 import { PressButton } from "./press";
 import { PasswordPanel } from "./password-panel";
+import { LogoutForm } from "./logout-form";
 import { MailHandling } from "./mail-handling";
 import { readAll } from "@/lib/supabase/read-all";
 import { countPlainRead } from "@/lib/mail-keys";
@@ -275,11 +276,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
       <section className="flex flex-col gap-3">
         <p className="text-xs text-neutral-500">ログイン中: {user.email}</p>
-        <form action="/auth/signout" method="post">
-          <button type="submit" className="rounded-lg border border-neutral-300 px-4 py-2 text-sm">
-            ログアウト
-          </button>
-        </form>
+        <LogoutForm />
       </section>
 
       <AccountDeletion />
