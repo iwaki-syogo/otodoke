@@ -113,18 +113,23 @@ final class UnlockModel {
         case signInAgain
     }
 
-    /// The help of the last submit. TDD-STUB(password-login): never set yet.
+    /// The help of the last submit.
     private(set) var help: Help?
     /// The key step after the sign-in (its .needsWebLogin is shown here too).
     @ObservationIgnored var keySetup: KeySetup?
     /// 「ログインし直す」 signs out through this (MainScreens passes auth.signOut).
     @ObservationIgnored var signOut: @MainActor () async -> Void = {}
 
-    /// help, else the key step's. TDD-STUB(password-login): nil.
-    var shownHelp: Help? { nil }
+    /// help, else the key step's (.needsWebLogin after the sign-in).
+    var shownHelp: Help? {
+        if let help { return help }
+        return keySetup?.lastOutcome == .needsWebLogin ? .webLogin : nil
+    }
 
-    /// 「ログインし直す」. TDD-STUB(password-login): does nothing.
-    func signInAgain() async {}
+    /// 「ログインし直す」: signs out (the login screen follows; the next password sign-in makes the key).
+    func signInAgain() async {
+        await signOut()
+    }
 
     init(store: OpenKeyStore, keys: any MailKeyReading, vault: KeyVault?, policy: KeyStorePolicy, deriver: any KeyDeriving = LiveKeyDeriver(), signInEmail: @escaping @MainActor () -> String = { "" }) {
         self.store = store
@@ -204,12 +209,16 @@ final class UnlockModel {
         defer { submitting = false }
         phase = .opening
         message = nil
+        help = nil
 
         let row: StoredKeyRow
         switch await keys.currentKey() {
         case let .loaded(found?):
             row = found
-        case .loaded(nil), .failed:
+        case .loaded(nil):
+            // No key row: the key step after the sign-in did not finish; signing in again makes it.
+            return finish(stamp, message: LoginText.noKeyYet, help: .signInAgain)
+        case .failed:
             return finish(stamp, message: Self.readFailedText)
         }
         guard store.isCurrent(stamp) else { return finish(stamp, message: nil) }
@@ -221,7 +230,11 @@ final class UnlockModel {
             recipient = try await deriver.open(row, password: password, email: email, userID: stamp.session.userID)
         } catch {
             lastOpenDuration = clock.now - started
-            return finish(stamp, message: error == .wrongPassword ? Self.wrongPassphraseText : Self.failedText)
+            if error == .wrongPassword {
+                // A typo, or a key wrapped for another password (a change on the Web stopped half-way).
+                return finish(stamp, message: Self.wrongPassphraseText, help: .webLogin)
+            }
+            return finish(stamp, message: Self.failedText)
         }
         lastOpenDuration = clock.now - started
 
@@ -241,13 +254,15 @@ final class UnlockModel {
     }
 
     /// A submit that did not open: back to the field with `message`, unless the stamps went stale.
-    private func finish(_ stamp: UnlockStamp, message: String?) -> Bool {
+    private func finish(_ stamp: UnlockStamp, message: String?, help: Help? = nil) -> Bool {
         if store.isCurrent(stamp) {
             phase = .needsPassphrase
             self.message = message
+            self.help = help
         } else {
             phase = .idle
             self.message = nil
+            self.help = nil
         }
         return false
     }

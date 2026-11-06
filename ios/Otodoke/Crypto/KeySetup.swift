@@ -164,7 +164,7 @@ enum KeySetupOutcome: Equatable, Sendable {
     /// Signed out, another account, or the background meanwhile: nothing kept, nothing shown.
     case stale
     /// The key in use does not open with the password that signed in (a change on the Web stopped half-way):
-    /// nothing made, nothing kept; the Web's login is asked for. TDD-STUB(password-login): not answered yet.
+    /// nothing made, nothing kept; the Web's login is asked for (no other password, no rewrap or restore here).
     case needsWebLogin
 }
 
@@ -236,8 +236,13 @@ final class KeySetup {
 
     /// The key in use, opened with the KEK of the sign-in's master.
     private func open(_ row: StoredKeyRow, signIn: PasswordSignIn, stamp: UnlockStamp, ticket: KeyStorePolicy.Ticket) -> KeySetupOutcome {
-        guard let recipient = try? PasswordV1.openStoredKey(row, master: signIn.master, userID: signIn.userID) else {
-            return .failed(message: UnlockModel.failedText)
+        let recipient: PrivateRecipient
+        do {
+            recipient = try PasswordV1.openStoredKey(row, master: signIn.master, userID: signIn.userID)
+        } catch {
+            // Wrapped for another password (a change on the Web stopped half-way): the Web's login is asked for.
+            // A row that is not a key row at all is another failure.
+            return error == .wrongPassword ? .needsWebLogin : .failed(message: UnlockModel.failedText)
         }
         return keep(recipient, stamp: stamp, ticket: ticket) ? .opened(keyID: recipient.keyID) : .stale
     }

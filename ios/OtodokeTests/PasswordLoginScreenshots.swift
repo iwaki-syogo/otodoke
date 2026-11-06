@@ -52,6 +52,16 @@ struct PasswordLoginScreenshots {
         }
     }
 
+    @Test func unlockWithoutAKeyRow() async throws {
+        let w = try UnlockWorld(key: .loaded(nil))
+        _ = await w.model.key()
+        _ = await w.model.submit(password: "いまのパスワードです", email: UnlockWorld.email)
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let view = VStack { UnlockView(model: w.model) }.padding(16).frame(maxHeight: .infinity, alignment: .top)
+            try await Self.shoot(view, name: "pw-unlock-nokey-\(style == .dark ? "dark" : "light")", style: style, height: 400)
+        }
+    }
+
     private static func shoot(_ view: some View, name: String, style: UIUserInterfaceStyle, height: CGFloat) async throws {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         for _ in 0..<100 where scene.activationState != .foregroundActive {

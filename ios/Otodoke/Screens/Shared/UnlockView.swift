@@ -1,5 +1,6 @@
 // The passphrase field (SecureField, no autocorrection or capitalization) with the button, 「開いています…」
-// while it opens, the message under the field. Every word comes from UnlockModel / FaceIDText (no other text
+// while it opens, the message under the field, and the help (「Web でログイン」 in Safari, 「ログインし直す」).
+// Every word comes from UnlockModel / FaceIDText / LoginText (no other text
 // is added; a vitest checks there is no Japanese literal here). The passphrase lives only in this view's state
 // and is cleared once the key opened.
 
@@ -12,6 +13,7 @@ struct UnlockView: View {
 
     @State private var passphrase = ""
     @FocusState private var focused: Bool
+    @Environment(\.openURL) private var openURL
 
     /// Face ID / Touch ID when the key will be kept with it; nil when only memory holds it.
     private var keptWith: BiometryKind? {
@@ -58,6 +60,28 @@ struct UnlockView: View {
                 Text(message)
                     .font(.subheadline)
                     .foregroundStyle(OtodokeColor.errorText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            switch model.shownHelp {
+            case .webLogin?:
+                // The key does not open with this password: the Web's login (Safari); nothing else is asked here.
+                Text(LoginText.keyNeedsWebLogin)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    openURL(LoginText.webLoginURL)
+                } label: {
+                    Text(LoginText.openWebLogin).font(.subheadline.weight(.medium))
+                }
+            case .signInAgain?:
+                Button {
+                    Task { await model.signInAgain() }
+                } label: {
+                    Text(LoginText.signInAgain).font(.subheadline.weight(.medium))
+                }
+            case nil:
+                EmptyView()
             }
         }
     }

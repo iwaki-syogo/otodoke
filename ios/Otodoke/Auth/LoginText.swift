@@ -57,17 +57,17 @@ enum LoginText {
 
     // MARK: the key does not open, or was never made (the owner's decision 11/6 23:4x)
 
-    /// The Web's sentence, to be in LOGIN_MESSAGES under a key not named yet. TDD-STUB(password-login)
-    static let keyDoesNotOpen = "TDD-STUB(password-login)"
+    /// The Web's sentence, to be in LOGIN_MESSAGES under a key not named yet.
+    static let keyDoesNotOpen = "このパスワードでは、メールの鍵を開けませんでした。"
     /// The app's own, after it.
-    static let webLoginPrompt = "TDD-STUB(password-login)"
+    static let webLoginPrompt = "Web でログインしてください。"
     /// The two, shown as one line.
-    static var keyNeedsWebLogin: String { keyDoesNotOpen }
-    static let openWebLogin = "TDD-STUB(password-login)"
-    static let noKeyYet = "TDD-STUB(password-login)"
-    static let signInAgain = "TDD-STUB(password-login)"
+    static var keyNeedsWebLogin: String { keyDoesNotOpen + webLoginPrompt }
+    static let openWebLogin = "Web でログイン"
+    static let noKeyYet = "メールの鍵がまだできていません。ログインし直すと作れます。"
+    static let signInAgain = "ログインし直す"
     /// Opened in Safari: https://otodoke.app/login
-    static let webLoginURL = URL(string: "http://otodoke.app/")!
+    static let webLoginURL = URL(string: "https://otodoke.app/login")!
 
     /// Opened in Safari (the reset is done on the Web): https://otodoke.app/login/forgot
     static let forgotPasswordURL = URL(string: "https://otodoke.app/login/forgot")!

@@ -30,6 +30,8 @@ extension MainScreens {
             accessToken: { try? await provider.auth.session.accessToken }
         )
         keySetup = setup
+        unlock?.keySetup = setup
+        unlock?.signOut = { await auth.signOut() }
         if let signIn = auth.takeSignInSecret() {
             Task {
                 await setup.run(signIn)
