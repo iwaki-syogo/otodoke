@@ -163,6 +163,9 @@ enum KeySetupOutcome: Equatable, Sendable {
     case failed(message: String)
     /// Signed out, another account, or the background meanwhile: nothing kept, nothing shown.
     case stale
+    /// The key in use does not open with the password that signed in (a change on the Web stopped half-way):
+    /// nothing made, nothing kept; the Web's login is asked for. TDD-STUB(password-login): not answered yet.
+    case needsWebLogin
 }
 
 @MainActor

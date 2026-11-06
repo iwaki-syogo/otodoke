@@ -55,6 +55,20 @@ enum LoginText {
     /// Shown with not_confirmed: sends the confirmation mail again.
     static let resendConfirmation = "確認のメールをもう一度送る"
 
+    // MARK: the key does not open, or was never made (the owner's decision 11/6 23:4x)
+
+    /// The Web's sentence, to be in LOGIN_MESSAGES under a key not named yet. TDD-STUB(password-login)
+    static let keyDoesNotOpen = "TDD-STUB(password-login)"
+    /// The app's own, after it.
+    static let webLoginPrompt = "TDD-STUB(password-login)"
+    /// The two, shown as one line.
+    static var keyNeedsWebLogin: String { keyDoesNotOpen }
+    static let openWebLogin = "TDD-STUB(password-login)"
+    static let noKeyYet = "TDD-STUB(password-login)"
+    static let signInAgain = "TDD-STUB(password-login)"
+    /// Opened in Safari: https://otodoke.app/login
+    static let webLoginURL = URL(string: "http://otodoke.app/")!
+
     /// Opened in Safari (the reset is done on the Web): https://otodoke.app/login/forgot
     static let forgotPasswordURL = URL(string: "https://otodoke.app/login/forgot")!
 }

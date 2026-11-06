@@ -134,6 +134,19 @@ const APP_OWN_WORDS: Record<string, string> = {
   toSignIn: "ログインに戻る",
   forgotPassword: "パスワードを忘れた",
   resendConfirmation: "確認のメールをもう一度送る",
+  // The owner's decision 11/6 23:4x: the key does not open, or was never made.
+  webLoginPrompt: "Web でログインしてください。",
+  openWebLogin: "Web でログイン",
+  noKeyYet: "メールの鍵がまだできていません。ログインし直すと作れます。",
+  signInAgain: "ログインし直す",
+};
+
+/**
+ * Words the Web is to put in LOGIN_MESSAGES under a key not named yet. Once the copy has them, the constant is
+ * checked against the copy like the others (move it to SHOWN_KEYS then).
+ */
+const TO_BE_WEB_WORDS: Record<string, string> = {
+  keyDoesNotOpen: "このパスワードでは、メールの鍵を開けませんでした。",
 };
 
 describe("the Web's words", () => {
@@ -171,8 +184,11 @@ describe("the Web's words", () => {
 
   it("LoginText has the Web's words and the listed words of the app's own, nothing else", () => {
     const all = swiftConstants(stripComments(read("ios/Otodoke/Auth/LoginText.swift")));
-    const own = [...all.entries()].filter(([name]) => !SHOWN_KEYS.map(camel).includes(name) && !(name in PASSWORD_NAMES));
+    const own = [...all.entries()].filter(([name]) => !SHOWN_KEYS.map(camel).includes(name) && !(name in PASSWORD_NAMES) && !(name in TO_BE_WEB_WORDS));
     expect(Object.fromEntries(own)).toEqual(APP_OWN_WORDS);
+    for (const [name, words] of Object.entries(TO_BE_WEB_WORDS)) expect(all.get(name), `LoginText.${name}`).toBe(words);
+    // Not in the copy yet: when the Web adds it, it moves to SHOWN_KEYS (this fails then, as a reminder).
+    for (const words of Object.values(TO_BE_WEB_WORDS)) expect(Object.values(LOGIN_MESSAGES_COPY)).not.toContain(words);
     for (const words of Object.values(APP_OWN_WORDS)) expect(words).not.toMatch(/合言葉/);
   });
 
@@ -180,6 +196,12 @@ describe("the Web's words", () => {
     const src = read("ios/Otodoke/Auth/LoginText.swift");
     const m = src.match(/^\s*static let forgotPasswordURL\s*=\s*URL\(string:\s*"([^"]+)"\)!/m);
     expect(m?.[1]).toBe("https://otodoke.app/login/forgot");
+  });
+
+  it("「Web でログイン」 is the Web's login page, over https", () => {
+    const src = read("ios/Otodoke/Auth/LoginText.swift");
+    const m = src.match(/^\s*static let webLoginURL\s*=\s*URL\(string:\s*"([^"]+)"\)!/m);
+    expect(m?.[1]).toBe("https://otodoke.app/login");
   });
 });
 
@@ -290,6 +312,29 @@ describe("the login screen", () => {
 
   it("the Turnstile widget stays on the screen and the model keeps its token", () => {
     expect(view()).toContain("TurnstileView(");
+  });
+});
+
+// ---- the unlock's help ---------------------------------------------------------------------------
+
+describe("the unlock: a key that does not open, a key never made", () => {
+  const view = () => stripComments(read("ios/Otodoke/Screens/Shared/UnlockView.swift"));
+
+  it("shows the help of model.shownHelp: 「Web でログイン」 in Safari, 「ログインし直す」 through the model", () => {
+    const src = view();
+    expect(src).toMatch(/model\.shownHelp/);
+    expect(src).toMatch(/LoginText\.keyNeedsWebLogin/);
+    expect(src).toMatch(/openURL\(LoginText\.webLoginURL\)/);
+    expect(src).toMatch(/LoginText\.openWebLogin/);
+    expect(src).toMatch(/LoginText\.signInAgain/);
+    expect(src).toMatch(/model\.signInAgain\(\)/);
+    expect(src).not.toMatch(/SFSafariViewController|WKWebView|ASWebAuthenticationSession/);
+  });
+
+  it("attachKeys gives the unlock the key step and the sign-out", () => {
+    const src = stripComments(read("ios/Otodoke/Screens/MainScreens+Keys.swift"));
+    expect(src).toMatch(/\.keySetup\s*=\s*setup/);
+    expect(src).toMatch(/\.signOut\s*=\s*\{[^}]*auth\.signOut\(\)/);
   });
 });
 

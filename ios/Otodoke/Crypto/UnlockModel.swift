@@ -105,6 +105,27 @@ final class UnlockModel {
     /// auth.signedInEmail). "" opens nothing.
     @ObservationIgnored let signInEmail: @MainActor () -> String
 
+    /// What the unlock offers besides the field (the owner's decision 11/6 23:4x).
+    enum Help: Equatable, Sendable {
+        /// 「Web でログイン」: the key does not open with this password.
+        case webLogin
+        /// 「ログインし直す」: no key row (the key step did not finish).
+        case signInAgain
+    }
+
+    /// The help of the last submit. TDD-STUB(password-login): never set yet.
+    private(set) var help: Help?
+    /// The key step after the sign-in (its .needsWebLogin is shown here too).
+    @ObservationIgnored var keySetup: KeySetup?
+    /// 「ログインし直す」 signs out through this (MainScreens passes auth.signOut).
+    @ObservationIgnored var signOut: @MainActor () async -> Void = {}
+
+    /// help, else the key step's. TDD-STUB(password-login): nil.
+    var shownHelp: Help? { nil }
+
+    /// 「ログインし直す」. TDD-STUB(password-login): does nothing.
+    func signInAgain() async {}
+
     init(store: OpenKeyStore, keys: any MailKeyReading, vault: KeyVault?, policy: KeyStorePolicy, deriver: any KeyDeriving = LiveKeyDeriver(), signInEmail: @escaping @MainActor () -> String = { "" }) {
         self.store = store
         self.keys = keys

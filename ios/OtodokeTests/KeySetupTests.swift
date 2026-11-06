@@ -174,7 +174,8 @@ struct KeySetupTests {
         #expect(await w.server.count("register") == 0)
         #expect(w.store.key == nil)
         #expect(w.vaultCount == 0)
-        if case .failed = outcome {} else { Issue.record("expected .failed, got \(outcome)") }
+        // The owner's decision 11/6 23:4x: the Web's login is asked for (KeyHelpTests).
+        #expect(outcome == .needsWebLogin)
     }
 
     @Test func turnedOffItIsInMemoryButNotKept() async throws {

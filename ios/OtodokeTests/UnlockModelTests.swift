@@ -133,7 +133,9 @@ struct UnlockModelTests {
     }
 
     @Test func anUnreadableKeyRowIsReadFailedAndRunsNoPBKDF2() async throws {
-        for answer in [LoadResult<StoredKeyRow?>.failed, .loaded(nil)] {
+        // The owner's decision 11/6 23:4x: no key row has its own words (KeyHelpTests.noKeyRowSaysSignInAgain…);
+        // a read that failed stays 「読み込めませんでした」.
+        for answer in [LoadResult<StoredKeyRow?>.failed] {
             let w = try UnlockWorld(key: answer)
             #expect(await w.model.submit(password: w.v.passphrase, email: UnlockWorld.email) == false)
             #expect(w.model.message == UnlockModel.readFailedText)
