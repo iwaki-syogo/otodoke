@@ -22,9 +22,21 @@
 -- the table's owner, so Supabase Auth deleting a user needs no grant here (checked on Postgres 17
 -- with a role that has none, on 2026-11-06).
 --
+-- One transaction of its own (begin ... commit below), whoever runs it: it applies whole or not at
+-- all. Wrapped once more by the runner (psql --single-transaction, say), Postgres warns twice
+-- (already a transaction in progress / no transaction in progress) and it still applies whole;
+-- sent as one multi-statement query, it does not warn (both tried on Postgres 17, 2026-11-06).
+-- Dropping or adding the reference to auth.users locks auth.users too (AccessExclusiveLock for the
+-- drop, measured on Postgres 17): sign-ins and getUser wait while this transaction holds it, and a
+-- long transaction that holds auth.users would queue them all behind this one. lock_timeout is 5 s:
+-- then this fails, changes nothing, and is run again later (review R3-38).
+--
 -- Re-runnable: each step checks what is there. Independent of the code.
 -- After applying: supabase/verify/20261106190000_claude_usage_keeps_deleted_calls.sql
 -- Rollback:       supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql
+
+begin;
+set local lock_timeout = '5s';
 
 do $$
 declare
@@ -51,3 +63,5 @@ alter table public.claude_usage_daily alter column user_id drop not null;
 
 alter table public.claude_usage_daily
   add constraint claude_usage_daily_user_id_fkey foreign key (user_id) references auth.users(id) on delete set null;
+
+commit;

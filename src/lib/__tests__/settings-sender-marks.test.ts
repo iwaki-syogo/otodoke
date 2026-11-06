@@ -133,7 +133,9 @@ describe("markWronglyDropped: the person's own mail (review R3-8)", () => {
 
   it("a forwarded copy is not called the person's own mail (R3-31)", async () => {
     const section = droppedSection(await render({ flagged: "forwarded" }));
-    expect(textOf(section)).toContain("転送されたメールは、差出人として覚えられません。今回の荷物は手で登録できます。");
+    expect(textOf(section)).toContain("手で転送されたメールは、差出人として覚えられません。今回の荷物は手で登録できます。");
+    // Every mail here came by automatic forwarding: the note is about the one forwarded by hand (R3-39).
+    expect(textOf(section)).not.toMatch(/(^|[^で])転送されたメール/);
     expect(textOf(section)).not.toContain("ご自身のアドレス");
     expect(findAll(section, (n) => n.tag === "a" && n.attrs.href === "/app/parcels/new")).toHaveLength(1);
   });

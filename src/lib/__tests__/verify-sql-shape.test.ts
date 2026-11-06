@@ -59,15 +59,30 @@ describe("verify files answer with a result row", () => {
   });
 });
 
+/** The statements of a file, the bodies of its do blocks folded. */
+const statementsOf = (sql: string) => sql.replace(/\$\$[\s\S]*?\$\$/g, "$$…$$").split(";").map((s) => s.trim()).filter(Boolean);
+
+describe("20261106190000 and its rollback: one transaction each, that gives up on a held auth.users (R3-30, R3-38)", () => {
+  // Run on local Postgres 17 on 2026-11-06: with another session holding a row of auth.users
+  // (select ... for update), each failed after 5 s and changed nothing; without it, each went
+  // through.
+  for (const file of ["supabase/migrations/20261106190000_claude_usage_keeps_deleted_calls.sql", "supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql"]) {
+    it(`${file}: begin, lock_timeout 5 s, ..., commit`, () => {
+      const statements = statementsOf(withoutComments(read(file)));
+      expect(statements[0]).toBe("begin");
+      expect(statements[1]).toBe("set local lock_timeout = '5s'");
+      expect(statements[statements.length - 1]).toBe("commit");
+    });
+  }
+});
+
 describe("the 20261106190000 rollback cannot stop halfway (R3-30)", () => {
   const sql = withoutComments(read("supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql"));
 
-  it("is one transaction, and every drop and add checks first", () => {
-    const statements = sql.replace(/\$\$[\s\S]*?\$\$/g, "$$…$$").split(";").map((s) => s.trim()).filter(Boolean);
-    expect(statements[0]).toBe("begin");
-    expect(statements[statements.length - 1]).toBe("commit");
-    // Run on local Postgres 17 on 2026-11-06: twice, by hand without begin/commit, and on a
-    // database 190000 never reached; the second run left every constraint's oid as it was.
+  it("every drop and add checks first, and the file is run in one go", () => {
+    // Run on local Postgres 17 on 2026-11-06: twice, and on a database 190000 never reached; the
+    // second run left every constraint's oid as it was.
+    expect(read("supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql")).toContain("Run the file in one go");
     expect(sql).toMatch(/drop constraint if exists /);
     expect(sql.match(/drop constraint (?!if exists )/g)).toBeNull();
     for (const add of sql.match(/add constraint[^;]*/g) ?? []) {

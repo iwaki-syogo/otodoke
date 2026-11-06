@@ -5,13 +5,19 @@
 -- first, so the day's sum loses their calls again, and deleting an account gives its calls back
 -- to the global limit once more (review R3-1).
 --
--- One transaction, and every step checks the state first (review R3-30): run twice, or one
--- statement at a time by hand, or on a database the migration never reached, it stops nowhere
--- halfway and a second run changes nothing. Before the migration and after this file the table
--- has the same three things: user_id not null, the primary key (user_id, day), and the reference
--- to auth.users that deletes the rows with the account.
+-- Run the file in one go (psql -f, or supabase db query -f), never a statement at a time: it is one
+-- transaction, and lock_timeout holds only inside it. Every step checks the state first (review
+-- R3-30): run twice, or on a database the migration never reached, it stops nowhere halfway and a
+-- second run changes nothing. Before the migration and after this file the table has the same
+-- three things: user_id not null, the primary key (user_id, day), and the reference to auth.users
+-- that deletes the rows with the account.
+-- Dropping or adding the reference to auth.users locks auth.users too (AccessExclusiveLock for the
+-- drop, measured on Postgres 17): sign-ins and getUser wait while this transaction holds it, and a
+-- long transaction that holds auth.users would queue them all behind this one. lock_timeout is 5 s:
+-- then this fails, changes nothing, and is run again later (review R3-38).
 
 begin;
+set local lock_timeout = '5s';
 
 delete from public.claude_usage_daily where user_id is null;
 

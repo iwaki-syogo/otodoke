@@ -31,7 +31,7 @@ const SENDER_NOTES = {
   flagged: {
     remembered: { ok: true, register: true, text: "覚えました。この差出人のメールは、次から Claude が確認します。今回の荷物は手で登録できます。" },
     shared: { ok: true, register: true, text: "Gmail など多くの人が使うアドレスは、差出人として覚えられません。今回の荷物は手で登録できます。" },
-    forwarded: { ok: true, register: true, text: "転送されたメールは、差出人として覚えられません。今回の荷物は手で登録できます。" },
+    forwarded: { ok: true, register: true, text: "手で転送されたメールは、差出人として覚えられません。今回の荷物は手で登録できます。" },
     own: { ok: true, register: true, text: "ご自身のアドレスから届いたメールは、差出人として覚えられません。今回の荷物は手で登録できます。" },
     failed: { ok: false, register: false, text: "記録できませんでした。もう一度お試しください。" },
   },
