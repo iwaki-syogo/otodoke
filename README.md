@@ -4,10 +4,12 @@
 
 どの店で買った荷物も、何がいつ届くか、いつ家にいればいいか、今月いくら使ったかが 1 つの画面で分かる荷物カレンダーです。最初にメールの自動転送を 1 回設定すれば、あとは何もしなくていい。届いた注文・発送のメールを Claude が読み、荷物ごとにまとめます。
 
+テーマは「あなたにしかない深さを。」です。作者が自分の 1 年分の注文・配送メール 341 通を読んで分かった、店や運送会社ごとの書き方の癖を、読み取りの規則の土台にしました（`docs/email-field-map.md`）。
+
 - 本番: https://otodoke.app
 - デモ動画: <!-- DEMO_VIDEO_URL -->
 
-> Built with Claude: Japan 2026（2026-11-02 〜 11-08）の提出作品です。コードはすべて期間中に新しく書きました。
+> Built with Claude: Japan 2026（2026-11-02 〜 11-08）の提出作品です。コードはすべて期間中に新しく書きました。最初のコミットは 2026-11-02 17:19（日本時間）です。
 
 ## 課題
 
@@ -33,11 +35,12 @@
 
 実際のメールは要りません。
 
-1. https://otodoke.app を開き、「アカウントを作る」でメールアドレスとパスワードを決めます。届いた確認のメールのリンクを開いてから、そのパスワードでログインします
+1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを開いて「確認する」を押し、そのパスワードでログインします
+   - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
 2. 「設定」タブの「サンプルで試す」で「サンプルのメールを読み込む」を押します。匿名化した実際のメール 17 通が、今日の日付に合わせて入ります（保存済みの読み取り結果を使うので、Claude API は呼びません）
 3. 見てほしいところ
-   - 「荷物」: 17 通が 6 つの荷物にまとまります。赤い 🤝 の印が、家にいる必要のある荷物です。メールに書いてあったものは「対面受け取り」、書いていないものは「念のため対面」と出ます
-   - 荷物の詳細: ヤマト運輸の「不在」の荷物を開くと、受け取り方法の下に、根拠になったメールの行が出ます。「元メールを見る」で読み取りメモも開けます
+   - 「荷物」: 17 通が 6 つの荷物にまとまります。赤い 🤝 の印が、家にいる必要のある荷物です（サンプルでは 4 つ）。メールに対面での受け取りが書いてあったものは「対面受け取り」と出ます。「念のため対面」は、メールに受け取り方法が書いていないので、念のため家にいる必要がある扱いにした荷物です（サンプルの 4 つのうち 3 つ。Amazon はふだん置き配なので、この扱いにしません）
+   - 荷物の詳細: 根拠の行が出るのは、メールに書いてあった荷物だけです。サンプルでは、状態が「不在・再配達」の荷物（ヤマト運輸から届いた 1 つ。店名は「送り主不明」と出ます）を開くと、受け取りの欄に「根拠: 「■受取ご希望場所：対面での配達を希望」」が出ます。「念のため対面」の荷物では、根拠の代わりに「メールに記載なし」と出ます。どの荷物も「元メールを見る」で、読み取りメモと元のメールを開けます（暗号化して保存したメールは、パスワードで開きます）
    - 「カレンダー」: 家にいる必要のある日が赤く出ます
    - 「支出」: 店・分類ごとの内訳と、月ごとの棒グラフ
 
@@ -70,14 +73,14 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 
 ### 開発で：Claude Code を中心に、止める仕組みを先に置く
 
-コードは Claude Code が書き、人は決めることと確かめることに回りました（期間中のコミットは 100 本超）。
+コードは Claude Code が書き、人は決めることと確かめることに回りました。
 
 - **CLAUDE.md をリポジトリの約束にする。** コミットしてはいけないもの、Claude に任せないこと、本番設定の罠を書き、別のエージェント（Codex）も `AGENTS.md` から同じ文書を読みます
 - **フックで止める。** `.claude/settings.json` の PreToolUse が force push・実メール（`fixtures/raw/`）のコミット・gitleaks に引っかかるコミットを止め、PostToolUse が編集したファイルを eslint にかけて結果を Claude に返します。`.githooks/pre-commit` は誰がコミットしても同じ検査をし、ふるい（`src/lib/screen.ts`）を変えると `npm run check:screen` を走らせます。荷物のメールを 1 通でも落とすとコミットできません
-- **サブエージェントで分業する。** まとまった直しは、計画 → 失敗するテスト → 実装 → レビュー・セキュリティ・QA → 直し、をサブエージェントに分け、作業用の worktree で進めてから `dev` にまとめました。コミットの `[TDD]` `[task-N]` `[SEC-…]` `[QA-…]` がその跡です
+- **サブエージェントで分業する。** まとまった直しは、作者が以前から使っている自作のスキル `/orchestrate` で、計画 → 失敗するテスト → 実装 → レビュー・セキュリティ・QA → 直し、をサブエージェントに分け、作業用の worktree で進めてから `dev` にまとめました。コミットの `[TDD]` `[task-N]` `[SEC-…]` `[QA-…]` がその跡です。例: 「届いた荷物」の検索は、[失敗するテストを先に書き](https://github.com/iwaki-syogo/otodoke/commit/df36805a372e4b8c9af242d7f3244746777f24e9)、[実装し](https://github.com/iwaki-syogo/otodoke/commit/f40eb215185a7e0fd51247f7530bd5a598902f8c)、[レビューと Codex の指摘を直しました](https://github.com/iwaki-syogo/otodoke/commit/8a0aa63eb4aa80adcbdca71ad0201f5bf9c75773)
 - **別の目でレビューする。** 実装したエージェントとは別のエージェントがレビューし、別の会社のモデル（Codex）にもレビューさせました（コミットの `[Codex-…]`）。メールの処理に手が入る変更は、本番の前に作者でない目のレビューを通しました
 - **本番は人が決める。** `main` への反映＝本番デプロイなので、毎回人が承認してから進めました
-- **画面で確かめる。** ブラウザを操作する MCP でスマホ幅（390px）の全画面を開き、ボタンの幅や行数を測り、支出の合計を DB の集計と突き合わせました
+- **画面で確かめる。** ブラウザを操作する MCP（作者の自作の Chrome 拡張）でスマホ幅（390px）の全画面を開き、ボタンの幅や行数を測り、支出の合計を DB の集計と突き合わせました
 - **実メールで通す。** 作者の 341 通を本番と同じ処理で読み、できた荷物 101 件のうち 46 件を別のエージェントが元メールと照合しました。誤りは 460 項目中 20 → 直したあと 440 項目中 10、状態・予定日・まとめ方の誤りは 0 になりました。名寄せや金額の規則を変えたら、API を呼ばない `scripts/replay.ts` で件数と合計の差を見ます
 
 ## 安全への配慮
@@ -111,7 +114,7 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 - 広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します。毎日まとめて消します。「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します。Gmail など多くの人が使うドメインは覚えません
 - 運営者が正しいプログラムを動かしていることが前提です。コードはすべてこのリポジトリで公開しています
 
-**仕組み。** パスワードはブラウザの中で、メールアドレスから作った salt で PBKDF2-SHA256 を 60 万回かけ、その結果を HKDF-SHA256 で 2 つに分けます。1 つはログイン用の値で、これだけを Supabase Auth にパスワードとして送ります。もう 1 つは秘密鍵を包む鍵で、ブラウザの外に出ません。最初にパスワードでログインしたとき、ブラウザが鍵の組（ECDH P-256）を作り、秘密鍵をこの鍵で AES-256-GCM で包んでから保存するので、サーバーにはパスワードも、包む鍵も、開いた秘密鍵も届きません。サーバーは公開鍵だけを持ち、メールを読み取った時点で件名・差出人・本文を 1 つの封筒（HKDF-SHA256 ＋ AES-256-GCM）にして、平文の列を同じ書き込みで空にします。登録のときは、データベースから読み戻した包みがパスワードで開き、公開鍵と対になっていることをブラウザで確かめてから鍵を使い始めます。元メールはブラウザで開き、文字だけを表示します（HTML は描画しません）。包んだ鍵と封筒は、ログイン中の本人の分だけをサーバーの処理（Server Action）から受け取ります。ブラウザ用のデータベースの鍵は配っていません。開いた鍵はそのタブのメモリにだけ置き、再読み込みや新しいタブでは、元メールを開くときにパスワードを入れ直します。パスワードを変えるときは、同じ秘密鍵を新しいパスワードで包み直すので、前のメールも開けます。再設定では前のパスワードが無いので、新しい鍵の組を作ります。iOS アプリも同じ計算をします。取り決めは `docs/crypto/password-v1.md`、形式は `src/lib/crypto/` です。固定のテストベクトルは、パスワードから作る 2 つの値と包みが `fixtures/crypto/password-v1.json`、封筒が `fixtures/crypto/envelope-v1.json` です。
+**仕組み。** パスワードはブラウザの中で、メールアドレスから作った salt で PBKDF2-SHA256 を 60 万回かけ、その結果を HKDF-SHA256 で 2 つに分けます。1 つはログイン用の値で、これだけを Supabase Auth にパスワードとして送ります。もう 1 つは秘密鍵を包む鍵で、ブラウザの外に出ません。最初にパスワードでログインしたとき、ブラウザが鍵の組（ECDH P-256）を作り、秘密鍵をこの鍵で AES-256-GCM で包んでから保存するので、サーバーにはパスワードも、包む鍵も、開いた秘密鍵も届きません。サーバーは公開鍵だけを持ち、メールを読み取った時点で件名・差出人・本文を 1 つの封筒（HKDF-SHA256 ＋ AES-256-GCM）にして、平文の列を同じ書き込みで空にします。登録のときは、データベースから読み戻した包みがパスワードで開き、公開鍵と対になっていることをブラウザで確かめてから鍵を使い始めます。元メールはブラウザで開き、文字だけを表示します（HTML は描画しません）。包んだ鍵と封筒は、ログイン中の本人の分だけをサーバーの処理（Server Action）から受け取ります。ブラウザ用のデータベースの鍵は配っていません。開いた鍵はそのタブのメモリにだけ置き、再読み込みや新しいタブでは、元メールを開くときにパスワードを入れ直します。パスワードを変えるときは、同じ秘密鍵を新しいパスワードで包み直すので、前のメールも開けます。再設定では前のパスワードが無いので、新しい鍵の組を作ります。iOS アプリにも同じ計算を入れるため、Web と iOS で同じ値になる取り決めにしています（このリポジトリの iOS アプリには、まだ入っていません）。取り決めは `docs/crypto/password-v1.md`、形式は `src/lib/crypto/` です。固定のテストベクトルは、パスワードから作る 2 つの値と包みが `fixtures/crypto/password-v1.json`、封筒が `fixtures/crypto/envelope-v1.json` です。
 
 ## 技術
 
@@ -121,6 +124,7 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 - Claude API（Haiku 5.5 が既定。判定と構造化抽出）
 - Vercel
 - テスト: Vitest（API を呼ばない）
+- iOS アプリ（`ios/`、SwiftUI）: 同じアカウントで、荷物の一覧と詳細を見て、左スワイプで「届いた」にしたり分類を変えたりできます。ログインはメールの 8 桁のコードです。カレンダー・支出・設定のタブはまだ空です。TestFlight の内部テストで配っているので、審査員の方は入れられません
 
 ## 動かし方
 
@@ -160,4 +164,5 @@ Claude only makes judgments: it classifies each email and extracts fields, each 
 Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database; parcel data and sender domains stay plaintext, and this is disclosed in the app.
 A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement (71/73 fields vs 73/73 for Opus, at about 1/20 of the cost).
 Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and a field-by-field check of 341 real emails.
-Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), open the link in the confirmation mail, log in with the password, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed).
+Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, `ios/`) is in internal TestFlight testing only.
+Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) and press 「確認する」, log in with the password, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed).

@@ -10,6 +10,8 @@ applied to production. A name written days ago will very likely sort before migr
 Rename its companions to the same new timestamp too: `supabase/rollback/<timestamp>_<name>.down.sql`,
 `supabase/verify/<timestamp>_<name>.sql`, and every comment and test that names the file.
 
+The timestamp in each name here is the planned date to apply or run it (`20261114090000` = 2026-11-14), not the date it was written: all three files were written on 2026-11-06, during the event.
+
 Now waiting:
 
 - `20261106130000_mail_sealed_after_processing.sql` — refuses a read mail left in plaintext. Apply only
