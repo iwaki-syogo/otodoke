@@ -20,8 +20,8 @@ export default function AccountDeletedPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
       <ForgetTabKey />
-      <Link href="/" className="mb-8 text-sm text-neutral-500">
-        ← <Wordmark className="text-lg" />
+      <Link href="/" className="-mt-2 mb-6 py-2 text-sm text-neutral-500">
+        <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">アカウントを削除しました</h1>
       <p className="mt-2 text-sm leading-6 text-neutral-600">ご利用ありがとうございました。Gmail などで設定した自動転送も、忘れずに外してください。</p>

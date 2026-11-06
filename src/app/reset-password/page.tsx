@@ -20,8 +20,8 @@ export default async function ResetPasswordPage() {
   const session = check.ok && check.session.email ? { email: check.session.email, userId: check.session.userId } : null;
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
-      <Link href="/" className="mb-8 text-sm text-neutral-500">
-        ← <Wordmark className="text-lg" />
+      <Link href="/" className="-mt-2 mb-6 py-2 text-sm text-neutral-500">
+        <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">パスワードの再設定</h1>
       {session ? (

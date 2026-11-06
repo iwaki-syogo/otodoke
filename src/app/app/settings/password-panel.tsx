@@ -278,9 +278,9 @@ export function ChangeForm({ userId, email, withCheck }: { userId: string; email
     <form method="post" onSubmit={submit} className="flex flex-col gap-2">
       <input type="text" autoComplete="username" value={email} readOnly hidden />
       <input type="password" autoComplete="current-password" aria-label="今のパスワード" placeholder="今のパスワード" value={current} onChange={(e) => setCurrent(e.target.value)} className={input} />
-      <input type="password" autoComplete="new-password" aria-label="新しいパスワード" placeholder="新しいパスワード" value={next} onChange={(e) => setNext(e.target.value)} className={input} />
-      <input type="password" autoComplete="new-password" aria-label="新しいパスワードをもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
-      <p className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
+      <input type="password" autoComplete="new-password" aria-label="新しいパスワード" aria-describedby="settings-password-rule" placeholder="新しいパスワード" value={next} onChange={(e) => setNext(e.target.value)} className={input} />
+      <input type="password" autoComplete="new-password" aria-label="新しいパスワードをもう一度" aria-describedby="settings-password-rule" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
+      <p id="settings-password-rule" className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
       {withCheck ? <TurnstileWidget tokenRef={token} round={round} /> : null}
       <PendingSubmitButton pending={busy && !needsTick} pendingLabel="変えています…" tone="light" className={primary}>
         {busy && needsTick ? TURNSTILE_TICK_PROMPT : "変える"}

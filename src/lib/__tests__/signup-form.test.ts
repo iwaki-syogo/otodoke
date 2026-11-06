@@ -176,8 +176,19 @@ describe("the page", () => {
     const html = renderToStaticMarkup(SignupPage());
     const anchors = findAll(parseHtml(html), (n) => n.tag === "a" && n.attrs.href === "/privacy");
     expect(anchors.map(textOf)).toEqual(["プライバシーポリシー"]);
-    // Right after the form, before the way to log in (the judges looked for it there).
-    expect(html.indexOf('href="/privacy"')).toBeGreaterThan(html.indexOf("</form>"));
-    expect(html.indexOf('href="/privacy"')).toBeLessThan(html.indexOf('href="/login"'));
+    // Same order as /login: the way to log in right after the form, the small privacy link below it.
+    expect(html.indexOf('href="/login"')).toBeGreaterThan(html.indexOf("</form>"));
+    expect(html.indexOf('href="/privacy"')).toBeGreaterThan(html.indexOf('href="/login"'));
+  });
+
+  it("both password fields point at the rule hint, and the arrow of the back link is hidden from the accessibility tree", () => {
+    const root = parseHtml(renderToStaticMarkup(SignupPage()));
+    const hint = findAll(root, (n) => n.tag === "p" && textOf(n) === PASSWORD_RULE)[0];
+    expect(hint?.attrs.id).toBeTruthy();
+    const pw = findAll(root, (n) => n.tag === "input" && n.attrs.type === "password");
+    expect(pw).toHaveLength(2);
+    for (const i of pw) expect(i.attrs["aria-describedby"]).toBe(hint.attrs.id);
+    const arrow = findAll(root, (n) => n.tag === "span" && textOf(n) === "←")[0];
+    expect(arrow?.attrs["aria-hidden"]).toBe("true");
   });
 });

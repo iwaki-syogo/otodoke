@@ -197,7 +197,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
               const result = x.result as { notes?: string | null } | null;
               const body = email.text_body?.trim() || (email.html_body ? htmlToText(email.html_body) : "");
               const notes = result?.notes ?? null;
-              const confidence = x.confidence !== null ? <p className="mt-1 text-[11px] text-neutral-400">確信度 {Math.round(Number(x.confidence) * 100)}%</p> : null;
+              const confidence = x.confidence !== null ? <p className="mt-1 text-[11px] text-neutral-500">確信度 {Math.round(Number(x.confidence) * 100)}%</p> : null;
               return (
                 <li key={x.id} className="rounded-2xl border border-neutral-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">

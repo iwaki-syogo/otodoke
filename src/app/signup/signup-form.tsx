@@ -453,8 +453,8 @@ export function SignupForm() {
           <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
             {resending && ticking("resend") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
           </PendingButton>
-          {resent && !resent.ok ? <p className="text-sm text-red-800">{resent.text}</p> : null}
-          <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex items-center justify-center gap-2 self-center px-4 py-1 text-xs text-neutral-500 underline underline-offset-4">
+          {resent && !resent.ok ? <p role="alert" className="text-sm text-red-800">{resent.text}</p> : null}
+          <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-xs text-neutral-500 underline underline-offset-4">
             {CONFIRM_WAIT.restart}
           </PendingButton>
         </div>
@@ -479,12 +479,12 @@ export function SignupForm() {
         <label className="text-sm font-medium" htmlFor="signup-password">
           パスワード
         </label>
-        <input id="signup-password" type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
+        <input id="signup-password" aria-describedby="signup-password-rule" type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
         <label className="text-sm font-medium" htmlFor="signup-password-again">
           パスワードをもう一度
         </label>
-        <input id="signup-password-again" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
-        <p className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
+        <input id="signup-password-again" aria-describedby="signup-password-rule" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
+        <p id="signup-password-rule" className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
         <TurnstileWidget tokenRef={token} round={round} />
         <PendingSubmitButton pending={creating && !ticking("signup")} pendingLabel="作っています…" tone="light" className={submitClass}>
           {creating && ticking("signup") ? TURNSTILE_TICK_PROMPT : "アカウントを作る"}
@@ -495,11 +495,13 @@ export function SignupForm() {
           </p>
         ) : null}
       </form>
-      <Link href="/privacy" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
+      <div className="mt-4 flex flex-wrap gap-x-6 text-sm">
+        <Link href="/login" className="py-2 font-medium text-neutral-900 underline underline-offset-4">
+          ログイン
+        </Link>
+      </div>
+      <Link href="/privacy" className="mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
-      </Link>
-      <Link href="/login" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
-        ログイン
       </Link>
     </>
   );

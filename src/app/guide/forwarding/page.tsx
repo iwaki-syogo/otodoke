@@ -104,8 +104,8 @@ export default function ForwardingGuidePage() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-4 py-10">
       <div>
-        <Link href="/" className="text-sm text-neutral-500">
-          ← <Wordmark className="text-lg" />
+        <Link href="/" className="-my-2 inline-block py-2 text-sm text-neutral-500">
+          <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
         </Link>
         <h1 className="mt-8 text-2xl font-bold">{FORWARDING_TITLE}</h1>
         <p className="mt-3 text-sm leading-6 text-neutral-600">{FORWARDING_LEAD}</p>
