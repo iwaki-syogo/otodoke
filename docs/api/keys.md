@@ -161,7 +161,15 @@ There is no read endpoint. The app reads its own rows with its session through P
 
 1. Sign in with Supabase Auth: `signInWithPassword(email, auth_secret)`. The 15 minutes start here.
 2. Read `user_keys` (above). With a key in use, open it with the KEK instead; stop here.
-3. Make a P-256 key pair, a new `kdfSalt`, the KEK and the wrap.
+   - **When it does not open, do not lead to the reset.** The key may be wrapped with the other password of a
+     password change that stopped half-way (the sign-in still takes the old password, the wrap is the new one's).
+     The web's 「ほかのパスワードで開く」 opens it with the other password and rewraps it under the sign-in
+     password. The app sends the user to the web (`https://otodoke.app/login`, the owner's decision of
+     2026-11-06). A reset makes a new key, and the mail sealed to the old one no longer opens.
+3. **Before making a key**, check that email_norm of the address typed at sign-in is the same as email_norm of
+   `session.user.email` (docs/crypto/password-v1.md). If not, make no key: the salt of the KEK comes from the
+   address, and the key would open only for the address typed.
+   Then make a P-256 key pair, a new `kdfSalt`, the KEK and the wrap.
 4. `POST /api/keys/register` with `expectedCurrentKeyId: null`.
 5. **Read the pending row back** by `keyId` and open its `wrapped_private_key` with the KEK: this proves the
    stored wrap opens with this password and is the pair of the stored public key.
@@ -172,7 +180,11 @@ There is no read endpoint. The app reads its own rows with its session through P
 
 ### Changing the password (the current one is known)
 
-1. Open the key in use with the current password's KEK.
+The app does not change the password: it opens the web (the owner's decision of 2026-11-06). The steps below
+are what the web does, for reference.
+
+1. Open the key in use with the current password's KEK. If it does not open, open it with the new password's
+   KEK: an earlier change stopped after its rewrap, and the same new password finishes it.
 2. Sign in with the current auth_secret (the 15 minutes start here, and it checks the current password).
 3. Wrap the same private key with the new password's KEK (new `kdfSalt` and `wrapIv`);
    `POST /api/keys/rewrap` with `previousWrappedPrivateKey` = the wrap from 1.
