@@ -1,7 +1,7 @@
 // 「うまく届かないとき」: the three pitfalls that keep a parcel from showing up, copied sentence for sentence
-// from 「届かない人が多い落とし穴」 of docs/ux-redo/forwarding-guide.md (built-with-claude-japan-2026), checked
-// against the carriers' own help on 2026-11-07. The screen only draws what is listed here, and
-// src/lib/__tests__/ios-forwarding-guide.test.ts fails when a sentence differs from the source.
+// from the Web's FORWARDING_PITFALLS (src/lib/forwarding-guide.ts), checked against the carriers' own help on
+// 2026-11-07. The screen only draws what is listed here, and src/lib/__tests__/ios-forwarding-guide.test.ts fails
+// when a sentence differs from the Web's.
 
 import Foundation
 

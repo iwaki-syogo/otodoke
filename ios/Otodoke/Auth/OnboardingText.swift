@@ -1,8 +1,7 @@
-// The words from registering to the forwarding setup. The source is the owner's wording file
-// (docs/ux-redo/onboarding-wording.md, fixed 2026-11-07), which the Web's screens use word for word. A vitest
-// (src/lib/__tests__/ios-onboarding.test.ts) compares each constant with a copy of that file's sentences. When
-// the Web's constants land in src, the copy moves there. Every sentence of the two screens lives here; the views
-// hold no Japanese literal of these.
+// The words from registering to the forwarding setup: the same sentences as the Web's, character for character
+// (src/lib/onboarding.ts: CONFIRM_WAIT and WELCOME). A vitest (src/lib/__tests__/ios-onboarding.test.ts) compares
+// each constant with those exports. Every sentence of the two screens lives here; the views hold no Japanese
+// literal of these.
 
 import Foundation
 

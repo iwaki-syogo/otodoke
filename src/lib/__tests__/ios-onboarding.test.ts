@@ -6,8 +6,7 @@ import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX, C
 
 /**
  * [iOS onboarding] From making an account to the forwarding setup:
- *  - the words: every OnboardingText constant is the sentence of the owner's wording file
- *    (docs/ux-redo/onboarding-wording.md, outside this repo), which the Web holds in src/lib/onboarding.ts
+ *  - the words: every OnboardingText constant is the same sentence as the Web's src/lib/onboarding.ts
  *    (CONFIRM_WAIT, WELCOME): the comparison is with those exports. No constant without a Web sentence and no Web
  *    sentence without a constant;
  *  - the views hold none of those words as literals; the waiting screen and the guide read OnboardingText;
@@ -36,7 +35,7 @@ function swiftConstants(src: string): Map<string, string> {
   return out;
 }
 
-/** The Web's constants (src/lib/onboarding.ts, the same words as the owner's wording file), by OnboardingText name. */
+/** The Web's constants (src/lib/onboarding.ts), by OnboardingText name. */
 const WORDING: Record<string, string> = {
   // screen 1
   waitingTitle: CONFIRM_WAIT.title,

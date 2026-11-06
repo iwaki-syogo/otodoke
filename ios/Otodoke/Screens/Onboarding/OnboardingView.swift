@@ -2,7 +2,7 @@
 // 「最後に、メールの自動転送を設定しますか？」, then 1. the address with the copy button, 2. the four mail services
 // (each folds open to the existing steps), and 「設定しました」 / 「あとで」, both back to the 荷物 tab. The Gmail
 // approval card is drawn above step 1 only while a confirmation mail is waiting. Every word is OnboardingText's
-// (the owner's wording file); the address and its failures use the same words as 「メールの転送」.
+// (the Web's src/lib/onboarding.ts); the address and its failures use the same words as 「メールの転送」.
 
 import SwiftUI
 
