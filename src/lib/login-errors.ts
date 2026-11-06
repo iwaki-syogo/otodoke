@@ -56,6 +56,17 @@ export const LOGIN_MESSAGES = {
   key_failed: "保存できませんでした。もう一度お試しください。",
   invalid_input: "うまくいきませんでした。ページを読み込み直してください。",
 
+  // What the browser finds itself, without the server's answer (src/lib/crypto/password-flows.ts).
+  // The key in use does not open with the password given (opening it again in a tab).
+  wrong_password: "パスワードが違います。",
+  // A change: the key opens with neither password given, or Supabase refused the current one.
+  wrong_current_password: "今のパスワードが違います。",
+  // There is no key in use to open.
+  no_key: "メールの鍵がまだありません。設定で作れます。",
+  // The address typed at the sign-in and the session's are not the same for password-v1 (letters
+  // outside ASCII): no first key is made, since every later step would make another master.
+  address_mismatch: "このアカウントでは、メールの鍵を作れませんでした。",
+
   // The mail's links (/auth/confirm).
   link_invalid: "このリンクは使えませんでした。確認が済んでいれば、ログインできます。",
   reset_link_invalid: "再設定のリンクは使えませんでした。もう一度、再設定のメールを送ってください。",
