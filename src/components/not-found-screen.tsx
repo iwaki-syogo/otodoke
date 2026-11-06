@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-/** Where a person goes back to: the parcel list when signed in, else the top page. */
+/** Where a person goes back to: the parcel list inside /app (signed in there), else the top page. */
 export type WayBack = { href: "/app"; label: "荷物の一覧へ" } | { href: "/"; label: "トップへ" };
 
 export const TO_LIST: WayBack = { href: "/app", label: "荷物の一覧へ" };
