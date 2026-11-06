@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useId } from "react";
 import { SubmitButton } from "@/components/pending-button";
 import { CARRIERS } from "@/lib/carriers";
 import { CATEGORIES, categoryLabel, isCategory } from "@/lib/category";
@@ -159,14 +159,15 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
 
 function DeleteForm({ id }: { id: string }) {
   const [state, action] = useActionState<ManualFormState, FormData>(deleteManualParcel, { error: null, values: {} });
+  const warningId = useId();
   return (
     <details className="text-sm">
       <summary className="cursor-pointer text-neutral-500">この荷物を消す</summary>
       <form action={action} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
         <input type="hidden" name="id" value={id} />
-        <p className="text-sm leading-6">消すと元に戻せません。</p>
+        <p id={warningId} className="text-sm leading-6">消すと元に戻せません。</p>
         <label className="flex items-center gap-2">
-          <input type="checkbox" name="confirm" value="yes" required className="h-4 w-4" />
+          <input type="checkbox" name="confirm" value="yes" required aria-describedby={warningId} className="h-4 w-4" />
           本当に消す
         </label>
         {state.error ? (
