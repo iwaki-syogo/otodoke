@@ -28,7 +28,7 @@ import {
 } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { ChangeSecretInputSchema, FinishResetInputSchema, MailRequestInputSchema, SignInInputSchema, SignUpInputSchema, type KeyWrapRestore } from "@/lib/login-input";
-import { claimLoginAttempt, claimLoginMail, clientIp, releaseLoginAttempt, releaseLoginMail } from "@/lib/login-mail-limit";
+import { claimLoginAttempt, claimLoginMail, claimLoginTry, clientIp, releaseLoginAttempt, releaseLoginMail } from "@/lib/login-mail-limit";
 import { activateKey, readStoredKey, rewrapKey, type KeyResult } from "@/lib/mail-keys";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -74,6 +74,26 @@ function logThrown(step: string, thrown: unknown): void {
 }
 
 /**
+ * The app's own limits before a sign-in with the login secret: every sign-in from this IP
+ * (LOGIN_TRY_LIMITS, never given back), then the failures for this address (LOGIN_ATTEMPT_LIMITS,
+ * given back unless the address or the secret was wrong). Null when either says no.
+ */
+async function claimSignIn(email: string): Promise<{ claimId: number | null } | null> {
+  const ip = await requestIp();
+  const tries = await claimLoginTry(ip);
+  if (tries !== "ok") {
+    console.warn("[login] sign-in limited:", `try_${tries}`);
+    return null;
+  }
+  const attempt = await claimLoginAttempt(email, ip);
+  if (attempt.verdict !== "ok") {
+    console.warn("[login] sign-in limited:", attempt.verdict);
+    return null;
+  }
+  return { claimId: attempt.claimId };
+}
+
+/**
  * Sign in with the login secret, on this browser's cookies. Only a wrong address or secret counts
  * against the app's attempt limit. No redirect: the browser opens the key next, with the userId.
  */
@@ -83,11 +103,8 @@ export async function signIn(input: unknown): Promise<SignInResult> {
   const email = normalizeLoginAddress(parsed.data.email);
   if (!isLoginAddress(email)) return { ok: false, code: "invalid_email" };
 
-  const attempt = await claimLoginAttempt(email, await requestIp());
-  if (attempt.verdict !== "ok") {
-    console.warn("[login] sign-in limited:", attempt.verdict);
-    return { ok: false, code: "rate" };
-  }
+  const attempt = await claimSignIn(email);
+  if (!attempt) return { ok: false, code: "rate" };
   let answer: Awaited<ReturnType<ServerClient["auth"]["signInWithPassword"]>>;
   try {
     const supabase = await createClient();
@@ -312,11 +329,8 @@ export async function changeSecret(input: unknown, restoreWrap: RestoreKeyWrap):
   const email = normalizeLoginAddress(read.session.email);
 
   // 1. The current login secret.
-  const attempt = await claimLoginAttempt(email, await requestIp());
-  if (attempt.verdict !== "ok") {
-    console.warn("[login] change: sign-in limited:", attempt.verdict);
-    return { ok: false, code: "rate" };
-  }
+  const attempt = await claimSignIn(email);
+  if (!attempt) return { ok: false, code: "rate" };
   let signedIn: Awaited<ReturnType<ServerClient["auth"]["signInWithPassword"]>>;
   try {
     signedIn = await supabase.auth.signInWithPassword({ email, password: currentAuthSecret, options: { captchaToken: captchaOf(captchaToken) } });
