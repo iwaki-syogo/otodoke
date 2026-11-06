@@ -319,9 +319,19 @@ const normalizeTrackingCases = [
   "1234 5678 9012",
   "tba123456789012",
   "ej 123 456 789 jp",
-  "１２３４－５６７８－９０１２", // full-width digits are not ASCII letters or digits: all dropped
+  "１２３４－５６７８－９０１２", // full-width forms (U+FF01-U+FF5E) count as their ASCII forms
   "ＴＢＡ１２３",
   "",
+  "№1234-5678-9012", // a sign, not folded: dropped like other marks (NFKC would make it "No")
+  "①1234-5678-9012",
+  "Ｎｏ．１２３４－５６７８－９０１２", // a "No." or "No:" label first is dropped
+  "伝票No.1234-5678-9012",
+  "No:EJ123456789JP",
+  "No . 123",
+  "No.",
+  "No123456789012", // no "." or ":": NO stays
+  "NO123456789JP",
+  "Nov.123",
 ].map((input) => ({ in: input, out: normalizeTracking(input) }));
 
 const carrierInputs: Array<[string | null, string | null]> = [
@@ -345,6 +355,8 @@ const carrierInputs: Array<[string | null, string | null]> = [
   ["ABC", "JapanPost"],
   ["12345", null],
   [null, null],
+  ["№1234-5678-9012", "ヤマト運輸"],
+  ["Ｎｏ．１２３４５６７８９０１", null],
 ];
 const identifyCarrierCases = carrierInputs.map(([tracking, hint]) => {
   const info = identifyCarrier(tracking, hint);
@@ -363,6 +375,8 @@ const linkInputs: Array<[string | null, string | null]> = [
   [null, "ヤマト運輸"],
   ["---", "ヤマト運輸"],
   ["", "佐川急便"],
+  ["№1234-5678-9012", "ヤマト運輸"],
+  ["No.12345678901", null],
 ];
 const trackingLinkForCases = linkInputs.map(([tracking, hint]) => ({ tracking, hint, out: trackingLinkFor(tracking, hint) }));
 
