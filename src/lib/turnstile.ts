@@ -14,10 +14,8 @@ export const TURNSTILE_SITEKEY = "0x4AAAAAAF1bMWXBw0RF-dvv";
  * the password (/login, and 設定's 「鍵を作る」 and 「パスワードを変える」, which signs in with the
  * current password), the sign-up and its 「送り直す」, and the reset mail.
  *
- * On in production from the release of the password sign-in on the web and on iOS (decided on
- * 2026-11-06): Supabase's CAPTCHA is turned on in the same release, once this version is the one
- * deployed. Until the switch a press without a token still goes through (it only waits longer);
- * a switch before the deployment would meet forms that give up on the token after 10 seconds.
+ * Supabase's CAPTCHA is switched in the dashboard. Its current state, and the order in which to
+ * turn it on or off, are written in one place only: the CAPTCHA section of CLAUDE.md.
  *
  * It decides what the forms say and how long a press waits when the check gives no token: while it
  * is true, a press waits as long as Turnstile is still working on a token (at most
