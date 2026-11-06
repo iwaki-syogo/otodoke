@@ -33,6 +33,9 @@ enum Turnstile {
     /// The only host a subframe may load from.
     private static let challengeHost = "challenges.cloudflare.com"
 
+    /// [SEC-N2] The page's CSP: only Cloudflare's challenge script and frames, the inline script and style.
+    static let contentSecurityPolicy = "default-src 'none'; script-src 'unsafe-inline' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; style-src 'unsafe-inline'"
+
     /// The widget's page for one generation: renders explicitly with `sitekey`, and posts
     /// {"generation": n, "kind": "token"|"expired"|"error"|"timeout"|"unavailable", "token": "..."} to
     /// `messageHandlerName` from callback, expired-callback, error-callback (which returns true),
@@ -43,6 +46,7 @@ enum Turnstile {
         <html lang="ja"><head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
         <style>html,body{margin:0;padding:0;background:transparent;}</style>
         </head><body>
         <div id="widget"></div>
@@ -112,10 +116,15 @@ enum Turnstile {
         return value as? Int
     }
 
-    /// createWebViewWith (the widget's 「プライバシー」「ヘルプ」): the URL to hand to Safari when it is
-    /// https, else nil. The WebView itself always answers nil (no new window inside the app).
+    /// createWebViewWith (the widget's 「プライバシー」「ヘルプ」): the URL to hand to Safari when it is https on
+    /// cloudflare.com or below, else nil. The WebView itself always answers nil (no new window inside the app).
     static func externalURL(forNewWindow url: URL?) -> URL? {
-        guard let url, url.scheme?.lowercased() == "https", let host = url.host, !host.isEmpty else { return nil }
+        // [SEC-N1] Only cloudflare.com and its subdomains (the widget's 「プライバシー」「ヘルプ」), no user info.
+        guard let url, url.scheme?.lowercased() == "https",
+              url.user(percentEncoded: false) == nil, url.password(percentEncoded: false) == nil,
+              let host = url.host(percentEncoded: false)?.lowercased(),
+              host == "cloudflare.com" || host.hasSuffix(".cloudflare.com")
+        else { return nil }
         return url
     }
 
