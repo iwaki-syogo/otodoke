@@ -3,13 +3,17 @@
 import { useFormStatus } from "react-dom";
 import { clearAllParcels, loadDemo } from "./actions";
 
-export function DemoLoader({ result, error, cleared }: { result?: string; error?: string; cleared?: string }) {
+/**
+ * `error` is fixed wording chosen by the page from a code (src/lib/settings-errors.ts), and
+ * `loaded` a number: nothing from the link is shown as it came.
+ */
+export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; error: string | null; cleared: boolean }) {
   return (
     <div className="mt-3 flex flex-col gap-3">
       <form action={loadDemo}>
         <LoadButton />
       </form>
-      {result && error ? <p className="text-sm text-neutral-700">{result} 通は読み込めました。</p> : null}
+      {loaded !== null && error ? <p className="text-sm text-neutral-700">{loaded} 通は読み込めました。</p> : null}
       {cleared ? <p className="text-sm text-neutral-700">荷物とメールを消しました。</p> : null}
       {error ? <p className="break-words text-sm text-red-800">{error}</p> : null}
 

@@ -6,6 +6,7 @@ import { loadDemoEntries } from "@/lib/demo";
 import { processInboundEmail } from "@/lib/pipeline";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
+import { settingsErrorPath } from "@/lib/settings-errors";
 import { UNREAD_FILTER } from "@/lib/unread";
 
 /**
@@ -51,7 +52,11 @@ export async function loadDemo(): Promise<void> {
   }
 
   revalidatePath("/app", "layout");
-  if (failure) redirect(`/app/settings?demo=${processed}&error=${encodeURIComponent(failure)}`);
+  if (failure) {
+    // The message stays in the server log; the page shows fixed words for the code.
+    console.error("loadDemo failed:", failure);
+    redirect(settingsErrorPath("demo_failed", `&demo=${processed}`));
+  }
   redirect("/app");
 }
 
@@ -69,24 +74,31 @@ export async function readWaitingMail(): Promise<void> {
     .or(UNREAD_FILTER())
     .order("sent_at", { ascending: true })
     .limit(20);
-  if (error) redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
+  if (error) {
+    console.error("readWaitingMail (lookup):", error.message);
+    redirect(settingsErrorPath("read_failed"));
+  }
 
   let failure: string | null = null;
   for (const m of data) {
     try {
-      // Without a Message-ID the pipeline cannot find this row again, so it would be duplicated.
-      if (!m.message_id) await db.from("emails").delete().eq("id", m.id);
-      const outcome = await processInboundEmail(db, {
-        userId: user.id,
-        providerEmailId: m.provider_email_id,
-        messageId: m.message_id,
-        from: m.from_address ?? "",
-        fromName: m.from_name,
-        subject: m.subject ?? "",
-        sentAt: m.sent_at,
-        text: m.text_body,
-        html: m.html_body,
-      });
+      const outcome = await processInboundEmail(
+        db,
+        {
+          userId: user.id,
+          providerEmailId: m.provider_email_id,
+          messageId: m.message_id,
+          from: m.from_address ?? "",
+          fromName: m.from_name,
+          subject: m.subject ?? "",
+          sentAt: m.sent_at,
+          text: m.text_body,
+          html: m.html_body,
+        },
+        // Without a Message-ID the pipeline cannot find this row again, so it would be duplicated:
+        // it replaces this row instead, removed only once nothing can fail before the new one is stored.
+        m.message_id ? {} : { replacesEmailId: m.id },
+      );
       if (outcome.kind === "over_limit") break;
     } catch (err) {
       // One unreadable mail must not hold back the ones after it.
@@ -95,7 +107,10 @@ export async function readWaitingMail(): Promise<void> {
   }
 
   revalidatePath("/app", "layout");
-  if (failure) redirect(`/app/settings?error=${encodeURIComponent(failure)}`);
+  if (failure) {
+    console.error("readWaitingMail:", failure);
+    redirect(settingsErrorPath("read_failed"));
+  }
   redirect("/app/settings");
 }
 
@@ -110,7 +125,10 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
     .eq("id", id)
     .eq("user_id", user.id);
   revalidatePath("/app/settings");
-  if (error) redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
+  if (error) {
+    console.error("markWronglyDropped:", error.message);
+    redirect(settingsErrorPath("flag_failed"));
+  }
   redirect("/app/settings?flagged=1");
 }
 
@@ -118,7 +136,7 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
 export async function clearAllParcels(formData: FormData): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
-  if (formData.get("confirm") !== "yes") redirect("/app/settings?error=" + encodeURIComponent("「本当に消す」にチェックを入れてください"));
+  if (formData.get("confirm") !== "yes") redirect(settingsErrorPath("clear_confirm"));
 
   const db = createAdminClient();
   // extractions and parcel_items cascade from parcels / emails.
@@ -127,6 +145,9 @@ export async function clearAllParcels(formData: FormData): Promise<void> {
   const failure = e1?.message ?? e2?.message ?? null;
 
   revalidatePath("/app", "layout");
-  if (failure) redirect(`/app/settings?error=${encodeURIComponent(failure)}`);
+  if (failure) {
+    console.error("clearAllParcels:", failure);
+    redirect(settingsErrorPath("clear_failed"));
+  }
   redirect("/app/settings?cleared=1");
 }

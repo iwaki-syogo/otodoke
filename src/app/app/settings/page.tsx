@@ -9,6 +9,8 @@ import { DemoLoader } from "./demo-loader";
 import { MailKeyPanel } from "./mail-key-panel";
 import { MailHandling } from "./mail-handling";
 import { readAll } from "@/lib/supabase/read-all";
+import { countPlainRead } from "@/lib/mail-keys";
+import { demoCount, settingsErrorMessage } from "@/lib/settings-errors";
 import type { Tables } from "@/lib/db/database.types";
 
 export const metadata = { title: "設定" };
@@ -25,6 +27,9 @@ export const maxDuration = 300;
 
 export default async function SettingsPage({ searchParams }: { searchParams: SearchParams }) {
   const { demo, error, cleared, flagged } = await searchParams;
+  // Only fixed words reach the page: ?error= is a code, ?demo= a number.
+  const errorMessage = settingsErrorMessage(error);
+  const demoLoaded = demoCount(demo);
   const user = (await getUser())!;
   const supabase = await createClient();
   const localPart = await ensureInboxAddress(supabase, user.id);
@@ -37,13 +42,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
     .is("retired_at", null)
     .maybeSingle();
   if (keyError) console.error("settings page (key):", keyError.message);
-  // Read mail still in plaintext: from before encryption, or samples loaded without a key.
-  const { count: plainCount, error: plainError } = await supabase
-    .from("emails")
-    .select("id", { count: "exact", head: true })
-    .eq("processing_status", "processed")
-    .eq("body_state", "plain");
-  if (plainError) console.error("settings page (plain count):", plainError.message);
+  // Read mail still in plaintext, from before encryption. The public sample mails are not counted:
+  // they are anonymized fixtures from the repository, not mail of the user's the operator could read.
+  let plainCount: number | null;
+  try {
+    plainCount = await countPlainRead(supabase, user.id);
+  } catch (err) {
+    plainCount = null;
+    console.error("settings page (plain count):", err instanceof Error ? err.message : "unknown error");
+  }
   const { count: oldKeyCount } = key
     ? await supabase.from("emails").select("id", { count: "exact", head: true }).eq("body_state", "sealed").neq("body_envelope->>kid", key.key_id)
     : { count: 0 };
@@ -89,12 +96,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         </section>
       ) : (
-        <MailKeyPanel state={{ userId: user.id, keyCreatedAt: key?.created_at ?? null, plainCount: plainError ? null : (plainCount ?? 0), oldKeyCount: oldKeyCount ?? 0 }} />
+        <MailKeyPanel state={{ userId: user.id, keyCreatedAt: key?.created_at ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
       )}
+      {/* Which account this is, next to the passphrase and the address: a page signed in to someone
+          else's account (a crafted login link) shows it here before anything is set up. */}
+      <p className="-mt-6 text-xs text-neutral-500">
+        ログイン中: <span className="break-all font-medium text-neutral-700">{user.email}</span>（自分のアドレスでなければ、何も設定せずにログアウトしてください）
+      </p>
 
       <section>
         <h2 className="text-base font-bold">転送先アドレス</h2>
-        {key ? (
+        {keyError ? (
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">合言葉を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。</p>
+        ) : key ? (
           <>
             <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
             <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
@@ -148,7 +162,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
               </li>
               <li>「転送する」に上のアドレスを選んで作成する</li>
             </ol>
-            <p className="mt-2 text-xs text-neutral-500">買い物に関係しそうなメールだけが届くので、私信は Otodoke に送られません。</p>
+            <p className="mt-2 text-xs text-neutral-500">転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。届いたメールのうち、買い物に関係しないものは本文を保存せずに捨てます。</p>
           </Guide>
           <Guide title="iCloud / Outlook / その他">
             <p>メールの設定にある自動転送で、すべてのメールを上のアドレスへ転送してください。</p>
@@ -199,7 +213,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       <section id="demo" className="scroll-mt-4 rounded-2xl border border-dashed border-neutral-300 p-4">
         <h2 className="text-base font-bold">サンプルで試す</h2>
         <p className="mt-1 text-sm leading-6 text-neutral-600">匿名化した実際の注文・発送メールを読み込みます。日付は今日に合わせてずらしてあります。</p>
-        <DemoLoader result={demo} error={error} cleared={cleared} />
+        <DemoLoader loaded={demoLoaded} error={errorMessage} cleared={Boolean(cleared)} />
       </section>
 
       <section className="flex flex-col gap-3">
