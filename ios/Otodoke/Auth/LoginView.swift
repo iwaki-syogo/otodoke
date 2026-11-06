@@ -1,17 +1,19 @@
 import SwiftUI
 
-/// The login screen: e-mail address → the 8-digit code from the mail.
+/// The login screen: e-mail address → the 8-digit code from the mail. The Turnstile widget sits above
+/// the send buttons (「コードを送る」 and 「コードをもう一度送る」 both send a code, and each send needs a token).
 struct LoginView: View {
     @State private var model: LoginModel
     @FocusState private var focused: Bool
 
     init(auth: AuthService) {
-        _model = State(initialValue: LoginModel(auth: auth))
+        _model = State(initialValue: LoginModel(auth: auth, turnstile: TurnstileToken()))
     }
 
     #if DEBUG
-    /// DEBUG only: with a model made elsewhere (the screen check).
+    /// DEBUG only: with a model made elsewhere (the screen check), shown with its widget.
     init(model: LoginModel) {
+        model.debugUseTurnstile()
         _model = State(initialValue: model)
     }
     #endif
@@ -58,6 +60,7 @@ struct LoginView: View {
                 .onSubmit { Task { await model.sendCode() } }
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
+            widget
             primaryButton("コードを送る", enabled: !model.email.trimmingCharacters(in: .whitespaces).isEmpty) {
                 await model.sendCode()
             }
@@ -78,12 +81,14 @@ struct LoginView: View {
                 .padding(12)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
                 .onChange(of: model.code) { _, typed in
-                    let digits = String(typed.filter { $0.isASCII && $0.isNumber }.prefix(LoginModel.codeLength))
+                    // iOS-11: full-width digits (a paste, a hardware keyboard) count, through NFKC.
+                    let digits = String(LoginModel.normalizeCode(typed).filter { $0.isASCII && $0.isNumber }.prefix(LoginModel.codeLength))
                     if digits != typed { model.code = digits }
                 }
             primaryButton("ログイン", enabled: model.canVerify) {
                 await model.verify()
             }
+            widget
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 let wait = model.resendWaitSeconds()
                 Button {
@@ -97,6 +102,13 @@ struct LoginView: View {
             Button("メールアドレスを変える") { model.changeAddress() }
                 .font(.subheadline)
                 .disabled(model.isWorking)
+        }
+    }
+
+    @ViewBuilder
+    private var widget: some View {
+        if let turnstile = model.turnstile {
+            TurnstileView(token: turnstile)
         }
     }
 

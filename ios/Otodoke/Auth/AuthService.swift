@@ -11,8 +11,8 @@ enum LoginError: Error, Equatable, Sendable {
     /// No answer from the server.
     case network
     case other
-    // TDD-STUB(task 2): Supabase's captcha_failed (400). Missing: this press sent no token;
-    // refused: it sent one. The words are CaptchaText's (login-errors.ts captcha_missing / captcha_refused).
+    /// Supabase's captcha_failed (400). Missing: this press sent no token; refused: it sent one.
+    /// The words are CaptchaText's (login-errors.ts captcha_missing / captcha_refused).
     case captchaMissing
     case captchaRefused
 
@@ -30,12 +30,12 @@ enum LoginError: Error, Equatable, Sendable {
     }
 }
 
-/// TDD-STUB(task 2): the two words of src/lib/login-errors.ts, in one place (a vitest compares them).
+/// The two words of src/lib/login-errors.ts, in one place (a vitest compares them).
 enum CaptchaText {
     /// captcha_missing
-    static let missing = ""
+    static let missing = "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。"
     /// captcha_refused
-    static let refused = ""
+    static let refused = "確認が切れました。もう一度リンクを送ってください。"
 }
 
 @MainActor
@@ -87,22 +87,24 @@ final class AuthService {
         }
     }
 
-    /// TDD-STUB(task 2): signInWithOTP(email:, redirectTo:, captchaToken:). The body carries
-    /// gotrue_meta_security.captcha_token only when a token is given. captcha_failed is
-    /// .captchaMissing without a token and .captchaRefused with one.
+    /// signInWithOTP(email: normalized, redirectTo: AppConfig.authRedirect, captchaToken:). The body
+    /// carries gotrue_meta_security.captcha_token only when a token is given (Supabase ignores a missing
+    /// one while its CAPTCHA is off). captcha_failed is .captchaMissing without a token and
+    /// .captchaRefused with one. Nothing is sent for an invalid address.
     func sendCode(email: String, captchaToken: String?) async throws(LoginError) {
-        try await sendCode(email: email)
-    }
-
-    /// signInWithOTP(email: normalized, redirectTo: AppConfig.authRedirect). Nothing is sent for an invalid address.
-    func sendCode(email: String) async throws(LoginError) {
         let address = Self.normalizeEmail(email)
         guard Self.isValidEmail(address) else { throw .invalidEmail }
+        let token = captchaToken.flatMap { $0.isEmpty ? nil : $0 }
         do {
-            try await provider.auth.signInWithOTP(email: address, redirectTo: AppConfig.authRedirect, shouldCreateUser: true)
+            try await provider.auth.signInWithOTP(email: address, redirectTo: AppConfig.authRedirect, shouldCreateUser: true, captchaToken: token)
         } catch {
-            throw Self.loginError(from: error)
+            throw Self.loginError(from: error, sentCaptchaToken: token != nil)
         }
+    }
+
+    /// sendCode(email:captchaToken: nil).
+    func sendCode(email: String) async throws(LoginError) {
+        try await sendCode(email: email, captchaToken: nil)
     }
 
     /// verifyOTP(email:, token: code, type: .email).
@@ -151,7 +153,9 @@ final class AuthService {
         }
     }
 
-    private static func loginError(from error: any Error) -> LoginError {
+    /// As the Web's loginSendErrorCode: by Supabase's error code and status, and by whether this press
+    /// sent a token; never by the English message text.
+    private static func loginError(from error: any Error, sentCaptchaToken: Bool = false) -> LoginError {
         if error is URLError { return .network }
         if let failure = error as? SupabaseProvider.NoRetry {
             switch failure {
@@ -160,6 +164,9 @@ final class AuthService {
             }
         }
         guard case let AuthError.api(_, code, _, response) = error else { return .other }
+        if code == .captchaFailed {
+            return sentCaptchaToken ? .captchaRefused : .captchaMissing
+        }
         if response.statusCode == 429 || [.overEmailSendRateLimit, .overRequestRateLimit].contains(code) {
             return .rateLimited
         }
