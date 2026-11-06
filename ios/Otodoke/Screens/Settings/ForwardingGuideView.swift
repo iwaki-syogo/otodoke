@@ -135,15 +135,25 @@ struct ForwardingGuideView: View {
 
     private func serviceBody(_ service: T.Service) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let meta = service.meta {
-                Label {
-                    Text(meta)
-                } icon: {
-                    Image(systemName: "clock")
+            if service.addresses != nil || service.meta != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let addresses = service.addresses {
+                        Text(verbatim: addresses)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let meta = service.meta {
+                        Label {
+                            Text(SettingsWebText.timePrefix + meta)
+                        } icon: {
+                            Image(systemName: "clock")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             }
             if let link = service.link {
                 VStack(alignment: .leading, spacing: 6) {
@@ -240,7 +250,7 @@ struct SettingsDisclosure<Content: View>: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityAddTraits(isExpanded ? [.isSelected] : [])
+            .accessibilityValue(isExpanded ? SettingsMenuText.disclosureOpen : SettingsMenuText.disclosureClosed)
             if isExpanded {
                 Divider()
                 content()

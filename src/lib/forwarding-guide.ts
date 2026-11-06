@@ -11,6 +11,7 @@
  * - iCloud Mail forwarding: https://support.apple.com/ja-jp/guide/icloud/mm6b1a3960/icloud
  * - Outlook.com forwarding: https://support.microsoft.com/ja-jp/office/1ed4ee1e-74f8-4f53-a174-86b748ff6a0e
  *   and https://support.microsoft.com/ja-JP/Outlook/mail/turn-automatic-forwarding-on-or-off-in-outlook
+ * - Yahoo!メール (why it is not recommended): https://support.yahoo-net.jp/PccMail/s/article/H000007313
  * - Yamato: https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/1361 (notification settings),
  *   .../a_id/235 (why mail does not arrive), .../a_id/7935 (domains),
  *   https://www.kuronekoyamato.co.jp/ytc/customer/redelivery/members/schedule_notice/
@@ -67,7 +68,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     title: "Gmail",
     time: "5 分・パソコンのブラウザで（スマホの Gmail アプリでは設定できません）",
     link: { label: "転送の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/fwdandpop" },
-    linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えます。",
+    linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
     groups: [
       {
         heading: "転送先を登録する",
@@ -82,7 +83,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
       {
         heading: "荷物のメールだけを送るフィルタを作る",
         steps: [
-          { text: "Gmail の上の検索ボックスの右端にある「検索オプションを表示」を押します。" },
+          { text: "Gmail の上の検索ボックスの右端にある、横線が並んだアイコン「検索オプションを表示」を押します。" },
           { text: "「含む」に次の文字列を貼り付けます。", copy: "gmailFilter" },
           { text: "下の「フィルタを作成」を押します。" },
           { text: "「転送する」にチェックを入れ、横の欄で Otodoke のアドレスを選び、「フィルタを作成」を押します。" },
@@ -142,7 +143,10 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     title: "そのほかのメール",
     intro: "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。",
     groups: [],
-    notes: [],
+    notes: [
+      "転送したメールが元のメールにも残る設定か、先に確かめてください。",
+      "Yahoo!メールは、自動転送したメールが Yahoo!メールに残らないので、おすすめしません。",
+    ],
   },
 ];
 

@@ -20,6 +20,10 @@ enum SettingsWebAction: CaseIterable, Equatable, Sendable {
     case clearAll
     /// 「Web で開く」
     case openWeb
+    /// 「プライバシーポリシー」
+    case privacy
+    /// 「アカウントの削除」
+    case deleteAccount
 }
 
 @MainActor
@@ -50,6 +54,8 @@ final class SettingsModel {
         case .createPassphrase, .changePassphrase, .readWaiting, .markAsParcel, .clearAll: WebLink.settings
         case .sample: WebLink.settingsDemo
         case .openWeb: WebLink.app
+        case .privacy: WebLink.privacy
+        case .deleteAccount: WebLink.accountDeletion
         }
     }
 
@@ -74,6 +80,8 @@ final class SettingsModel {
     @ObservationIgnored private var fence = ReadFence()
     /// A read was started at least once (onAppear reads the first time only when none was).
     @ObservationIgnored private var hasRead = false
+    /// Reads running now (load() adds one while it runs).
+    @ObservationIgnored private var loadsRunning = 0
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
 
@@ -152,6 +160,8 @@ final class SettingsModel {
     /// Reads everything again. Each read fails on its own; a newer read drops this one's answers.
     func load() async {
         hasRead = true
+        loadsRunning += 1
+        defer { loadsRunning -= 1 }
         mark.markRead()
         let ticket = fence.beginRead()
         let signal = CutOffSignal()
@@ -221,6 +231,15 @@ final class SettingsModel {
         await load()
     }
 
+    /// A page of the list was shown (pushed or come back to): reads again through load(), so a mail that
+    /// came while the tab stayed open (the Gmail approval, step 4 of the guide) shows without leaving the
+    /// tab. Nothing is cleared while it reads. Skipped while a read is running, unless that read was
+    /// cut off (its answers will be dropped).
+    func pageShown() async {
+        guard loadsRunning == 0 || cutOff?.isRaised == true else { return }
+        await load()
+    }
+
     /// iOS-12: the app came back to the front while this screen is shown.
     func sceneBecameActive() async {
         await load()
@@ -229,11 +248,11 @@ final class SettingsModel {
     // MARK: helpers
 
     /// "local@domain" of the user's address (made on first use), .failed when it could not be read or made.
-    /// With no inbound domain set the Web shows 「（受信ドメイン設定前）」 after the local part.
+    /// With no inbound domain set the Web shows 「受信ドメインがまだ設定されていません。」 in place of the address.
     private func readAddressOfKey() async -> LoadResult<String> {
         do {
             let local = try await inbox.ensure()
-            return .loaded(InboxAddressService.email(localPart: local, domain: inboundDomain) ?? "\(local)@（受信ドメイン設定前）")
+            return .loaded(InboxAddressService.email(localPart: local, domain: inboundDomain) ?? SettingsWebText.noInboundDomain)
         } catch {
             return .failed
         }

@@ -85,6 +85,7 @@ struct LoginView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
+        .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         // Back in front (from the mail's link in Safari): the sign-in is tried once, never in a quick loop.
         .onChange(of: scenePhase) { _, phase in

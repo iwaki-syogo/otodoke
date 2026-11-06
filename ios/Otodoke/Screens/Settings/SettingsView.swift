@@ -74,13 +74,19 @@ struct SettingsView: View {
                         SettingsParts.errorBox(SettingsModel.failedText)
                     }
                     SettingsStatusRows(model: model)
-                    group([.forward, .key, .dropped, .handling, .delivery])
-                    VStack(alignment: .leading, spacing: 0) {
-                        row(.sample)
-                        Divider().padding(.leading, 58)
-                        webRow
+                    section(SettingsWebText.mailGroup) {
+                        group([.forward, .key, .dropped, .handling, .delivery, .sample])
                     }
-                    .modifier(SettingsCard())
+                    section(SettingsWebText.accountGroup) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            webRow(.privacy, symbol: "hand.raised", title: SettingsWebText.privacyTitle)
+                            Divider().padding(.leading, 58)
+                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle, subtitle: SettingsMenuText.deleteSubtitle)
+                            Divider().padding(.leading, 58)
+                            webRow(.openWeb, symbol: "safari", title: SettingsMenuText.webTitle)
+                        }
+                        .modifier(SettingsCard())
+                    }
                     footer
                 }
                 .padding(.horizontal, 16)
@@ -91,6 +97,18 @@ struct SettingsView: View {
     }
 
     // MARK: the rows
+
+    /// A group of the list under its small label, as the Web's two groups (メール, アカウント).
+    private func section<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+    }
 
     private func group(_ pages: [SettingsPage]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -109,9 +127,10 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    private var webRow: some View {
-        Button { SettingsWeb.open(.openWeb, openURL) } label: {
-            SettingsRow(symbol: "safari", title: SettingsMenuText.webTitle, subtitle: nil, badge: nil, trailing: "arrow.up.right")
+    /// A row that leaves the app for a Web page (Safari).
+    private func webRow(_ action: SettingsWebAction, symbol: String, title: String, subtitle: String? = nil) -> some View {
+        Button { SettingsWeb.open(action, openURL) } label: {
+            SettingsRow(symbol: symbol, title: title, subtitle: subtitle, badge: nil, trailing: "arrow.up.right", hint: SettingsMenuText.webHint)
         }
         .buttonStyle(.plain)
     }
@@ -147,16 +166,27 @@ struct SettingsView: View {
         }
     }
 
-    /// The key row's badge: no key yet, or mail from before the encryption is still readable by the operator.
     private func badge(_ page: SettingsPage) -> SettingsRow.Badge? {
-        guard page == .key else { return nil }
+        page == .key ? Self.keyBadge(for: model) : nil
+    }
+
+    /// The key row's badge. Mail still readable by the operator (未暗号化 n 通) is the most important
+    /// warning, so it wins over a count that could not be read; otherwise a count that failed shows as
+    /// unknown (never drawn as 0). With no key the badge stays 未設定 even if the unencrypted count failed:
+    /// that is true (there is no key yet), and the key page says the rest.
+    static func keyBadge(for model: SettingsModel) -> SettingsRow.Badge? {
         switch model.keyPanel {
         case .none?:
+            if model.keyStepFailure != nil {
+                return .init(text: SettingsMenuText.keyStepFailedBadge, kind: .red)
+            }
             return .init(text: SettingsMenuText.keyNoneBadge, kind: .sky)
-        case let .present(plainCount, _)?:
+        case let .present(plainCount, oldKeyCount)?:
             if case let .loaded(n) = plainCount, n > 0 {
                 return .init(text: SettingsMenuText.plainBadge(n), kind: .amber)
             }
+            if case .failed = plainCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
+            if case .failed = oldKeyCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
             return nil
         case .failed?, nil:
             return nil
@@ -168,7 +198,7 @@ struct SettingsView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let email = model.signedInEmail {
-                Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))（自分のアドレスでなければ、何も設定せずにログアウトしてください）")
+                Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -206,8 +236,8 @@ struct SettingsCard: ViewModifier {
 
 /// One row of the list: a gray rounded square with the symbol, a title, an optional subtitle and badge.
 struct SettingsRow: View {
-    struct Badge {
-        enum Kind { case sky, amber }
+    struct Badge: Equatable {
+        enum Kind { case sky, amber, red }
         let text: String
         let kind: Kind
     }
@@ -217,6 +247,8 @@ struct SettingsRow: View {
     let subtitle: String?
     let badge: Badge?
     let trailing: String
+    var hint: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: 12) {
@@ -237,18 +269,14 @@ struct SettingsRow: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 }
+                // At the accessibility sizes the badge goes under the title, so it cannot squeeze it.
+                if let badge, typeSize.isAccessibilitySize {
+                    badgeView(badge).padding(.top, 4)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let badge {
-                Text(badge.text)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(badge.kind == .sky ? OtodokeColor.link : Palette.amberText)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(badge.kind == .sky ? SettingsPalette.skyBackground : Palette.amberBackground, in: Capsule())
-                    .overlay(Capsule().stroke(badge.kind == .sky ? SettingsPalette.skyBorder : Palette.amberBorder))
+            if let badge, !typeSize.isAccessibilitySize {
+                badgeView(badge)
             }
             Image(systemName: trailing)
                 .font(.caption.weight(.semibold))
@@ -259,5 +287,42 @@ struct SettingsRow: View {
         .padding(.vertical, 12)
         .frame(minHeight: 56)
         .contentShape(Rectangle())
+        .accessibilityHint(hint ?? "")
+    }
+
+    private func badgeView(_ badge: Badge) -> some View {
+        Text(badge.text)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(Self.text(badge.kind))
+            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+            .fixedSize(horizontal: typeSize.isAccessibilitySize ? false : true, vertical: true)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(Self.background(badge.kind), in: Capsule())
+            .overlay(Capsule().stroke(Self.border(badge.kind)))
+    }
+
+    private static func text(_ kind: Badge.Kind) -> Color {
+        switch kind {
+        case .sky: OtodokeColor.link
+        case .amber: Palette.amberText
+        case .red: OtodokeColor.errorText
+        }
+    }
+
+    private static func background(_ kind: Badge.Kind) -> Color {
+        switch kind {
+        case .sky: SettingsPalette.skyBackground
+        case .amber: Palette.amberBackground
+        case .red: Palette.errorBackground
+        }
+    }
+
+    private static func border(_ kind: Badge.Kind) -> Color {
+        switch kind {
+        case .sky: SettingsPalette.skyBorder
+        case .amber: Palette.amberBorder
+        case .red: Palette.errorBorder
+        }
     }
 }

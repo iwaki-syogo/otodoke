@@ -435,6 +435,12 @@ struct SettingsModelTests {
         #expect(WebLink.app.absoluteString == "https://otodoke.app/app")
     }
 
+    @Test func thePrivacyAndDeletionRows() {
+        #expect(SettingsModel.webLink(.privacy).absoluteString == "https://otodoke.app/privacy")
+        // The deletion is a section of /app/settings until the Web's split reaches main.
+        #expect(SettingsModel.webLink(.deleteAccount).absoluteString == "https://otodoke.app/app/settings")
+    }
+
     @Test func theMailHandlingItemsOfM1() {
         #expect(MailHandlingText.heading == "あなたのメールの扱い")
         // M2 task 19 adds the item about keeping the key in the Keychain with Face ID (12 → 13).
@@ -483,5 +489,125 @@ struct SettingsModelTests {
         let before = await s.fake.count("GET", "user_keys")
         await s.model.sceneBecameActive()
         #expect(await s.fake.count("GET", "user_keys") == before + 1)
+    }
+    // MARK: 「メールの転送」 page shown (Gmail step 4: open it again after a while)
+
+    private func confirmationReads(_ fake: FakeSupabase) async -> Int {
+        await fake.requests("GET", "emails").filter { $0.query("classification") == ["eq.forwarding_confirmation"] }.count
+    }
+
+    @Test func theForwardingPageShownReadsTheApprovalAgain() async throws {
+        let s = try await setUp()
+        #expect(s.model.confirmURL == nil)
+        let before = await confirmationReads(s.fake)
+        // The approval mail arrives while the settings tab stays open (no change is published, no scene change).
+        await s.fake.insert("emails", [confirm(["forwarding_confirm_url": .string(SettingsRows.google)])])
+        await s.model.pageShown()
+        #expect(await confirmationReads(s.fake) == before + 1)
+        #expect(s.model.confirmURL?.absoluteString == SettingsRows.google)
+        // Shown again later: read again, not only the first time.
+        await s.model.pageShown()
+        #expect(await confirmationReads(s.fake) == before + 2)
+    }
+
+    @Test func theOldAnswerStaysWhileThePageReadsAgain() async throws {
+        let s = try await setUp(mails: [confirm(["forwarding_confirm_url": .string(SettingsRows.google)])])
+        #expect(s.model.confirmURL != nil)
+        let gate = Gate()
+        let before = await confirmationReads(s.fake)
+        await s.fake.fail(where: { $0.query("classification") == ["eq.forwarding_confirmation"] }, nth: before + 1, with: .hold(gate))
+        let shown = Task { await s.model.pageShown() }
+        #expect(await waitFor { await self.confirmationReads(s.fake) == before + 1 })
+        // Mid-read: nothing is cleared (no spinner state, the approval card stays).
+        #expect(s.model.keyPanel != nil)
+        #expect(s.model.confirmURL != nil)
+        gate.open()
+        await shown.value
+        #expect(s.model.keyPanel != nil)
+        #expect(s.model.confirmURL != nil)
+    }
+
+    @Test func aPageShownWhileReadingDoesNotStartASecondRead() async throws {
+        let s = try await setUp()
+        let gate = Gate()
+        let keys = await s.fake.count("GET", "user_keys")
+        await s.fake.fail("GET", "user_keys", nth: keys + 1, with: .hold(gate))
+        let first = Task { await s.model.pageShown() }
+        #expect(await waitFor { await s.fake.count("GET", "user_keys") == keys + 1 })
+        await s.model.pageShown()
+        await s.model.pageShown()
+        #expect(await s.fake.count("GET", "user_keys") == keys + 1)
+        gate.open()
+        await first.value
+        #expect(await s.fake.count("GET", "user_keys") == keys + 1)
+        // Once it ended, the next showing reads again.
+        await s.model.pageShown()
+        #expect(await s.fake.count("GET", "user_keys") == keys + 2)
+    }
+    @Test func aPageShownWhileTheReadWasCutOffReadsAgain() async throws {
+        let s = try await setUp()
+        let gate = Gate()
+        let keys = await s.fake.count("GET", "user_keys")
+        await s.fake.fail("GET", "user_keys", nth: keys + 1, with: .hold(gate))
+        let first = Task { await s.model.pageShown() }
+        #expect(await waitFor { await s.fake.count("GET", "user_keys") == keys + 1 })
+        // The read is still running, but cut off (its answers will be dropped): a page shown starts a new one.
+        first.cancel()
+        await s.model.pageShown()
+        #expect(await s.fake.count("GET", "user_keys") == keys + 2)
+        gate.open()
+        await first.value
+    }
+
+    // MARK: the key row's badge (a failed count is never drawn as no badge)
+
+    @Test func theKeyBadgeForTheCountsThatCouldNotBeRead() async throws {
+        let sampleFails = try await setUp(faults: { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) })
+        #expect(SettingsView.keyBadge(for: sampleFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        let oldKeyFails = try await setUp(faults: { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) })
+        #expect(SettingsView.keyBadge(for: oldKeyFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        #expect(SettingsMenuText.keyUnknownBadge == "確認できません")
+    }
+
+    @Test func theAmberWarningIsNotHiddenByAFailedCount() async throws {
+        let sealedFails: (FakeSupabase) async -> Void = { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) }
+        let plainFails: (FakeSupabase) async -> Void = { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) }
+        // Unencrypted mail (loaded 5) with the old-key count failed: the amber warning stays.
+        let amberAndOldFails = try await setUp(mails: (1...5).map { SettingsRows.mail($0) }, faults: sealedFails)
+        #expect(SettingsView.keyBadge(for: amberAndOldFails.model) == .init(text: SettingsMenuText.plainBadge(5), kind: .amber))
+        // The unencrypted count failed, the old-key count loaded as 0: unknown.
+        let plainFailsOnly = try await setUp(faults: plainFails)
+        #expect(SettingsView.keyBadge(for: plainFailsOnly.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        // Both failed: unknown.
+        let bothFail = try await setUp(faults: { await plainFails($0); await sealedFails($0) })
+        #expect(SettingsView.keyBadge(for: bothFail.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        // No key and the unencrypted count failed: still 未設定 (that is true; there is no key to be unsure about).
+        let noKeyPlainFails = try await setUp(keys: [], faults: plainFails)
+        #expect(SettingsView.keyBadge(for: noKeyPlainFails.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .sky))
+    }
+
+    @Test func theDeleteRowSaysWhereTheDeletionIs() {
+        #expect(SettingsMenuText.deleteSubtitle == "Web の設定の一番下にあります")
+    }
+
+    @Test func theKeyBadgeKeepsItsOtherStates() async throws {
+        let clean = try await setUp()
+        #expect(SettingsView.keyBadge(for: clean.model) == nil)
+        let plain = try await setUp(mails: [SettingsRows.mail(1), SettingsRows.mail(2)])
+        #expect(SettingsView.keyBadge(for: plain.model) == .init(text: SettingsMenuText.plainBadge(2), kind: .amber))
+        let noKey = try await setUp(keys: [])
+        #expect(SettingsView.keyBadge(for: noKey.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .sky))
+    }
+
+    @Test func aKeyStepThatFailedShowsOnTheKeyRow() async throws {
+        let w = try await KeyOwnerAndOrderTests.SignInWorld(keyInUse: false)
+        try await w.signIn()
+        let screens = MainScreens.live(auth: w.auth)
+        let setup = try #require(screens.keySetup)
+        #expect(await waitFor(.seconds(5)) { await MainActor.run { setup.lastOutcome != nil } })
+        await screens.settings.onAppear()
+        #expect(screens.settings.keyStepFailure != nil)
+        #expect(SettingsView.keyBadge(for: screens.settings) == .init(text: SettingsMenuText.keyStepFailedBadge, kind: .red))
+        #expect(SettingsMenuText.keyStepFailedBadge == "鍵を作れませんでした")
     }
 }

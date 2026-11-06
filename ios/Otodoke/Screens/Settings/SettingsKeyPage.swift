@@ -12,6 +12,7 @@ struct SettingsKeyPage: View {
             keyPanel
         }
         .refreshableToTheEnd { await model.load() }
+        .task { await model.pageShown() }
         .navigationTitle(SettingsMenuText.keyTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -26,18 +27,21 @@ struct SettingsKeyPage: View {
             }
         case let .none(plainCount)?:
             VStack(alignment: .leading, spacing: 8) {
-                SettingsParts.heading("パスワード")
-                Text("読み取った後のメールの件名・差出人・本文は、パスワードでしか開けない形で保存します。運営者もデータベースからは読めません。")
+                SettingsParts.heading(SettingsWebText.makeKeyHeading)
+                Text(SettingsWebText.makeKeyLead)
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
                 if case let .loaded(n) = plainCount, n > 0 {
-                    Text(verbatim: "暗号化されていない保存済みのメール \(n) 通も、決めたあとに暗号化できます。それまでは運営者が読める形です。")
+                    Text(verbatim: SettingsWebText.plainMailNote(n))
                         .font(.subheadline.bold())
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                         .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.amberBorder))
+                }
+                if case .failed = plainCount {
+                    SettingsParts.errorBox(SettingsModel.plainCountFailedText)
                 }
                 if let failure = model.keyStepFailure {
                     // S3: the key step after the sign-in did not make the key.

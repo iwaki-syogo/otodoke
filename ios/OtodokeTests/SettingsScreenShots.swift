@@ -20,6 +20,10 @@ struct SettingsScreenShots {
         case keyPresent = "key-present"
         /// As keyPresent, with the guide's cards and the not-read list open.
         case guideOpen = "guide-open"
+        /// Unencrypted mail (5) with the old-key count failed: the amber warning stays.
+        case amberOldKeyFailed = "amber-oldkey-failed"
+        /// The unencrypted count failed: 確認できません.
+        case plainFailed = "plain-failed"
     }
 
     @Test(.enabled(if: dir != nil), arguments: Scenario.allCases)
@@ -64,6 +68,13 @@ struct SettingsScreenShots {
             await fake.fail("GET", "user_keys", with: .http(500))
         case .keyNone:
             await fake.insert("emails", [SettingsRows.mail(1), SettingsRows.mail(2), SettingsRows.mail(3)])
+        case .amberOldKeyFailed:
+            await fake.insert("user_keys", [SettingsRows.key(1, keyID: "k1")])
+            await fake.insert("emails", (1...5).map { SettingsRows.mail($0) })
+            await fake.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503))
+        case .plainFailed:
+            await fake.insert("user_keys", [SettingsRows.key(1, keyID: "k1")])
+            await fake.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500))
         case .keyPresent, .guideOpen:
             await fake.insert("user_keys", [SettingsRows.key(1, keyID: "k1")])
             await fake.insert("emails", [

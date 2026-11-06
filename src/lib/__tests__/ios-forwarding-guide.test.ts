@@ -41,14 +41,14 @@ const IDS = /^(gmail|icloud|outlook|others)$/;
 const iosTextLiterals = () => literals(read(TEXT)).filter((s) => !IDS.test(s));
 const iosHelpLiterals = () => literals(read(HELP));
 
-/** The title iOS shows for a service: the Web's title and, in full-width brackets, its addresses. */
-const iosTitle = (g: { title: string; addresses?: string }) => (g.addresses ? `${g.title}（${g.addresses}）` : g.title);
+/** The Web draws a service's title alone and its addresses on a line of their own under it (C13); iOS does the same. */
+const iosTitle = (g: { title: string; addresses?: string }) => (g.addresses ? [g.title, g.addresses] : [g.title]);
 
 /** What the iOS text file must hold, in the order of its source: every sentence of the Web data except the chips. */
 function expectedGuideLiterals(): string[] {
   const out: string[] = [FORWARDING_TITLE, FORWARDING_LEAD, FORWARDING_LEAD_NOTE, BEFORE_YOU_START_HEADING, ...BEFORE_YOU_START];
   for (const g of FORWARDING_GUIDES) {
-    out.push(iosTitle(g));
+    out.push(...iosTitle(g));
     if (g.time) out.push(g.time);
     if (g.link) out.push(g.link.label, g.link.href);
     if (g.linkNote) out.push(g.linkNote);
