@@ -10,6 +10,9 @@ enum ScreenID: Hashable, Sendable {
     case calendar
     case spend
     case settings
+    /// TDD-STUB(task 21, task 22): the delivered and cancelled pages.
+    case delivered
+    case cancelled
 }
 
 @MainActor

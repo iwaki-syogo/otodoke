@@ -51,6 +51,13 @@ final class AuthService {
     let provider: SupabaseProvider
     @ObservationIgnored private var events: Task<Void, Never>?
 
+    /// TDD-STUB(task 16): the signed-in state's generation (Codex-001). Moves on at sign-out and when the
+    /// signed-in user changes; work that started under an older one is thrown away.
+    let session = SessionGeneration()
+    /// TDD-STUB(task 16): sign-out's steps ② ③ ④ (the opened key's store). signOut() runs ① (session
+    /// moves on) and then cleanup's cancelWork, dropMemory, deleteKeychainKey, in this order.
+    @ObservationIgnored var cleanup: (any SignOutCleanup)?
+
     init(provider: SupabaseProvider) {
         self.provider = provider
     }

@@ -74,6 +74,22 @@ final class MainScreens {
         )
     }
 
+    /// TDD-STUB(task 16, task 17, task 19): the opened key's store (also AuthService.cleanup), the one
+    /// UnlockModel every detail uses, and the settings switch. Set by `live(auth:)`.
+    var keys: OpenKeyStore?
+    var unlock: UnlockModel?
+    var faceID: FaceIDSwitch?
+
+    /// TDD-STUB(task 21): the delivered page's model, told of the changes.
+    func delivered() -> DeliveredModel {
+        DeliveredModel(reader: StatusListReader(provider: list.reader.provider), changes: nil) // TDD-STUB(task 21)
+    }
+
+    /// TDD-STUB(task 22): the cancelled page's model, told of the changes.
+    func cancelled() -> CancelledModel {
+        CancelledModel(reader: StatusListReader(provider: list.reader.provider), changes: nil) // TDD-STUB(task 22)
+    }
+
     /// A parcel's detail model, told of the changes.
     func detail(_ id: String) -> ParcelDetailModel {
         let model = makeDetail(id)

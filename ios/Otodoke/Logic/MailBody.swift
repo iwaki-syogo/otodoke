@@ -96,3 +96,17 @@ enum MailBody {
         return s
     }
 }
+
+/// TDD-STUB(task 18): a sealed mail once opened, as sealed-mail.tsx shows it: the subject, "name <address>"
+/// or the address, and the body (text trimmed, else htmlToText(html), else ""; "" is shown as 「（本文なし）」).
+struct OpenedMail: Equatable, Sendable {
+    let subject: String?
+    let fromText: String?
+    let body: String
+}
+
+extension MailBody {
+    static func opened(_ mail: MailPlaintext) -> OpenedMail {
+        OpenedMail(subject: nil, fromText: nil, body: "") // TDD-STUB(task 18)
+    }
+}

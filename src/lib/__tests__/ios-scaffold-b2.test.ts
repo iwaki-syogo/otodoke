@@ -157,7 +157,8 @@ describe("task 11: the settings words", () => {
     const html = renderToStaticMarkup(createElement(MailHandling));
     const decode = (s: string) => s.replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
     const web = [...html.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => decode(m[1].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim());
-    expect(web.length).toBe(12);
+    // M2 task 19 adds the item about keeping the key in the Keychain with Face ID (12 → 13).
+    expect(web.length).toBe(13);
     const src = stripComments(read("ios/Otodoke/Screens/Settings/MailHandlingView.swift"));
     const block = src.match(/static let items(?:\s*:\s*\[String\])?\s*=\s*\[([\s\S]*?)\n\s*\]/);
     expect(block, "MailHandlingText.items").not.toBeNull();

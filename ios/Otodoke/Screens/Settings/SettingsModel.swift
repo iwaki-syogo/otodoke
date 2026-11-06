@@ -100,6 +100,15 @@ final class SettingsModel {
         )
     }
 
+    /// TDD-STUB(task 19): the 「この端末で Face ID を使う」 switch (set by MainScreens).
+    @ObservationIgnored var faceID: FaceIDSwitch?
+
+    /// TDD-STUB(task 19): the switch shows only with a key row in use (not when none, not when the key
+    /// could not be read) and a FaceIDSwitch.
+    var showsFaceIDToggle: Bool {
+        false // TDD-STUB(task 19)
+    }
+
     /// The address shows only with a key row in use (never when the key could not be read).
     var showsAddress: Bool {
         if case .present? = keyPanel { return true }

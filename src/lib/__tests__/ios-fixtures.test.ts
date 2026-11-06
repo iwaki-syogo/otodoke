@@ -82,7 +82,8 @@ describe("scripts/ios-fixtures.ts output", () => {
   it("has exactly the agreed top-level keys", () => {
     expect(Object.keys(fx).sort()).toEqual(
       // iOS batch 2, task 4: calendar, spend, shop, month and forwarding (src/lib/__tests__/ios-fixtures-m1.test.ts).
-      ["generatedBy", "format", "match", "sections", "undelivered", "unread", "carriers", "safeUrl", "category", "text", "calendar", "spend", "shop", "month", "forwarding"].sort(),
+      // iOS batch 2, task 13: delivered (src/lib/__tests__/ios-fixtures-m2.test.ts).
+      ["generatedBy", "format", "match", "sections", "undelivered", "unread", "carriers", "safeUrl", "category", "text", "calendar", "spend", "shop", "month", "forwarding", "delivered"].sort(),
     );
     expect(fx.generatedBy).toBe("scripts/ios-fixtures.ts");
     expect(Object.keys(fx.format).sort()).toEqual(

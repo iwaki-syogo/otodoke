@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 /// How the tracking row opens the carrier's page. Every URL here is https.
 enum TrackingAction: Equatable, Sendable {
@@ -33,6 +34,25 @@ struct TimelineEntry: Equatable, Sendable, Identifiable {
     /// MailBody.display(email) of this mail: what the row shows, by body_state. The fields above are the
     /// plain mail's (a sealed or dropped mail has them null); the screen goes by this.
     var mail: MailDisplay? = nil
+    /// TDD-STUB(task 18): emails.id of this mail (the sealed mail's AAD and its body_envelope read).
+    var emailID: String? = nil
+}
+
+/// TDD-STUB(task 18): a sealed mail in 「メールの履歴」, by what opening it came to.
+enum SealedState: Equatable, Sendable {
+    /// 「🔒 暗号化されたメール」, not opened yet.
+    case closed
+    /// The key is needed: UnlockView (Face ID or the passphrase).
+    case unlocking
+    /// 「開いています…」
+    case opening
+    case opened(OpenedMail)
+    /// 「開けませんでした」: the envelope could not be read, was null, or was not an envelope (or did not open).
+    case failed
+    /// UnlockModel.oldKeyText.
+    case oldKey
+    /// 「読み込めませんでした」: the key row could not be read again.
+    case readFailed
 }
 
 /// The fields of the detail card, as the Web words them.
@@ -157,6 +177,41 @@ final class ParcelDetailModel {
         self.reader = reader
         self.writer = writer
         self.today = today
+    }
+
+    /// TDD-STUB(task 18): opening sealed mail. Set by MainScreens.detail(_:) (the one UnlockModel of the
+    /// session and its reader of body_envelope).
+    @ObservationIgnored var unlock: UnlockModel?
+    @ObservationIgnored var mailKeys: (any MailKeyReading)?
+
+    /// TDD-STUB(task 18): scenePhase inactive (or background) hides every opened body; active shows it again.
+    private(set) var isBodyHidden = false
+
+    /// TDD-STUB(task 18): what a sealed mail of this detail shows now (closed when never opened, and again
+    /// once the key's front period or the session moved on).
+    func sealedState(emailID: String) -> SealedState {
+        .closed // TDD-STUB(task 18)
+    }
+
+    /// TDD-STUB(task 18): 「元メールを見る」 on a sealed mail: the key (memory, Face ID, else .unlocking), then
+    /// body_envelope read and opened; the kid differing goes through UnlockModel.recipient(forKid:).
+    func openSealed(emailID: String) async {
+        // TDD-STUB(task 18)
+    }
+
+    /// TDD-STUB(task 18): the passphrase typed in UnlockView for this mail; opens it when the key opened.
+    func submitPassphrase(_ passphrase: String, emailID: String) async {
+        // TDD-STUB(task 18)
+    }
+
+    /// TDD-STUB(task 18): scenePhase changed (inactive / background hide the bodies; active shows them).
+    func sceneChanged(_ phase: ScenePhase) {
+        // TDD-STUB(task 18)
+    }
+
+    /// TDD-STUB(task 18): how many opened mails are held in memory (for the tests of dropping them).
+    var heldPlaintextCount: Int {
+        0 // TDD-STUB(task 18)
     }
 
     /// 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads again when it
@@ -527,3 +582,10 @@ extension ParcelDetailModel {
     }
 }
 #endif
+
+/// TDD-STUB(task 16, task 18): the detail holds opened mail; OpenKeyStore tells it to drop it.
+extension ParcelDetailModel: PlaintextHolder {
+    func dropPlaintext() {
+        // TDD-STUB(task 18)
+    }
+}
