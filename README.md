@@ -39,7 +39,7 @@
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
    - 進めないときは次を見てください
      - パスワードは 10 文字以上です。同じ文字のくり返し、1234… や abcd… のような連番、password のようなよくある言葉と数字だけの組み合わせは使えません（アカウントを作る画面にも同じ決まりが出ます）
-     - 新規登録とログインでは、人かどうかの確認（Cloudflare Turnstile）が出ます。ボタンが「確認のチェックを押してください」になったら、チェックを押してからもう一度押します。「確認を読み込めませんでした」と出たら、ページを読み込み直すか、別のブラウザで試してください
+     - 新規登録とログインでは、人かどうかの確認（Cloudflare Turnstile）が出ます。ボタンが「確認のチェックを押してください」になったら、チェックを押してください。押すと、そのまま進みます。「確認を読み込めませんでした」と出たら、ページを読み込み直すか、別のブラウザで試してください
      - 確認のメールが来ないときは、アカウントを作る画面で送ったあとに出る「送り直す」を押します
      - 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」と出たら、少し待ってからやり直してください
      - それでも届かないときは support@otodoke.app へ書いてください
@@ -139,29 +139,35 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 
 **手元で動かす。** 上から順に打てば動きます。自分の Supabase のプロジェクトが要ります。
 
-1. Node.js は 20.9 以上が要ります（Next.js 16.4.3 の条件、`package-lock.json`）。作者は Node.js 26 で確かめています。
+1. Node.js は 22.12 以上（22・24・26）が要ります。vitest と supabase-js の条件によります（`package-lock.json` の engines）。作者は Node.js 26 で確かめています。
 2. 依存を入れます。git の pre-commit も有効になります。
 
    ```bash
    npm install
    ```
 
-3. Supabase にログインし、自分のプロジェクトにつなぎ、スキーマを適用します。
+3. Supabase CLI を入れます。`npm run env:supabase` もこの CLI を使います。
 
    ```bash
-   npx supabase login
-   npx supabase link --project-ref <自分のプロジェクトの ref>
-   npx supabase db push
+   brew install supabase/tap/supabase
    ```
 
-4. 環境変数を用意します。`.env.example` を `.env.local` に写して値を入れます。Supabase の 3 つの値（URL・anon キー・サーバー用キー）は、`link` のあとに `npm run env:supabase` を打つと `.env.local` に書き込まれます。このスクリプトは、つないだプロジェクトのキーを Supabase の CLI で取り、`.env.local` に書き、サーバー用キーが通るかを確かめます。値は画面に出しません。ほかのキーは空のまま残します。
+4. Supabase にログインし、自分のプロジェクトにつなぎ、スキーマを適用します。
+
+   ```bash
+   supabase login
+   supabase link --project-ref <自分のプロジェクトの ref>
+   supabase db push
+   ```
+
+5. 環境変数を用意します。`.env.example` を `.env.local` に写して値を入れます。Supabase の 3 つの値（URL・anon キー・サーバー用キー）は、`link` のあとに `npm run env:supabase` を打つと `.env.local` に書き込まれます。このスクリプトは、つないだプロジェクトのキーを Supabase の CLI で取り、`.env.local` に書き、サーバー用キーが通るかを確かめます。値は画面に出しません。ほかのキーは空のまま残します。
 
    ```bash
    cp .env.example .env.local
    npm run env:supabase
    ```
 
-5. 起動します。
+6. 起動します。
 
    ```bash
    npm run dev   # http://localhost:3015
@@ -169,8 +175,12 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 
 何が要るかは、試したいことで変わります。
 
-- **サンプルのメールを試すだけ**なら、要るのは Supabase の 3 つの値だけです。サンプルは保存済みの読み取り結果を使うので、Claude と Resend のキーは要りません。
-- **新規登録**には確認のメールが要ります。手元の Supabase にも Auth の設定が要ります。確認メールの有効化、SMTP、`site_url`、戻り先の URL（`/auth/confirm**`）で、値は `supabase/config.toml` にあります。`supabase config push` は本番を書き換える使い方になりやすいので勧めません。ダッシュボードの Authentication で同じ値を入れてください。
+- **サンプルのメールを試すだけ**なら、キーとして要るのは Supabase の 3 つの値だけです。サンプルは保存済みの読み取り結果を使うので、Claude と Resend のキーは要りません。ただし、アカウントを作ってログインするので、下の Auth の設定は要ります。
+- **新規登録**には確認のメールが要ります。手元の Supabase にも、次の Auth の設定が要ります。値は `supabase/config.toml` と `supabase/templates/` にあります。`supabase config push` は本番を書き換える使い方になりやすいので勧めません。ダッシュボードの Authentication で入れてください。
+  - 確認メールを有効にし、SMTP を設定します（`config.toml` は Resend の SMTP で、キーは `RESEND_SMTP_KEY` です）。
+  - Site URL は `http://localhost:3015` にします。本番の値は写さないでください。
+  - Redirect URLs に `http://localhost:3015/auth/confirm**` を入れます。
+  - メールの文面を `supabase/templates/confirmation.html`（件名「Otodoke のメールアドレスの確認」）と `supabase/templates/recovery.html`（件名「Otodoke のパスワードの再設定」）に差し替えます。確認のリンクは `/auth/confirm` が `token_hash` を `verifyOtp` で検証するので、Supabase の既定の文面ではログインに進めません。
 - **実際のメールの受信**には、Resend の受信の設定（受信ドメインと、`email.received` の webhook の送り先 `/api/inbound`）と、外から届く URL が要ります。`RESEND_API_KEY`、`RESEND_WEBHOOK_SECRET`、`INBOUND_DOMAIN` を入れます。読み取りには `ANTHROPIC_API_KEY` が要ります。
 
 `npm test` は API を呼びません。`npm run eval` は Claude API を呼ぶので課金されます。`--max-usd` で上限を付けて流します。
@@ -196,10 +206,10 @@ Demo video: <!-- DEMO_VIDEO_URL --> (coming soon)
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home (no 置き配), and how much you spent this month.
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
-Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database; parcel data and sender domains stay plaintext, and this is disclosed in the app. Exceptions, also disclosed: mail not yet read, and mail read before encryption started, is stored unsealed (until you press "encrypt" in settings), and unsealed mail stays in database backups for up to 7 days. The iOS app can keep the unlocked key in the device keychain behind Face ID / Touch ID; it never leaves the device, is not synced, and is removed on logout.
-A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement: it first matched 71/73 hand-labelled fields on the 17 demo mails (Opus 73/73), the misses were time-slot formats that the code now handles, and the latest run (2026-11-06) is 73/73 at about 1/20 of the cost. Mail types were also checked on all 341 of the author's mails (314/320). Reading those 341 mails (one year) with the production pipeline cost about $0.4.
+Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database. Parcel data, the evidence lines (short excerpts of the body) and reading notes, sender domains, Message-IDs and Gmail's forwarding-approval links stay plaintext, and this is disclosed in the app. Mail waiting to be read stays unsealed until it is read; mail read before encryption started stays unsealed until you press 「暗号化する」 in settings. Unsealed mail stays in database backups for up to 7 days. Resend, which receives the mail, also keeps a copy for a while. The iOS app can keep the unlocked key in the device keychain behind Face ID / Touch ID; it never leaves the device, is not synced, and is removed on logout.
+A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement: it first matched 71/73 hand-labelled fields on the 17 demo mails (Opus 73/73), the misses were time-slot formats that the code now handles, and the latest run (2026-11-06) is 73/73 at about 1/20 of the cost. Mail types were also checked on all 341 of the author's anonymized mails (314/320). Reading those 341 mails (one year) with the production pipeline cost about $0.4.
 The saved demo results were made with Opus 5.5 and then touched by hand: a category was set on all 17, and six reading notes were reworded in plain Japanese. No extracted value was changed.
-Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and a manual check of 46 of the 101 parcels built from the 341 real emails against the original mails.
+Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and real-mail runs: the author's 341 mails went through the production pipeline, and an independent agent checked 46 of the 101 parcels against the original mails (errors 20/460 fields, 10/440 after fixes).
 Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, `ios/`) is in internal TestFlight testing only.
-Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) and press 「確認する」, log in with the password, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; each parcel shows the source line it was read from; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
-If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks); 「送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
+Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) and press 「確認する」, log in with the password, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
+If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
