@@ -1,20 +1,20 @@
 // 「うまく届かないとき」: the three pitfalls that keep a parcel from showing up, copied sentence for sentence
-// from the Web's FORWARDING_PITFALLS (src/lib/forwarding-guide.ts), checked against the carriers' own help on
-// 2026-11-07. The screen only draws what is listed here, and src/lib/__tests__/ios-forwarding-guide.test.ts fails
-// when a sentence differs from the Web's.
+// from 「届かない人が多い落とし穴」 of src/lib/forwarding-guide.ts (the Web source of truth), checked
+// against the carriers' own help on 2026-11-07. The screen only draws what is listed here, and
+// src/lib/__tests__/ios-forwarding-guide.test.ts fails when a sentence differs from the source.
 
 import Foundation
 
 enum DeliveryHelpText {
-    static let heading = "届かない人が多い落とし穴（必ず確かめてください）"
-    static let lead = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。"
+    static let heading = "届かない人が多い落とし穴"
+    static let lead = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。必ず確かめてください。"
 
     static let pitfalls: [ForwardingGuideText.Pitfall] = [
         .init(title: "ヤマト運輸などのお届け予定メールを受け取っていない", blocks: [
             .text("ヤマト運輸の「お届け予定メール」は、クロネコメンバーズに登録した人にだけ届きます。いつ届くかは、このメールで分かることが多いです。"),
             .text("確かめ方:"),
             .steps([
-                "クロネコメンバーズにログインします（未登録なら登録して、本人認証まで済ませます）。",
+                "クロネコメンバーズにログインします。未登録なら登録して、本人認証まで済ませます。",
                 "左上のメニュー › 「荷物に関する通知設定」を開きます。",
                 "メールを「利用する」にして、「通知設定を保存する」を押します。LINE やアプリだけにしていると、メールが届きません。",
             ]),
@@ -22,8 +22,8 @@ enum DeliveryHelpText {
             .domains(["@kuronekoyamato.co.jp", "@ml.kuronekoyamato.co.jp", "@ml2.kuronekoyamato.co.jp"]),
             .text("佐川急便・日本郵便も、会員サービスでメールの通知を受け取る設定にしておくと、届く日が分かりやすくなります。"),
             .links([
-                .init(title: "お届け予定通知（ヤマト運輸）", url: "https://www.kuronekoyamato.co.jp/ytc/customer/redelivery/members/schedule_notice/"),
-                .init(title: "受け取るドメイン（ヤマト運輸のよくある質問）", url: "https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/7935"),
+                .init(title: "ヤマト運輸のお届け予定通知", url: "https://www.kuronekoyamato.co.jp/ytc/customer/redelivery/members/schedule_notice/"),
+                .init(title: "ヤマト運輸のよくある質問・受け取るドメイン", url: "https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/7935"),
             ]),
         ]),
         .init(title: "ショップの「発送のお知らせ」メールを止めている", blocks: [

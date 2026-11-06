@@ -24,7 +24,6 @@ const nextConfig: NextConfig = {
   // The demo loader (a Server Action rendered on /app/settings/demo) reads anonymized fixtures at
   // runtime. The key is the page that renders it: a function only holds the files of its own route.
   outputFileTracingIncludes: {
-    "/app/settings": ["./fixtures/demo/**/*.json"],
     "/app/settings/demo": ["./fixtures/demo/**/*.json"],
   },
   // Every route, including the landing page and API responses. Not "/:path*": that skips "/".

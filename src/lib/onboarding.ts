@@ -2,9 +2,8 @@ import { CONFIRMED_PATH } from "@/lib/login-errors";
 
 /**
  * From the sign-up to the forwarding setup without a stop (decided on 2026-11-07): the words of the
- * three screens and where each one leads. The words are the iOS app's too, character for character
- * (the source is the team's onboarding-wording.md, outside this repository); change them only
- * together with it. Pure: the screens and the route import it.
+ * three screens and where each one leads. The words are the iOS app's too, character for character;
+ * change them only together with it. Pure: the screens and the route import it.
  *
  *   1  /signup, once the confirmation mail went: the tab keeps the password in its memory and signs
  *      in by itself when it is shown again (or 「確認しました」 is pressed).
@@ -77,8 +76,9 @@ export function landingAfterSignIn(key: "opened" | "made", next: string): string
  *   and the `focus` that one return fires).
  * - After a refusal other than "not confirmed yet", the next try waits AUTO_SIGN_IN_AFTER_FAILURE_MS.
  * - At most AUTO_SIGN_IN_MAX sends per waiting screen; after them only the button tries.
- * No timer tries again: only the next return does.
+ * No repeating timer: only a return tries, and a return the gap held back gets one try when the gap
+ * ends (a single timeout, not a loop).
  */
 export const AUTO_SIGN_IN_GAP_MS = 20_000;
 export const AUTO_SIGN_IN_AFTER_FAILURE_MS = 60_000;
-export const AUTO_SIGN_IN_MAX = 10;
+export const AUTO_SIGN_IN_MAX = 5;

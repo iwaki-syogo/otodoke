@@ -9,7 +9,7 @@ import { findAll, hasClasses, linksTo, parseHtml, textOf, type HtmlNode } from "
 
 /**
  * [Review 2026-11-06 E-1] A parcel whose mails say nothing about how it is received counts as
- * face-to-face (Amazon aside; the owner's decision, worked out on display, stored values kept).
+ * face-to-face (Amazon aside; worked out on display, stored values kept).
  * That default is still red and still counted, but it is worded apart, so it never reads like a
  * mail that said so:
  * - list and calendar cards, and the badge on the parcel page: 「🤝 念のため対面」

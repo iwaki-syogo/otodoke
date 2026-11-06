@@ -443,7 +443,7 @@ export function needsCheck(p: DatedParcel, today: string): boolean {
 
 /**
  * Whether the parcel has to be handed over in person, as shown to the user. A mail that says
- * nothing about it counts as face-to-face (the owner's decision: being home is the safe guess),
+ * nothing about it counts as face-to-face (being home is the safe guess),
  * except Amazon, which mostly leaves parcels at the door, so it stays unknown. The stored value
  * is never changed; this is worked out on display.
  */

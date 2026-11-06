@@ -6,7 +6,7 @@ import { findAll, hasClasses, parseHtml, textOf } from "./html-tree";
 /**
  * /app's loading screen stands in for a moment while any page under /app is on its way, before that
  * page's own. On the way to the first-run guide it draws the guide's frame, not the parcel list's:
- * the list is never shown, even in grey, before the guide (onboarding-wording.md, screen 3).
+ * the list is never shown, even in grey, before the guide.
  */
 
 const at = vi.hoisted(() => ({ path: "/app/welcome" }));

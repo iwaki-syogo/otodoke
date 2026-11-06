@@ -337,9 +337,9 @@ describe("task 19: 「あなたのメールの扱い」 gains the Keychain item,
     return block ? [...block[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]) : [];
   };
 
-  it("iOS and the Web list the same 13 items, one of them about the Keychain", () => {
+  it("iOS and the Web list the same 14 items, one of them about the Keychain", () => {
     const web = webItems();
-    expect(web).toHaveLength(13);
+    expect(web).toHaveLength(14);
     expect(swiftItems()).toEqual(web);
     const added = web.filter((s) => s.includes("キーチェーン"));
     expect(added).toHaveLength(1);

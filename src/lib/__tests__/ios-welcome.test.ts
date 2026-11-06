@@ -50,7 +50,7 @@ describe("the iOS first screen", () => {
     expect(parseTopPage("<h1>あ</h1><p>い</p>")).toBeNull();
   });
 
-  it("the buttons' words are the ones the owner chose", () => {
+  it("the buttons' words are the agreed ones", () => {
     expect(swiftConstant(text(), "newHere")).toBe("はじめての方");
     expect(swiftConstant(text(), "newHereNote")).toBe("アカウントを作る");
     expect(swiftConstant(text(), "signIn")).toBe("ログイン");
