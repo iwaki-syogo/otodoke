@@ -3,8 +3,12 @@ import { cookies, headers } from "next/headers";
 /**
  * The address the login form last sent a mail to, or tried to, kept for this browser only.
  *
+ * - After a send, the "sent" screen shows it, and the code typed there is checked with it:
+ *   Supabase verifies a code together with the address it went to.
  * - After a refused send, the address field shows it again: Next.js draws the form anew after a
  *   Server Action redirects, so what the browser had in the field is gone.
+ * - Removed once the code has signed the browser in. (A sign-in by the link lands on
+ *   /auth/confirm, which leaves it to expire: it is only the address this browser typed.)
  *
  * Not in the URL: a URL stays in the browser's history and in request logs. A cookie instead:
  * - httpOnly: no script on the page can read it.
@@ -72,5 +76,14 @@ export async function rememberLogin(login: RememberedLogin): Promise<void> {
   } catch (error) {
     // Never the address itself.
     console.warn("[login] could not keep the address for this browser:", error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** Forgets the address (after a sign-in). Server Actions only. The path must match the one set. */
+export async function forgetLogin(): Promise<void> {
+  try {
+    (await cookies()).delete({ name: LOGIN_EMAIL_COOKIE, path: LOGIN_EMAIL_COOKIE_PATH });
+  } catch (error) {
+    console.warn("[login] could not forget the address for this browser:", error instanceof Error ? error.message : String(error));
   }
 }

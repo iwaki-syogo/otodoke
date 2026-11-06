@@ -101,7 +101,7 @@ afterEach(() => {
 describe("sendMagicLink with the mail limit", () => {
   it("sends when the limit allows, passing only hashes and the limits", async () => {
     mocks.rpc.mockResolvedValue(claimAnswer("ok"));
-    expect(await submit()).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(await submit()).toBe("REDIRECT:/login?sent=1");
     expect(mocks.otp).toHaveLength(1);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     const [fn, args] = mocks.rpc.mock.calls[0];
@@ -135,14 +135,14 @@ describe("sendMagicLink with the mail limit", () => {
 
   it("still sends, and warns, when the limit check returns an error", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "function public.claim_login_mail does not exist" } });
-    expect(await submit()).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(await submit()).toBe("REDIRECT:/login?sent=1");
     expect(mocks.otp).toHaveLength(1);
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("limit check failed"), expect.stringContaining("does not exist"));
   });
 
   it("still sends when the limit check throws (no service key, network)", async () => {
     mocks.adminThrows = true;
-    expect(await submit()).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(await submit()).toBe("REDIRECT:/login?sent=1");
     expect(mocks.otp).toHaveLength(1);
     expect(console.warn).toHaveBeenCalled();
   });
@@ -205,7 +205,7 @@ describe("a send Supabase refuses does not count", () => {
 
   it("keeps the send counted when the mail went out", async () => {
     answer(claimAnswer("ok", 77));
-    expect(await submit()).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(await submit()).toBe("REDIRECT:/login?sent=1");
     expect(rpcCalls("claim_login_mail")).toHaveLength(1);
     expect(rpcCalls("release_login_mail")).toHaveLength(0);
   });
@@ -290,11 +290,14 @@ describe("/login?error= shows fixed wording", () => {
     expect(html).toContain("ログインできませんでした。もう一度リンクを送ってください。");
   });
 
-  it("echoes ?sent= only when it is a plain address", async () => {
-    expect(await loginPage({ sent: EMAIL })).toContain(`${EMAIL} にリンクを送りました。`);
-    const html = await loginPage({ sent: "サポートに電話してください 0120-000-000" });
-    expect(html).not.toContain("0120");
-    expect(html).toContain("リンクを送りました。");
+  it("never echoes what ?sent= carries (the address comes from this browser's cookie, login-code-form.test.ts)", async () => {
+    // An old link that still has the address in it, and a crafted one.
+    for (const sent of [EMAIL, "サポートに電話してください 0120-000-000"]) {
+      const html = await loginPage({ sent });
+      expect(html).not.toContain(EMAIL);
+      expect(html).not.toContain("0120");
+      expect(html).toContain("メールを送りました。");
+    }
   });
 });
 

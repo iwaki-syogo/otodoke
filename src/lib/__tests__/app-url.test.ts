@@ -121,7 +121,7 @@ describe("sendMagicLink redirect target", () => {
 
   it("sends the preview's branch URL as emailRedirectTo", async () => {
     const result = await submitLogin({ VERCEL_ENV: "preview", VERCEL_BRANCH_URL: BRANCH });
-    expect(result).toBe(`REDIRECT:/login?sent=${encodeURIComponent("someone@example.com")}`);
+    expect(result).toBe("REDIRECT:/login?sent=1");
     expect(mocks.otp).toHaveLength(1);
     expect(mocks.otp[0].options?.emailRedirectTo).toBe(`https://${BRANCH}/auth/confirm?next=${encodeURIComponent("/app")}`);
   });

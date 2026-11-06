@@ -1,3 +1,5 @@
+import { safeNextPath } from "./safe-next";
+
 /**
  * What /login?error=<code> may say. The query carries only a code; the words come from here,
  * so a crafted link cannot put its own text on the login page.
@@ -31,6 +33,17 @@ export const LOGIN_ERROR_MESSAGES = {
   // Supabase did not answer, or answered 5xx: nothing says the token was refused.
   link_failed: "いまはログインできませんでした。少し時間をおいて、もう一度メールのリンクを開いてください。",
   link_incomplete: "リンクが不完全です。もう一度リンクを送ってください。",
+  // The code typed on the "sent" screen (verifyLoginCode). Not 6 to 10 digits once full-width
+  // digits, spaces and dashes are read: Supabase is not asked.
+  code_format: "コードを確かめて、もう一度入力してください。",
+  // Supabase refused it: wrong, expired, used, or from an older mail (a new send replaces it).
+  code_invalid: "コードが違うか、期限が切れています。いちばん新しいメールのコードを入力してください。",
+  // The same limit and outages as the link (verifyFailure). The code still works after the wait.
+  code_limited: "ただいま混み合っています。1分ほど待ってから、もう一度お試しください。",
+  code_failed: "いまはログインできませんでした。少し時間をおいて、もう一度お試しください。",
+  // This browser no longer knows the address the code went to (the cookie is an hour old or
+  // gone), and Supabase needs the address with the code.
+  code_no_address: "もう一度リンクを送ってから、届いたメールのコードを入力してください。",
 } as const;
 
 export type LoginErrorCode = keyof typeof LOGIN_ERROR_MESSAGES;
@@ -41,8 +54,33 @@ export const UNKNOWN_LOGIN_ERROR = "ログインできませんでした。も�
 /** Shown in the bot check's place when its script cannot load (blocked, offline, Cloudflare down). */
 export const TURNSTILE_UNAVAILABLE_MESSAGE = "確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。";
 
-export function loginErrorPath(code: LoginErrorCode): string {
-  return `/login?error=${code}`;
+/**
+ * /login with the given state. `next` (where to go after signing in) is carried only when it is a
+ * path on this site other than the default, so a refused send or code does not lose it. The
+ * address is never put in the URL (see login-email-cookie.ts).
+ */
+function loginPath(params: { sent?: boolean; error?: LoginErrorCode; next?: string | null }): string {
+  const query = new URLSearchParams();
+  if (params.sent) query.set("sent", "1");
+  if (params.error) query.set("error", params.error);
+  const next = params.next == null ? "/app" : safeNextPath(params.next);
+  if (next !== "/app") query.set("next", next);
+  const search = query.toString();
+  return search ? `/login?${search}` : "/login";
+}
+
+export function loginErrorPath(code: LoginErrorCode, next?: string | null): string {
+  return loginPath({ error: code, next });
+}
+
+/** The "sent" screen: the mail went out; the code form is there, with an error when one is given. */
+export function loginSentPath(next?: string | null, error?: LoginErrorCode): string {
+  return loginPath({ sent: true, error, next });
+}
+
+/** The send form again ("メールを送り直す"), keeping where to go after signing in. */
+export function loginFormPath(next?: string | null): string {
+  return loginPath({ next });
 }
 
 /**
@@ -81,6 +119,13 @@ const LINK_ERROR = { invalid: "link_invalid", limited: "link_limited", failed: "
 /** The fixed message code for a link /auth/confirm could not verify (`null`: verifyOtp threw). */
 export function loginLinkErrorCode(error: { status?: number; code?: string } | null): LoginErrorCode {
   return error ? LINK_ERROR[verifyFailure(error)] : "link_failed";
+}
+
+const CODE_ERROR = { invalid: "code_invalid", limited: "code_limited", failed: "code_failed" } as const;
+
+/** The same for a code typed on the "sent" screen. */
+export function loginCodeErrorCode(error: { status?: number; code?: string } | null): LoginErrorCode {
+  return error ? CODE_ERROR[verifyFailure(error)] : "code_failed";
 }
 
 /** The message for a query value; null when there is no error to show. */

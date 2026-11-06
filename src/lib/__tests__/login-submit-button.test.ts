@@ -113,7 +113,7 @@ describe("login submit button", () => {
 
   it("is what the login page uses, inside the form that posts to the server action", () => {
     const page = readFileSync(path.resolve(__dirname, "../../app/login/page.tsx"), "utf8");
-    const form = page.slice(page.indexOf("<form action={sendMagicLink}"), page.indexOf("</form>"));
+    const form = page.slice(page.indexOf("<form action={sendMagicLink}"), page.indexOf("</form>", page.indexOf("<form action={sendMagicLink}")));
     expect(form).toContain("<LoginSubmitButton />");
     expect(form).not.toMatch(/<button\b/);
     const source = readFileSync(path.resolve(__dirname, "../../app/login/submit-button.tsx"), "utf8");

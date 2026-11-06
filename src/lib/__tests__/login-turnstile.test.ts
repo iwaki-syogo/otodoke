@@ -96,7 +96,7 @@ afterEach(() => {
 
 describe("sendMagicLink passes the Turnstile token to Supabase", () => {
   it("sends the token from cf-turnstile-response as captchaToken", async () => {
-    expect(await submit({ "cf-turnstile-response": TOKEN })).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?sent=1");
     expect(mocks.otp).toHaveLength(1);
     expect(mocks.otp[0].options?.captchaToken).toBe(TOKEN);
     expect(mocks.otp[0].options?.emailRedirectTo).toBe("https://otodoke.app/auth/confirm?next=%2Fapp");
@@ -108,7 +108,7 @@ describe("sendMagicLink passes the Turnstile token to Supabase", () => {
     ["only spaces", { "cf-turnstile-response": "   " }],
     ["something longer than any token", { "cf-turnstile-response": "x".repeat(2049) }],
   ])("still asks Supabase to send, without a token, for %s", async (_label, fields) => {
-    expect(await submit(fields)).toBe(`REDIRECT:/login?sent=${encodeURIComponent(EMAIL)}`);
+    expect(await submit(fields)).toBe("REDIRECT:/login?sent=1");
     expect(mocks.otp).toHaveLength(1);
     expect(mocks.otp[0].options?.captchaToken).toBeUndefined();
   });
@@ -206,7 +206,7 @@ describe("the login form carries the widget", () => {
     expect(source).toContain("turnstile.reset(");
     expect(source).toContain("turnstile.remove(");
     const page = readFileSync(path.resolve(__dirname, "../../app/login/page.tsx"), "utf8");
-    const form = page.slice(page.indexOf("<form action={sendMagicLink}"), page.indexOf("</form>"));
+    const form = page.slice(page.indexOf("<form action={sendMagicLink}"), page.indexOf("</form>", page.indexOf("<form action={sendMagicLink}")));
     expect(form).toContain("<TurnstileWidget ");
   });
 
