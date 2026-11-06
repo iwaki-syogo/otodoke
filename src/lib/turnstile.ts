@@ -59,6 +59,22 @@ export const TURNSTILE_WAIT_MS = 10_000;
  */
 export const TURNSTILE_ENFORCED_WAIT_MS = 60_000;
 
+/**
+ * What the screen says when Supabase refused a press with its captcha code and the press had sent
+ * no token (the check could not load, or never answered within TURNSTILE_ENFORCED_WAIT_MS): trying
+ * again would meet the same refusal. Web only, so it is not in LOGIN_MESSAGES (shared with iOS).
+ */
+export const CAPTCHA_NOT_FINISHED_MESSAGE = "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。";
+
+/**
+ * The words for a press's answer: `text` as it is, except a captcha refusal of a press that sent
+ * no token, which gets CAPTCHA_NOT_FINISHED_MESSAGE. A refusal of a token (expired, used) keeps
+ * the shared words, where trying again does help.
+ */
+export function pressText(code: string, captchaToken: string | undefined, text: string): string {
+  return code === "captcha" && !captchaToken ? CAPTCHA_NOT_FINISHED_MESSAGE : text;
+}
+
 /** How long a press waits for the token, by whether Supabase enforces the check. */
 export function tokenWaitMs(captchaEnforced: boolean): number {
   return captchaEnforced ? TURNSTILE_ENFORCED_WAIT_MS : TURNSTILE_WAIT_MS;

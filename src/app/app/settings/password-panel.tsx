@@ -9,7 +9,7 @@ import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { useTabKey } from "@/lib/crypto/tab-key";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { tokenForPress, type TokenField } from "@/lib/turnstile";
+import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { signInWithAuthSecret } from "@/app/login/actions";
 import { readSignedInAddress } from "@/app/login/session-actions";
 import { OtherPasswordForm } from "@/app/login/other-password-form";
@@ -147,7 +147,7 @@ export function MakeKeyForm({ email }: { email: string }) {
       if (!result.ok) {
         // The address is the session's: a refused sign-in can only be the password.
         const code = result.code === "credentials" ? "wrong_password" : result.code;
-        setError({ text: flowMessage(code), logIn: LOG_IN_AGAIN.has(code) });
+        setError({ text: pressText(code, captchaToken, flowMessage(code)), logIn: LOG_IN_AGAIN.has(code) });
         return;
       }
       if (result.key === "opened" || result.key === "made") {
@@ -249,7 +249,7 @@ export function ChangeForm({ userId, email, withCheck }: { userId: string; email
         setNext("");
         setAgain("");
       }
-      setMessage(result.ok ? { ok: true, text: "変えました。前のメールも新しいパスワードで開けます。", logIn: false } : { ok: false, text: flowMessage(result.code), logIn: LOG_IN_AGAIN.has(result.code) });
+      setMessage(result.ok ? { ok: true, text: "変えました。前のメールも新しいパスワードで開けます。", logIn: false } : { ok: false, text: pressText(result.code, captchaToken, flowMessage(result.code)), logIn: LOG_IN_AGAIN.has(result.code) });
     } finally {
       // The token went with the press (each is checked once): the next press waits for a new one.
       setRound((r) => r + 1);

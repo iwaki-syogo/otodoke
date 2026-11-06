@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { PendingSubmitButton } from "@/components/pending-button";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { tokenForPress, type TokenField } from "@/lib/turnstile";
+import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { inputClass, submitClass } from "../form-style";
 import { sendResetMail } from "../actions";
 import { TurnstileWidget } from "../turnstile-widget";
@@ -36,7 +36,7 @@ export function ForgotForm() {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await sendResetMail({ email, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
-      setAnswer({ ok: result.ok, text: loginMessage(result.code) });
+      setAnswer({ ok: result.ok, text: pressText(result.code, captchaToken, loginMessage(result.code)) });
     } finally {
       // The token went with the press (each is checked once): the next press waits for a new one.
       setRound((r) => r + 1);
