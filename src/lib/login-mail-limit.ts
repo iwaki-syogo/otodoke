@@ -17,16 +17,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * pass through here, so this cannot stop someone from exhausting Supabase's project-wide mail
  * cap. Only a CAPTCHA on the Supabase side or Supabase's own rate-limit settings can.
  *
- * Who must not be blocked, and how the numbers allow for them:
+ * Who must not be blocked, and how the numbers allow for them. The three mails share every count
+ * here; signing in with the password sends none.
  * - Someone whose mail is slow or in spam and asks again: Supabase already refuses a second
  *   send to one address within a minute, so 3 per 10 minutes is two retries, 6 per hour plenty.
  *   A send Supabase refuses is given back (releaseLoginMail), so pressing the button again
  *   within that minute does not use up the allowance.
  * - Someone who mistyped the address: the typo is a different address with its own count.
- * - Several judges on one office or venue network (one shared IP): 10 per hour from one IP.
- *   A signed-in session lasts, so each person needs a link once; ten different people logging in
- *   from one network within the same hour is unlikely, while one IP alone can no longer take the
- *   whole allowance through the form.
+ * - Several judges on one office or venue network (one shared IP): 10 per hour from one IP for
+ *   the three mails together. Ten people can make their accounts within one hour, or five if each
+ *   has the mail sent again, and a reset for a forgotten password takes from the same ten. One
+ *   more is told to try again later and can once the oldest of those sends is an hour old; one IP
+ *   alone can no longer take the whole allowance through the forms. Raising the 10 is bounded by
+ *   LOGIN_TRY_LIMITS: together they keep one IP's sign-ups and sign-ins under Supabase's own
+ *   per-IP limit, which every visitor shares (login-actions.test.ts checks the sum).
  *
  * Fails open: if the check itself fails (DB down, function missing, no service key locally), the
  * mail is sent and a warning is logged. Locking everyone out is worse than a missing cap.

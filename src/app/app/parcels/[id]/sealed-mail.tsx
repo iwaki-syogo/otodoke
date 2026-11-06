@@ -90,7 +90,7 @@ export function SealedMail({ userId, email, emailId, fromDomain, notes, confiden
           ) : current.kind === "failed" ? (
             <p className="text-xs text-red-800">開けませんでした</p>
           ) : (
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">{body || "（本文なし）"}</pre>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">{body || "本文はありません。"}</pre>
           )}
         </div>
       </details>

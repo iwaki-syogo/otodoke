@@ -8,7 +8,8 @@ export const metadata = { title: "アカウントを作る" };
  * /signup: a new account with the address and the password (password-v1). Supabase mails the
  * confirmation link; after it, the person signs in with the password and the key is made then.
  * Those who used to sign in by a mail's link have an account already: they set a password from
- * 「パスワードを忘れた」 (decision 7).
+ * 「パスワードを忘れた」 on /login (decision 7). This page has no word for them: it is the public
+ * page of an app made new for the contest.
  */
 export default function SignupPage() {
   return (
@@ -21,13 +22,6 @@ export default function SignupPage() {
       <Link href="/privacy" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
         プライバシーポリシー
       </Link>
-      <p className="mt-6 text-sm leading-6 text-neutral-600">
-        前にメールのリンクでログインしていた方は、
-        <Link href="/login/forgot" className="font-medium text-neutral-900 underline underline-offset-4">
-          パスワードを忘れた
-        </Link>
-        からパスワードを決めてください。
-      </p>
       <Link href="/login" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
         ログイン
       </Link>

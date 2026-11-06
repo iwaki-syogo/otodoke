@@ -150,13 +150,15 @@ describe("making the account", () => {
 });
 
 describe("the page", () => {
-  it("states the rule, the way for those who signed in by a mail's link, and the way to log in", () => {
+  it("states the rule and the way to log in, and has no word for those who signed in by a mail's link before", () => {
     const root = parseHtml(renderToStaticMarkup(SignupPage()));
     const text = textOf(root);
     expect(text).toContain(PASSWORD_RULE);
-    expect(text).toContain("前にメールのリンクでログインしていた方は、パスワードを忘れたからパスワードを決めてください。");
+    // Otodoke was made new for the contest: this public page does not read as if people used it
+    // before. Those who signed in by a mail's link set a password from 「パスワードを忘れた」 on /login.
+    expect(text).not.toContain("前にメールのリンクでログインしていた方は");
+    expect(text).not.toMatch(/ログインしていた|メールのリンクでログイン/);
     const anchors = findAll(root, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a)]);
-    expect(anchors).toContainEqual(["/login/forgot", "パスワードを忘れた"]);
     expect(anchors).toContainEqual(["/login", "ログイン"]);
     expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["アカウントを作る"]);
   });
@@ -165,8 +167,8 @@ describe("the page", () => {
     const html = renderToStaticMarkup(SignupPage());
     const anchors = findAll(parseHtml(html), (n) => n.tag === "a" && n.attrs.href === "/privacy");
     expect(anchors.map(textOf)).toEqual(["プライバシーポリシー"]);
-    // Right after the form, before the note and the way to log in (the judges looked for it there).
+    // Right after the form, before the way to log in (the judges looked for it there).
     expect(html.indexOf('href="/privacy"')).toBeGreaterThan(html.indexOf("</form>"));
-    expect(html.indexOf('href="/privacy"')).toBeLessThan(html.indexOf("前にメールのリンクで"));
+    expect(html.indexOf('href="/privacy"')).toBeLessThan(html.indexOf('href="/login"'));
   });
 });
