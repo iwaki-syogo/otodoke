@@ -86,7 +86,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
               {dropped.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className={d.subject ? "truncate text-sm" : "truncate text-sm text-neutral-500"}>{d.subject || "件名はありません。"}</p>
+                    <p className={d.subject?.trim() ? "truncate text-sm" : "truncate text-sm text-neutral-500"}>{d.subject?.trim() ? d.subject : "件名はありません。"}</p>
                     <p className="truncate text-xs text-neutral-500">
                       {d.from_domain} ・ {formatDateTimeJa(d.created_at)}
                     </p>
