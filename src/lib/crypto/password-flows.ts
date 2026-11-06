@@ -103,7 +103,7 @@ export type Failed = { ok: false; code: FlowCode };
  *   password-v1, say). Only a reset makes a new one.
  * - `failed`: the key could not be opened or made, for `code`. Signing in again tries again.
  */
-export type KeyAfterSignIn = { key: "opened" | "made" } | { key: "not_opened" } | { key: "failed"; code: FlowCode };
+export type KeyAfterSignIn = { key: "opened" } | { key: "made" } | { key: "not_opened" } | { key: "failed"; code: FlowCode };
 
 export type SignInOutcome = ({ ok: true; userId: string } & KeyAfterSignIn) | Failed;
 

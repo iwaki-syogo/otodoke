@@ -3,39 +3,33 @@ import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
 import {
   CAPTCHA_ENFORCED,
   TURNSTILE_FATAL_ERRORS,
-  TURNSTILE_RESPONSE_FIELD,
   TURNSTILE_SCRIPT_URL,
   TURNSTILE_SITEKEY,
   tokenSettled,
   turnstileErrorIsFatal,
+  type TokenField,
 } from "@/lib/turnstile";
 import { mount, type Mounted, type NodeFactory } from "./hook-harness";
 
 /**
- * The bot check on the login form, followed over time (src/app/login/turnstile-widget.tsx).
+ * The bot check of the login screens, followed over time (src/app/login/turnstile-widget.tsx).
  *
  * - The widget is drawn once per mount with the Otodoke sitekey and `response-field: false`; each
- *   token from Cloudflare goes into the form's hidden `cf-turnstile-response`, and an expired,
- *   timed-out or failed check empties it.
- * - A new mount starts with an empty field, whatever the browser restored into it.
- * - Each token can be checked once: when a send finishes while the form stays mounted, the widget
- *   is reset and the field emptied. After a Server Action redirect Next.js draws the form anew:
- *   the old widget is removed and a new one drawn.
+ *   token from Cloudflare goes into the token object the form holds (never a form field: the forms
+ *   that take a password have no named field), and an expired, timed-out or failed check empties it.
+ * - A new mount starts without a token, whatever the object held before.
+ * - Each token can be checked once: when the form moves `round` on after a press, the widget is
+ *   reset and the token emptied. A form drawn anew removes the old widget and draws a new one.
  * - When the script cannot load (onerror, or a page that is not Turnstile), a fixed notice takes
- *   the widget's place and the field is marked `data-turnstile="unavailable"` (the button then
+ *   the widget's place and the token is marked `dataset.turnstile = "unavailable"` (the press then
  *   sends at once). The next mount tries the script again.
  */
 
-const status = vi.hoisted(() => ({ pending: false }));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   const { harnessHooks } = await import("./hook-harness");
   return harnessHooks(actual);
 });
-vi.mock("react-dom", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("react-dom")>()),
-  useFormStatus: () => ({ pending: status.pending, data: null, method: null, action: null }),
-}));
 
 const { TurnstileWidget } = await import("@/app/login/turnstile-widget");
 
@@ -48,7 +42,6 @@ type Options = Record<string, unknown> & {
   "timeout-callback": () => void;
   "error-callback": (code?: string) => unknown;
 };
-type Field = { value: string; dataset: Record<string, string> };
 
 /** Cloudflare's window.turnstile, recording what the widget asks of it. */
 function fakeTurnstile() {
@@ -81,23 +74,36 @@ function fakeDocument() {
   return { doc, scripts };
 }
 
-const nodes: NodeFactory = (type) => (type === "input" ? { value: "", dataset: {} } : { dataset: {} });
+const nodes: NodeFactory = () => ({ dataset: {} });
+/** The token object of each mounted widget (the form's ref). */
+const tokens = new WeakMap<Mounted, { current: TokenField }>();
+/** The props of each mounted widget, which a test may change before rendering again. */
+const propsOf = new WeakMap<Mounted, { round: number; captchaEnforced?: boolean }>();
 // The widget as it will run once Supabase enforces the check (CAPTCHA_ENFORCED = true): the notice
 // shows. While it is off (the default) the notice stays hidden: see "while CAPTCHA is off" below.
-const widget = (node: NodeFactory = nodes, props: Parameters<typeof TurnstileWidget>[0] = { captchaEnforced: true }) => mount(() => TurnstileWidget(props), node);
-const fieldHost = (view: Mounted) => view.host((h) => h.type === "input" && h.props.name === TURNSTILE_RESPONSE_FIELD);
-const fieldOf = (view: Mounted) => view.nodeOf<Field>(fieldHost(view));
+function widget(token: TokenField = { value: "", dataset: {} }, props: { round: number; captchaEnforced?: boolean } = { round: 0, captchaEnforced: true }, Widget = TurnstileWidget): Mounted {
+  const ref = { current: token };
+  const view = mount(() => Widget({ tokenRef: ref, ...props }), nodes);
+  tokens.set(view, ref);
+  propsOf.set(view, props);
+  return view;
+}
+const fieldOf = (view: Mounted) => tokens.get(view)!.current;
+/** The form moves `round` on: a press used the token. */
+function nextRound(view: Mounted) {
+  propsOf.get(view)!.round += 1;
+  view.rerender();
+}
 const slotOf = (view: Mounted) => view.host((h) => h.type === "div" && "data-turnstile-widget" in h.props);
 /** Lets the script promise and the state updates it causes run. */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 afterEach(() => {
-  status.pending = false;
   vi.unstubAllGlobals();
 });
 
 describe("the Turnstile widget on the login form", () => {
-  it("draws the widget once in its slot, with the Otodoke sitekey, and keeps each token in the form's hidden field", async () => {
+  it("draws the widget once in its slot, with the Otodoke sitekey, and keeps each token in the form's token object", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });
     const view = widget();
@@ -105,7 +111,6 @@ describe("the Turnstile widget on the login form", () => {
     expect(t.api.render).toHaveBeenCalledTimes(1);
     expect(t.last().container).toBe(view.nodeOf(slotOf(view)));
     expect(t.last().options).toMatchObject({ sitekey: TURNSTILE_SITEKEY, "response-field": false });
-    expect(fieldHost(view).props.type).toBe("hidden");
 
     const field = fieldOf(view);
     const { options } = t.last();
@@ -121,29 +126,30 @@ describe("the Turnstile widget on the login form", () => {
     expect(field.value).toBe("");
   });
 
-  it("never lets React set the field's value (React re-applies a defaultValue on every render)", async () => {
+  it("puts nothing in the form: no field at all, so a form that takes a password stays without a named one", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });
     const view = widget();
     await settle();
-    expect(fieldHost(view).props).not.toHaveProperty("value");
-    expect(fieldHost(view).props).not.toHaveProperty("defaultValue");
     t.last().options.callback(TOKEN);
     view.rerender();
+    expect(view.hosts((h) => ["input", "select", "textarea", "button"].includes(h.type))).toEqual([]);
+    expect(view.hosts((h) => "name" in h.props)).toEqual([]);
     expect(fieldOf(view).value).toBe(TOKEN);
   });
 
-  it("starts without a token, even when the browser put an old one back into the field", async () => {
+  it("starts without a token, even when the object held one from before", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });
-    const view = widget((type) => (type === "input" ? { value: "0.restored-and-already-used", dataset: {} } : { dataset: {} }));
+    const view = widget({ value: "0.already-used", dataset: { turnstile: "interactive" } });
     await settle();
     expect(fieldOf(view).value).toBe("");
+    expect(fieldOf(view).dataset.turnstile).toBeUndefined();
     t.last().options.callback(TOKEN);
     expect(fieldOf(view).value).toBe(TOKEN);
   });
 
-  it("after a send that fails while the form stays, resets the widget and empties the field (a token is checked once)", async () => {
+  it("when the form moves the round on after a press, resets the widget and empties the token (a token is checked once)", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });
     const view = widget();
@@ -151,14 +157,12 @@ describe("the Turnstile widget on the login form", () => {
     const field = fieldOf(view);
     t.last().options.callback(TOKEN);
 
-    status.pending = true;
+    // While the press is on its way, the token stays where the form read it from.
     view.rerender();
-    // While sending, the token stays where the form read it from.
     expect(t.api.reset).not.toHaveBeenCalled();
     expect(field.value).toBe(TOKEN);
 
-    status.pending = false;
-    view.rerender();
+    nextRound(view);
     expect(t.api.reset).toHaveBeenCalledTimes(1);
     expect(t.api.reset).toHaveBeenCalledWith(t.last().id);
     expect(field.value).toBe("");
@@ -170,7 +174,7 @@ describe("the Turnstile widget on the login form", () => {
     expect(t.api.reset).toHaveBeenCalledTimes(1);
   });
 
-  it("when the form is drawn anew after a send, removes the old widget and draws a new one with an empty field", async () => {
+  it("when the form is drawn anew, removes the old widget and draws a new one without a token", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });
     const first = widget();
@@ -181,6 +185,7 @@ describe("the Turnstile widget on the login form", () => {
     expect(t.api.remove).toHaveBeenCalledWith("widget-1");
     // A late answer for the removed widget writes nowhere.
     expect(() => t.drawn[0].options.callback("0.late")).not.toThrow();
+    expect(fieldOf(first).value).toBe(TOKEN);
 
     const second = widget();
     await settle();
@@ -192,7 +197,7 @@ describe("the Turnstile widget on the login form", () => {
 });
 
 describe("when Cloudflare's script cannot load", () => {
-  it("keeps the slot while loading, then shows the fixed notice in the widget's place and marks the field", async () => {
+  it("keeps the slot while loading, then shows the fixed notice in the widget's place and marks the token", async () => {
     vi.stubGlobal("window", {});
     const { doc, scripts } = fakeDocument();
     const view = widget();
@@ -212,21 +217,8 @@ describe("when Cloudflare's script cannot load", () => {
     expect(fieldOf(view).value).toBe("");
     // The notice stands where the widget would: right before the (hidden) slot.
     const order = view.hosts(() => true).map((h) => h.type);
-    expect(order).toEqual(["input", "p", "div"]);
+    expect(order).toEqual(["p", "div"]);
     expect(TURNSTILE_UNAVAILABLE_MESSAGE).toBe("確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。");
-  });
-
-  it("shows no notice of its own when the page already says the same (captcha_missing), and still marks the field", async () => {
-    vi.stubGlobal("window", {});
-    const { scripts } = fakeDocument();
-    const view = mount(() => TurnstileWidget({ hideUnavailableNotice: true, captchaEnforced: true }), nodes);
-    scripts[0].onerror!();
-    await settle();
-    expect(view.text()).toBe("");
-    expect(view.hosts((h) => h.type === "p")).toHaveLength(0);
-    expect(slotOf(view).props.hidden).toBe(true);
-    // The button still sends at once instead of waiting for a token that will not come.
-    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
   });
 
   it("treats a script that loads without Turnstile (a proxy's block page) the same way, and tries again on the next mount", async () => {
@@ -370,17 +362,14 @@ describe("when Turnstile asks for a tick (review R2b-1)", () => {
     expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
   });
 
-  it("starts the next press without a tick to wait for, after a send that stayed on the page", async () => {
+  it("starts the next press without a tick to wait for, after a press that stayed on the page", async () => {
     const t = fakeTurnstile();
     vi.stubGlobal("window", { turnstile: t.api });
     const view = widget();
     await settle();
     opts(t)["before-interactive-callback"]();
     await settle();
-    status.pending = true;
-    view.rerender();
-    status.pending = false;
-    view.rerender();
+    nextRound(view);
     await settle();
     expect(fieldOf(view).dataset.turnstile).toBeUndefined();
     expect(t.api.reset).toHaveBeenCalledTimes(1);
@@ -398,7 +387,7 @@ describe("while CAPTCHA is off (review R2b-3)", () => {
     // A fresh module: the script promise of an earlier test (one that loaded) is not reused.
     vi.resetModules();
     const fresh = (await import("@/app/login/turnstile-widget")).TurnstileWidget;
-    const view = mount(() => fresh(), nodes);
+    const view = widget(undefined, { round: 0 }, fresh);
     scripts[0].onerror!();
     await settle();
     expect(view.text()).toBe("");

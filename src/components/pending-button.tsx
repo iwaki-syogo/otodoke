@@ -98,6 +98,34 @@ export function PendingButton({ pending, pendingLabel, tone = "dark", children, 
 }
 
 /**
+ * The submit button of a form handled in code (`onSubmit` with preventDefault, no `action`), such
+ * as the forms that take a password: `pending` is the form's own, set at the press. Enter in a
+ * field presses it too; a press while pending is cancelled.
+ *
+ *   <form method="post" onSubmit={submit}><PendingSubmitButton pending={busy} pendingLabel="ログインしています…">ログイン</PendingSubmitButton></form>
+ */
+export function PendingSubmitButton({ pending, pendingLabel, tone = "dark", children, onClick, className = "", ...rest }: Common & { pending: boolean }) {
+  return (
+    <button
+      {...rest}
+      type="submit"
+      {...pendingProps(pending, className)}
+      onClick={(e: MouseEvent<HTMLButtonElement>) => {
+        if (pending) {
+          e.preventDefault();
+          return;
+        }
+        onClick?.(e);
+      }}
+    >
+      <Content pending={pending} pendingLabel={pendingLabel} tone={tone}>
+        {children}
+      </Content>
+    </button>
+  );
+}
+
+/**
  * The submit button of a form, pending while the form is sent.
  *
  * - `<form action={serverAction}>`: pending while React sends it (useFormStatus).
