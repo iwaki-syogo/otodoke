@@ -435,6 +435,12 @@ struct SettingsModelTests {
         #expect(WebLink.app.absoluteString == "https://otodoke.app/app")
     }
 
+    @Test func thePrivacyAndDeletionRows() {
+        #expect(SettingsModel.webLink(.privacy).absoluteString == "https://otodoke.app/privacy")
+        // The deletion is a section of /app/settings until the Web's split reaches main.
+        #expect(SettingsModel.webLink(.deleteAccount).absoluteString == "https://otodoke.app/app/settings")
+    }
+
     @Test func theMailHandlingItemsOfM1() {
         #expect(MailHandlingText.heading == "あなたのメールの扱い")
         // M2 task 19 adds the item about keeping the key in the Keychain with Face ID (12 → 13).

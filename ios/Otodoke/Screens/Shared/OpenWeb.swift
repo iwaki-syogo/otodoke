@@ -24,7 +24,18 @@ enum WebLink {
     }
 
     /// https://otodoke.app/app/settings
+    /// Until the Web's split of the settings reaches main, every Web page the settings buttons open is a section
+    /// of this one. When it does, each button goes to its own page (SettingsModel.webLink):
+    ///   鍵を作る・パスワードを変える・暗号化する -> /app/settings/password
+    ///   読み取る -> /app/settings/trouble,  これは荷物 -> /app/settings/dropped,  すべての荷物を消す -> /app/settings/demo
     static let settings = page("/app/settings")
+
+    /// https://otodoke.app/privacy
+    static let privacy = page("/privacy")
+
+    /// https://otodoke.app/app/settings (the deletion sits inside this page for now).
+    /// When the Web's split reaches main, change this to page("/app/settings/delete").
+    static let accountDeletion = page("/app/settings")
     /// https://otodoke.app/app
     static let app = page("/app")
 

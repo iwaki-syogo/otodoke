@@ -20,6 +20,10 @@ enum SettingsWebAction: CaseIterable, Equatable, Sendable {
     case clearAll
     /// 「Web で開く」
     case openWeb
+    /// 「プライバシーポリシー」
+    case privacy
+    /// 「アカウントの削除」
+    case deleteAccount
 }
 
 @MainActor
@@ -50,6 +54,8 @@ final class SettingsModel {
         case .createPassphrase, .changePassphrase, .readWaiting, .markAsParcel, .clearAll: WebLink.settings
         case .sample: WebLink.settingsDemo
         case .openWeb: WebLink.app
+        case .privacy: WebLink.privacy
+        case .deleteAccount: WebLink.accountDeletion
         }
     }
 
@@ -242,11 +248,11 @@ final class SettingsModel {
     // MARK: helpers
 
     /// "local@domain" of the user's address (made on first use), .failed when it could not be read or made.
-    /// With no inbound domain set the Web shows 「（受信ドメイン設定前）」 after the local part.
+    /// With no inbound domain set the Web shows 「受信ドメインがまだ設定されていません。」 in place of the address.
     private func readAddressOfKey() async -> LoadResult<String> {
         do {
             let local = try await inbox.ensure()
-            return .loaded(InboxAddressService.email(localPart: local, domain: inboundDomain) ?? "\(local)@（受信ドメイン設定前）")
+            return .loaded(InboxAddressService.email(localPart: local, domain: inboundDomain) ?? SettingsWebText.noInboundDomain)
         } catch {
             return .failed
         }

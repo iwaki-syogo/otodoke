@@ -19,6 +19,8 @@ enum ForwardingGuideText {
     struct Service: Identifiable, Sendable {
         let id: String
         let title: String
+        /// The addresses of the service, under its title (iCloud, Outlook).
+        let addresses: String?
         /// How long it takes and where (shown with a clock).
         let meta: String?
         let link: Link?
@@ -64,6 +66,7 @@ enum ForwardingGuideText {
         Service(
             id: "gmail",
             title: "Gmail",
+            addresses: nil,
             meta: "5 分・パソコンのブラウザで（スマホの Gmail アプリでは設定できません）",
             link: Link(title: "転送の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/fwdandpop"),
             linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
@@ -90,7 +93,8 @@ enum ForwardingGuideText {
         ),
         Service(
             id: "icloud",
-            title: "iCloud メール（@icloud.com・@me.com・@mac.com）",
+            title: "iCloud メール",
+            addresses: "@icloud.com・@me.com・@mac.com",
             meta: "3 分・ブラウザで",
             link: Link(title: "iCloud メールを開く", url: "https://www.icloud.com/mail/"),
             linkNote: nil,
@@ -109,7 +113,8 @@ enum ForwardingGuideText {
         ),
         Service(
             id: "outlook",
-            title: "Outlook（@outlook.jp・@outlook.com・@hotmail.co.jp など）",
+            title: "Outlook",
+            addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
             meta: "3 分・ブラウザで",
             link: Link(title: "転送の設定を開く", url: "https://outlook.live.com/mail/0/options/mail/forwarding"),
             linkNote: "サインインしていないと Outlook の紹介ページが開きます。サインインしてから、もう一度このボタンを押してください。",
@@ -129,6 +134,7 @@ enum ForwardingGuideText {
         Service(
             id: "others",
             title: "そのほかのメール",
+            addresses: nil,
             meta: nil,
             link: nil,
             linkNote: nil,

@@ -61,13 +61,19 @@ struct SettingsView: View {
                         SettingsParts.errorBox(SettingsModel.failedText)
                     }
                     SettingsStatusRows(model: model)
-                    group([.forward, .key, .dropped, .handling, .delivery])
-                    VStack(alignment: .leading, spacing: 0) {
-                        row(.sample)
-                        Divider().padding(.leading, 58)
-                        webRow
+                    section(SettingsWebText.mailGroup) {
+                        group([.forward, .key, .dropped, .handling, .delivery, .sample])
                     }
-                    .modifier(SettingsCard())
+                    section(SettingsWebText.accountGroup) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            webRow(.privacy, symbol: "hand.raised", title: SettingsWebText.privacyTitle)
+                            Divider().padding(.leading, 58)
+                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle)
+                            Divider().padding(.leading, 58)
+                            webRow(.openWeb, symbol: "safari", title: SettingsMenuText.webTitle)
+                        }
+                        .modifier(SettingsCard())
+                    }
                     footer
                 }
                 .padding(.horizontal, 16)
@@ -78,6 +84,18 @@ struct SettingsView: View {
     }
 
     // MARK: the rows
+
+    /// A group of the list under its small label, as the Web's two groups (メール, アカウント).
+    private func section<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+    }
 
     private func group(_ pages: [SettingsPage]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -96,9 +114,10 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    private var webRow: some View {
-        Button { SettingsWeb.open(.openWeb, openURL) } label: {
-            SettingsRow(symbol: "safari", title: SettingsMenuText.webTitle, subtitle: nil, badge: nil, trailing: "arrow.up.right", hint: SettingsMenuText.webHint)
+    /// A row that leaves the app for a Web page (Safari).
+    private func webRow(_ action: SettingsWebAction, symbol: String, title: String) -> some View {
+        Button { SettingsWeb.open(action, openURL) } label: {
+            SettingsRow(symbol: symbol, title: title, subtitle: nil, badge: nil, trailing: "arrow.up.right", hint: SettingsMenuText.webHint)
         }
         .buttonStyle(.plain)
     }
@@ -164,7 +183,7 @@ struct SettingsView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let email = model.signedInEmail {
-                Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))（自分のアドレスでなければ、何も設定せずにログアウトしてください）")
+                Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

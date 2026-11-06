@@ -28,16 +28,16 @@ struct SettingsForwardPage: View {
             SettingsParts.heading("転送先アドレス")
             switch model.keyPanel {
             case .failed?, nil:
-                SettingsParts.errorBox("鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。")
+                SettingsParts.errorBox(SettingsWebText.keyReadFailed)
             case .none?:
-                SettingsParts.secondaryText("鍵ができると、ここに出ます。サンプルは鍵なしで試せます。")
+                SettingsParts.secondaryText(SettingsWebText.keyNotMade)
             case .present?:
                 SettingsParts.secondaryText("注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。")
                 switch model.address {
                 case let .loaded(address)?:
                     HStack(spacing: 8) {
                         Text(address)
-                            .font(.subheadline.monospaced())
+                            .font(model.addressCanBeCopied ? .subheadline.monospaced() : .subheadline)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -74,10 +74,10 @@ struct SettingsDroppedPage: View {
 
     var body: some View {
         SettingsParts.page(spacing: 8) {
-            SettingsParts.secondaryText("広告など、買い物に関係なさそうなメールです。本文は保存せず、件名だけ 14 日間残します。")
+            SettingsParts.secondaryText(SettingsWebText.droppedLead)
             switch model.dropped {
             case let .loaded(rows)? where !rows.isEmpty:
-                SettingsDisclosure(title: "荷物のメールが混ざっていないか見る（\(rows.count) 通）", isExpanded: $showsDropped) {
+                SettingsDisclosure(title: SettingsWebText.droppedSummary(rows.count), isExpanded: $showsDropped) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             if index > 0 { Divider() }
@@ -103,8 +103,9 @@ struct SettingsDroppedPage: View {
     private func droppedRow(_ row: DroppedMailRow) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.subject.flatMap { $0.isEmpty ? nil : $0 } ?? "（件名なし）")
+                Text(row.subject.flatMap { $0.isEmpty ? nil : $0 } ?? SettingsWebText.noSubject)
                     .font(.subheadline)
+                    .foregroundStyle(row.subject?.isEmpty ?? true ? Color.secondary : Color.primary)
                     .lineLimit(1)
                 Text(verbatim: "\(row.fromDomain ?? "") ・ \(Format.formatDateTimeJa(row.createdAt, today: Format.todayJst(now: Date())))")
                     .font(.caption)
@@ -136,9 +137,23 @@ struct SettingsDroppedPage: View {
 // MARK: 「あなたのメールの扱い」
 
 struct SettingsHandlingPage: View {
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
-        SettingsParts.page {
+        SettingsParts.page(spacing: 12) {
             MailHandlingView(showsHeading: false)
+            // As the Web's page: the whole policy, right under the summary of how mail is handled.
+            Button { SettingsWeb.open(.privacy, openURL) } label: {
+                Text(SettingsWebText.privacyTitle)
+                    .font(.caption)
+                    .underline()
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, -12)
         }
         .navigationTitle(SettingsMenuText.handlingTitle)
         .navigationBarTitleDisplayMode(.inline)
