@@ -11,6 +11,9 @@ import Testing
 struct ExistingAddressTests {
     private let clock = TestClock(Date(timeIntervalSince1970: 1_793_000_000))
 
+    /// Held by the suite value so the fake server outlives the whole test (its stub goes with it).
+    private let fake = FakeSupabase.make()
+
     private func make(_ fake: FakeSupabase) -> LoginModel {
         let auth = PW.auth(fake, storage: InMemorySessionStorage())
         let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: []), now: clock.function, tokenWait: .milliseconds(100))
@@ -20,7 +23,6 @@ struct ExistingAddressTests {
 
     /// A model that made an account and waits, for an address that already had one with another password.
     private func waitingOnRegisteredAddress() async -> (LoginModel, FakeSupabase) {
-        let fake = FakeSupabase.make()
         let model = make(fake)
         model.setMode(.signUp)
         model.password = PW.good
@@ -60,7 +62,6 @@ struct ExistingAddressTests {
     }
 
     @Test func anOrdinarySignInWithAWrongPasswordKeepsTheWebsWords() async {
-        let fake = FakeSupabase.make()
         await fake.addPasswordAccount(email: FakeSupabase.email, secret: "someone-elses", confirmed: true)
         let model = make(fake)
         model.password = PW.good
@@ -111,7 +112,6 @@ struct ExistingAddressTests {
     }
 
     @Test func otherRefusalsOfTheWaitDoNotSayIt() async {
-        let fake = FakeSupabase.make()
         let model = make(fake)
         model.setMode(.signUp)
         model.password = PW.good

@@ -233,21 +233,36 @@ struct LoginView: View {
         .buttonStyle(.plain)
     }
 
+    /// The Web's dark button of the registered address's box (login-form.tsx: bg-neutral-900 px-4 py-2 font-medium).
+    private var forgotPasswordPrimaryButton: some View {
+        Button {
+            openURL(model.forgotPasswordURL)
+        } label: {
+            Text(LoginText.forgotPassword)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color(.systemBackground))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(.label), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
     /// The address was registered already: amber like 「まだ確認できていません…」 (a guidance, not a failure of the
     /// typed words), with the way to the reset and what the reset costs.
     private var existingAddressBox: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(OnboardingText.existingAddress)
-                .font(.subheadline)
+                .font(.subheadline.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
-            forgotPasswordButton
+            forgotPasswordPrimaryButton
             Text(OnboardingText.resetLosesMail)
-                .font(.footnote)
+                .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Palette.amberText)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(16)
         .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.amberBorder))
     }
