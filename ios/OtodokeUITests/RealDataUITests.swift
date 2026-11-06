@@ -142,7 +142,10 @@ final class RealDataUITests: XCTestCase {
         let emailField = app.textFields["you@example.com"]
         let list = app.navigationBars["荷物"]
         let start = Date()
+        // The first screen has two buttons; 「ログイン」 opens the form below.
+        let welcomeSignIn = app.buttons["welcome.signIn"]
         while !emailField.exists && !list.exists && Date().timeIntervalSince(start) < 30 {
+            if welcomeSignIn.exists { welcomeSignIn.tap() }
             Thread.sleep(forTimeInterval: 0.3)
         }
         if list.exists {

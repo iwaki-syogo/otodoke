@@ -8,8 +8,11 @@ struct LoginView: View {
     @FocusState private var focused: Bool
     @Environment(\.openURL) private var openURL
 
-    init(auth: AuthService) {
-        _model = State(initialValue: LoginModel(auth: auth, turnstile: TurnstileToken()))
+    /// `startMode`: which form opens first (the first screen's two buttons pick one).
+    init(auth: AuthService, startMode: LoginModel.Mode = .signIn) {
+        let model = LoginModel(auth: auth, turnstile: TurnstileToken())
+        if startMode != .signIn { model.setMode(startMode) }
+        _model = State(initialValue: model)
     }
 
     #if DEBUG
@@ -24,8 +27,11 @@ struct LoginView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                WordmarkView(size: 28)
+                    .padding(.bottom, 12)
                 Text(model.mode == .signIn ? LoginText.signInTitle : LoginText.signUpTitle)
-                    .font(.title.bold())
+                    .font(.largeTitle.bold())
+                    .padding(.bottom, 8)
                 emailField
                 switch model.mode {
                 case .signIn:
@@ -49,14 +55,16 @@ struct LoginView: View {
                     Button {
                         Task { await model.resendConfirmation() }
                     } label: {
-                        Text(LoginText.resendConfirmation).font(.subheadline)
+                        Text(LoginText.resendConfirmation).font(.subheadline).underline()
                     }
+                    .buttonStyle(.plain)
                     .disabled(model.isWorking)
                 }
                 links
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 40)
+            .padding(.top, 32)
+            .padding(.bottom, 40)
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
@@ -133,15 +141,17 @@ struct LoginView: View {
             Button {
                 model.setMode(model.mode == .signIn ? .signUp : .signIn)
             } label: {
-                Text(model.mode == .signIn ? LoginText.toSignUp : LoginText.toSignIn).font(.subheadline)
+                Text(model.mode == .signIn ? LoginText.toSignUp : LoginText.toSignIn).font(.subheadline).underline()
             }
+            .buttonStyle(.plain)
             .disabled(model.isWorking)
             if model.mode == .signIn {
                 Button {
                     openURL(model.forgotPasswordURL)
                 } label: {
-                    Text(LoginText.forgotPassword).font(.subheadline)
+                    Text(LoginText.forgotPassword).font(.subheadline).underline()
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(.top, 8)
@@ -176,8 +186,8 @@ struct LoginView: View {
             .font(.body.weight(.medium))
             .foregroundStyle(Color(.systemBackground))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color(.label).opacity(enabled || model.isWorking ? 1 : 0.35), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.vertical, 18)
+            .background(Color(.label).opacity(enabled || model.isWorking ? 1 : 0.35), in: RoundedRectangle(cornerRadius: OtodokeButton.radius))
         }
         .disabled(!enabled || model.isWorking)
     }

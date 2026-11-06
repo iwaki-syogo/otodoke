@@ -75,6 +75,28 @@ final class ScreenshotUITests: XCTestCase {
         try shoot("checking-toast-note")
     }
 
+    /// The first screen, and the form each of its two buttons opens, in light and dark.
+    func testTheWelcomeScreen() throws {
+        for style in ["Light", "Dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-otodoke-ui-preview", "welcome", "-AppleInterfaceStyle", style]
+            app.launch()
+            XCTAssertTrue(app.buttons["welcome.signUp"].waitForExistence(timeout: 10), style)
+            XCTAssertTrue(app.buttons["welcome.signIn"].exists, style)
+            try shoot("welcome-\(style)")
+            app.buttons["welcome.signUp"].tap()
+            XCTAssertTrue(app.secureTextFields["パスワード（もう一度）"].waitForExistence(timeout: 10), style)
+            try shoot("welcome-signup-\(style)")
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.buttons["welcome.signIn"].waitForExistence(timeout: 10), "back to the first screen")
+            app.buttons["welcome.signIn"].tap()
+            XCTAssertTrue(app.secureTextFields["パスワード"].waitForExistence(timeout: 10), style)
+            XCTAssertFalse(app.secureTextFields["パスワード（もう一度）"].exists)
+            try shoot("welcome-signin-\(style)")
+            app.terminate()
+        }
+    }
+
     func testTheLoginScreens() throws {
         for scenario in ["login", "login-signup", "login-error", "login-sent"] {
             let app = launch(scenario)

@@ -23,7 +23,9 @@ struct RootView: View {
     var body: some View {
         #if DEBUG
         if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
-            if let login = preview.makeLoginModel() {
+            if preview.showsWelcome {
+                WelcomeView(auth: preview.previewAuth())
+            } else if let login = preview.makeLoginModel() {
                 LoginView(model: login)
             } else {
                 MainTabView(listModel: preview.makeModel(), detailModel: preview.detailModelMaker())
@@ -42,7 +44,7 @@ struct RootView: View {
             case .loading:
                 ProgressView()
             case .login:
-                LoginView(auth: auth)
+                WelcomeView(auth: auth)
             case .main:
                 // N-2: the tabs live as long as one signed-in generation.
                 MainTabView(auth: auth)

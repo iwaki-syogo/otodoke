@@ -19,6 +19,8 @@ struct ListPreview {
         case loginSignUp = "login-signup"
         case loginError = "login-error"
         case loginSent = "login-sent"
+        /// The first screen (the two buttons) before the login.
+        case welcome
     }
 
     let scenario: Scenario
@@ -29,6 +31,13 @@ struct ListPreview {
         else { return nil }
         self.scenario = scenario
     }
+
+    /// True for the first-screen scenario.
+    var showsWelcome: Bool { scenario == .welcome }
+
+    /// An auth service that reaches nothing (the first-screen scenario's buttons open LoginView).
+    @MainActor
+    func previewAuth() -> AuthService { AuthService(provider: Self.provider()) }
 
     private static func provider() -> SupabaseProvider {
         let config = AppConfig(supabaseURL: URL(string: "https://preview.invalid")!, anonKey: "preview", inboundDomain: "preview.invalid")
@@ -99,7 +108,7 @@ struct ListPreview {
         )
         let counts = ParcelCounts(delivered: .loaded(1234), cancelled: .loaded(2), unread: .loaded(scenario == .list ? 3 : 0))
         switch scenario {
-        case .list, .detail, .login, .loginSignUp, .loginError, .loginSent:
+        case .list, .detail, .login, .loginSignUp, .loginError, .loginSent, .welcome:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
         case .empty:
             model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded)
