@@ -48,6 +48,10 @@ final class CalendarModel {
     @ObservationIgnored private let today: @Sendable () -> String
     @ObservationIgnored private let mark: ChangeMark
     @ObservationIgnored private var fence = ReadFence()
+    /// [N2] The month a move is reading: a load() meanwhile reads it too, so the move is not undone.
+    @ObservationIgnored private var movingTo: String?
+    /// [S1] The last read was cut off (its .task cancelled): the next appearance reads again.
+    @ObservationIgnored private var wasCutOff = false
 
     init(reader: ParcelReader, changes: DataChanges?, today: @escaping @Sendable () -> String) {
         self.reader = reader
@@ -125,7 +129,7 @@ final class CalendarModel {
     static let noTime = "時間未定"
 
     func load() async {
-        await read(month)
+        await read(movingTo ?? month)
     }
 
     func previousMonth() async {
@@ -143,7 +147,7 @@ final class CalendarModel {
 
     /// Shown (the tab opened): reads when never read, or when DataChanges moved since the last read.
     func onAppear() async {
-        if byDay == nil || byDay == .failed || mark.isStale { await load() }
+        if byDay == nil || byDay == .failed || mark.isStale || wasCutOff { await load() }
     }
 
     /// iOS-12: the app came back to the front while this screen is shown.
@@ -156,7 +160,11 @@ final class CalendarModel {
     private func move(to ym: String) async {
         guard !isMoving, bounds.contains(ym), !JSText.equal(ym, month) else { return }
         isMoving = true
-        defer { isMoving = false }
+        movingTo = ym
+        defer {
+            isMoving = false
+            movingTo = nil
+        }
         await read(ym)
     }
 
@@ -166,7 +174,13 @@ final class CalendarModel {
         mark.markRead()
         let now = today()
         let result = await reader.allParcels()
+        // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
+        guard !Task.isCancelled else {
+            wasCutOff = true
+            return
+        }
         guard fence.verdict(ticket) == .current else { return }
+        wasCutOff = false
         month = ym
         shownToday = now
         switch result {
