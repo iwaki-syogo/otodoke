@@ -3,8 +3,9 @@ import { isIP } from "node:net";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * App-side cap on login-link mails sent from this website's login form, checked before asking
- * Supabase to send one.
+ * App-side cap on the mails this website asks Supabase to send (the confirmation of a new account,
+ * sending it again, the reset mail), checked before asking Supabase to send one. Further down, the
+ * same table caps failed sign-ins (LOGIN_ATTEMPT_LIMITS).
  *
  * Supabase sees every request from Vercel's addresses, so its own per-IP limit is shared by all
  * visitors of the website. This keeps one visitor of the form from using up the project's mail
@@ -76,9 +77,32 @@ export function ipLimitKey(ip: string): string {
     .join(":")}::/64`;
 }
 
+/**
+ * App-side cap on sign-in attempts with the login secret through this website (the login, and the
+ * check of the current password before a change), counted in the same table under a namespace of
+ * its own ("login-attempt"), so attempts and mails never count against each other.
+ *
+ * Only failures count: an attempt is claimed before Supabase is asked and given back unless
+ * Supabase said the address or the secret was wrong (releaseLoginAttempt). Supabase's own per-IP
+ * limit cannot tell visitors apart either (every request comes from this server), and a guesser
+ * through the form would use it up for everyone.
+ *
+ * Who must not be blocked: someone who mistypes a few times (10 per 10 minutes, 20 per hour for one
+ * address), and many people behind one venue network (50 failures per hour from one IP). Fails
+ * open like the mail limit: a broken check must not lock everyone out (Supabase still limits).
+ */
+export const LOGIN_ATTEMPT_LIMITS = {
+  emailPer10Minutes: 10,
+  emailPerHour: 20,
+  ipPerHour: 50,
+} as const;
+
+/** What a limit counts in login_mail_sends: mails sent from the form, or failed sign-ins. */
+export type LimitScope = "login-mail" | "login-attempt";
+
 /** SHA-256 hex. The table keeps only these, never the address or the IP itself. */
-export function limitHash(kind: "email" | "ip", value: string): string {
-  return createHash("sha256").update(`otodoke:login-mail:${kind}:${value}`).digest("hex");
+export function limitHash(kind: "email" | "ip", value: string, scope: LimitScope = "login-mail"): string {
+  return createHash("sha256").update(`otodoke:${scope}:${kind}:${value}`).digest("hex");
 }
 
 /** The answer to a claim. `claimId` is the recorded send (only when the verdict is "ok"). */
@@ -89,34 +113,55 @@ export interface LoginMailClaim {
 
 const OPEN: LoginMailClaim = { verdict: "ok", claimId: null };
 
-/** Take one login mail from the allowance. `email` must already be trimmed and lowercased. */
-export async function claimLoginMail(email: string, ip: string | null): Promise<LoginMailClaim> {
+type Limits = { emailPer10Minutes: number; emailPerHour: number; ipPerHour: number };
+
+async function claim(scope: LimitScope, limits: Limits, email: string, ip: string | null): Promise<LoginMailClaim> {
+  const what = scope === "login-mail" ? "mail" : "attempt";
   try {
     const { data, error } = await createAdminClient().rpc("claim_login_mail", {
-      p_email_hash: limitHash("email", email),
+      p_email_hash: limitHash("email", email, scope),
       // The generated type says string, but the function accepts null (address limits only).
-      p_ip_hash: (ip ? limitHash("ip", ipLimitKey(ip)) : null) as string,
-      p_email_10m_limit: LOGIN_MAIL_LIMITS.emailPer10Minutes,
-      p_email_1h_limit: LOGIN_MAIL_LIMITS.emailPerHour,
-      p_ip_1h_limit: LOGIN_MAIL_LIMITS.ipPerHour,
+      p_ip_hash: (ip ? limitHash("ip", ipLimitKey(ip), scope) : null) as string,
+      p_email_10m_limit: limits.emailPer10Minutes,
+      p_email_1h_limit: limits.emailPerHour,
+      p_ip_1h_limit: limits.ipPerHour,
     });
     if (error) {
-      console.warn("[login] mail limit check failed; sending anyway:", error.message);
+      console.warn(`[login] ${what} limit check failed; going ahead:`, error.message);
       return OPEN;
     }
     // A set-returning function: PostgREST answers with an array of one row.
     const row: unknown = Array.isArray(data) ? data[0] : data;
     const verdict = row && typeof row === "object" ? (row as { verdict?: unknown }).verdict : undefined;
     if (typeof verdict !== "string" || !VERDICTS.includes(verdict)) {
-      console.warn("[login] mail limit check returned an unexpected value; sending anyway:", data);
+      console.warn(`[login] ${what} limit check returned an unexpected value; going ahead:`, data);
       return OPEN;
     }
     const id = (row as { claim_id?: unknown }).claim_id;
     return { verdict: verdict as LoginMailVerdict, claimId: verdict === "ok" && typeof id === "number" ? id : null };
   } catch (err) {
-    console.warn("[login] mail limit check failed; sending anyway:", err instanceof Error ? err.message : err);
+    console.warn(`[login] ${what} limit check failed; going ahead:`, err instanceof Error ? err.message : err);
     return OPEN;
   }
+}
+
+async function release(scope: LimitScope, email: string, claimId: number | null): Promise<void> {
+  if (claimId === null) return;
+  const what = scope === "login-mail" ? "the unsent login mail" : "the sign-in attempt";
+  try {
+    const { error } = await createAdminClient().rpc("release_login_mail", {
+      p_claim_id: claimId,
+      p_email_hash: limitHash("email", email, scope),
+    });
+    if (error) console.warn(`[login] could not give back ${what}:`, error.message);
+  } catch (err) {
+    console.warn(`[login] could not give back ${what}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Take one login mail from the allowance. `email` must already be normalized (normalizeLoginAddress). */
+export async function claimLoginMail(email: string, ip: string | null): Promise<LoginMailClaim> {
+  return claim("login-mail", LOGIN_MAIL_LIMITS, email, ip);
 }
 
 /**
@@ -124,14 +169,15 @@ export async function claimLoginMail(email: string, ip: string | null): Promise<
  * does not count. Never throws: when this fails the send stays counted and a warning is logged.
  */
 export async function releaseLoginMail(email: string, claimId: number | null): Promise<void> {
-  if (claimId === null) return;
-  try {
-    const { error } = await createAdminClient().rpc("release_login_mail", {
-      p_claim_id: claimId,
-      p_email_hash: limitHash("email", email),
-    });
-    if (error) console.warn("[login] could not give back the unsent login mail:", error.message);
-  } catch (err) {
-    console.warn("[login] could not give back the unsent login mail:", err instanceof Error ? err.message : err);
-  }
+  return release("login-mail", email, claimId);
+}
+
+/** Take one sign-in attempt from the allowance (LOGIN_ATTEMPT_LIMITS). `email` normalized. */
+export async function claimLoginAttempt(email: string, ip: string | null): Promise<LoginMailClaim> {
+  return claim("login-attempt", LOGIN_ATTEMPT_LIMITS, email, ip);
+}
+
+/** Give back an attempt that did not fail on the address or the secret. Never throws. */
+export async function releaseLoginAttempt(email: string, claimId: number | null): Promise<void> {
+  return release("login-attempt", email, claimId);
 }

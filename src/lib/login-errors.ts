@@ -1,58 +1,141 @@
-import { safeNextPath } from "./safe-next";
+import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 
 /**
- * What /login?error=<code> may say. The query carries only a code; the words come from here,
- * so a crafted link cannot put its own text on the login page.
+ * The result codes of the login, sign-up, reset and change steps, and the fixed words for each.
+ *
+ * An Action answers a code, never Supabase's text; the screens show the words from here. A code in
+ * a URL (/login?error=…) is looked up the same way, so a crafted link cannot put its own text on a
+ * page. Pure (no request, no Supabase): the screens import it too.
+ *
+ * The first six codes are the iOS app's categories, with the same words.
  */
-export const LOGIN_ERROR_MESSAGES = {
-  invalid_email: "メールアドレスの形式を確認してください",
-  not_configured: "ログインの設定に問題があり、メールを送れませんでした",
-  send_failed: "メールを送れませんでした。少し時間をおいて、もう一度お試しください。",
-  // Supabase refused to send (one address once a minute, or the project's hourly allowance).
-  busy: "いまはリンクを送れませんでした。少し時間をおいて、もう一度お試しください。",
-  // The same refusal less than a minute after this browser sent to the same address: it is the
-  // once-a-minute limit (max_frequency), so the wait is known. The earlier mail is on its way.
-  busy_recent: "このメールアドレスには、さきほどメールを送りました。1分ほど待ってから、もう一度お試しください。",
-  // Supabase's CAPTCHA wanted a Turnstile token and the press had none: the check did not finish
-  // (script blocked, host not allowed, not solved within the button's wait).
-  captcha_missing: "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。",
-  // Supabase's CAPTCHA refused the token the press sent (expired, already used or invalid). The
-  // form comes back with a new check, so sending again works.
-  captcha_refused: "確認が切れました。もう一度リンクを送ってください。",
-  // The code used before missing and refused were told apart. No longer sent; kept for old links.
+export const LOGIN_MESSAGES = {
+  // The categories shared with the iOS app.
+  credentials: "メールアドレスかパスワードが違います。",
+  not_confirmed: "メールアドレスの確認がまだです。届いたメールのリンクを開いてください。",
+  rate: "回数が多いため、しばらく時間をおいてから、もう一度お試しください。",
   captcha: "確認が切れました。もう一度お試しください。",
-  // The app's own limits (src/lib/login-mail-limit.ts).
-  email_10m:
-    "このメールアドレスには続けてリンクを送りました。10分ほど待ってから、もう一度お試しください。届いたメールが迷惑メールに入っていないかも見てください。",
-  email_1h: "このメールアドレスにはリンクを何度も送りました。1時間ほど待ってから、もう一度お試しください。",
-  ip_1h: "この接続からのリンクの送信が続いたため、しばらく止めています。1時間ほど待ってから、もう一度お試しください。",
-  // The link was not accepted: Supabase refused its token (wrong, expired, used, or an older mail
-  // whose token a newer one replaced), or /auth/confirm refused a POST from another site (then the
-  // token was not used at all). The words fit every one of them.
-  link_invalid: "リンクを確認できませんでした。いちばん新しいメールのリンクを開くか、もう一度リンクを送ってください。",
-  // Supabase's limit on verifications (429, per IP, before the token is looked at: the link still
-  // works). Its bucket refills within a minute (see verifyFailure).
+  network: "つながりませんでした。少し時間をおいて、もう一度お試しください。",
+  other: "うまくいきませんでした。もう一度お試しください。",
+
+  // The address.
+  invalid_email: "メールアドレスの形式を確認してください。",
+  email_not_ascii: "半角の英数字と記号だけのメールアドレスをお使いください。",
+  // The app cannot say where the mail's link should lead (its URL is not configured).
+  not_configured: "いまは受け付けられません。少し時間をおいて、もう一度お試しください。",
+
+  // What a sent mail says. The same words whether the address has an account or not.
+  signup_exists_or_sent: "確認のメールを送りました。メールのリンクを開いてから、ログインしてください。",
+  confirmation_sent: "確認のメールを送りました。",
+  reset_sent: "再設定のメールを送りました。メールのリンクを開いてください。",
+  // /login?confirmed=1, after the confirmation link.
+  confirmed: "メールアドレスを確認しました。パスワードでログインしてください。",
+
+  // The session.
+  signed_out: "ログインし直してください。",
+  // A key step more than 15 minutes after the password or the reset (auth-session.ts).
+  stale_session: "続けるには、もう一度ログインしてください。",
+  // finishReset without a reset link opened in the last 15 minutes.
+  reset_expired: "再設定の期限が切れました。もう一度、再設定のメールを送ってください。",
+
+  // Changing the password.
+  same_secret: "いまと同じパスワードです。別のパスワードを決めてください。",
+  // Supabase did not answer whether the new password was set; the key opens with the new one.
+  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。",
+  // Supabase refused the new password; the key opens with the old one again.
+  secret_change_refused: "パスワードを変えられませんでした。もう一度お試しください。",
+  // The same, but the key could not be put back: it opens with the new password, the login is the old one.
+  secret_change_refused_key_new: "パスワードを変えられませんでした。もう一度お試しください。",
+
+  // The key steps (src/lib/mail-keys.ts).
+  key_in_use_changed: "ほかの画面で鍵が変わりました。ページを読み込み直してください。",
+  key_wrap_changed: "ほかの画面でパスワードが変わりました。ページを読み込み直してください。",
+  key_not_pending: "もう一度、最初からお試しください。",
+  key_not_in_use: "ページを読み込み直してください。",
+  key_challenge_failed: "鍵を確かめられませんでした。もう一度お試しください。",
+  key_failed: "保存できませんでした。もう一度お試しください。",
+  invalid_input: "うまくいきませんでした。ページを読み込み直してください。",
+
+  // The mail's links (/auth/confirm).
+  link_invalid: "このリンクは使えませんでした。確認が済んでいれば、ログインできます。",
+  reset_link_invalid: "再設定のリンクは使えませんでした。もう一度、再設定のメールを送ってください。",
+  // Supabase's limit on verifications (429, per IP, before the token is looked at: the link still works).
   link_limited: "ただいま混み合っています。1分ほど待ってから、もう一度メールのリンクを開いてください。",
   // Supabase did not answer, or answered 5xx: nothing says the token was refused.
-  link_failed: "いまはログインできませんでした。少し時間をおいて、もう一度メールのリンクを開いてください。",
-  link_incomplete: "リンクが不完全です。もう一度リンクを送ってください。",
-  // The code typed on the "sent" screen (verifyLoginCode). Not 6 to 10 digits once full-width
-  // digits, spaces and dashes are read: Supabase is not asked.
-  code_format: "コードを確かめて、もう一度入力してください。",
-  // Supabase refused it: wrong, expired, used, or from an older mail (a new send replaces it).
-  code_invalid: "コードが違うか、期限が切れています。いちばん新しいメールのコードを入力してください。",
-  // The same limit and outages as the link (verifyFailure). The code still works after the wait.
-  code_limited: "ただいま混み合っています。1分ほど待ってから、もう一度お試しください。",
-  code_failed: "いまはログインできませんでした。少し時間をおいて、もう一度お試しください。",
-  // This browser no longer knows the address the code went to (the cookie is an hour old or
-  // gone), and Supabase needs the address with the code.
-  code_no_address: "もう一度リンクを送ってから、届いたメールのコードを入力してください。",
+  link_failed: "いまは確認できませんでした。少し時間をおいて、もう一度メールのリンクを開いてください。",
+  link_incomplete: "リンクが不完全です。いちばん新しいメールのリンクを開いてください。",
 } as const;
 
-export type LoginErrorCode = keyof typeof LOGIN_ERROR_MESSAGES;
+export type LoginCode = keyof typeof LOGIN_MESSAGES;
+
+/** The categories the iOS app has too. */
+export type CommonFailure = "credentials" | "not_confirmed" | "rate" | "captcha" | "network" | "other";
+
+export type SignInFailure = CommonFailure | "invalid_email";
+export type SignInResult = { ok: true; userId: string } | { ok: false; code: SignInFailure };
+
+export type SignUpFailure = "invalid_email" | "email_not_ascii" | "not_configured" | "rate" | "captcha" | "network" | "other";
+export type SignUpResult = { ok: true; code: "signup_exists_or_sent" } | { ok: false; code: SignUpFailure };
+
+export type MailRequestFailure = "invalid_email" | "not_configured" | "rate" | "captcha" | "network" | "other";
+export type ResendResult = { ok: true; code: "confirmation_sent" } | { ok: false; code: MailRequestFailure };
+export type ResetMailResult = { ok: true; code: "reset_sent" } | { ok: false; code: MailRequestFailure };
+
+/** What a key step of src/lib/mail-keys.ts can come to, as a code (keyStepCode maps them). */
+export type KeyStepFailure = "key_in_use_changed" | "key_wrap_changed" | "key_not_pending" | "key_not_in_use" | "key_challenge_failed" | "key_failed" | "invalid_input";
+
+/**
+ * The code for the `error` text a key step of src/lib/mail-keys.ts answered. Those texts are the
+ * shared constants of key-messages.ts and the fixed sentences of mail-keys.ts; a database or
+ * unexpected error is key_failed (its text is not passed on).
+ */
+export function keyStepCode(error: string): KeyStepFailure {
+  if (error === KEY_IN_USE_CHANGED) return "key_in_use_changed";
+  if (error === KEY_WRAP_CHANGED) return "key_wrap_changed";
+  // activateKey's own check, and activate_user_key_checked's P0002 (passed on in its message).
+  if (error === "no key is waiting to be activated" || error.includes("no matching key is waiting to be activated")) return "key_not_pending";
+  if (error === "the key did not open its challenge") return "key_challenge_failed";
+  if (error === "no key in use with this id") return "key_not_in_use";
+  // checkWrap, and restoreKeyWrap's refusal to put back the wrap stored now.
+  if (/^(wrapped key has an unexpected size|wrap iv must be 12 bytes|salt must be 16 bytes|the wrap to put back is the one stored now)$/.test(error)) return "invalid_input";
+  return "key_failed";
+}
+
+export type FinishResetFailure = "signed_out" | "reset_expired" | "rate" | "network" | "other" | "secret_change_unknown" | KeyStepFailure;
+export type FinishResetResult = { ok: true; keyId: string } | { ok: false; code: FinishResetFailure };
+
+export type ChangeSecretFailure =
+  | "signed_out"
+  | "credentials"
+  | "rate"
+  | "captcha"
+  | "network"
+  | "other"
+  | "same_secret"
+  | "secret_change_unknown"
+  | "secret_change_refused"
+  | "secret_change_refused_key_new"
+  | KeyStepFailure;
+export type ChangeSecretResult = { ok: true } | { ok: false; code: ChangeSecretFailure };
+
+/**
+ * The `error` a key Action of 設定 (key-actions.ts) answers when the session is older than 15
+ * minutes since the password or the reset: the screen asks to log in again (LOGIN_MESSAGES.stale_session).
+ */
+export const KEY_SESSION_STALE = "stale_session";
 
 /** Shown for a code this version does not know (an old link, or one somebody typed). */
-export const UNKNOWN_LOGIN_ERROR = "ログインできませんでした。もう一度リンクを送ってください。";
+export const UNKNOWN_LOGIN_ERROR = "ログインできませんでした。もう一度お試しください。";
+
+/** The words for a code; the unknown-code words for anything else (never the text itself). */
+export function loginMessage(code: string): string {
+  return Object.hasOwn(LOGIN_MESSAGES, code) ? LOGIN_MESSAGES[code as LoginCode] : UNKNOWN_LOGIN_ERROR;
+}
+
+/** The message for /login?error=<code>; null when there is no error to show. */
+export function loginErrorMessage(code: string | undefined): string | null {
+  return code ? loginMessage(code) : null;
+}
 
 /** The held login button, while the bot check shows its checkbox and waits for the tick. */
 export const TURNSTILE_TICK_PROMPT = "確認のチェックを押してください";
@@ -60,55 +143,24 @@ export const TURNSTILE_TICK_PROMPT = "確認のチェックを押してくださ
 /** Shown in the bot check's place when its script cannot load (blocked, offline, Cloudflare down). */
 export const TURNSTILE_UNAVAILABLE_MESSAGE = "確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。";
 
-/**
- * /login with the given state. `next` (where to go after signing in) is carried only when it is a
- * path on this site other than the default, so a refused send or code does not lose it. The
- * address is never put in the URL (see login-email-cookie.ts).
- */
-function loginPath(params: { sent?: boolean; error?: LoginErrorCode; next?: string | null }): string {
-  const query = new URLSearchParams();
-  if (params.sent) query.set("sent", "1");
-  if (params.error) query.set("error", params.error);
-  const next = params.next == null ? "/app" : safeNextPath(params.next);
-  if (next !== "/app") query.set("next", next);
-  const search = query.toString();
-  return search ? `/login?${search}` : "/login";
+/** Where /auth/confirm sends a reset link it accepted: a constant, never the link's next. */
+export const RESET_PATH = "/reset-password";
+
+/** Where /auth/confirm sends a confirmation link it accepted: the login, to sign in with the password. */
+export const CONFIRMED_PATH = "/login?confirmed=1";
+
+/** /login with an error code (the words come from LOGIN_MESSAGES). */
+export function loginErrorPath(code: LoginCode): string {
+  return `/login?error=${encodeURIComponent(code)}`;
 }
 
-export function loginErrorPath(code: LoginErrorCode, next?: string | null): string {
-  return loginPath({ error: code, next });
-}
-
-/** The "sent" screen: the mail went out; the code form is there, with an error when one is given. */
-export function loginSentPath(next?: string | null, error?: LoginErrorCode): string {
-  return loginPath({ sent: true, error, next });
-}
-
-/** The send form again ("メールを送り直す"), keeping where to go after signing in. */
-export function loginFormPath(next?: string | null): string {
-  return loginPath({ next });
-}
+/** An error Supabase Auth answered with: only its status and code are read, never the English text. */
+export type AuthFailure = { status?: number; code?: string } | null;
 
 /**
- * Which fixed message a refused signInWithOtp gets. Decided by Supabase's error code and status,
- * and by whether this press sent a token; never by the English message text.
- * - `captcha_failed` (400): CAPTCHA is on and the token is missing, expired, used or invalid.
- *   Supabase answers the same code for all of them, so what this press sent tells them apart.
- * - 429: Supabase's own send limits.
- */
-export function loginSendErrorCode(error: { status?: number; code?: string }, sentCaptchaToken: boolean): LoginErrorCode {
-  if (error.code === "captcha_failed") return sentCaptchaToken ? "captcha_refused" : "captcha_missing";
-  if (error.status === 429) return "busy";
-  return "send_failed";
-}
-
-/**
- * Why Supabase did not accept a token (verifyOtp), by status only, never by the English text:
+ * Why Supabase did not accept a token (verifyOtp), by status only:
  * - `limited`: 429 (over_request_rate_limit). Supabase Auth limits /verify per IP before it reads
- *   the token, so the same link or code still works later. The limit is token_verifications in
- *   config.toml (30 per 5 minutes); GoTrue keeps it as a bucket (v2.150: rate 30 per 300 s, burst
- *   30), which gives one more try every 10 seconds once spent: a minute is the wait to suggest.
- *   The IP Supabase sees is this server's, shared by everyone signing in at the moment.
+ *   the token, so the same link still works later. The IP Supabase sees is this server's.
  * - `failed`: no answer (status 0), 5xx or Cloudflare's 52x (AuthRetryableFetchError), or an
  *   answer that was not Supabase's (AuthUnknownError, no status): try again later.
  * - `invalid`: every other answer (403 otp_expired for a wrong, expired, used or replaced token;
@@ -120,31 +172,29 @@ export function verifyFailure(error: { status?: number; code?: string }): "inval
   return "invalid";
 }
 
-const LINK_ERROR = { invalid: "link_invalid", limited: "link_limited", failed: "link_failed" } as const;
-
-/** The fixed message code for a link /auth/confirm could not verify (`null`: verifyOtp threw). */
-export function loginLinkErrorCode(error: { status?: number; code?: string } | null): LoginErrorCode {
-  return error ? LINK_ERROR[verifyFailure(error)] : "link_failed";
+/** The code for a mail's link /auth/confirm could not verify (`null`: verifyOtp threw). */
+export function linkFailureCode(error: AuthFailure, kind: "confirm" | "reset"): LoginCode {
+  if (!error) return "link_failed";
+  const reason = verifyFailure(error);
+  if (reason === "limited") return "link_limited";
+  if (reason === "failed") return "link_failed";
+  return kind === "reset" ? "reset_link_invalid" : "link_invalid";
 }
 
-const CODE_ERROR = { invalid: "code_invalid", limited: "code_limited", failed: "code_failed" } as const;
-
-/** The same for a code typed on the "sent" screen. */
-export function loginCodeErrorCode(error: { status?: number; code?: string } | null): LoginErrorCode {
-  return error ? CODE_ERROR[verifyFailure(error)] : "code_failed";
-}
-
-/** The message for a query value; null when there is no error to show. */
-export function loginErrorMessage(code: string | undefined): string | null {
-  if (!code) return null;
-  return Object.hasOwn(LOGIN_ERROR_MESSAGES, code) ? LOGIN_ERROR_MESSAGES[code as LoginErrorCode] : UNKNOWN_LOGIN_ERROR;
+/** No answer or not Supabase's: nothing says the request was refused (verifyFailure's `failed`). */
+export function isOutage(error: { status?: number; code?: string }): boolean {
+  return !error.status || error.status >= 500;
 }
 
 /**
- * The address to echo in "sent to …". Only a plain ASCII address is echoed back; anything else
- * in ?sent= (which anyone can put in a link) gets the sentence without an address.
+ * The code for a refused sign-in with the login secret (signInWithPassword), by Supabase's code and
+ * status. `invalid_credentials` is the same for an unknown address and a wrong secret.
  */
-export function sentAddress(value: string | undefined): string | null {
-  if (!value || value.length > 254) return null;
-  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(value) ? value : null;
+export function signInFailureCode(error: { status?: number; code?: string }): CommonFailure {
+  if (error.code === "invalid_credentials") return "credentials";
+  if (error.code === "email_not_confirmed") return "not_confirmed";
+  if (error.code === "captcha_failed") return "captcha";
+  if (error.status === 429 || error.code === "over_request_rate_limit") return "rate";
+  if (isOutage(error)) return "network";
+  return "other";
 }

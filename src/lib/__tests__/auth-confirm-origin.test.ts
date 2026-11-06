@@ -3,9 +3,10 @@ import { NextRequest } from "next/server";
 import { fromThisSite } from "@/lib/request-origin";
 
 /**
- * Review A-1 (login CSRF): POST /auth/confirm signs the browser in with the token_hash it is
- * sent. A form on another site holding the attacker's own token would leave the visitor signed in
- * to the attacker's account. Only a POST from this site's own page reaches verifyOtp.
+ * Review A-1 (login CSRF): POST /auth/confirm signs the browser in with a reset link's token_hash
+ * (type=recovery). A form on another site holding the attacker's own reset token would leave the
+ * visitor signed in to the attacker's account, on its reset page. Only a POST from this site's own
+ * page reaches verifyOtp, for every type.
  */
 
 const mocks = vi.hoisted(() => ({ verifyOtp: vi.fn() }));
@@ -21,7 +22,7 @@ const TOKEN = "attacker-or-visitor-token";
 async function post(headers: Record<string, string>, url = "https://otodoke.app/auth/confirm") {
   const body = new FormData();
   body.set("token_hash", TOKEN);
-  body.set("type", "magiclink");
+  body.set("type", "recovery");
   body.set("next", "/app/settings");
   const res = await POST(new NextRequest(url, { method: "POST", body, headers }));
   return { status: res.status, location: res.headers.get("location") };
@@ -49,8 +50,9 @@ describe("POST /auth/confirm accepts its own page", () => {
   ])("verifies the token for %s", async (_name, headers) => {
     const res = await post(headers);
     expect(mocks.verifyOtp).toHaveBeenCalledTimes(1);
-    expect(mocks.verifyOtp).toHaveBeenCalledWith({ type: "magiclink", token_hash: TOKEN });
-    expect(res).toEqual({ status: 303, location: "/app/settings" });
+    expect(mocks.verifyOtp).toHaveBeenCalledWith({ type: "recovery", token_hash: TOKEN });
+    // The reset page, a constant: the link's next is never read.
+    expect(res).toEqual({ status: 303, location: "/reset-password" });
   });
 });
 
@@ -72,7 +74,7 @@ describe("POST /auth/confirm refuses another site's form and leaves the token un
     expect(mocks.verifyOtp).not.toHaveBeenCalled();
     // The same fixed wording as a link that failed to verify.
     expect(res).toEqual({ status: 303, location: "/login?error=link_invalid" });
-    expect(vi.mocked(console.warn).mock.calls.map((c) => c[0])).toEqual(["[auth] refused a login POST from another site:"]);
+    expect(vi.mocked(console.warn).mock.calls.map((c) => c[0])).toEqual(["[auth] refused a POST from another site:"]);
   });
 });
 

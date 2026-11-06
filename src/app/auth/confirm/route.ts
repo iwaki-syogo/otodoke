@@ -1,36 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
-import type { EmailOtpType } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
-import { safeNextPath } from "@/lib/safe-next";
-import { loginErrorPath, loginLinkErrorCode } from "@/lib/login-errors";
+import { throwawayAuthClient } from "@/lib/auth-session";
+import { CONFIRMED_PATH, RESET_PATH, linkFailureCode, loginErrorPath, type AuthFailure, type LoginCode } from "@/lib/login-errors";
 import { fromThisSite } from "@/lib/request-origin";
-import { forgetLogin } from "@/lib/login-email-cookie";
+import { createClient } from "@/lib/supabase/server";
 
 /** A relative Location keeps the visitor on the host they opened, whatever host the server thinks it has. */
 function go(path: string, status: number) {
   return new NextResponse(null, { status, headers: { Location: path } });
 }
 
-/** Whether this browser has a signed-in user (Supabase checks the token). False when that cannot be read. */
-async function signedIn(supabase: Awaited<ReturnType<typeof createClient>>): Promise<boolean> {
-  try {
-    const { data } = await supabase.auth.getUser();
-    return !!data.user;
-  } catch {
-    return false;
-  }
-}
-
 /** What the continue page takes from a mail's link: its token, the token's type, where it goes. */
 const LINK_FIELDS = ["token_hash", "type", "next"];
 
+/** The links that only confirm the address: verified, and the session they make is thrown away. */
+const CONFIRM_TYPES = ["email", "signup", "magiclink"] as const;
+type ConfirmType = (typeof CONFIRM_TYPES)[number];
+const isConfirmType = (type: string): type is ConfirmType => (CONFIRM_TYPES as readonly string[]).includes(type);
+
 /**
- * Magic-link landing. Opening the link only shows a button: mail security scanners fetch
- * links with GET, and would otherwise use up the one-time token before the person arrives.
- * Only the link's own fields are carried over. The continue page's link=refused is this site's
- * answer to a refused switch (set by the POST below) and is never taken from a link: a URL made
- * with someone's own token and that mark would show 「このリンクは使えませんでした。」 next to a
- * switch button that signs in to their account.
+ * A mail's link lands here. Opening it only shows a button (/auth/continue): mail security scanners
+ * fetch links with GET, and would otherwise use up the one-time token before the person arrives.
+ * Only the link's own fields are carried over.
  */
 export async function GET(request: NextRequest) {
   const carried = new URLSearchParams();
@@ -39,50 +29,82 @@ export async function GET(request: NextRequest) {
   return go(query ? `/auth/continue?${query}` : "/auth/continue", 307);
 }
 
-/** Verifies the token_hash server-side, so the link works in a different browser than the one that asked. */
+/**
+ * The continue page's button posts the token here; it is verified server-side, so the link works
+ * in another browser than the one that asked for the mail. By the link's type:
+ *
+ * - email, signup, magiclink (the confirmation of a new account; an old login link): verified in a
+ *   client of its own that writes no cookie, the session it makes is ended at once, and the answer
+ *   is the login page, to sign in with the password (decision 6: the key is made then). This
+ *   browser's session, if any, is left as it was.
+ * - recovery (the reset mail): verified on this browser's cookies, which then hold that session
+ *   (any other one signed in here is replaced), and the answer is always RESET_PATH. The link's
+ *   next is never read.
+ * - anything else: refused.
+ */
 export async function POST(request: NextRequest) {
-  // Only the button on /auth/continue may post here. Another site's form would sign this browser
-  // in to the account whose link it holds (login CSRF); its token is left unused.
+  // Only the button on /auth/continue may post here. Another site's form would otherwise sign this
+  // browser in to the account whose reset link it holds; its token is left unused.
   if (!fromThisSite(request.headers)) {
-    console.warn("[auth] refused a login POST from another site:", request.headers.get("sec-fetch-site"), request.headers.get("origin")?.slice(0, 100));
+    console.warn("[auth] refused a POST from another site:", request.headers.get("sec-fetch-site"), request.headers.get("origin")?.slice(0, 100));
     return go(loginErrorPath("link_invalid"), 303);
   }
   const form = await request.formData();
   const tokenHash = form.get("token_hash");
   const type = form.get("type");
-  const next = form.get("next");
+  if (typeof tokenHash !== "string" || !tokenHash || typeof type !== "string" || !type) return go(loginErrorPath("link_incomplete"), 303);
+  if (type === "recovery") return recover(tokenHash);
+  if (isConfirmType(type)) return confirmOnly(tokenHash, type);
+  console.warn("[auth] refused a link of an unknown type:", type.slice(0, 40));
+  return go(loginErrorPath("link_invalid"), 303);
+}
 
-  if (typeof tokenHash === "string" && tokenHash && typeof type === "string" && type) {
-    const supabase = await createClient();
-    let error: { status?: number; code?: string; message?: string } | null;
-    try {
-      ({ error } = await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash }));
-    } catch (thrown) {
-      // Not an AuthError (supabase-js returns those): nothing says the token was refused.
-      console.warn("[auth] verifyOtp threw:", thrown instanceof Error ? thrown.message : String(thrown));
-      return go(loginErrorPath(loginLinkErrorCode(null)), 303);
-    }
-    if (!error) {
-      // Signed in: the address the login form kept for this browser (if it sent from here) is done.
-      await forgetLogin();
-      return go(safeNextPath(typeof next === "string" ? next : null), 303);
-    }
-    // The reason goes to the log only: the login page shows fixed wording for the code. A limit
-    // or an outage is told apart from a refused token (the same link works again later).
-    console.warn("[auth] verifyOtp failed:", error.status, error.code, error.message);
-    const code = loginLinkErrorCode(error);
-    // A refused link in a browser that is signed in already (an old link pressed in another tab,
-    // or one used up by this very sign-in): the continue page says who is signed in and leads to
-    // the parcels, instead of a red error on the login page, and without a word: the person is
-    // signed in, as they meant to be. Only 「別のアカウントでログインする」 posts intent: then the
-    // switch they asked for did not happen, and link=refused has the page say so. The mark is
-    // only shown there; where the page leads is the next, either way.
-    if (code === "link_invalid" && (await signedIn(supabase))) {
-      const target = safeNextPath(typeof next === "string" ? next : null);
-      const query = [target === "/app" ? null : `next=${encodeURIComponent(target)}`, form.get("intent") === "switch_account" ? "link=refused" : null].filter(Boolean);
-      return go(query.length ? `/auth/continue?${query.join("&")}` : "/auth/continue", 303);
-    }
-    return go(loginErrorPath(code), 303);
+/** The login page with the code for a token Supabase did not accept (its text only to the log). */
+function refused(error: AuthFailure, kind: "confirm" | "reset"): NextResponse {
+  const code: LoginCode = linkFailureCode(error, kind);
+  return go(loginErrorPath(code), 303);
+}
+
+async function confirmOnly(tokenHash: string, type: ConfirmType): Promise<NextResponse> {
+  const client = throwawayAuthClient();
+  let answer: Awaited<ReturnType<typeof client.auth.verifyOtp>>;
+  try {
+    answer = await client.auth.verifyOtp({ type, token_hash: tokenHash });
+  } catch (thrown) {
+    // Not an AuthError (supabase-js returns those): nothing says the token was refused.
+    console.warn("[auth] confirm: verifyOtp threw:", thrown instanceof Error ? thrown.name : typeof thrown);
+    return refused(null, "confirm");
   }
-  return go(loginErrorPath("link_incomplete"), 303);
+  const { data, error } = answer;
+  if (error) {
+    console.warn("[auth] confirm: verifyOtp refused:", error.status ?? 0, error.code ?? "unknown");
+    return refused(error, "confirm");
+  }
+  // The address is confirmed. The session the token made is nobody's: ended here (this one only).
+  const token = data.session?.access_token;
+  if (token) {
+    try {
+      const { error: endError } = await client.auth.admin.signOut(token, "local");
+      if (endError) console.warn("[auth] confirm: the session could not be ended:", endError.status ?? 0, endError.code ?? "unknown");
+    } catch (thrown) {
+      console.warn("[auth] confirm: ending the session threw:", thrown instanceof Error ? thrown.name : typeof thrown);
+    }
+  }
+  return go(CONFIRMED_PATH, 303);
+}
+
+async function recover(tokenHash: string): Promise<NextResponse> {
+  const supabase = await createClient();
+  let error: { status?: number; code?: string } | null;
+  try {
+    ({ error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash }));
+  } catch (thrown) {
+    console.warn("[auth] reset: verifyOtp threw:", thrown instanceof Error ? thrown.name : typeof thrown);
+    return refused(null, "reset");
+  }
+  if (error) {
+    console.warn("[auth] reset: verifyOtp refused:", error.status ?? 0, error.code ?? "unknown");
+    return refused(error, "reset");
+  }
+  return go(RESET_PATH, 303);
 }

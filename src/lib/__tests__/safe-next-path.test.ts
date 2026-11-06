@@ -159,45 +159,24 @@ describe("safeNextPath", () => {
   });
 });
 
-// The three places a `next` passes through: the login form's link, /auth/continue's hidden field,
-// and the Location of POST /auth/confirm. The route and the action are read here, not changed.
+// A mail's link still carries a next (the mails ask Supabase for /auth/confirm?next=%2Fapp), but
+// since password-v1 nothing follows it: GET passes it to /auth/continue (R3-28's three fields),
+// the page does not post it, and POST /auth/confirm answers a constant for either kind of link.
 
-type OtpArgs = { email: string; options?: { emailRedirectTo?: string; captchaToken?: string } };
+const mocks = vi.hoisted(() => ({ cookieVerify: vi.fn(), throwawayVerify: vi.fn() }));
 
-const mocks = vi.hoisted(() => ({
-  otp: [] as OtpArgs[],
-  verifyOtp: vi.fn(),
-  rpc: vi.fn(),
-}));
-
-vi.mock("next/navigation", () => ({
-  redirect: (url: string) => {
-    throw new Error(`REDIRECT:${url}`);
-  },
-}));
-vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-real-ip": "203.0.113.7" }) }));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const Link = ({ href, children, prefetch, ...rest }: Record<string, unknown>) => h("a", { href: String(href), ...rest }, children as never);
   return { default: Link };
 });
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({
-    auth: {
-      verifyOtp: mocks.verifyOtp,
-      signInWithOtp: async (args: OtpArgs) => {
-        mocks.otp.push(args);
-        return { error: null };
-      },
-    },
-  }),
-  getUser: async () => null,
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { verifyOtp: mocks.cookieVerify } }), getUser: async () => null }));
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({ auth: { verifyOtp: mocks.throwawayVerify, admin: { signOut: async () => ({ data: null, error: null }) } } }),
 }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: mocks.rpc }) }));
 
 const { GET, POST } = await import("@/app/auth/confirm/route");
-const { sendMagicLink } = await import("@/app/login/actions");
 const ContinuePage = (await import("@/app/auth/continue/page")).default as unknown as (p: {
   searchParams: Promise<Record<string, string>>;
 }) => Promise<Parameters<typeof renderToStaticMarkup>[0]>;
@@ -205,19 +184,15 @@ const ContinuePage = (await import("@/app/auth/continue/page")).default as unkno
 const TOKEN = "token-hash-from-the-mail";
 const SAME_ORIGIN = { host: "otodoke.app", origin: SITE, "sec-fetch-site": "same-origin" };
 
-/** The hidden `next` of the /auth/continue form, as the browser will post it. */
-async function hiddenNext(params: Record<string, string>): Promise<string> {
+/** The hidden fields of the /auth/continue form, as the browser will post them. */
+async function posted(params: Record<string, string>): Promise<Record<string, string>> {
   const html = renderToStaticMarkup(await ContinuePage({ searchParams: Promise.resolve(params) }));
-  const match = /<input type="hidden" name="next" value="([^"]*)"\/>/.exec(html);
-  if (!match) throw new Error(`no hidden next in ${html}`);
-  return match[1].replaceAll("&amp;", "&");
+  return Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)].map((m) => [m[1], m[2].replaceAll("&amp;", "&")]));
 }
 
-async function postConfirm(next: string): Promise<string | null> {
+async function postConfirm(fields: Record<string, string>): Promise<string | null> {
   const body = new FormData();
-  body.set("token_hash", TOKEN);
-  body.set("type", "email");
-  body.set("next", next);
+  for (const [k, v] of Object.entries(fields)) body.set(k, v);
   const res = await POST(new NextRequest(`${SITE}/auth/confirm`, { method: "POST", body, headers: SAME_ORIGIN }));
   expect(res.status).toBe(303);
   return res.headers.get("location");
@@ -226,15 +201,10 @@ async function postConfirm(next: string): Promise<string | null> {
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
-  vi.stubEnv("NEXT_PUBLIC_APP_URL", SITE);
-  vi.stubEnv("VERCEL_ENV", "production");
-  mocks.otp.length = 0;
-  mocks.verifyOtp.mockReset();
-  mocks.verifyOtp.mockResolvedValue({ error: null });
-  mocks.rpc.mockReset();
-  mocks.rpc.mockImplementation(async (fn: string) =>
-    fn === "claim_login_mail" ? { data: [{ verdict: "ok", claim_id: 7 }], error: null } : { data: 1, error: null },
-  );
+  mocks.cookieVerify.mockReset();
+  mocks.cookieVerify.mockResolvedValue({ data: { session: null }, error: null });
+  mocks.throwawayVerify.mockReset();
+  mocks.throwawayVerify.mockResolvedValue({ data: { session: null }, error: null });
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => {
@@ -242,74 +212,32 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("a next from a link stays on this site at every step", () => {
-  it.each(HOSTILE)("POST /auth/confirm sends %s to /app after login", async (_what, value) => {
-    expect(await postConfirm(value)).toBe("/app");
-    expect(mocks.verifyOtp).toHaveBeenCalledTimes(1);
+const EVERY_NEXT: Array<[string, string]> = [...HOSTILE, ...INTO_AUTH, ...LEGIT.map(([what, value]): [string, string] => [what, value])];
+
+describe("a next from a link is never followed", () => {
+  it.each(EVERY_NEXT)("POST /auth/confirm answers the login for a confirmation, whatever the next: %s", async (_what, value) => {
+    expect(await postConfirm({ token_hash: TOKEN, type: "email", next: value })).toBe("/login?confirmed=1");
   });
 
-  it.each(LEGIT)("POST /auth/confirm keeps %s", async (_what, value, expected) => {
-    expect(await postConfirm(value)).toBe(expected);
+  it.each(EVERY_NEXT)("POST /auth/confirm answers the reset page for a reset link, whatever the next: %s", async (_what, value) => {
+    expect(await postConfirm({ token_hash: TOKEN, type: "recovery", next: value })).toBe("/reset-password");
   });
 
-  it.each(HOSTILE)("/auth/continue posts /app for %s", async (_what, value) => {
-    expect(await hiddenNext({ token_hash: TOKEN, type: "email", next: value })).toBe("/app");
+  it.each(EVERY_NEXT)("/auth/continue does not post the next: %s", async (_what, value) => {
+    expect(await posted({ token_hash: TOKEN, type: "email", next: value })).toEqual({ token_hash: TOKEN, type: "email" });
   });
 
-  it("/auth/continue posts /app when the link has no next", async () => {
-    expect(await hiddenNext({ token_hash: TOKEN, type: "email" })).toBe("/app");
-  });
-
-  it.each(INTO_AUTH)("[R3-36] POST /auth/confirm sends %s to /app after login", async (_what, value) => {
-    expect(await postConfirm(value)).toBe("/app");
-  });
-
-  it.each(INTO_AUTH)("[R3-36] /auth/continue posts /app for %s", async (_what, value) => {
-    expect(await hiddenNext({ token_hash: TOKEN, type: "email", next: value })).toBe("/app");
-  });
-
-  const THROUGH_THE_MAIL: Array<[string, string]> = [...HOSTILE.slice(0, 12), ...[LEGIT[1], LEGIT[6], LEGIT[7]].map(([what, value]): [string, string] => [what, value])];
-
-  // [R3-36] A link whose next is the continue page with the refusal's mark, or with a token:
-  // from the mail's button to the Location after login, it ends on the parcel list.
-  it.each(INTO_AUTH.slice(0, 2))("[R3-36] a mail's link with a next into /auth/ ends on /app: %s", async (_what, value) => {
-    const link = `${SITE}/auth/confirm?next=${encodeURIComponent(value)}&token_hash=${TOKEN}&type=email`;
-    const continueUrl = new URL((await GET(new NextRequest(link))).headers.get("location")!, SITE);
-    expect(continueUrl.searchParams.get("next")).toBe(value);
-    const posted = await hiddenNext(Object.fromEntries(continueUrl.searchParams));
-    expect(posted).toBe("/app");
-    expect(await postConfirm(posted)).toBe("/app");
-    // And had the page posted the next as it came, the route would still send it to /app.
-    expect(await postConfirm(value)).toBe("/app");
-  });
-
-  it.each(THROUGH_THE_MAIL)(
-    "from the login form to the Location after login: %s",
-    async (_what, value) => {
-      // 1. The login form asks Supabase for a link back to this site's /auth/confirm.
-      const form = new FormData();
-      form.set("email", "someone@example.com");
-      form.set("next", value);
-      await expect(sendMagicLink(form)).rejects.toThrow("REDIRECT:/login?sent=");
-      const redirectTo = new URL(mocks.otp[0].options!.emailRedirectTo!);
-      expect(redirectTo.origin).toBe(SITE);
-      expect(redirectTo.pathname).toBe("/auth/confirm");
-      expect(redirectTo.searchParams.get("next")).toBe(value);
-
-      // 2. The mail's button: the link with the token added (supabase/templates/magic_link.html).
-      const link = `${redirectTo.href}&token_hash=${TOKEN}&type=email`;
-
-      // 3. Opening it shows /auth/continue, on this site.
+  it.each(HOSTILE.slice(0, 12))("from the mail's link to the Location after the button, on this site: %s", async (_what, value) => {
+    for (const type of ["email", "recovery"]) {
+      // The mail's button: the link the mails ask for, with the token added (supabase/templates).
+      const link = `${SITE}/auth/confirm?next=${encodeURIComponent(value)}&token_hash=${TOKEN}&type=${type}`;
       const opened = (await GET(new NextRequest(link))).headers.get("location")!;
       expect(lands(opened)).toBe(SITE);
       const continueUrl = new URL(opened, SITE);
       expect(continueUrl.pathname).toBe("/auth/continue");
-
-      // 4. Its button posts the next, and 5. the Location after login is a path on this site.
-      const posted = await hiddenNext(Object.fromEntries(continueUrl.searchParams));
-      const location = await postConfirm(posted);
-      expect(location).toBe(safeNextPath(value));
+      const location = await postConfirm(await posted(Object.fromEntries(continueUrl.searchParams)));
+      expect(location).toBe(type === "recovery" ? "/reset-password" : "/login?confirmed=1");
       expect(lands(location!)).toBe(SITE);
-    },
-  );
+    }
+  });
 });
