@@ -56,21 +56,3 @@ export const ChangeSecretInputSchema = z
   })
   .strict();
 export type ChangeSecretInput = z.infer<typeof ChangeSecretInputSchema>;
-
-/**
- * Putting back the wrap from before a rewrap (iOS, after a password change Supabase refused). The
- * same fields as KeyRestoreSchema of src/lib/mail-keys.ts on integrate/password-v1:
- * `rewrappedPrivateKey` is the wrap stored by that rewrap (only that one is replaced), the other
- * four are the wrap from before it.
- */
-export const KeyWrapRestoreSchema = z
-  .object({
-    keyId: KeyActivationSchema.shape.keyId,
-    rewrappedPrivateKey: KeyRewrapSchema.shape.wrappedPrivateKey,
-    wrappedPrivateKey: KeyRewrapSchema.shape.wrappedPrivateKey,
-    wrapIv: KeyRewrapSchema.shape.wrapIv,
-    kdfSalt: KeyRewrapSchema.shape.kdfSalt,
-    kdfIterations: KeyRewrapSchema.shape.kdfIterations,
-  })
-  .strict();
-export type KeyWrapRestore = z.infer<typeof KeyWrapRestoreSchema>;

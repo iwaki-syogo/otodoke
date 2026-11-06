@@ -24,7 +24,7 @@ import { appSourceFiles, read as readSource, withoutComments } from "./source-sc
  * - Password sign-in (password-v1): no passphrase, no login link, no login screen cookie.
  */
 
-const probe = vi.hoisted(() => ({ contact: "privacy-probe@example.test" }));
+const probe = vi.hoisted(() => ({ contact: "privacy-probe@example.test", rpc: vi.fn() }));
 
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
@@ -35,6 +35,8 @@ vi.mock("next/link", async () => {
 // next/font only works inside the Next.js compiler.
 vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
 vi.mock("@/app/privacy/contact", () => ({ CONTACT_EMAIL: probe.contact }));
+// What src/lib/login-mail-limit.ts asks the database (the record of mails and sign-ins).
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: probe.rpc }) }));
 
 const PAGE_SOURCE = path.join(process.cwd(), "src/app/privacy/page.tsx");
 const CONTACT_SOURCE = path.join(process.cwd(), "src/app/privacy/contact.ts");
@@ -120,7 +122,7 @@ describe("/privacy: what it says", () => {
       "荷物の情報と根拠の行",
       "読まなかったメールの件名と差出人のドメイン",
       "「これは荷物」で覚えた差出人",
-      "確認や再設定のメールを送った記録",
+      "メールの送信とログインを試した記録",
       "Claude を使った回数",
       "接続の記録",
       "cookie",
@@ -132,10 +134,14 @@ describe("/privacy: what it says", () => {
     expect(said["パスワード"]).toContain("ブラウザで、ログイン用の値とメールの鍵を開く値の 2 つに分け、ログイン用の値だけをサーバーに送ります");
     expect(said["パスワード"]).toContain("ログイン用の値は、Supabase がハッシュ値に変えて保存します");
     expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("14 日で消します");
-    // What login_mail_sends keeps (migration 20261106100000): hashes and the time, pruned after an hour.
-    expect(said["確認や再設定のメールを送った記録"]).toContain("ハッシュ値に変えて");
-    expect(said["確認や再設定のメールを送った記録"]).toContain("どちらのアドレスも、そのままでは記録しません");
-    expect(said["確認や再設定のメールを送った記録"]).toContain("1 時間を過ぎた記録");
+    // What login_mail_sends keeps (migration 20261106100000): hashes and the time, pruned after an hour,
+    // for the mails and for the sign-ins alike (src/lib/login-mail-limit.ts).
+    const record = said["メールの送信とログインを試した記録"];
+    expect(record).toContain("ハッシュ値に変えて");
+    expect(record).toContain("ログインを試したときも、続けて試されるのを防ぐため、メールアドレスと接続元の IP アドレスのハッシュ値と日時を記録します。");
+    expect(record).toContain("どちらのアドレスも、そのままでは記録しません");
+    expect(record).toContain("1 時間を過ぎた記録は、次に記録するときに消します。");
+    expect(record).not.toContain("次に送るとき");
     expect(said["接続の記録"]).toContain("障害や不正を調べるときに使うことがあります");
     // Review R3-20: the providers' logs keep the address used to log in, for as long as the plans say.
     expect(said["接続の記録"]).toContain("Supabase の記録には、ログインに使ったメールアドレスも入ります。Supabase は 7 日、Vercel は 1 日で消えます。");
@@ -284,7 +290,7 @@ describe("/privacy: what it says matches the code it describes", () => {
     expect(setsCookie('// (await cookies()).set("seen", "1");')).toBe(false);
   });
 
-  it("「1 時間を過ぎた記録は、次に送るときに消します」: login_mail_sends keeps two hashes and the time, pruned after an hour", () => {
+  it("「1 時間を過ぎた記録は、次に記録するときに消します」: login_mail_sends keeps two hashes and the time, pruned after an hour", () => {
     const migration = withoutComments(readFileSync(path.join(process.cwd(), "supabase/migrations/20261106100000_login_mail_limit.sql"), "utf8"));
     const table = migration.match(/create table public\.login_mail_sends \(([\s\S]*?)\n\);/);
     expect(table).not.toBeNull();
@@ -294,6 +300,36 @@ describe("/privacy: what it says matches the code it describes", () => {
       .filter(Boolean);
     expect(columns).toEqual(["id", "email_hash", "ip_hash", "sent_at"]);
     expect(migration).toMatch(/delete from public\.login_mail_sends[\s\S]*?sent_at < v_now - interval '1 hour'/);
+  });
+
+  it("「ログインを試したときも…記録します」: every sign-in is claimed in login_mail_sends like a mail, with hashes only", async () => {
+    const { claimLoginAttempt, claimLoginMail, claimLoginTry } = await import("@/lib/login-mail-limit");
+    probe.rpc.mockReset();
+    probe.rpc.mockResolvedValue({ data: [{ verdict: "ok", claim_id: 1 }], error: null });
+    await claimLoginTry("203.0.113.7");
+    await claimLoginAttempt("someone@example.com", "203.0.113.7");
+    await claimLoginMail("someone@example.com", "203.0.113.7");
+    // One database function for all three: the one that writes login_mail_sends.
+    expect(probe.rpc.mock.calls.map(([fn]) => fn)).toEqual(["claim_login_mail", "claim_login_mail", "claim_login_mail"]);
+    for (const [, args] of probe.rpc.mock.calls as Array<[string, Record<string, unknown>]>) {
+      expect(args.p_email_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(args.p_ip_hash === null || /^[0-9a-f]{64}$/.test(String(args.p_ip_hash))).toBe(true);
+      expect(JSON.stringify(args)).not.toContain("someone@example.com");
+      expect(JSON.stringify(args)).not.toContain("203.0.113.7");
+    }
+    // A sign-in attempt keeps the address and the IP, both as hashes.
+    expect((probe.rpc.mock.calls[1] as [string, Record<string, unknown>])[1].p_ip_hash).toMatch(/^[0-9a-f]{64}$/);
+
+    // The login steps claim before they ask Supabase (login-auth.ts claimSignIn, for signIn and changeSecret).
+    const auth = withoutComments(readFileSync(path.join(process.cwd(), "src/lib/login-auth.ts"), "utf8"));
+    for (const claim of ["await claimLoginTry(", "await claimLoginAttempt(", "await claimSignIn(email)"]) expect(auth, claim).toContain(claim);
+
+    // claim_login_mail removes the rows older than an hour before it records a new one.
+    const sql = readFileSync(path.join(process.cwd(), "supabase/migrations/20261106100000_login_mail_limit.sql"), "utf8").replace(/--.*$/gm, "");
+    const fn = sql.slice(sql.indexOf("create function public.claim_login_mail("), sql.indexOf("create function public.release_login_mail("));
+    const prune = fn.search(/delete from public\.login_mail_sends[\s\S]*?sent_at < v_now - interval '1 hour'/);
+    expect(prune).toBeGreaterThan(-1);
+    expect(prune).toBeLessThan(fn.indexOf("insert into public.login_mail_sends"));
   });
 
   it("「アドレスの文字と作った日時だけは残します」: the registry of given-out addresses has those two columns", () => {

@@ -2,7 +2,8 @@
 
 The iOS app cannot call the web's Server Actions, so the key steps of `src/app/app/settings/key-actions.ts`
 are also served over HTTP. Each endpoint calls the same function of `src/lib/mail-keys.ts` as the web, behind
-the same checks. Code: `src/app/api/keys/**`. Tests: `src/lib/__tests__/keys-api.test.ts`.
+the same checks. Code: `src/app/api/keys/**`. Tests: `src/lib/__tests__/keys-api.test.ts`, and
+`src/lib/__tests__/restore-key-wrap-seam.test.ts` for the restore over the real key code.
 
 How the client makes the values (email_norm, auth_secret, KEK, the wrap): `docs/crypto/password-v1.md` and
 `fixtures/crypto/password-v1.json`. No endpoint takes the password, master, the KEK or auth_secret.
@@ -105,7 +106,8 @@ Answer `200`: `{ "ok": true, "keyId": "<32 hex>" }`.
 ## POST /api/keys/restore
 
 Put back the wrap from before a rewrap, when the password change it belonged to did not go through (Supabase
-refused the new auth_secret). Written only while the stored wrap is still the one that rewrap stored.
+refused the new auth_secret). Written only while the stored wrap is still the one that rewrap stored. The server
+calls `restoreKeyWrap` of `src/lib/mail-keys.ts`, as the web's `changeLoginSecret` does.
 
 Request:
 
@@ -121,6 +123,14 @@ Request:
 ```
 
 Answer `200`: `{ "ok": true, "keyId": "<32 hex>" }`.
+
+- **Safe to repeat.** When the wrap from before is back already (an earlier call went through and its answer was
+  lost), the answer is the same `200` and nothing changes. Back already means the stored `wrapped_private_key`,
+  `wrap_iv`, `kdf_salt` and `kdf_iterations` are the four of the body.
+- `409 key_wrap_changed`: the stored wrap is neither the one the rewrap stored nor the one from before (another
+  device changed the password meanwhile). Nothing changed: read the key again.
+- `409 key_not_in_use`: `keyId` is not the key in use (none, retired, or another one). Nothing changed.
+- `400 invalid_input`: also when `wrappedPrivateKey` is the same as `rewrappedPrivateKey`. Nothing changed.
 
 ## Reading
 
@@ -154,7 +164,8 @@ There is no read endpoint. The app reads its own rows with its session through P
    `POST /api/keys/rewrap` with `previousWrappedPrivateKey` = the wrap from 1.
 4. `updateUser(password: new auth_secret)`.
 5. If Supabase **refused** it (a 4xx answer), `POST /api/keys/restore` with `rewrappedPrivateKey` = the wrap of 3
-   and the four columns of the wrap from 1. If the answer is **unknown** (no answer, timeout, 5xx), do not
+   and the four columns of the wrap from 1. When the restore's own answer is lost, send the same body again: a
+   wrap that is back already answers `200`. If Supabase's answer is **unknown** (no answer, timeout, 5xx), do not
    restore: the key now opens with the new password, which may be the one that signs in.
 
 The web does steps 2 to 5 in one Server Action (`changeLoginSecret`), so a closed tab cannot stop between

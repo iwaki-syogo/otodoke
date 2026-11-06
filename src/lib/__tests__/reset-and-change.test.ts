@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   activate: vi.fn(),
   readKey: vi.fn(),
   rewrap: vi.fn(),
+  restore: vi.fn(),
   claim: vi.fn(),
   release: vi.fn(),
 }));
@@ -44,6 +45,7 @@ vi.mock("@/lib/mail-keys", async (importOriginal) => ({
   activateKey: mocks.activate,
   readStoredKey: mocks.readKey,
   rewrapKey: mocks.rewrap,
+  restoreKeyWrap: mocks.restore,
 }));
 
 const { finishReset } = await import("@/app/reset-password/actions");
@@ -76,6 +78,7 @@ beforeEach(() => {
   mocks.activate.mockImplementation(async () => (order.push("activate"), { ok: true, keyId: KEY_ID }));
   mocks.readKey.mockImplementation(async () => (order.push("readKey"), { ok: true, key: STORED }));
   mocks.rewrap.mockImplementation(async () => (order.push("rewrap"), { ok: true, keyId: KEY_ID }));
+  mocks.restore.mockImplementation(async () => (order.push("restore"), { ok: true, keyId: KEY_ID }));
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -243,18 +246,41 @@ describe("changeLoginSecret", () => {
     expect(restore).not.toHaveBeenCalled();
   });
 
-  it("the Action puts the wrap back through rewrapKey, over the wrap it stored only", async () => {
+  it("the Action puts the wrap back with restoreKeyWrap of mail-keys.ts, over the wrap it stored only", async () => {
     session("password");
-    mocks.updateUser.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "weak_password" } });
+    mocks.updateUser.mockImplementation(async () => (order.push("updateUser"), { data: { user: null }, error: { status: 422, code: "weak_password" } }));
     expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "secret_change_refused" });
-    expect(mocks.rewrap).toHaveBeenLastCalledWith({ admin: true }, "user-1", {
+    expect(order).toEqual(["signIn", "readKey", "rewrap", "updateUser", "restore"]);
+    expect(mocks.restore).toHaveBeenCalledWith({ admin: true }, "user-1", {
       keyId: KEY_ID,
-      previousWrappedPrivateKey: REWRAP.wrappedPrivateKey,
+      rewrappedPrivateKey: REWRAP.wrappedPrivateKey,
       wrappedPrivateKey: STORED.wrapped_private_key,
       wrapIv: STORED.wrap_iv,
       kdfSalt: STORED.kdf_salt,
       kdfIterations: STORED.kdf_iterations,
     });
+    // The rewrap only: the wrap is not put back through rewrapKey.
+    expect(mocks.rewrap).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [KEY_WRAP_CHANGED, "key_wrap_changed"],
+    ["no key in use with this id", "key_not_in_use"],
+    ["user_keys update failed: connection reset", "key_failed"],
+  ])("the Action reads restoreKeyWrap's refusal (%s) as secret_change_refused_key_new, and logs only its code", async (error, code) => {
+    session("password");
+    mocks.updateUser.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "weak_password" } });
+    mocks.restore.mockResolvedValue({ ok: false, error });
+    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "secret_change_refused_key_new" });
+    expect(console.error).toHaveBeenCalledWith("[login] change: the wrap could not be put back:", code);
+  });
+
+  it("the Action does not put the wrap back when the new secret was set, or when Supabase's answer is unknown", async () => {
+    session("password");
+    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: true });
+    mocks.updateUser.mockResolvedValue({ data: { user: null }, error: { status: 504 } });
+    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "secret_change_unknown" });
+    expect(mocks.restore).not.toHaveBeenCalled();
   });
 
   it("says signed_out without a session, and refuses a password field", async () => {
