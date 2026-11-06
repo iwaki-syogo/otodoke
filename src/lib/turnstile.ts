@@ -45,7 +45,7 @@ export const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 
 /**
  * How long a press of the login button waits for the token before sending without one, while
- * CAPTCHA is not enforced (the mail goes out without a token anyway).
+ * CAPTCHA is not enforced (Supabase takes the request without a token anyway).
  */
 export const TURNSTILE_WAIT_MS = 10_000;
 
@@ -134,7 +134,7 @@ export function tokenNeedsTick(field: TokenField): boolean {
  * of waiting have passed. `onNeedsTick` hears whenever the checkbox appears or goes, so the button
  * can ask for the tick. With `pauseForTick` (CAPTCHA enforced) the clock stops while the checkbox
  * waits: no token comes without the tick, and a send without one would fail. Without it (CAPTCHA
- * off) the press is sent at the limit anyway, and the mail goes out.
+ * off) the press is sent at the limit anyway, and Supabase takes it.
  *
  * The clock is the wall clock between polls, not the number of polls: a browser runs the timers of
  * a page it does not show about once a second (or less), and counting polls stretched 10 s to 100.
