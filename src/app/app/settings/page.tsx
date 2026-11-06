@@ -143,7 +143,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <>
             <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
             <div className="mt-3 flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white p-3">
-              <code className="min-w-0 flex-1 break-all text-sm">{address ?? `${localPart}@（受信ドメイン設定前）`}</code>
+              <code className="min-w-0 flex-1 break-all text-sm">{address ?? `${localPart}@受信ドメインを設定する前`}</code>
               {address ? <CopyButton text={address} /> : null}
             </div>
             <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
@@ -174,7 +174,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       ) : null}
 
       <section>
-        <h2 className="text-base font-bold">自動転送の設定（最初の 1 回だけ）</h2>
+        <h2 className="text-base font-bold">自動転送の設定は最初の 1 回だけ</h2>
         <p className="mt-1 text-sm leading-6 text-neutral-600">店ごとの設定はいりません。新しい店で買っても、そのまま読み取ります。</p>
         <div className="mt-2 flex flex-col gap-2">
           <Guide title="Gmail">
@@ -191,7 +191,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
               </li>
               <li>「転送する」に上のアドレスを選んで作成する</li>
             </ol>
-            <p className="mt-2 text-xs text-neutral-500">転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。届いたメールのうち、買い物に関係しないものは本文を保存せずに捨てます。</p>
+            <p className="mt-2 text-xs text-neutral-500">転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信も転送されます。たとえば「到着したよ」という連絡です。届いたメールのうち、買い物に関係しないものは本文を保存せずに捨てます。</p>
           </Guide>
           <Guide title="iCloud / Outlook / その他">
             <p>メールの設定にある自動転送で、すべてのメールを上のアドレスへ転送してください。</p>
@@ -217,12 +217,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         ) : dropped && dropped.length > 0 ? (
           <details className="mt-2 rounded-2xl border border-neutral-200 bg-white">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">荷物のメールが混ざっていないか見る（{dropped.length} 通）</summary>
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium">荷物のメールが混ざっていないか、{dropped.length} 通を見る</summary>
             <ul className="divide-y divide-neutral-100 border-t border-neutral-100">
               {dropped.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{d.subject || "（件名なし）"}</p>
+                    <p className="truncate text-sm">{d.subject || "件名はありません"}</p>
                     <p className="truncate text-xs text-neutral-500">
                       {d.from_domain} ・ {formatDateTimeJa(d.created_at)}
                     </p>
