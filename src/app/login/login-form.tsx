@@ -8,7 +8,7 @@ import { flowMessage, signInAndOpenKey, type OpenWithAnother, type SignInPorts }
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { tokenForPress, type TokenField } from "@/lib/turnstile";
+import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { readMailKey, registerMailKey, activateMailKey, rewrapMailKey } from "@/app/app/settings/key-actions";
 import { signInWithAuthSecret } from "./actions";
 import { inputClass, submitClass } from "./form-style";
@@ -64,7 +64,7 @@ export function LoginForm({ next }: { next: string }) {
       setNeedsTick(false);
       const result = await signInAndOpenKey({ email, password, captchaToken }, ports());
       if (!result.ok) {
-        setNotice({ kind: "error", text: flowMessage(result.code) });
+        setNotice({ kind: "error", text: pressText(result.code, captchaToken, flowMessage(result.code)) });
         return;
       }
       if (result.key === "opened" || result.key === "made") {

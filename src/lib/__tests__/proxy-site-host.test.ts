@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Vercel's production URL, otodoke-app.vercel.app, answered 200 with the whole app. Once Supabase's
- * CAPTCHA is on, Turnstile refuses a login there (its host list has otodoke.app only). The proxy
+ * CAPTCHA is on, Turnstile refuses a login there (the widget is not registered for that host; the list is in src/lib/turnstile.ts). The proxy
  * now sends that host to the same path and query on https://otodoke.app (308), before anything
  * else. Not sent: other methods than GET and HEAD, /api/, and every other host (previews too).
  * The proxy's own work (the session cookie, /app for signed-in visitors only) is unchanged.

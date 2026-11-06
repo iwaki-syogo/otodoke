@@ -4,16 +4,18 @@ import { describe, expect, it } from "vitest";
 import nextConfig from "../../../next.config";
 
 /**
- * Cloudflare Turnstile on the login screens. The browser puts the token in `cf-turnstile-response`
- * and the Actions hand it to Supabase as `captchaToken` (login-actions.test.ts checks that, with a
- * missing, empty or too long token). Supabase checks it once CAPTCHA protection is on.
+ * Cloudflare Turnstile on the login screens. The widget keeps the token in a plain object (a
+ * TokenField, never a form field), each press sends it to its Action as `captchaToken`
+ * (captcha-enforced-forms.test.ts), and the Actions hand it to Supabase (login-actions.test.ts
+ * checks that, with a missing, empty or too long token). Supabase checks it once CAPTCHA
+ * protection is on.
  *
  * Where the widget sits in the new login and sign-up forms is the screens' part (their tests).
  */
 
 describe("the widget", () => {
   it("is a client component that renders explicitly with the Otodoke sitekey and resets after each send", () => {
-    // How it behaves over time is in login-turnstile-widget.test.ts and login-submit-button.test.ts.
+    // How it behaves over time is in login-turnstile-widget.test.ts and captcha-enforced-forms.test.ts.
     const source = readFileSync(path.resolve(__dirname, "../../app/login/turnstile-widget.tsx"), "utf8");
     expect(source.startsWith('"use client";')).toBe(true);
     expect(source).toContain("turnstile.render(");

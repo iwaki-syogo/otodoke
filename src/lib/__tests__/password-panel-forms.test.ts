@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PASSWORD_MIN_LENGTH } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
@@ -52,7 +53,7 @@ vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: vi.fn() }))
 vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readSealedMail: vi.fn() }));
 vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
-const { MakeKeyForm, ChangeForm } = await import("@/app/app/settings/password-panel");
+const { MakeKeyForm, ChangeForm, useDetailsOpen } = await import("@/app/app/settings/password-panel");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 const EMAIL = "qa@example.com";
@@ -220,5 +221,37 @@ describe("設定: パスワードを変える", () => {
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
+  });
+});
+
+describe("「パスワードを変える」: the bot check is drawn once the details are open", () => {
+  // ChangeDetails passes `open` to ChangeForm as withCheck; the hook behind it is mounted alone
+  // (the harness does not run the hooks of child components).
+  const mountDetails = (open: boolean) =>
+    mount(
+      () => {
+        const d = useDetailsOpen();
+        return createElement("details", { ref: d.element, onToggle: d.onToggle, "data-open": d.open ? "yes" : "no" });
+      },
+      () => ({ dataset: {}, open }),
+    );
+  const openState = (view: Mounted) => view.nodeOf<{ dataset: Record<string, string> }>(view.host((h) => h.type === "details")).dataset.open;
+
+  it("opening it turns the check on", async () => {
+    const view = mountDetails(false);
+    expect(openState(view)).toBe("no");
+    (view.host((h) => h.type === "details").props.onToggle as (e: unknown) => void)({ currentTarget: { open: true } });
+    await vi.waitFor(() => expect(openState(view)).toBe("yes"));
+  });
+
+  it("already open when the page is hydrated (its toggle fired before React was attached): the check is on", async () => {
+    const view = mountDetails(true);
+    await vi.waitFor(() => expect(openState(view)).toBe("yes"));
+  });
+
+  it("closed when the page is hydrated: the check stays off", async () => {
+    const view = mountDetails(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(openState(view)).toBe("no");
   });
 });

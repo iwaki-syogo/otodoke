@@ -215,8 +215,9 @@ describe("/privacy: what it says", () => {
     expect(said.Anthropic).toContain("米国に保存され");
     expect(said.Anthropic).toContain("既定では学習に使わず、30 日以内に消す");
     expect(said.Cloudflare).toContain("ロボットの判定");
-    // Turnstile's token goes with signUp, signInWithPassword and resetPasswordForEmail.
-    expect(said.Cloudflare).toContain("Turnstile で、ログイン・アカウント作成・再設定の画面の操作がロボットでないかを確かめます");
+    // Turnstile's token goes with signUp, resend, resetPasswordForEmail and signInWithPassword, which
+    // 設定's 「鍵を作る」 and 「パスワードを変える」 call too.
+    expect(said.Cloudflare).toContain("Turnstile で、ログイン・アカウント作成・再設定の画面と、設定でパスワードを使う操作が、ロボットでないかを確かめます");
     // The owner's decision (2026-11-06): no promise about handing data to others on this page.
     expect(textOf(await render())).not.toContain("渡したり売ったり");
   });

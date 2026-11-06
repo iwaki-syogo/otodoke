@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
-import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
+import { CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -284,7 +284,7 @@ describe("a press before the bot check has its token", () => {
     expect(flows.signIn.mock.calls[0][0].captchaToken).toBeUndefined();
     await drawn();
     // Not a press that ends in nothing: the words, the button back, and a new token for the next press.
-    expect(view.text()).toContain(LOGIN_MESSAGES.captcha);
+    expect(view.text()).toContain(CAPTCHA_NOT_FINISHED_MESSAGE);
     expect(textOfHost(button(view))).toBe("ログイン");
     expect(widget.round).toBe(1);
   });

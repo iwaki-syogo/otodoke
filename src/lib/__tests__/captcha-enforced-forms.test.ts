@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { readStoredKey, registerKey } from "@/lib/mail-keys";
-import { CAPTCHA_ENFORCED, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField } from "@/lib/turnstile";
+import { CAPTCHA_ENFORCED, CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField } from "@/lib/turnstile";
 import { fakeEvent } from "./element-tree";
 import { FakeDb } from "./fake-db";
 import { mount, type Mounted } from "./hook-harness";
@@ -257,6 +257,8 @@ describe("with CAPTCHA enforced", () => {
     // The press is over, the refusal is told, and the widget moved on: the used token is gone.
     await vi.waitFor(() => expect(widget.round).toBe(round + 1));
     await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.captcha));
+    // A token that was refused (expired, used): trying again helps, so the shared words stay.
+    expect(view.text()).not.toContain(CAPTCHA_NOT_FINISHED_MESSAGE);
     expect(widget.token!.current.value).toBe("");
 
     // The next press waits for the new token, and sends that one.
@@ -311,7 +313,9 @@ describe("with CAPTCHA enforced", () => {
     await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS - TURNSTILE_WAIT_MS - 5_000 + 200);
     await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
     expect(action.mock.calls[0][0].captchaToken).toBeUndefined();
-    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.captcha));
+    // No token was sent, so "try again" would meet the same refusal: the Web-only words say so.
+    await vi.waitFor(() => expect(view.text()).toContain(CAPTCHA_NOT_FINISHED_MESSAGE));
+    expect(view.text()).not.toContain(LOGIN_MESSAGES.captcha);
     // The button is back, ready for a press with a new token.
     expect(view.text()).not.toContain(pending);
     expect(spinners(view)).toHaveLength(0);
@@ -332,7 +336,9 @@ describe("with CAPTCHA enforced", () => {
     // At once, not after a wait for the token (vi.waitFor moves the fake clock a little each try).
     expect(Date.now() - pressedAt).toBeLessThan(TURNSTILE_WAIT_MS);
     expect(action.mock.calls[0][0].captchaToken).toBeUndefined();
-    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.captcha));
+    // No token was sent, so "try again" would meet the same refusal: the Web-only words say so.
+    await vi.waitFor(() => expect(view.text()).toContain(CAPTCHA_NOT_FINISHED_MESSAGE));
+    expect(view.text()).not.toContain(LOGIN_MESSAGES.captcha);
     expect(spinners(view)).toHaveLength(0);
   });
 

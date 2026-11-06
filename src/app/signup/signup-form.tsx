@@ -7,7 +7,7 @@ import { flowMessage, signUpWithPassword } from "@/lib/crypto/password-flows";
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { tokenForPress, type TokenField } from "@/lib/turnstile";
+import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
 import { inputClass, submitClass } from "@/app/login/form-style";
 import { resendConfirmation, signUpWithAuthSecret } from "@/app/login/actions";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
@@ -58,7 +58,7 @@ export function SignupForm() {
       setNeedsTick(false);
       const result = await signUpWithPassword({ email, password, captchaToken }, { signUpWithAuthSecret });
       if (!result.ok) {
-        setError(flowMessage(result.code));
+        setError(pressText(result.code, captchaToken, flowMessage(result.code)));
         return;
       }
       setPassword("");
@@ -81,7 +81,7 @@ export function SignupForm() {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
       const result = await resendConfirmation({ email: sentTo, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
-      setResent({ ok: result.ok, text: loginMessage(result.code) });
+      setResent({ ok: result.ok, text: pressText(result.code, captchaToken, loginMessage(result.code)) });
     } finally {
       // The token went with the press (each is checked once): the next press waits for a new one.
       setRound((r) => r + 1);
