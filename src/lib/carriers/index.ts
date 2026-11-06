@@ -71,13 +71,28 @@ const HINTS: Array<[RegExp, CarrierKey]> = [
   [/福山通運|fukutsu/i, "fukutsu"],
 ];
 
+/** Full-width ASCII forms (U+FF01-U+FF5E) as ASCII: １２３４ is 1234, Ｎｏ． is No. */
+function halfWidth(s: string): string {
+  return s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+}
+
 /**
- * Normalize a tracking number: keep letters and digits only. Full-width ones (１２３４, typed in
- * Japanese input or printed in a mail) count as their half-width forms first (NFKC), or they would
- * be dropped and the number lost. Empty when nothing of it is left.
+ * A "No." or "No:" before the number (No.1234-5678-9012, 伝票No.1234…, Ｎｏ．１２３４…). The "." or
+ * ":" tells the label from a number that starts with the letters NO (EJ123456789JP's two letters
+ * can be any two); a number itself never has either.
+ */
+const NUMBER_LABEL = /^[^0-9A-Za-z]*no\s*[.:]/i;
+
+/**
+ * Normalize a tracking number: keep letters and digits only, upper-cased, after dropping a "No."
+ * label. Full-width ones (１２３４, typed in Japanese input or printed in a mail) count as their
+ * half-width forms first, or they would be dropped and the number lost. Only those are folded, not
+ * all of NFKC: NFKC spells signs with letters and digits (№ as "No", ① as "1"), which then joined
+ * the number and changed it. A sign is dropped like any other mark. Letters and digits come out
+ * unchanged, so a number stored before reads the same. Empty when nothing of it is left.
  */
 export function normalizeTracking(raw: string): string {
-  return raw.normalize("NFKC").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  return halfWidth(raw).replace(NUMBER_LABEL, "").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
 }
 
 /**
