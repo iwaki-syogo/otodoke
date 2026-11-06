@@ -6,7 +6,9 @@
  *
  *   signUpWithPassword    /signup: the account, with the login secret (the key comes at the first sign-in)
  *   signInAndOpenKey      /login, and 設定 for a user with no key: sign in, then open the key in use
- *                         or, when there is none, make the first one
+ *                         or, when there is none, make the first one. A key the password does not
+ *                         open can be opened with another one, and is then wrapped again for the
+ *                         password that signed in (openWithAnother)
  *   openKeyAgain          a reloaded or new tab: open the key in use again (Supabase Auth is not asked)
  *   changePassword        設定: the same key wrapped again for the new password, then the new login secret
  *   finishPasswordReset   /reset-password: a new key for the new password, then the new login secret
@@ -52,6 +54,8 @@ export interface SignInPorts extends KeyPorts {
   /** src/app/login/actions.ts */
   signInWithAuthSecret: (input: SignInInput) => Promise<SignInResult>;
   readSignedInAddress: () => Promise<SignedInAddress>;
+  /** key-actions.ts: a key opened with another password, wrapped again for the one that signed in. */
+  rewrapMailKey: (input: KeyRewrap) => Promise<KeyResult<{ keyId: string }>>;
 }
 
 /** 設定's 「パスワードを変える」. */
@@ -73,8 +77,9 @@ export interface ResetPorts {
 
 /**
  * Every answer is a code of src/lib/login-errors.ts, with its words in LOGIN_MESSAGES: the server's,
- * and four the browser finds itself (wrong_password, wrong_current_password, no_key,
- * address_mismatch).
+ * and those the browser finds itself (wrong_password, wrong_current_password, no_key,
+ * address_mismatch, other_password_wrong). A sign-in whose key did not open is told with
+ * key_not_opened.
  */
 export type FlowCode = LoginCode;
 
@@ -86,14 +91,23 @@ export function flowMessage(code: FlowCode): string {
 export type Failed = { ok: false; code: FlowCode };
 
 /**
+ * 「ほかのパスワードで開く」: the key in use opened with `otherPassword`, wrapped again for the
+ * password that signed in, stored, and opened in this tab. It holds that password's master, never
+ * the password: the screen keeps no copy of it.
+ */
+export type OpenWithAnother = (otherPassword: string) => Promise<{ ok: true } | Failed>;
+
+/**
  * After a sign-in that went through:
  * - `opened`: the key in use is open in this tab; `made`: there was none, and the first one is
  *   made, in use and open.
- * - `not_opened`: the key in use does not open with this password (a key made before
- *   password-v1, say). Only a reset makes a new one.
+ * - `not_opened`: the key in use does not open with this password: a key made before password-v1,
+ *   or a change that stopped half-way (the login is the old password, the key opens with the new
+ *   one). `openWithAnother` tries a password that opened it before; a reset makes a new key and
+ *   loses the mail sealed before.
  * - `failed`: the key could not be opened or made, for `code`. Signing in again tries again.
  */
-export type KeyAfterSignIn = { key: "opened" } | { key: "made" } | { key: "not_opened" } | { key: "failed"; code: FlowCode };
+export type KeyAfterSignIn = { key: "opened" } | { key: "made" } | { key: "not_opened"; openWithAnother: OpenWithAnother } | { key: "failed"; code: FlowCode };
 
 export type SignInOutcome = ({ ok: true; userId: string } & KeyAfterSignIn) | Failed;
 
@@ -171,13 +185,62 @@ async function registerNewKey(master: CryptoKey, userId: string, expectedCurrent
   return { ok: true, keyId: reg.keyId, answer: toBase64(answer), recipient };
 }
 
+/**
+ * openWithAnother for a sign-in with `loginMaster` whose password did not open the key in use.
+ * master is made from the session's address, as every step after the login (the typed one must be
+ * the same for password-v1, or the next sign-in would make another master); the key in use is read
+ * again (another tab may have changed it), opened with the KEK of the other password and the row's
+ * kdf_salt, wrapped again with the KEK of the login's password and a new salt, opened from that
+ * wrap, and only then stored, over the wrap it was opened from (rewrapMailKey; a session less than
+ * 15 minutes after the password sign-in, which this follows). A key that opens with the login's
+ * password already (another tab did this meanwhile) is only opened.
+ */
+function anotherPasswordOpener(loginMaster: CryptoKey, typedEmail: string, userId: string, ports: SignInPorts): OpenWithAnother {
+  return async (otherPassword) => {
+    try {
+      const who = await ports.readSignedInAddress();
+      // Another account signed in meanwhile (another tab): its key is not this one's to wrap.
+      if (!who.ok || who.userId !== userId) return { ok: false, code: "signed_out" };
+      if (emailNorm(who.email) !== emailNorm(typedEmail)) return { ok: false, code: "address_mismatch" };
+      const [otherMaster, read] = await Promise.all([deriveMaster(who.email, otherPassword), ports.readMailKey({ keyId: null })]);
+      if (!read.ok) return { ok: false, code: keyActionCode(read.error) };
+      if (!read.key) return { ok: false, code: "no_key" };
+      const stored = read.key;
+      const already = await openRow(stored, loginMaster, userId);
+      if (already) {
+        setTabKey(userId, already);
+        return { ok: true };
+      }
+      if (!(await openRow(stored, otherMaster, userId))) return { ok: false, code: "other_password_wrong" };
+      const salt = newKdfSalt();
+      const wrap = await rewrapStoredKey(stored, await kekFor(otherMaster, stored.kdf_salt), await kekFor(loginMaster, salt), salt, userId);
+      // The new wrap opens with the login's password, from the salt it carries: nothing else is stored.
+      const reopened = await openRow({ ...stored, ...wrap }, loginMaster, userId);
+      if (!reopened) return { ok: false, code: "key_failed" };
+      const saved = await ports.rewrapMailKey({
+        keyId: stored.key_id,
+        previousWrappedPrivateKey: stored.wrapped_private_key,
+        wrappedPrivateKey: wrap.wrapped_private_key,
+        wrapIv: wrap.wrap_iv,
+        kdfSalt: wrap.kdf_salt,
+        kdfIterations: wrap.kdf_iterations,
+      });
+      if (!saved.ok) return { ok: false, code: keyActionCode(saved.error) };
+      setTabKey(userId, reopened);
+      return { ok: true };
+    } catch {
+      return { ok: false, code: "other" };
+    }
+  };
+}
+
 /** The key in use read again and opened with the same master (another tab or device put one in use meanwhile). */
-async function openKeyInUse(master: CryptoKey, userId: string, ports: Pick<KeyPorts, "readMailKey">): Promise<KeyAfterSignIn> {
+async function openKeyInUse(master: CryptoKey, typedEmail: string, userId: string, ports: SignInPorts): Promise<KeyAfterSignIn> {
   const read = await ports.readMailKey({ keyId: null });
   if (!read.ok) return { key: "failed", code: keyActionCode(read.error) };
   if (!read.key) return { key: "failed", code: "key_failed" };
   const recipient = await openRow(read.key, master, userId);
-  if (!recipient) return { key: "not_opened" };
+  if (!recipient) return { key: "not_opened", openWithAnother: anotherPasswordOpener(master, typedEmail, userId, ports) };
   setTabKey(userId, recipient);
   return { key: "opened" };
 }
@@ -188,7 +251,7 @@ async function openOrMakeKey(master: CryptoKey, typedEmail: string, userId: stri
   if (!read.ok) return { key: "failed", code: keyActionCode(read.error) };
   if (read.key) {
     const recipient = await openRow(read.key, master, userId);
-    if (!recipient) return { key: "not_opened" };
+    if (!recipient) return { key: "not_opened", openWithAnother: anotherPasswordOpener(master, typedEmail, userId, ports) };
     setTabKey(userId, recipient);
     return { key: "opened" };
   }
@@ -200,11 +263,11 @@ async function openOrMakeKey(master: CryptoKey, typedEmail: string, userId: stri
   if (emailNorm(who.email) !== emailNorm(typedEmail)) return { key: "failed", code: "address_mismatch" };
 
   const reg = await registerNewKey(master, userId, null, ports);
-  if (!reg.ok) return reg.code === "key_in_use_changed" ? openKeyInUse(master, userId, ports) : { key: "failed", code: reg.code };
+  if (!reg.ok) return reg.code === "key_in_use_changed" ? openKeyInUse(master, typedEmail, userId, ports) : { key: "failed", code: reg.code };
   const done = await ports.activateMailKey({ keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId: null });
   if (!done.ok) {
     const code = keyActionCode(done.error);
-    return code === "key_in_use_changed" ? openKeyInUse(master, userId, ports) : { key: "failed", code };
+    return code === "key_in_use_changed" ? openKeyInUse(master, typedEmail, userId, ports) : { key: "failed", code };
   }
   setTabKey(userId, reg.recipient);
   return { key: "made" };

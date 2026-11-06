@@ -67,7 +67,7 @@ vi.mock("@/lib/turnstile", async (importOriginal) => {
 });
 vi.mock("@/app/login/actions", () => ({ signInWithAuthSecret: actions.signIn, signUpWithAuthSecret: actions.signUp, resendConfirmation: actions.resend, sendResetMail: actions.resetMail }));
 vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: actions.readAddress }));
-vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: actions.readMailKey, registerMailKey: vi.fn(), activateMailKey: vi.fn(), sealStoredMail: vi.fn(), readSealedMail: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: actions.readMailKey, registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readSealedMail: vi.fn() }));
 vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: actions.change }));
 // The steps are password-flows.test.ts's; here master is made quickly.
 vi.mock("@/lib/crypto/password-v1", async (importOriginal) => {

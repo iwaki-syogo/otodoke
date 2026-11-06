@@ -181,7 +181,7 @@ describe("password forms: the source", () => {
     const withInputs = files()
       .filter((f) => jsxInputs(f.source).some((i) => PASSWORD_INPUT.test(i)))
       .map((f) => path.relative(process.cwd(), f.file));
-    expect(withInputs.sort()).toEqual(["src/app/app/settings/password-panel.tsx", "src/app/app/unlock-form.tsx", "src/app/login/login-form.tsx", "src/app/reset-password/reset-form.tsx", "src/app/signup/signup-form.tsx"]);
+    expect(withInputs.sort()).toEqual(["src/app/app/settings/password-panel.tsx", "src/app/app/unlock-form.tsx", "src/app/login/login-form.tsx", "src/app/login/other-password-form.tsx", "src/app/reset-password/reset-form.tsx", "src/app/signup/signup-form.tsx"]);
   });
 
   it("no password input has a name; their forms are method=post without an action", () => {

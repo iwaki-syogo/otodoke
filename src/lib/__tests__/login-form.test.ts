@@ -23,6 +23,8 @@ import { mount, type Mounted } from "./hook-harness";
 const flows = vi.hoisted(() => ({ signIn: vi.fn() }));
 const widget = vi.hoisted(() => ({ token: null as { current: TokenField } | null, round: -1 }));
 const nav = vi.hoisted(() => ({ to: [] as string[] }));
+/** What the login form gave 「ほかのパスワードで開く」 (other-password-form.test.ts tests that form). */
+const other = vi.hoisted(() => ({ props: null as { email: string; openWithAnother: unknown; onOpened: () => void } | null }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -44,6 +46,15 @@ vi.mock("@/app/login/turnstile-widget", () => ({
     return null;
   },
 }));
+vi.mock("@/app/login/other-password-form", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    OtherPasswordForm: (props: { email: string; openWithAnother: unknown; onOpened: () => void }) => {
+      other.props = props;
+      return h("div", { "data-other-password": "" });
+    },
+  };
+});
 vi.mock("@/components/leave-for", () => ({
   LeaveFor: ({ href }: { href: string }) => {
     nav.to.push(href);
@@ -53,7 +64,7 @@ vi.mock("@/components/leave-for", () => ({
 vi.mock("@/lib/crypto/password-flows", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/crypto/password-flows")>()), signInAndOpenKey: flows.signIn }));
 vi.mock("@/app/login/actions", () => ({ signInWithAuthSecret: vi.fn() }));
 vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: vi.fn() }));
-vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn() }));
 
 const { LoginForm } = await import("@/app/login/login-form");
 const LoginPage = (await import("@/app/login/page")).default;
@@ -97,6 +108,7 @@ beforeEach(() => {
   widget.token = null;
   widget.round = -1;
   nav.to = [];
+  other.props = null;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -152,19 +164,35 @@ describe("the press", () => {
     expect(nav.to).toEqual([NEXT]);
   });
 
-  it("signed in but the key does not open: says so, with the reset and a way on", async () => {
-    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "not_opened" });
+  it("signed in but the key does not open: says so, offers another password, the reset and a way on", async () => {
+    const openWithAnother = vi.fn();
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "not_opened", openWithAnother });
     const view = await filled();
     await press(view);
     await drawn();
     expect(nav.to).toEqual([]);
-    expect(view.text()).toContain("このパスワードでは、メールの鍵を開けませんでした。");
+    expect(view.text()).toContain(LOGIN_MESSAGES.key_not_opened);
     expect(view.text()).toContain(RESET_LOSES_MAIL);
+    // 「ほかのパスワードで開く」 with the sign-in's own opener, for the address typed above.
+    expect(other.props).toMatchObject({ email: EMAIL, openWithAnother });
     expect(links(view)).toEqual([
       { href: "/login/forgot", text: "再設定する" },
       { href: NEXT, text: "このまま進む" },
     ]);
     expect(textOfHost(button(view))).toBe("ログイン");
+    // The password that signed in is not kept by the form: the opener holds its master.
+    expect(input(view, "login-password").props.value).toBe("");
+    expect(openWithAnother).not.toHaveBeenCalled();
+  });
+
+  it("the key opened with another password: moves on to ?next=", async () => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "not_opened", openWithAnother: vi.fn() });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    other.props!.onOpened();
+    await drawn();
+    expect(nav.to).toEqual([NEXT]);
   });
 
   it("signed in but the key could not be made: the fixed words, and a way on; pressing again tries again", async () => {

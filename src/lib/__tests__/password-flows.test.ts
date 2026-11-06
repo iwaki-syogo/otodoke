@@ -3,7 +3,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { toBase64, utf8 } from "@/lib/crypto/bytes";
 import { openMail, sealMail, type PrivateRecipient } from "@/lib/crypto/envelope";
-import { KEY_IN_USE_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import { createWrappedKey, type StoredKey } from "@/lib/crypto/key-wrap";
 import { KEY_SESSION_STALE, LOGIN_MESSAGES, keyStepCode } from "@/lib/login-errors";
 import { normalizeLoginAddress } from "@/lib/login-form";
@@ -81,6 +81,7 @@ class Server {
   );
   registerMailKey = vi.fn((input: unknown) => this.step("registerMailKey", () => registerKey(asAdmin(this.db), USER, input)));
   activateMailKey = vi.fn((input: unknown) => this.step("activateMailKey", () => activateKey(asAdmin(this.db), USER, input)));
+  rewrapMailKey = vi.fn((input: unknown) => this.step("rewrapMailKey", async () => (this.signedIn ? rewrapKey(asAdmin(this.db), USER, input) : { ok: false as const, error: SIGNED_OUT })));
   finishReset = vi.fn((input: { authSecret: string; keyId: string; challenge: string; expectedCurrentKeyId: string | null }) =>
     this.step("finishReset", async () => {
       this.account.secret = input.authSecret;
@@ -202,10 +203,118 @@ describe("signing in: a key in use", () => {
     server.db.rows("user_keys").push({ user_id: USER, key_id: made.keyId, public_key: toBase64(made.publicKey), ...made.wrapped, activated_at: "2026-11-06T00:00:00Z", retired_at: null });
     server.signedIn = false;
 
-    expect(await login()).toEqual({ ok: true, userId: USER, key: "not_opened" });
+    expect(await login()).toEqual({ ok: true, userId: USER, key: "not_opened", openWithAnother: expect.any(Function) });
     expect(tab.setTabKey).not.toHaveBeenCalled();
     expect(server.log).not.toContain("registerMailKey");
     expect(server.inUse().map((k) => k.key_id)).toEqual([made.keyId]);
+  });
+});
+
+describe("signing in: the key opens with another password (a change that stopped half-way)", () => {
+  /**
+   * The state R3-PW-1 found: a change whose wrap was stored, whose new secret Supabase refused, and
+   * whose wrap could not be put back (secret_change_refused_key_new). The login is PASSWORD; the
+   * key opens with NEW_PASSWORD.
+   */
+  async function halfChanged() {
+    await signUp();
+    await login();
+    server.before.changeLoginSecret = async () => {
+      await rewrapKey(asAdmin(server.db), USER, server.changeLoginSecret.mock.calls.at(-1)![0].rewrap!);
+      return { ok: false, code: "secret_change_refused_key_new" };
+    };
+    expect(await changePassword({ email: EMAIL, userId: USER, current: PASSWORD, next: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "secret_change_refused_key_new" });
+    server.signedIn = false;
+    tab.setTabKey.mockReset();
+    tab.forgetTabKey.mockReset();
+  }
+
+  /** A sign-in with PASSWORD whose key did not open, and what it offers. */
+  async function notOpened(email = EMAIL) {
+    const signedIn = await login(PASSWORD, email);
+    if (!signedIn.ok || signedIn.key !== "not_opened") throw new Error(`not_opened expected, got ${JSON.stringify(signedIn)}`);
+    server.log = [];
+    derive.calls = [];
+    return signedIn.openWithAnother;
+  }
+
+  it("the old password signs in; the new one opens the key, wrapped again for the old one; the next sign-in opens it", async () => {
+    await halfChanged();
+    const keyId = String(server.inUse()[0].key_id);
+    const before = String(server.inUse()[0].wrapped_private_key);
+    // The address typed in other ASCII capitals: master is made from the session's.
+    const openWithAnother = await notOpened("SomeOne@Example.TEST");
+    expect(tab.setTabKey).not.toHaveBeenCalled();
+
+    expect(await openWithAnother(NEW_PASSWORD)).toEqual({ ok: true });
+    expect(server.log).toEqual(["readSignedInAddress", "readMailKey(in use)", "rewrapMailKey"]);
+    expect(derive.calls).toEqual([{ email: EMAIL, password: NEW_PASSWORD }]);
+    // Over the wrap it opened, with a new salt; the same key, now open in this tab.
+    expect(server.rewrapMailKey.mock.calls[0][0]).toMatchObject({ keyId, previousWrappedPrivateKey: before });
+    expect(server.inUse().map((k) => k.key_id)).toEqual([keyId]);
+    expect(String(server.inUse()[0].wrapped_private_key)).not.toBe(before);
+    expect(tabKey().keyId).toBe(keyId);
+    expect(await opensMailOfKeyInUse(tabKey())).toBe(true);
+
+    // The next sign-in, with the login's password, opens it; the other one no longer does.
+    server.signedIn = false;
+    tab.setTabKey.mockReset();
+    expect(await login(PASSWORD)).toEqual({ ok: true, userId: USER, key: "opened" });
+    expect(await opensMailOfKeyInUse(tabKey())).toBe(true);
+    expect(await openKeyAgain({ email: EMAIL, password: PASSWORD, userId: USER }, server)).toEqual({ ok: true });
+    expect(await openKeyAgain({ email: EMAIL, password: NEW_PASSWORD, userId: USER }, server)).toEqual({ ok: false, code: "wrong_password" });
+  });
+
+  it("a password that does not open it either is told so; nothing is stored, and it can be tried again", async () => {
+    await halfChanged();
+    const before = String(server.inUse()[0].wrapped_private_key);
+    const openWithAnother = await notOpened();
+    expect(await openWithAnother("まだちがうパスワードです")).toEqual({ ok: false, code: "other_password_wrong" });
+    expect(flowMessage("other_password_wrong")).toBe("このパスワードでも、メールの鍵を開けませんでした。");
+    expect(server.log).not.toContain("rewrapMailKey");
+    expect(String(server.inUse()[0].wrapped_private_key)).toBe(before);
+    expect(tab.setTabKey).not.toHaveBeenCalled();
+    expect(await openWithAnother(NEW_PASSWORD)).toEqual({ ok: true });
+  });
+
+  it("a key wrapped again for the login's password meanwhile (another tab) is only opened", async () => {
+    await halfChanged();
+    const fromAnotherTab = await notOpened();
+    const openWithAnother = await notOpened();
+    expect(await fromAnotherTab(NEW_PASSWORD)).toEqual({ ok: true });
+    server.log = [];
+    tab.setTabKey.mockReset();
+    // The password typed here does not matter any more: the login's opens it.
+    expect(await openWithAnother("まだちがうパスワードです")).toEqual({ ok: true });
+    expect(server.log).toEqual(["readSignedInAddress", "readMailKey(in use)"]);
+    expect(await opensMailOfKeyInUse(tabKey())).toBe(true);
+  });
+
+  it("another account signed in meanwhile: nothing is read or wrapped for it", async () => {
+    await halfChanged();
+    const openWithAnother = await notOpened();
+    server.readSignedInAddress.mockResolvedValueOnce({ ok: true, userId: "00000000-0000-4000-8000-00000000000b", email: "other@example.test" });
+    expect(await openWithAnother(NEW_PASSWORD)).toEqual({ ok: false, code: "signed_out" });
+    expect(server.log).toEqual([]);
+    expect(tab.setTabKey).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a wrap another tab changed", KEY_WRAP_CHANGED, "key_wrap_changed"],
+    ["a session older than 15 minutes since the password", KEY_SESSION_STALE, "stale_session"],
+  ] as const)("a refused save (%s) is told with its words, and the tab gets nothing", async (_, error, code) => {
+    await halfChanged();
+    const openWithAnother = await notOpened();
+    server.before.rewrapMailKey = () => ({ ok: false, error });
+    expect(await openWithAnother(NEW_PASSWORD)).toEqual({ ok: false, code });
+    expect(flowMessage(code)).toBe(LOGIN_MESSAGES[code]);
+    expect(tab.setTabKey).not.toHaveBeenCalled();
+    expect(await openKeyAgain({ email: EMAIL, password: NEW_PASSWORD, userId: USER }, server)).toEqual({ ok: true });
+  });
+
+  it("the change's words say to try the same new password again, which brings both to it", () => {
+    expect(LOGIN_MESSAGES.secret_change_refused_key_new).toBe("パスワードを変えられませんでした。同じ新しいパスワードで、もう一度お試しください。");
+    expect(LOGIN_MESSAGES.key_not_opened).toBe("このパスワードでは、メールの鍵を開けませんでした。");
   });
 });
 
@@ -490,6 +599,7 @@ describe("the contract shared with the iOS app (fixtures/crypto/password-v1.json
       readMailKey: async () => ({ ok: true as const, key: v.user_keys_row }),
       registerMailKey: async () => ({ ok: false as const, error: "unused" }),
       activateMailKey: async () => ({ ok: false as const, error: "unused" }),
+      rewrapMailKey: async () => ({ ok: false as const, error: "unused" }),
     };
     await signInAndOpenKey({ email: v.email, password: v.password }, ports);
     expect(seen).toEqual([v.auth_secret]);

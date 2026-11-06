@@ -4,17 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { PendingSubmitButton } from "@/components/pending-button";
-import { changePassword, flowMessage, signInAndOpenKey, type FlowCode } from "@/lib/crypto/password-flows";
+import { changePassword, flowMessage, signInAndOpenKey, type FlowCode, type OpenWithAnother } from "@/lib/crypto/password-flows";
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { useTabKey } from "@/lib/crypto/tab-key";
-import { TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
+import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { tokenForPress, type TokenField } from "@/lib/turnstile";
 import { signInWithAuthSecret } from "@/app/login/actions";
 import { readSignedInAddress } from "@/app/login/session-actions";
+import { OtherPasswordForm } from "@/app/login/other-password-form";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 import { UnlockForm } from "../unlock-form";
-import { activateMailKey, readMailKey, registerMailKey, sealStoredMail } from "./key-actions";
+import { activateMailKey, readMailKey, registerMailKey, rewrapMailKey, sealStoredMail } from "./key-actions";
 import { changeLoginSecret } from "./password-actions";
 import { BUSY, pressLabel } from "./press";
 
@@ -127,7 +128,8 @@ export function MakeKeyForm({ email }: { email: string }) {
   const [busy, setBusy] = useState(false);
   const [needsTick, setNeedsTick] = useState(false);
   const [round, setRound] = useState(0);
-  const [error, setError] = useState<{ text: string; logIn: boolean; reset: boolean } | null>(null);
+  // `openWithAnother`: the key in use (made in another tab meanwhile) does not open with this password.
+  const [error, setError] = useState<{ text: string; logIn: boolean; openWithAnother?: OpenWithAnother } | null>(null);
   // A ref, not state: a second press (or Enter) can come before React has drawn the first.
   const running = useRef(false);
   const token = useRef<TokenField>({ value: "", dataset: {} });
@@ -141,11 +143,11 @@ export function MakeKeyForm({ email }: { email: string }) {
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
       setNeedsTick(false);
-      const result = await signInAndOpenKey({ email, password, captchaToken }, { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey });
+      const result = await signInAndOpenKey({ email, password, captchaToken }, { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey, rewrapMailKey });
       if (!result.ok) {
         // The address is the session's: a refused sign-in can only be the password.
         const code = result.code === "credentials" ? "wrong_password" : result.code;
-        setError({ text: flowMessage(code), logIn: LOG_IN_AGAIN.has(code), reset: false });
+        setError({ text: flowMessage(code), logIn: LOG_IN_AGAIN.has(code) });
         return;
       }
       if (result.key === "opened" || result.key === "made") {
@@ -155,8 +157,8 @@ export function MakeKeyForm({ email }: { email: string }) {
       }
       if (result.key === "not_opened") {
         setPassword("");
-        setError({ text: RESET_LOSES_MAIL, logIn: false, reset: true });
-      } else setError({ text: flowMessage(result.code), logIn: LOG_IN_AGAIN.has(result.code), reset: false });
+        setError({ text: RESET_LOSES_MAIL, logIn: false, openWithAnother: result.openWithAnother });
+      } else setError({ text: flowMessage(result.code), logIn: LOG_IN_AGAIN.has(result.code) });
     } finally {
       // The token went with the press (each is checked once): the next press waits for a new one.
       setRound((r) => r + 1);
@@ -166,27 +168,35 @@ export function MakeKeyForm({ email }: { email: string }) {
   }
 
   return (
-    // No `name` on any field, POST: submitted before the script runs, it sends nothing.
-    <form method="post" onSubmit={submit} className="mt-3 flex flex-col gap-2">
-      <input type="text" autoComplete="username" value={email} readOnly hidden />
-      <input type="password" autoComplete="current-password" aria-label="パスワード" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
-      <TurnstileWidget tokenRef={token} round={round} />
-      <PendingSubmitButton pending={busy && !needsTick} pendingLabel="作っています…" tone="light" className={primary}>
-        {busy && needsTick ? TURNSTILE_TICK_PROMPT : "鍵を作る"}
-      </PendingSubmitButton>
+    <>
+      {/* No `name` on any field, POST: submitted before the script runs, it sends nothing. */}
+      <form method="post" onSubmit={submit} className="mt-3 flex flex-col gap-2">
+        <input type="text" autoComplete="username" value={email} readOnly hidden />
+        <input type="password" autoComplete="current-password" aria-label="パスワード" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
+        <TurnstileWidget tokenRef={token} round={round} />
+        <PendingSubmitButton pending={busy && !needsTick} pendingLabel="作っています…" tone="light" className={primary}>
+          {busy && needsTick ? TURNSTILE_TICK_PROMPT : "鍵を作る"}
+        </PendingSubmitButton>
+      </form>
+      {/* Below the form, not in it: 「ほかのパスワードで開く」 is a form of its own. */}
       {error ? (
-        <div role="alert" className="text-sm leading-6 text-red-800">
-          {error.reset ? <p className="font-medium">このパスワードでは、メールの鍵を開けませんでした。</p> : null}
+        <div role="alert" className="mt-2 text-sm leading-6 text-red-800">
+          {error.openWithAnother ? <p className="font-medium">{LOGIN_MESSAGES.key_not_opened}</p> : null}
           <p>{error.text}</p>
           {error.logIn ? <LogInAgain /> : null}
-          {error.reset ? (
-            <Link href="/login/forgot" className="mt-1 inline-block font-medium underline underline-offset-4">
-              再設定する
-            </Link>
+          {error.openWithAnother ? (
+            <>
+              <div className="mt-2">
+                <OtherPasswordForm email={email} openWithAnother={error.openWithAnother} onOpened={() => router.refresh()} />
+              </div>
+              <Link href="/login/forgot" className="mt-1 inline-block font-medium underline underline-offset-4">
+                再設定する
+              </Link>
+            </>
           ) : null}
         </div>
       ) : null}
-    </form>
+    </>
   );
 }
 

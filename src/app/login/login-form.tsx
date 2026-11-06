@@ -4,25 +4,27 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { LeaveFor } from "@/components/leave-for";
 import { PendingSubmitButton } from "@/components/pending-button";
-import { flowMessage, signInAndOpenKey, type SignInPorts } from "@/lib/crypto/password-flows";
+import { flowMessage, signInAndOpenKey, type OpenWithAnother, type SignInPorts } from "@/lib/crypto/password-flows";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { tokenForPress, type TokenField } from "@/lib/turnstile";
-import { readMailKey, registerMailKey, activateMailKey } from "@/app/app/settings/key-actions";
+import { readMailKey, registerMailKey, activateMailKey, rewrapMailKey } from "@/app/app/settings/key-actions";
 import { signInWithAuthSecret } from "./actions";
 import { inputClass, submitClass } from "./form-style";
+import { OtherPasswordForm } from "./other-password-form";
 import { readSignedInAddress } from "./session-actions";
 import { TurnstileWidget } from "./turnstile-widget";
 
 /** The Actions a sign-in calls, read when a press needs them. */
-const ports = (): SignInPorts => ({ signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey });
+const ports = (): SignInPorts => ({ signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey, rewrapMailKey });
 
 /**
- * What the form says after a press. `signed_in_*`: the sign-in went through but the key did not
- * open (`not_opened`) or could not be opened or made (`key_failed`); the app can still be used.
+ * What the form says after a press. The sign-in went through but the key did not open
+ * (`not_opened`: another password may open it) or could not be opened or made (`key_failed`); the
+ * app can still be used.
  */
-type Notice = { kind: "error"; text: string } | { kind: "not_opened" } | { kind: "key_failed"; text: string };
+type Notice = { kind: "error"; text: string } | { kind: "not_opened"; openWithAnother: OpenWithAnother } | { kind: "key_failed"; text: string };
 
 /**
  * /login: the address and the password. The press is shown at once (making master takes about a
@@ -73,7 +75,7 @@ export function LoginForm({ next }: { next: string }) {
       }
       if (result.key === "not_opened") {
         setPassword("");
-        setNotice({ kind: "not_opened" });
+        setNotice({ kind: "not_opened", openWithAnother: result.openWithAnother });
       } else setNotice({ kind: "key_failed", text: flowMessage(result.code) });
     } finally {
       // The token went with the press (each is checked once): the next press waits for a new one.
@@ -111,8 +113,11 @@ export function LoginForm({ next }: { next: string }) {
         <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
           {notice.kind === "not_opened" ? (
             <>
-              <p className="font-medium">このパスワードでは、メールの鍵を開けませんでした。</p>
+              <p className="font-medium">{LOGIN_MESSAGES.key_not_opened}</p>
               <p className="mt-1">{RESET_LOSES_MAIL}</p>
+              <div className="mt-3">
+                <OtherPasswordForm email={email} openWithAnother={notice.openWithAnother} onOpened={() => setLeaveFor(next)} />
+              </div>
             </>
           ) : (
             <p>{notice.text}</p>
