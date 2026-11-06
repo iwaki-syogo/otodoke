@@ -45,7 +45,8 @@ export function stripInvisible(text: string): string {
  * replace took time growing with the square of the length on unclosed tags (`<` repeated, `<a `
  * with no `>`, a link with no `</a>`), and this runs on up to 512K characters of anyone's mail
  * before any limit (the pre-check in screen.ts). Each step gives exactly what its regex gave
- * (named in its comment): src/lib/__tests__/html-to-text-equivalence.test.ts compares them.
+ * (named in its comment): src/lib/__tests__/html-to-text-equivalence.test.ts compares the whole
+ * function with a copy of the regex version (f73de89) on the demo mails and generated HTML.
  */
 
 /** Only "A"-"Z" lowered, so every index stays where it was (toLowerCase can change the length). */

@@ -52,7 +52,7 @@ async function render() {
 const historyItems = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "li" && textOf(n).includes("元メールを見る"));
 
 describe("parcel page: mail history with sealed mail", () => {
-  it("a sealed mail shows a placeholder with the sender domain and asks for the passphrase; no ciphertext in the page", async () => {
+  it("a sealed mail shows a placeholder with the sender domain and asks for the password; no ciphertext in the page", async () => {
     addMail("e-sealed", { body_state: "sealed", body_envelope: ENVELOPE, from_domain: "shop.example.test" }, "発送日は11/1");
     const { html, root } = await render();
     const [item] = historyItems(root);
@@ -60,6 +60,9 @@ describe("parcel page: mail history with sealed mail", () => {
     expect(textOf(item)).toContain("shop.example.test");
     expect(textOf(item)).toContain("読み取りメモ: 発送日は11/1");
     expect(findAll(item, (n) => n.tag === "input" && n.attrs.type === "password")).toHaveLength(1);
+    // The session's address goes with it, for the password manager and for making the KEK again.
+    expect(findAll(item, (n) => n.tag === "input" && n.attrs.type === "text" && n.attrs.value === "qa@example.com")).toHaveLength(1);
+    expect(textOf(item)).toContain("パスワードで開きます。");
     // The envelope is fetched by the browser on demand, never put in the server-rendered page.
     expect(html).not.toContain("Q0lQSEVSVEVYVC1NQVJLRVI=");
     expect(html).not.toContain("body_envelope");
@@ -73,8 +76,11 @@ describe("parcel page: mail history with sealed mail", () => {
     addMail("e-dropped", { body_state: "dropped", from_domain: "shop.example.test" });
     const { root } = await render();
     const [item] = historyItems(root);
-    expect(textOf(item)).toContain("本文は保存していません");
-    expect(textOf(item)).toContain("合言葉を決める前に届いたメールです");
+    // Decided when the mail is read, not when it arrives (src/lib/mail-seal.ts closedBody), as
+    // 「あなたのメールの扱い」 and /privacy say it.
+    expect(textOf(item)).toContain("メールの鍵ができる前に読み取ったメールです。件名・差出人・本文は残していません。");
+    expect(textOf(item)).not.toContain("合言葉");
+    expect(textOf(item)).not.toContain("届いたメール");
     expect(findAll(item, (n) => n.tag === "pre")).toHaveLength(0);
   });
 

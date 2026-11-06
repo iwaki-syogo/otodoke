@@ -17,24 +17,32 @@ const base = {
 
 const BRANCH = "otodoke-app-git-dev-syodgo-9062s-projects.vercel.app";
 
-const mocks = vi.hoisted(() => ({ otp: [] as Array<{ email: string; options?: { emailRedirectTo?: string } }> }));
+/** Where each mail's link was to lead, as the Actions asked Supabase. */
+const mocks = vi.hoisted(() => ({ sent: [] as Array<{ step: string; redirectTo?: string }> }));
 
-vi.mock("next/navigation", () => ({
-  redirect: (url: string) => {
-    throw new Error(`REDIRECT:${url}`);
-  },
-}));
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 // The mail limit has its own tests (login-mail-limit.test.ts); here it must never reach a database.
 vi.mock("@/lib/login-mail-limit", () => ({
   clientIp: () => null,
   claimLoginMail: async () => ({ verdict: "ok", claimId: null }),
   releaseLoginMail: async () => {},
+  claimLoginTry: async () => "ok",
+  claimLoginAttempt: async () => ({ verdict: "ok", claimId: null }),
+  releaseLoginAttempt: async () => {},
 }));
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({
     auth: {
-      signInWithOtp: async (args: { email: string; options?: { emailRedirectTo?: string } }) => {
-        mocks.otp.push(args);
+      signUp: async (args: { options?: { emailRedirectTo?: string } }) => {
+        mocks.sent.push({ step: "signUp", redirectTo: args.options?.emailRedirectTo });
+        return { data: { user: null, session: null }, error: null };
+      },
+      resend: async (args: { options?: { emailRedirectTo?: string } }) => {
+        mocks.sent.push({ step: "resend", redirectTo: args.options?.emailRedirectTo });
+        return { error: null };
+      },
+      resetPasswordForEmail: async (_email: string, options?: { redirectTo?: string }) => {
+        mocks.sent.push({ step: "reset", redirectTo: options?.redirectTo });
         return { error: null };
       },
     },
@@ -53,19 +61,13 @@ async function loadAppUrl(values: Record<string, string>): Promise<() => string>
   return mod.appUrl;
 }
 
-async function submitLogin(values: Record<string, string>): Promise<string> {
+/** The three mails the web asks for, with the same env; their answers in order. */
+async function requestMails(values: Record<string, string>): Promise<unknown[]> {
   stub(values);
-  mocks.otp.length = 0;
-  const { sendMagicLink } = await import("@/app/login/actions");
-  const form = new FormData();
-  form.set("email", "someone@example.com");
-  form.set("next", "/app");
-  try {
-    await sendMagicLink(form);
-  } catch (error) {
-    return (error as Error).message;
-  }
-  return "no redirect";
+  mocks.sent.length = 0;
+  const { signUpWithAuthSecret, resendConfirmation, sendResetMail } = await import("@/app/login/actions");
+  const email = "someone@example.com";
+  return [await signUpWithAuthSecret({ email, authSecret: "a".repeat(64) }), await resendConfirmation({ email }), await sendResetMail({ email })];
 }
 
 describe("appUrl", () => {
@@ -116,24 +118,28 @@ describe("appUrl", () => {
   });
 });
 
-describe("sendMagicLink redirect target", () => {
+describe("the mails' link target (confirmation, again, reset)", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("sends the preview's branch URL as emailRedirectTo", async () => {
-    const result = await submitLogin({ VERCEL_ENV: "preview", VERCEL_BRANCH_URL: BRANCH });
-    expect(result).toBe(`REDIRECT:/login?sent=${encodeURIComponent("someone@example.com")}`);
-    expect(mocks.otp).toHaveLength(1);
-    expect(mocks.otp[0].options?.emailRedirectTo).toBe(`https://${BRANCH}/auth/confirm?next=${encodeURIComponent("/app")}`);
+  it("leads to the preview's branch URL on a preview", async () => {
+    const answers = await requestMails({ VERCEL_ENV: "preview", VERCEL_BRANCH_URL: BRANCH });
+    expect(answers).toEqual([
+      { ok: true, code: "signup_exists_or_sent" },
+      { ok: true, code: "confirmation_sent" },
+      { ok: true, code: "reset_sent" },
+    ]);
+    expect(mocks.sent).toEqual(["signUp", "resend", "reset"].map((step) => ({ step, redirectTo: `https://${BRANCH}/auth/confirm?next=${encodeURIComponent("/app")}` })));
   });
 
-  it("sends the production URL as emailRedirectTo in production", async () => {
-    await submitLogin({ VERCEL_ENV: "production", VERCEL_BRANCH_URL: "otodoke-app-git-main-syodgo-9062s-projects.vercel.app", NEXT_PUBLIC_APP_URL: "https://otodoke.app" });
-    expect(mocks.otp[0].options?.emailRedirectTo).toBe(`https://otodoke.app/auth/confirm?next=${encodeURIComponent("/app")}`);
+  it("leads to the production URL in production", async () => {
+    await requestMails({ VERCEL_ENV: "production", VERCEL_BRANCH_URL: "otodoke-app-git-main-syodgo-9062s-projects.vercel.app", NEXT_PUBLIC_APP_URL: "https://otodoke.app" });
+    expect(mocks.sent.map((s) => s.redirectTo)).toEqual(Array(3).fill(`https://otodoke.app/auth/confirm?next=${encodeURIComponent("/app")}`));
   });
 
-  it("sends no email and returns an error when Vercel has no URL to use", async () => {
-    const result = await submitLogin({ VERCEL_ENV: "preview" });
-    expect(mocks.otp).toHaveLength(0);
-    expect(result).toMatch(/^REDIRECT:\/login\?error=/);
+  it("sends no mail and answers not_configured when Vercel has no URL to use", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const answers = await requestMails({ VERCEL_ENV: "preview" });
+    expect(mocks.sent).toHaveLength(0);
+    expect(answers).toEqual(Array(3).fill({ ok: false, code: "not_configured" }));
   });
 });

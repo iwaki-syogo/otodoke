@@ -2576,6 +2576,46 @@
       {
         "in": "",
         "out": ""
+      },
+      {
+        "in": "№1234-5678-9012",
+        "out": "123456789012"
+      },
+      {
+        "in": "①1234-5678-9012",
+        "out": "123456789012"
+      },
+      {
+        "in": "Ｎｏ．１２３４－５６７８－９０１２",
+        "out": "123456789012"
+      },
+      {
+        "in": "伝票No.1234-5678-9012",
+        "out": "123456789012"
+      },
+      {
+        "in": "No:EJ123456789JP",
+        "out": "EJ123456789JP"
+      },
+      {
+        "in": "No . 123",
+        "out": "123"
+      },
+      {
+        "in": "No.",
+        "out": ""
+      },
+      {
+        "in": "No123456789012",
+        "out": "NO123456789012"
+      },
+      {
+        "in": "NO123456789JP",
+        "out": "NO123456789JP"
+      },
+      {
+        "in": "Nov.123",
+        "out": "NOV123"
       }
     ],
     "identifyCarrier": [
@@ -2738,6 +2778,22 @@
           "key": "unknown",
           "name": "不明"
         }
+      },
+      {
+        "tracking": "№1234-5678-9012",
+        "hint": "ヤマト運輸",
+        "out": {
+          "key": "yamato",
+          "name": "ヤマト運輸"
+        }
+      },
+      {
+        "tracking": "Ｎｏ．１２３４５６７８９０１",
+        "hint": null,
+        "out": {
+          "key": "japanpost",
+          "name": "日本郵便"
+        }
       }
     ],
     "trackingLinkFor": [
@@ -2822,6 +2878,26 @@
         "tracking": "",
         "hint": "佐川急便",
         "out": null
+      },
+      {
+        "tracking": "№1234-5678-9012",
+        "hint": "ヤマト運輸",
+        "out": {
+          "kind": "post",
+          "url": "https://toi.kuronekoyamato.co.jp/cgi-bin/tneko",
+          "fields": {
+            "category": "1",
+            "number01": "123456789012"
+          }
+        }
+      },
+      {
+        "tracking": "No.12345678901",
+        "hint": null,
+        "out": {
+          "kind": "open",
+          "url": "https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=12345678901&searchKind=S002&locale=ja"
+        }
       }
     ],
     "amazonOrderTrackingUrl": [

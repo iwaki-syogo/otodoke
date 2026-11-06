@@ -1,0 +1,186 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { forwardingConfirmUrl } from "@/lib/forwarding";
+
+/**
+ * The SQL for decision 7 and the daily purge, after the review of 2026-11-06 (R1-2, R1-4, E-5).
+ *
+ * `supabase db query --linked -f` returns only the last result and exits 0 even on an error, so a
+ * verify file that prints OK as a NOTICE says nothing: each verify file ends in one SELECT whose
+ * row carries the verdict, and one file does one job (they used to be three parts in one file).
+ * What these files do was run on a local Postgres 17 on 2026-11-06, with negative controls; this
+ * test only keeps their shape.
+ */
+
+const root = path.resolve(__dirname, "../../..");
+const read = (file: string) => readFileSync(path.join(root, file), "utf8");
+const withoutComments = (sql: string) => sql.replace(/--.*$/gm, "");
+
+/** The last statement of a file: what `supabase db query` shows. */
+function lastStatement(sql: string): string {
+  const code = withoutComments(sql).replace(/\$\$[\s\S]*?\$\$/g, "$$…$$").trim();
+  const parts = code.split(";").map((s) => s.trim()).filter(Boolean);
+  return parts[parts.length - 1];
+}
+
+const VERIFY = [
+  "supabase/verify/20261114090000_drop_unsealed_plaintext.before.sql",
+  "supabase/verify/20261114090000_drop_unsealed_plaintext.after.sql",
+  "supabase/verify/20261114090000_drop_unsealed_plaintext.count-control.sql",
+  "supabase/verify/20261106180000_screen_events_daily_purge.before.sql",
+  "supabase/verify/20261106180000_screen_events_daily_purge.sql",
+  "supabase/verify/20261106180000_screen_events_daily_purge.after-first-run.sql",
+  "supabase/verify/20261106170000_issued_inbox_local_parts.sql",
+  "supabase/verify/20261106190000_claude_usage_keeps_deleted_calls.sql",
+  "supabase/verify/20261107090000_retire_passphrase_keys.before.sql",
+  "supabase/verify/20261107090000_retire_passphrase_keys.after.sql",
+];
+
+describe("verify files answer with a result row", () => {
+  for (const file of VERIFY) {
+    it(`${file}: ends in a SELECT (with a verdict where there is something to judge), no OK by NOTICE`, () => {
+      const sql = read(file);
+      const last = lastStatement(sql);
+      expect(last, file).toMatch(/^(with|select)\b/i);
+      if (!file.includes("daily_purge.before")) expect(last, file).toMatch(/\bas verdict\b/);
+      expect(withoutComments(sql), file).not.toMatch(/raise\s+notice/i);
+    });
+  }
+
+  it("the combined decision-7 verify file is gone, and the pending SQL names the split ones", () => {
+    expect(existsSync(path.join(root, "supabase/verify/20261114090000_drop_unsealed_plaintext.sql"))).toBe(false);
+    const pending = read("supabase/pending/20261114090000_drop_unsealed_plaintext.sql");
+    for (const part of ["before", "after", "count-control"]) expect(pending).toContain(`20261114090000_drop_unsealed_plaintext.${part}.sql`);
+  });
+
+  it("negative control: a file whose verdict is a NOTICE is caught", () => {
+    const old = "select 1;\ndo $$ begin raise notice 'x: OK'; end $$;";
+    expect(lastStatement(old)).toMatch(/^do\b/);
+    expect(withoutComments(old)).toMatch(/raise\s+notice/i);
+  });
+});
+
+/** The statements of a file, the bodies of its do blocks folded. */
+const statementsOf = (sql: string) => sql.replace(/\$\$[\s\S]*?\$\$/g, "$$…$$").split(";").map((s) => s.trim()).filter(Boolean);
+
+describe("20261106190000 and its rollback: one transaction each, that gives up on a held auth.users (R3-30, R3-38)", () => {
+  // Run on local Postgres 17 on 2026-11-06: with another session holding a row of auth.users
+  // (select ... for update), each failed after 5 s and changed nothing; without it, each went
+  // through.
+  for (const file of ["supabase/migrations/20261106190000_claude_usage_keeps_deleted_calls.sql", "supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql"]) {
+    it(`${file}: begin, lock_timeout 5 s, ..., commit`, () => {
+      const statements = statementsOf(withoutComments(read(file)));
+      expect(statements[0]).toBe("begin");
+      expect(statements[1]).toBe("set local lock_timeout = '5s'");
+      expect(statements[statements.length - 1]).toBe("commit");
+    });
+  }
+});
+
+describe("the 20261106190000 rollback cannot stop halfway (R3-30)", () => {
+  const sql = withoutComments(read("supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql"));
+
+  it("every drop and add checks first, and the file is run in one go", () => {
+    // Run on local Postgres 17 on 2026-11-06: twice, and on a database 190000 never reached; the
+    // second run left every constraint's oid as it was.
+    expect(read("supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql")).toContain("Run the file in one go");
+    expect(sql).toMatch(/drop constraint if exists /);
+    expect(sql.match(/drop constraint (?!if exists )/g)).toBeNull();
+    for (const add of sql.match(/add constraint[^;]*/g) ?? []) {
+      const before = sql.slice(0, sql.indexOf(add));
+      expect(before.slice(before.lastIndexOf("do $$")), add).toMatch(/if not exists \(/);
+    }
+  });
+});
+
+describe("decision 7 keeps the Gmail approval link (R1-2)", () => {
+  const sql = withoutComments(read("supabase/pending/20261114090000_drop_unsealed_plaintext.sql"));
+  // The SQL string literal after `from`, with its doubled quotes undone.
+  const pattern = sql.match(/substring\(e\.text_body from '((?:[^']|'')*)'\)/)?.[1]?.replace(/''/g, "'");
+
+  it("moves the link from the body into forwarding_confirm_url in the update that drops the body", () => {
+    expect(sql).toMatch(/forwarding_confirm_url = coalesce\(\s*e\.forwarding_confirm_url,\s*case when e\.classification = 'forwarding_confirmation'/);
+    expect(sql).toContain("substring(e.html_body from");
+    expect(pattern).toBeDefined();
+  });
+
+  it("its pattern finds every link the settings page would show (Postgres ARE, mirrored in JavaScript)", () => {
+    // (?i) and [:space:] are ARE syntax; this is the same pattern for JavaScript.
+    expect(pattern).toBe(`(?i)https://mail-settings\\.google\\.com/mail/[^[:space:]<>"')]*`);
+    const mirror = /https:\/\/mail-settings\.google\.com\/mail\/[^\s<>"')]*/i;
+    for (const body of [
+      "確認: https://mail-settings.google.com/mail/vf-%5Bxyz%5D-abc",
+      '<a href="https://mail-settings.google.com/mail/vf-abc?x=1&amp;y=2">confirm</a>',
+      "(https://mail-settings.google.com/mail/u/0/?ui=2)",
+    ]) {
+      const shown = forwardingConfirmUrl(body);
+      expect(shown, body).not.toBeNull();
+      expect(body.match(mirror)?.[0], body).toBe(shown);
+    }
+    // What it moves but the page refuses is never shown: the page checks the link again.
+    expect(forwardingConfirmUrl("HTTPS://MAIL-SETTINGS.GOOGLE.COM/mail/vf-abc")).toBeNull();
+  });
+});
+
+/** Whitespace folded, so a statement can be compared whole. */
+const folded = (statement: string) => statement.replace(/\s+/g, " ").trim();
+
+describe("decision 8: retire the passphrase keys, once, by hand (20261107090000)", () => {
+  // Run on a local Postgres 17 on 2026-11-06, the migrations applied: before -> OK; after, run
+  // before the retire -> FAILED (negative control); the retire; after -> OK; before again ->
+  // FAILED; a second run changed nothing; with a user's rows held (select ... for update) or an
+  // uncommitted registration, it gave up after 5 s and changed nothing, run by psql -f and as one
+  // query; afterwards activate_user_key_checked put a new key in use for a retired user.
+  const PENDING = "supabase/pending/20261107090000_retire_passphrase_keys.sql";
+  const statements = statementsOf(withoutComments(read(PENDING))).map(folded);
+
+  it("is one transaction that gives up after 5 s, locks the table against writes, retires the keys in use and deletes the ones never put in use", () => {
+    expect(statements).toEqual([
+      "begin",
+      "set local lock_timeout = '5s'",
+      "lock table public.user_keys in share row exclusive mode",
+      "update public.user_keys set retired_at = now() where activated_at is not null and retired_at is null",
+      "delete from public.user_keys where activated_at is null",
+      "commit",
+    ]);
+  });
+
+  it("negative control: an update that also touched retired keys, or a delete of retired ones, is not the file", () => {
+    expect(statements).not.toContain("update public.user_keys set retired_at = now()");
+    expect(statements).not.toContain("delete from public.user_keys where retired_at is not null");
+    expect(statementsOf(withoutComments("begin;\nupdate public.user_keys set retired_at = now();\ncommit;")).map(folded)).not.toEqual(statements);
+  });
+
+  it("is never a migration: not in supabase/migrations/, and the README says how it is run", () => {
+    expect(readdirSync(path.join(root, "supabase/migrations")).filter((f) => f.includes("retire_passphrase_keys"))).toEqual([]);
+    const readme = read("supabase/pending/README.md");
+    expect(readme).toContain("`20261107090000_retire_passphrase_keys.sql`");
+    expect(readme).toContain("supabase db query --linked -f supabase/pending/20261107090000_retire_passphrase_keys.sql");
+    expect(readme).toContain("Not a migration");
+    expect(read(PENDING)).toContain("Never through `supabase db push`");
+  });
+
+  it("its verify files only read, and judge: the before file wants a key in use, the after file none, and none never put in use", () => {
+    const before = withoutComments(read("supabase/verify/20261107090000_retire_passphrase_keys.before.sql"));
+    const after = withoutComments(read("supabase/verify/20261107090000_retire_passphrase_keys.after.sql"));
+    for (const sql of [before, after]) expect(sql).not.toMatch(/\b(update|delete|insert|lock|truncate|alter|drop)\b/i);
+    expect(lastStatement(before)).toMatch(/when in_use = 0 then 'FAILED: /);
+    expect(lastStatement(after)).toMatch(/when in_use <> 0 then format\('FAILED: /);
+    expect(lastStatement(after)).toMatch(/when pending <> 0 then format\('FAILED: /);
+    // The before file shows when the newest key in use was put in use: a key from after the
+    // deploy may be a password key, which the retire would take too.
+    expect(before).toContain("as newest_in_use_at");
+    // Counts and one time only: no column that would print a key, an id or an address.
+    for (const sql of [before, after]) expect(sql).not.toMatch(/\b(key_id|public_key|wrapped_private_key|email)\b|select \*/);
+  });
+});
+
+describe("supabase/pending/README.md names every file waiting there", () => {
+  it("each pending SQL file is in the list", () => {
+    const files = readdirSync(path.join(root, "supabase/pending")).filter((f) => f.endsWith(".sql"));
+    expect(files.length).toBeGreaterThanOrEqual(3);
+    const readme = read("supabase/pending/README.md");
+    for (const file of files) expect(readme, file).toContain(`\`${file}\``);
+  });
+});

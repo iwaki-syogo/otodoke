@@ -24,6 +24,7 @@ import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
 import type { MailPlaintext } from "@/lib/crypto/envelope";
 import { PENDING_GRACE_MS } from "@/lib/unread";
 import { screenMail, type ScreenResult } from "@/lib/screen";
+import { isRememberableDomain } from "@/lib/screen-senders";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import { withDefaults, type Extraction } from "@/lib/extract/schema";
 import type { Json } from "@/lib/db/database.types";
@@ -59,11 +60,29 @@ export interface PipelineOptions {
    */
   publicSample?: boolean;
   /**
-   * A stored row this mail replaces (re-reading a stored mail that has no Message-ID, so it cannot
-   * be found again by it). Removed only after everything that can fail before the new row is
-   * stored has passed, so a failure never loses the only copy.
+   * The stored row of this mail, when it has no Message-ID to be found again by (re-reading a
+   * stored mail from 設定). The mail is read again in that row, in place, like a row found by its
+   * Message-ID: the row is never removed and stored anew, so a failure never loses the only copy.
    */
   replacesEmailId?: string;
+}
+
+/** The stored row of a mail, as far as deciding what to do with it goes. */
+interface StoredRow {
+  id: string;
+  processing_status: string;
+  created_at: string;
+}
+
+/** The row this mail already has: by its Message-ID, or the row being read again. Throws when it cannot tell. */
+async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | null): Promise<StoredRow | null> {
+  if (!mail.messageId && !rowId) return null;
+  const query = db.from("emails").select("id, processing_status, created_at").eq("user_id", mail.userId);
+  const { data, error } = await (mail.messageId ? query.eq("message_id", mail.messageId) : query.eq("id", rowId!)).maybeSingle();
+  if (error) throw new Error(`emails lookup failed: ${error.message}`);
+  // A row found by its Message-ID wins; the row named for re-reading is the fallback.
+  if (!data && mail.messageId && rowId) return storedRow(db, { ...mail, messageId: null }, rowId);
+  return data;
 }
 
 /**
@@ -76,86 +95,108 @@ export interface PipelineOptions {
 export async function processInboundEmail(db: AdminClient, mail: InboundEmail, options: PipelineOptions = {}): Promise<PipelineOutcome> {
   const isForwardingConfirmation = isGmailConfirmation(mail.from);
 
+  // The row this mail already has, looked up before the screen: a mail that was read is never
+  // screened, paid for or removed again when it is delivered a second time.
+  const stored = await storedRow(db, mail, options.replacesEmailId ?? null);
+  if (stored?.processing_status === "processed") return { kind: "duplicate", emailId: stored.id };
+  // Another delivery of this mail is being read right now. Taking its row over would break that
+  // run and pay for a second read, so fail and let the webhook retry later.
+  if (stored?.processing_status === "pending" && Date.now() - new Date(stored.created_at).getTime() < PENDING_GRACE_MS) {
+    throw new Error("this mail is still being read");
+  }
+
   // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
   if (!isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
     if (!screen.pass) {
       const keep = await secondLook(db, mail, screen);
-      await logScreenEvent(db, mail, keep ? "rescued" : "dropped", screen.reason);
-      if (!keep) {
-        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread forever.
-        if (mail.messageId) {
-          const { error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("message_id", mail.messageId);
+      if (keep) {
+        await logScreenEvent(db, mail, "rescued", screen.reason);
+      } else {
+        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
+        // forever. Only while the row is as it was read, as for the take-over below: a delivery that
+        // took it over meanwhile is reading it, and its row is not removed from under it.
+        let removed = true;
+        if (stored) {
+          const { data, error } = await db
+            .from("emails")
+            .delete()
+            .eq("user_id", mail.userId)
+            .eq("id", stored.id)
+            .eq("processing_status", stored.processing_status)
+            .eq("created_at", stored.created_at)
+            .select("id");
           if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+          removed = (data ?? []).length > 0;
         }
-        if (options.replacesEmailId) {
-          const { error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("id", options.replacesEmailId);
-          if (error) throw new Error(`emails cleanup failed: ${error.message}`);
-        }
+        // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
+        // delivery that took the row over may read and seal it (review R3-33). Removed first and
+        // logged after, so a failure in between leaves no subject behind.
+        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
         return { kind: "screened_out", reason: screen.reason };
       }
     }
   }
 
-  // 1. Store the raw mail (dedupe by Message-ID).
-  let replaced: string | null = options.replacesEmailId ?? null;
-  if (mail.messageId) {
-    const { data: existing, error } = await db
-      .from("emails")
-      .select("id, processing_status, created_at")
-      .eq("user_id", mail.userId)
-      .eq("message_id", mail.messageId)
-      .maybeSingle();
-    if (error) throw new Error(`emails lookup failed: ${error.message}`);
-    if (existing?.processing_status === "processed") return { kind: "duplicate", emailId: existing.id };
-    // Another delivery of this mail is being read right now. Removing its row would break that run
-    // and pay for a second read, so fail and let the webhook retry later.
-    if (existing?.processing_status === "pending" && Date.now() - new Date(existing.created_at).getTime() < PENDING_GRACE_MS) {
-      throw new Error("this mail is still being read");
-    }
-    if (existing) replaced = existing.id;
-  }
-
-  // Known before anything is stored, removed or paid for: not knowing whether there is a key fails
-  // here, while the stored row (a mail read again from 設定, say) is still there. The Gmail
-  // confirmation is closed with it as it is stored; a mail that is read is closed with the key read
-  // again right before that write (markRead), so a key put in use meanwhile counts.
+  // Known before anything is stored or paid for: not knowing whether there is a key fails here,
+  // with the stored row (a mail read again from 設定, say) as it was. The Gmail confirmation is
+  // closed with it as it is stored; a mail that is read is closed with the key read again right
+  // before that write (markRead), so a key put in use meanwhile counts.
   const key = await currentSealKey(db, mail.userId);
 
-  if (replaced) {
-    const { error: deleteError } = await db.from("emails").delete().eq("id", replaced).eq("user_id", mail.userId);
-    if (deleteError) throw new Error(`emails cleanup failed: ${deleteError.message}`);
+  // 1. Store the raw mail. A stored row is taken over in place, under its own id: it is never
+  // removed and stored anew, so a failed write leaves it as it was and the only copy is not lost.
+  const emailId = stored?.id ?? crypto.randomUUID();
+  const columns = {
+    provider_email_id: mail.providerEmailId,
+    message_id: mail.messageId,
+    from_address: mail.from,
+    from_name: mail.fromName,
+    subject: mail.subject,
+    sent_at: mail.sentAt,
+    text_body: mail.text,
+    html_body: mail.html,
+    from_domain: domainOf(mail.from),
+    classification: isForwardingConfirmation ? "forwarding_confirmation" : null,
+    processing_status: isForwardingConfirmation ? "processed" : "pending",
+    error: null,
+    forwarding_confirm_url: null,
+    // Gmail's confirmation is done as it arrives: only its approval link stays in plaintext.
+    ...(isForwardingConfirmation
+      ? {
+          forwarding_confirm_url: forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? ""),
+          ...(await closedBody(key, mail.userId, emailId, plaintextOf(mail), false)),
+        }
+      : {}),
+  };
+  let emailRow: { id: string };
+  if (stored) {
+    // Only while the row is as it was read: two deliveries never both take it over and pay twice.
+    // created_at starts the pending grace again, as a new row would.
+    const { data, error } = await db
+      .from("emails")
+      .update({ ...columns, created_at: new Date().toISOString() })
+      .eq("id", stored.id)
+      .eq("user_id", mail.userId)
+      .eq("processing_status", stored.processing_status)
+      .eq("created_at", stored.created_at)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(`emails update failed: ${error.message}`);
+    if (!data) throw new Error("this mail changed while it was being stored; it is read on the next try");
+    // What an earlier, unfinished read of this row left: read again from the start, as for a new row.
+    const { error: leftoverError } = await db.from("extractions").delete().eq("email_id", stored.id).eq("user_id", mail.userId);
+    if (leftoverError) throw new Error(`extractions cleanup failed: ${leftoverError.message}`);
+    emailRow = data;
+  } else {
+    const { data, error } = await db
+      .from("emails")
+      .insert({ id: emailId, user_id: mail.userId, ...columns })
+      .select("id")
+      .single();
+    if (error || !data) throw new Error(`emails insert failed: ${error?.message}`);
+    emailRow = data;
   }
-
-  const emailId = crypto.randomUUID();
-
-  const { data: emailRow, error: insertError } = await db
-    .from("emails")
-    .insert({
-      id: emailId,
-      user_id: mail.userId,
-      provider_email_id: mail.providerEmailId,
-      message_id: mail.messageId,
-      from_address: mail.from,
-      from_name: mail.fromName,
-      subject: mail.subject,
-      sent_at: mail.sentAt,
-      text_body: mail.text,
-      html_body: mail.html,
-      from_domain: domainOf(mail.from),
-      classification: isForwardingConfirmation ? "forwarding_confirmation" : null,
-      processing_status: isForwardingConfirmation ? "processed" : "pending",
-      // Gmail's confirmation is done as it arrives: only its approval link stays in plaintext.
-      ...(isForwardingConfirmation
-        ? {
-            forwarding_confirm_url: forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? ""),
-            ...(await closedBody(key, mail.userId, emailId, plaintextOf(mail), false)),
-          }
-        : {}),
-    })
-    .select("id")
-    .single();
-  if (insertError || !emailRow) throw new Error(`emails insert failed: ${insertError?.message}`);
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
 
@@ -192,21 +233,13 @@ function plaintextOf(mail: InboundEmail): MailPlaintext {
 }
 
 /**
- * A dropped mail still goes on when the user has marked this sender as wrongly dropped,
- * or when a cheap Claude check says it is a purchase notice.
+ * A mail the free rules would drop still goes on when a cheap Claude check (Haiku) says it is a
+ * purchase notice. The check runs for a mail the rules were unsure about, and for every mail from
+ * a sender the user marked 「これは荷物」. A mark never skips the check: anyone can write a From
+ * line, and a shop sends its ads from the same domain as its notices.
  */
 async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<boolean> {
-  const domain = domainOf(mail.from);
-  if (domain) {
-    const { count } = await db
-      .from("screen_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", mail.userId)
-      .eq("from_domain", domain)
-      .not("flagged_at", "is", null);
-    if (count) return true;
-  }
-  if (!screen.borderline) return false;
+  if (!screen.borderline && !(await senderMarked(db, mail))) return false;
 
   const { OTODOKE_USER_DAILY_LIMIT, OTODOKE_GLOBAL_DAILY_LIMIT } = env();
   const { data: claim, error } = await db.rpc("claim_claude_call", {
@@ -217,6 +250,27 @@ async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenRes
   // Over the limit or unable to tell: keep it. The next step stores it as unread instead of losing it.
   if (error || claim !== "ok") return true;
   return isPurchaseMail(mail);
+}
+
+/**
+ * The user marked mail from this sender's domain 「これは荷物」. A domain many people have their
+ * own address on is never taken as marked (src/lib/screen-senders.ts), even by a mark made before
+ * that rule. Unable to tell counts as marked: the cheap check then decides, not a database error.
+ */
+async function senderMarked(db: AdminClient, mail: InboundEmail): Promise<boolean> {
+  const domain = domainOf(mail.from);
+  if (!isRememberableDomain(domain)) return false;
+  const { count, error } = await db
+    .from("screen_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", mail.userId)
+    .eq("from_domain", domain)
+    .not("flagged_at", "is", null);
+  if (error) {
+    console.error("screen_events lookup failed:", error.message);
+    return true;
+  }
+  return Boolean(count);
 }
 
 /**

@@ -11,6 +11,7 @@ import { todayJst } from "@/lib/format";
 
 /** Longest values kept. Shop listings often run long, so names get room; numbers do not. */
 export const MANUAL_LIMITS = { title: 300, shop: 100, tracking: 40 } as const;
+/** The most that may be typed in, to stop a mistyped amount. An amount a mail filled in may be more. */
 export const MANUAL_MAX_AMOUNT = 10_000_000;
 
 /** Carrier choices on the form. "auto" lets the number's shape decide. */
@@ -54,11 +55,15 @@ const optionalDate = (message: string) =>
     .refine((v) => v === "" || isRealDate(v), message)
     .transform((v) => (v === "" ? null : v));
 
-// Allows "1,980" and full-width digits; still a whole number of yen.
-const amount = () =>
+/**
+ * Allows "1,980" and full-width digits; still a whole number of yen, up to MANUAL_MAX_AMOUNT. The
+ * stored amount saved back as it is passes too: a mail fills in an amount left empty, up to what
+ * the column holds (2,147,483,647), and an edit that leaves it alone must still save.
+ */
+const amount = (stored: number | null = null) =>
   text()
     .transform((v) => v.normalize("NFKC").replace(/,/g, ""))
-    .refine((v) => v === "" || (/^\d{1,9}$/.test(v) && Number(v) <= MANUAL_MAX_AMOUNT), "金額が正しくありません")
+    .refine((v) => v === "" || (/^\d{1,10}$/.test(v) && (Number(v) <= MANUAL_MAX_AMOUNT || Number(v) === stored)), "金額が正しくありません")
     .transform((v) => (v === "" ? null : Number(v)));
 
 export const ManualParcelSchema = z.object({
@@ -82,9 +87,13 @@ const ManualParcelWhileCancelled = ManualParcelSchema.extend({
   status: z.enum([...MANUAL_STATUSES, ...MANUAL_CARRIED_STATUSES, MANUAL_CANCELLED]),
 });
 
-/** The checks for saving an edit, given the parcel's status now: a cancelled one may stay cancelled. */
-export function manualParcelSchemaFor(currentStatus: string | null) {
-  return currentStatus === MANUAL_CANCELLED ? ManualParcelWhileCancelled : ManualParcelSchema;
+/**
+ * The checks for saving an edit, given what is stored: a cancelled parcel may stay cancelled, and
+ * the stored amount may be saved back unchanged, even one above what may be typed.
+ */
+export function manualParcelSchemaFor(currentStatus: string | null, storedAmount: number | null = null) {
+  const total_amount = amount(storedAmount);
+  return currentStatus === MANUAL_CANCELLED ? ManualParcelWhileCancelled.extend({ total_amount }) : ManualParcelSchema.extend({ total_amount });
 }
 
 export type ManualParcelInput = z.output<typeof ManualParcelWhileCancelled>;

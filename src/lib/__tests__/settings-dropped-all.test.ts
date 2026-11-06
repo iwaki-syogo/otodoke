@@ -37,6 +37,7 @@ vi.mock("@/app/app/settings/actions", () => ({
   loadDemo: vi.fn(),
   readWaitingMail: vi.fn(),
   markWronglyDropped: vi.fn(),
+  forgetSender: vi.fn(),
   clearAllParcels: vi.fn(),
 }));
 

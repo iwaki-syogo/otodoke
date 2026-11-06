@@ -84,7 +84,8 @@ false にするのは、この荷物について次のいずれかが書かれ�
 
 ## 出力
 - 指定された JSON スキーマに従う。文章は日本語。
-- notes には迷った点だけ短く書く。問題なければ null。`;
+- notes には迷った点だけ短く書く。問題なければ null。
+- notes は「読み取りメモ」として利用者の画面にそのまま出る。日本語の文だけで書き、null・true・false や英語の項目名（requires_presence、items、total_amount など）を書かない。「在宅要否は判断しませんでした」「品目は空欄にしました」のように書く。`;
 
 export interface EmailForPrompt {
   from: string;

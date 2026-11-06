@@ -21,7 +21,7 @@ import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fi
 
 const PASS = "テスト用の合言葉です1234";
 
-/** What tab-key.ts createMailKey sends, from a screen drawn when `shown` was the key in use. */
+/** What the passphrase screens' createMailKey sent (tab-key.ts, before password-v1), from a screen drawn when `shown` was the key in use. */
 async function createMailKeyLikeTheBrowser(db: FakeDb, passphrase: string, shown: string | null) {
   const pair = await createKeyPair();
   const w = await wrapPrivateKey(pair.pkcs8, passphrase, USER);
@@ -41,7 +41,7 @@ async function createMailKeyLikeTheBrowser(db: FakeDb, passphrase: string, shown
   return { reg, act, keyId: reg.keyId };
 }
 
-/** What tab-key.ts unlock() opens: the key in use. */
+/** What their unlock() opened: the key in use. */
 async function unlockLikeTheBrowser(db: FakeDb, passphrase: string) {
   const row = db.rows("user_keys").find((k) => k.user_id === USER && k.activated_at && !k.retired_at) as unknown as StoredKey;
   return openStoredKey(row, passphrase, USER);

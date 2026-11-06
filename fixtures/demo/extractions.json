@@ -123,7 +123,7 @@
       "confidence": 0.8
     },
     "overall_confidence": 0.92,
-    "notes": "受取方法の指定はなく、置き配設定の案内文のみのため在宅要否は null としました。"
+    "notes": "受取方法の指定はなく、置き配設定の案内文のみのため在宅要否は判断しませんでした。"
   },
   "amazon/2026-11-02_ordered_cb191b1b.eml": {
     "relevance": "order",
@@ -375,7 +375,7 @@
       "confidence": 0.3
     },
     "overall_confidence": 0.9,
-    "notes": "HTML版の「もう一度買う」以下の商品はおすすめ商品のため items に含めていません。"
+    "notes": "HTML版の「もう一度買う」以下の商品はおすすめ商品のため品目に含めていません。"
   },
   "amazon/2026-11-02_ordered_fe85ef8c.eml": {
     "relevance": "order",
@@ -438,7 +438,7 @@
       "confidence": 0.3
     },
     "overall_confidence": 0.9,
-    "notes": "注文日時は本文に明記がないため null。「本日到着予定」は基準日 2026-11-02 として解決した。"
+    "notes": "注文日時は本文に明記がないため空欄にしました。「本日到着予定」は基準日 2026-11-02 として解決した。"
   },
   "irisplaza/2026-04-06_shipped_90cf9800.eml": {
     "relevance": "payment",
@@ -606,7 +606,7 @@
       "confidence": 0.5
     },
     "overall_confidence": 0.9,
-    "notes": "置き配・非対面に関する記述は定型文のため在宅要否は null としました。"
+    "notes": "置き配・非対面に関する記述は定型文のため在宅要否は判断しませんでした。"
   },
   "other/2026-06-29_shipped_b24d5050.eml": {
     "relevance": "shipped",
@@ -830,7 +830,7 @@
       "confidence": 0.3
     },
     "overall_confidence": 0.85,
-    "notes": "本文に商品名・金額の記載がないため items と total_amount は空/null にしました。置き配に関する記述は UNIQLO FLOWER の一般案内のため在宅判定には使っていません。"
+    "notes": "本文に商品名・金額の記載がないため品目と合計金額は空欄にしました。置き配に関する記述は UNIQLO FLOWER の一般案内のため在宅判定には使っていません。"
   },
   "ocn/2026-10-30_shipped_a80dd410.eml": {
     "relevance": "shipped",
@@ -956,7 +956,7 @@
       "confidence": 0.4
     },
     "overall_confidence": 0.9,
-    "notes": "配達日は未定で、時間帯指定（18～21時）のみ記載。受取方法の指定は無いため在宅要否は null。"
+    "notes": "配達日は未定で、時間帯指定（18～21時）のみ記載。受取方法の指定は無いため在宅要否は判断しませんでした。"
   },
   "other/2026-10-16_shipped_782b250c.eml": {
     "relevance": "shipped",

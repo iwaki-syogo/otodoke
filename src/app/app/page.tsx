@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
+import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
 import { UNREAD_FILTER } from "@/lib/unread";
@@ -84,7 +85,7 @@ export default async function ParcelsPage() {
       <div className="flex flex-col gap-4">
         {addLink}
         {waitingNotice}
-        <EmptyState />
+        <EmptyState mail={await mailSoFar(supabase, user.id)} />
         {pageLinks}
       </div>
     );
@@ -171,19 +172,62 @@ function Section({ title, count, items, empty, swipe = false }: { title: string;
   );
 }
 
-function EmptyState() {
+/**
+ * What has come in so far, for the empty list:
+ * - "received": forwarded mail of the person's own, a stored mail or one the screen dropped
+ *   (screen_events keeps those 14 days).
+ * - "approval": only Gmail's forwarding confirmation. Gmail forwards nothing until it is approved,
+ *   so waiting brings nothing: the person is asked to approve it (the button is in 設定).
+ * - "none": nothing. The public samples never count (no sample is a Gmail confirmation), and
+ *   clearing them (「すべての荷物を消す」 takes their mails too) brings the setup question back.
+ * Read only for the empty list. A failed read answers "none": the setup question shows, as before.
+ */
+type MailSoFar = "none" | "approval" | "received";
+
+async function mailSoFar(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<MailSoFar> {
+  const head = { count: "exact", head: true } as const;
+  const [all, samples, confirmations, screened] = await Promise.all([
+    supabase.from("emails").select("id", head).eq("user_id", userId),
+    supabase.from("emails").select("id", head).eq("user_id", userId).like("provider_email_id", SAMPLE_PROVIDER_ID),
+    supabase.from("emails").select("id", head).eq("user_id", userId).eq("classification", "forwarding_confirmation"),
+    supabase.from("screen_events").select("id", head).eq("user_id", userId),
+  ]);
+  for (const [what, r] of [["emails", all], ["samples", samples], ["confirmations", confirmations], ["screen_events", screened]] as const) {
+    if (r.error) {
+      console.error(`parcels page (${what}):`, r.error.message);
+      return "none";
+    }
+  }
+  const forwarded = (all.count ?? 0) - (samples.count ?? 0) - (confirmations.count ?? 0);
+  if (forwarded > 0 || (screened.count ?? 0) > 0) return "received";
+  return (confirmations.count ?? 0) > 0 ? "approval" : "none";
+}
+
+/** The empty list's words and its first button, by what has come in so far. */
+const EMPTY_GUIDE: Record<MailSoFar, { lines: [string, string]; button: string; href: string }> = {
+  // Setting up is once, never a mail at a time; the button does not promise the address at once.
+  none: { lines: ["メールの自動転送を設定しますか？", "設定は最初の 1 回だけです。"], button: "設定する", href: "/app/settings" },
+  // Forwarding is there: asking again would send them to set it up twice.
+  received: { lines: ["メールは届いています。", "荷物のメールが届くまで、お待ちください。"], button: "設定を見る", href: "/app/settings" },
+  // Worded for both: not approved yet, or approved and no mail since. The button goes to the
+  // approval in 設定 (its section is id="gmail-approval"; the loading screen scrolls there once
+  // the page is in). Without that id the hash is ignored and it is 設定 as before.
+  approval: { lines: ["Gmail の転送は承認しましたか？", "承認すると、荷物のメールが届きはじめます。"], button: "設定で承認する", href: "/app/settings#gmail-approval" },
+};
+
+function EmptyState({ mail }: { mail: MailSoFar }) {
+  const guide = EMPTY_GUIDE[mail];
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <p className="text-5xl">📬</p>
       <h2 className="mt-4 text-lg font-bold">まだ荷物がありません</h2>
-      {/* Setting up is once, never a mail at a time; the button does not promise the address at once. */}
       <p className="mt-2 text-sm leading-6 text-neutral-600">
-        メールの自動転送を設定しますか？
+        {guide.lines[0]}
         <br />
-        設定は最初の 1 回だけです。
+        {guide.lines[1]}
       </p>
-      <Link href="/app/settings" className="mt-6 w-full rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
-        設定する
+      <Link href={guide.href} className="mt-6 w-full rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
+        {guide.button}
       </Link>
       <Link href="/app/settings#demo" className="mt-3 w-full rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">
         サンプルで試す

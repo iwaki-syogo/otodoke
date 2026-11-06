@@ -35,14 +35,13 @@ describe("review C: a failed key read during a re-read", () => {
     expect(db.rows("emails").map((e) => e.id)).toEqual(["e-no-id"]);
   });
 
-  it("control: when the key read works, the stored row is replaced by the read mail (one row, not two)", async () => {
+  it("control: when the key read works, the stored row is read again in place (one row, the same id; review R1-3)", async () => {
     const mail = { ...mailOf("2026-11-03T01:00:00Z"), messageId: null };
     const db = new FakeDb({
       emails: [{ id: "e-no-id", user_id: USER, message_id: null, subject: mail.subject, text_body: mail.text, html_body: mail.html, processing_status: "failed", created_at: "2026-11-01T00:00:00Z" }],
     });
     await processInboundEmail(asAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })), replacesEmailId: "e-no-id" });
     expect(db.rows("emails")).toHaveLength(1);
-    expect(db.rows("emails")[0]).toMatchObject({ processing_status: "processed" });
-    expect(db.rows("emails")[0].id).not.toBe("e-no-id");
+    expect(db.rows("emails")[0]).toMatchObject({ id: "e-no-id", processing_status: "processed" });
   });
 });

@@ -3,8 +3,10 @@ import { isIP } from "node:net";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * App-side cap on login-link mails sent from this website's login form, checked before asking
- * Supabase to send one.
+ * App-side cap on the mails this website asks Supabase to send (the confirmation of a new account,
+ * sending it again, the reset mail), checked before asking Supabase to send one. Further down, the
+ * same table caps failed sign-ins (LOGIN_ATTEMPT_LIMITS), every sign-in per IP (LOGIN_TRY_LIMITS)
+ * and every mail's link checked per IP (LOGIN_LINK_LIMITS).
  *
  * Supabase sees every request from Vercel's addresses, so its own per-IP limit is shared by all
  * visitors of the website. This keeps one visitor of the form from using up the project's mail
@@ -15,16 +17,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * pass through here, so this cannot stop someone from exhausting Supabase's project-wide mail
  * cap. Only a CAPTCHA on the Supabase side or Supabase's own rate-limit settings can.
  *
- * Who must not be blocked, and how the numbers allow for them:
+ * Who must not be blocked, and how the numbers allow for them. The three mails share every count
+ * here; signing in with the password sends none.
  * - Someone whose mail is slow or in spam and asks again: Supabase already refuses a second
  *   send to one address within a minute, so 3 per 10 minutes is two retries, 6 per hour plenty.
  *   A send Supabase refuses is given back (releaseLoginMail), so pressing the button again
  *   within that minute does not use up the allowance.
  * - Someone who mistyped the address: the typo is a different address with its own count.
- * - Several judges on one office or venue network (one shared IP): 10 per hour from one IP.
- *   A signed-in session lasts, so each person needs a link once; ten different people logging in
- *   from one network within the same hour is unlikely, while one IP alone can no longer take the
- *   whole allowance through the form.
+ * - Several judges on one office or venue network (one shared IP): 10 per hour from one IP for
+ *   the three mails together. Ten people can make their accounts within one hour, or five if each
+ *   has the mail sent again, and a reset for a forgotten password takes from the same ten. One
+ *   more is told to try again later and can once the oldest of those sends is an hour old; one IP
+ *   alone can no longer take the whole allowance through the forms. Raising the 10 is bounded by
+ *   LOGIN_TRY_LIMITS: together they keep one IP's sign-ups and sign-ins under Supabase's own
+ *   per-IP limit, which every visitor shares (login-actions.test.ts checks the sum).
  *
  * Fails open: if the check itself fails (DB down, function missing, no service key locally), the
  * mail is sent and a warning is logged. Locking everyone out is worse than a missing cap.
@@ -76,9 +82,66 @@ export function ipLimitKey(ip: string): string {
     .join(":")}::/64`;
 }
 
+/**
+ * App-side cap on sign-in attempts with the login secret through this website (the login, and the
+ * check of the current password before a change), counted in the same table under a namespace of
+ * its own ("login-attempt"), so attempts and mails never count against each other.
+ *
+ * Only failures count: an attempt is claimed before Supabase is asked and given back unless
+ * Supabase said the address or the secret was wrong (releaseLoginAttempt). Supabase's own per-IP
+ * limit cannot tell visitors apart either (every request comes from this server), and a guesser
+ * through the form would use it up for everyone.
+ *
+ * Who must not be blocked: someone who mistypes a few times (10 per 10 minutes, 20 per hour for one
+ * address), and many people behind one venue network (50 failures per hour from one IP). Fails
+ * open like the mail limit: a broken check must not lock everyone out (Supabase still limits).
+ */
+export const LOGIN_ATTEMPT_LIMITS = {
+  emailPer10Minutes: 10,
+  emailPerHour: 20,
+  ipPerHour: 50,
+} as const;
+
+/**
+ * Every sign-in this website asks Supabase for, failed or not, per client IP. Supabase allows 30
+ * sign-ins and sign-ups per 5 minutes per IP, and every visitor of the website comes from this
+ * server's IP: one visitor must not be able to use that up for everyone (successes included, which
+ * the attempt limit gives back). Counted under its own namespace with the IP in the address column,
+ * so the function's 10-minute window applies to the IP: at most 15 in any 10 minutes (so never 30
+ * in 5), 60 in an hour. Never given back.
+ */
+export const LOGIN_TRY_LIMITS = {
+  ipPer10Minutes: 15,
+  ipPerHour: 60,
+} as const;
+
+/**
+ * Every mail's link this website asks Supabase to check (the POST of /auth/confirm: a confirmation
+ * or a reset), per client IP. Supabase checks at most 30 tokens per 5 minutes per IP, and every
+ * visitor's link is checked from this server's IP: one visitor posting made-up tokens must not use
+ * that up, or every confirmation and reset link fails for everyone meanwhile (review R3-PW-4).
+ * Counted like LOGIN_TRY_LIMITS, under its own namespace: at most 10 in any 10 minutes (so never 30
+ * in 5); the hour adds nothing to that (6 × 10). Never given back: a check Supabase made uses its
+ * allowance whatever it answered.
+ *
+ * Who must not be blocked: someone who opens the mail's link again and presses again a few times,
+ * and a few people behind one network at once. A link held back still works later: its token was
+ * not sent to Supabase. Many IPs at once are not stopped by this.
+ */
+export const LOGIN_LINK_LIMITS = {
+  ipPer10Minutes: 10,
+  ipPerHour: 60,
+} as const;
+
+/** What a limit counts in login_mail_sends: mails sent from the form, failed sign-ins, every sign-in per IP, or every link checked per IP. */
+export type LimitScope = "login-mail" | "login-attempt" | "login-try" | "login-link";
+
+/** The word for a scope in the log. */
+const WHAT: Record<LimitScope, string> = { "login-mail": "mail", "login-attempt": "attempt", "login-try": "attempt", "login-link": "link" };
+
 /** SHA-256 hex. The table keeps only these, never the address or the IP itself. */
-export function limitHash(kind: "email" | "ip", value: string): string {
-  return createHash("sha256").update(`otodoke:login-mail:${kind}:${value}`).digest("hex");
+export function limitHash(kind: "email" | "ip", value: string, scope: LimitScope = "login-mail"): string {
+  return createHash("sha256").update(`otodoke:${scope}:${kind}:${value}`).digest("hex");
 }
 
 /** The answer to a claim. `claimId` is the recorded send (only when the verdict is "ok"). */
@@ -89,34 +152,55 @@ export interface LoginMailClaim {
 
 const OPEN: LoginMailClaim = { verdict: "ok", claimId: null };
 
-/** Take one login mail from the allowance. `email` must already be trimmed and lowercased. */
-export async function claimLoginMail(email: string, ip: string | null): Promise<LoginMailClaim> {
+type Limits = { emailPer10Minutes: number; emailPerHour: number; ipPerHour: number };
+
+async function claim(scope: LimitScope, limits: Limits, email: string, ip: string | null): Promise<LoginMailClaim> {
+  const what = WHAT[scope];
   try {
     const { data, error } = await createAdminClient().rpc("claim_login_mail", {
-      p_email_hash: limitHash("email", email),
+      p_email_hash: limitHash("email", email, scope),
       // The generated type says string, but the function accepts null (address limits only).
-      p_ip_hash: (ip ? limitHash("ip", ipLimitKey(ip)) : null) as string,
-      p_email_10m_limit: LOGIN_MAIL_LIMITS.emailPer10Minutes,
-      p_email_1h_limit: LOGIN_MAIL_LIMITS.emailPerHour,
-      p_ip_1h_limit: LOGIN_MAIL_LIMITS.ipPerHour,
+      p_ip_hash: (ip ? limitHash("ip", ipLimitKey(ip), scope) : null) as string,
+      p_email_10m_limit: limits.emailPer10Minutes,
+      p_email_1h_limit: limits.emailPerHour,
+      p_ip_1h_limit: limits.ipPerHour,
     });
     if (error) {
-      console.warn("[login] mail limit check failed; sending anyway:", error.message);
+      console.warn(`[login] ${what} limit check failed; going ahead:`, error.message);
       return OPEN;
     }
     // A set-returning function: PostgREST answers with an array of one row.
     const row: unknown = Array.isArray(data) ? data[0] : data;
     const verdict = row && typeof row === "object" ? (row as { verdict?: unknown }).verdict : undefined;
     if (typeof verdict !== "string" || !VERDICTS.includes(verdict)) {
-      console.warn("[login] mail limit check returned an unexpected value; sending anyway:", data);
+      console.warn(`[login] ${what} limit check returned an unexpected value; going ahead:`, data);
       return OPEN;
     }
     const id = (row as { claim_id?: unknown }).claim_id;
     return { verdict: verdict as LoginMailVerdict, claimId: verdict === "ok" && typeof id === "number" ? id : null };
   } catch (err) {
-    console.warn("[login] mail limit check failed; sending anyway:", err instanceof Error ? err.message : err);
+    console.warn(`[login] ${what} limit check failed; going ahead:`, err instanceof Error ? err.message : err);
     return OPEN;
   }
+}
+
+async function release(scope: LimitScope, email: string, claimId: number | null): Promise<void> {
+  if (claimId === null) return;
+  const what = scope === "login-mail" ? "the unsent login mail" : "the sign-in attempt";
+  try {
+    const { error } = await createAdminClient().rpc("release_login_mail", {
+      p_claim_id: claimId,
+      p_email_hash: limitHash("email", email, scope),
+    });
+    if (error) console.warn(`[login] could not give back ${what}:`, error.message);
+  } catch (err) {
+    console.warn(`[login] could not give back ${what}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Take one login mail from the allowance. `email` must already be normalized (normalizeLoginAddress). */
+export async function claimLoginMail(email: string, ip: string | null): Promise<LoginMailClaim> {
+  return claim("login-mail", LOGIN_MAIL_LIMITS, email, ip);
 }
 
 /**
@@ -124,14 +208,35 @@ export async function claimLoginMail(email: string, ip: string | null): Promise<
  * does not count. Never throws: when this fails the send stays counted and a warning is logged.
  */
 export async function releaseLoginMail(email: string, claimId: number | null): Promise<void> {
-  if (claimId === null) return;
-  try {
-    const { error } = await createAdminClient().rpc("release_login_mail", {
-      p_claim_id: claimId,
-      p_email_hash: limitHash("email", email),
-    });
-    if (error) console.warn("[login] could not give back the unsent login mail:", error.message);
-  } catch (err) {
-    console.warn("[login] could not give back the unsent login mail:", err instanceof Error ? err.message : err);
-  }
+  return release("login-mail", email, claimId);
+}
+
+/** Take one sign-in attempt from the allowance (LOGIN_ATTEMPT_LIMITS). `email` normalized. */
+export async function claimLoginAttempt(email: string, ip: string | null): Promise<LoginMailClaim> {
+  return claim("login-attempt", LOGIN_ATTEMPT_LIMITS, email, ip);
+}
+
+/** Give back an attempt that did not fail on the address or the secret. Never throws. */
+export async function releaseLoginAttempt(email: string, claimId: number | null): Promise<void> {
+  return release("login-attempt", email, claimId);
+}
+
+/**
+ * Take one sign-in from this IP's allowance (LOGIN_TRY_LIMITS). Without a client IP there is
+ * nothing to count it by: "ok". The IP's key goes where claim_login_mail keeps the address.
+ */
+export async function claimLoginTry(ip: string | null): Promise<LoginMailVerdict> {
+  if (!ip) return "ok";
+  const { verdict } = await claim("login-try", { emailPer10Minutes: LOGIN_TRY_LIMITS.ipPer10Minutes, emailPerHour: LOGIN_TRY_LIMITS.ipPerHour, ipPerHour: LOGIN_TRY_LIMITS.ipPerHour }, ipLimitKey(ip), null);
+  return verdict;
+}
+
+/**
+ * Take one link check from this IP's allowance (LOGIN_LINK_LIMITS), the same way as claimLoginTry:
+ * the IP's key where claim_login_mail keeps the address. Without a client IP: "ok".
+ */
+export async function claimLoginLink(ip: string | null): Promise<LoginMailVerdict> {
+  if (!ip) return "ok";
+  const { verdict } = await claim("login-link", { emailPer10Minutes: LOGIN_LINK_LIMITS.ipPer10Minutes, emailPerHour: LOGIN_LINK_LIMITS.ipPerHour, ipPerHour: LOGIN_LINK_LIMITS.ipPerHour }, ipLimitKey(ip), null);
+  return verdict;
 }

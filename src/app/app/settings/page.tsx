@@ -1,17 +1,22 @@
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "./copy-button";
-import { markWronglyDropped, readWaitingMail } from "./actions";
+import Link from "next/link";
+import { forgetSender, markWronglyDropped, readWaitingMail } from "./actions";
+import { isRememberableDomain } from "@/lib/screen-senders";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
-import { MailKeyPanel } from "./mail-key-panel";
+import { PressButton } from "./press";
+import { PasswordPanel } from "./password-panel";
+import { LogoutForm } from "./logout-form";
 import { MailHandling } from "./mail-handling";
 import { readAll } from "@/lib/supabase/read-all";
 import { countPlainRead } from "@/lib/mail-keys";
 import { demoCount, settingsErrorMessage } from "@/lib/settings-errors";
 import type { Tables } from "@/lib/db/database.types";
+import { AccountDeletion } from "./account-deletion";
 
 export const metadata = { title: "設定" };
 
@@ -20,13 +25,36 @@ const GMAIL_FILTER = "{注文 発送 出荷 配達 お届け 配送 到着 荷�
 
 type DroppedRow = Pick<Tables<"screen_events">, "id" | "subject" | "from_domain" | "created_at" | "flagged_at">;
 
-type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string; flagged?: string }>;
+type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string; flagged?: string; unflagged?: string }>;
+
+/** What 「これは荷物」 / 「外す」 answer (?flagged= / ?unflagged=): fixed words for a code, never text from the link. */
+const SENDER_NOTES = {
+  flagged: {
+    remembered: { ok: true, register: true, text: "覚えました。この差出人のメールは、次から Claude が確認します。今回の荷物は手で登録できます。" },
+    shared: { ok: true, register: true, text: "Gmail など多くの人が使うアドレスは、差出人として覚えられません。今回の荷物は手で登録できます。" },
+    forwarded: { ok: true, register: true, text: "手で転送されたメールは、差出人として覚えられません。今回の荷物は手で登録できます。" },
+    own: { ok: true, register: true, text: "ご自身のアドレスから届いたメールは、差出人として覚えられません。今回の荷物は手で登録できます。" },
+    failed: { ok: false, register: false, text: "記録できませんでした。もう一度お試しください。" },
+  },
+  unflagged: {
+    done: { ok: true, register: false, text: "外しました。" },
+    failed: { ok: false, register: false, text: "外せませんでした。もう一度お試しください。" },
+  },
+} as const;
+
+type SenderNote = { ok: boolean; register: boolean; text: string };
+
+function senderNote(kind: keyof typeof SENDER_NOTES, code: string | undefined): SenderNote | null {
+  const notes: Record<string, SenderNote> = SENDER_NOTES[kind];
+  return code && Object.hasOwn(notes, code) ? notes[code] : null;
+}
 
 // The demo loader runs several Claude calls in sequence.
 export const maxDuration = 300;
 
 export default async function SettingsPage({ searchParams }: { searchParams: SearchParams }) {
-  const { demo, error, cleared, flagged } = await searchParams;
+  const { demo, error, cleared, flagged, unflagged } = await searchParams;
+  const note = senderNote("flagged", flagged) ?? senderNote("unflagged", unflagged);
   // Only fixed words reach the page: ?error= is a code, ?demo= a number.
   const errorMessage = settingsErrorMessage(error);
   const demoLoaded = demoCount(demo);
@@ -81,6 +109,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   }
   // A failed read is told apart from no dropped mail: by the failure, never by the empty list.
   const droppedError = dropped === null;
+  // The senders 「これは荷物」 remembered, from the marked rows (kept past 14 days). A mark made on
+  // a shared domain before that was refused is not honoured by the pipeline, so it is not listed.
+  const remembered = [...new Set((dropped ?? []).filter((d) => d.flagged_at && isRememberableDomain(d.from_domain)).map((d) => d.from_domain!))].sort();
   // Checked again when shown: only Google's own page is ever linked.
   const confirmUrl = confirmation
     ? forwardingConfirmUrl(confirmation.forwarding_confirm_url ?? "") ?? forwardingConfirmUrl(confirmation.text_body ?? confirmation.html_body ?? "")
@@ -92,22 +123,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
       {keyError ? (
         <section>
-          <h2 className="text-base font-bold">合言葉</h2>
+          <h2 className="text-base font-bold">パスワード</h2>
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         </section>
       ) : (
-        <MailKeyPanel state={{ userId: user.id, keyCreatedAt: key?.created_at ?? null, currentKeyId: key?.key_id ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
+        <PasswordPanel state={{ userId: user.id, email: user.email ?? "", keyCreatedAt: key?.created_at ?? null, plainCount, oldKeyCount: oldKeyCount ?? 0 }} />
       )}
-      {/* Which account this is, next to the passphrase and the address: a page signed in to someone
+      {/* Which account this is, next to the password and the address: a page signed in to someone
           else's account (a crafted login link) shows it here before anything is set up. */}
       <p className="-mt-6 text-xs text-neutral-500">
-        ログイン中: <span className="break-all font-medium text-neutral-700">{user.email}</span>（自分のアドレスでなければ、何も設定せずにログアウトしてください）
+        ログイン中: <span className="break-all font-medium text-neutral-700">{user.email}</span>
       </p>
 
       <section>
         <h2 className="text-base font-bold">転送先アドレス</h2>
         {keyError ? (
-          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">合言葉を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。</p>
+          <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">メールの鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。</p>
         ) : key ? (
           <>
             <p className="mt-1 text-sm leading-6 text-neutral-600">注文・発送のメールをこのアドレスに転送してください。自動転送を 1 回設定すれば、あとは何もしなくて大丈夫です。</p>
@@ -118,7 +149,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
             <p className="mt-2 text-xs text-neutral-500">あなた専用のアドレスです。知らない人に教えないでください。</p>
           </>
         ) : (
-          <p className="mt-1 text-sm leading-6 text-neutral-600">合言葉を決めると、ここに出ます。サンプルは合言葉なしで試せます。</p>
+          <p className="mt-1 text-sm leading-6 text-neutral-600">メールの鍵を作ると、ここに出ます。サンプルは鍵なしで試せます。</p>
         )}
       </section>
 
@@ -127,15 +158,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <h2 className="text-base font-bold">未読のメールが {waiting} 通あります</h2>
           <p className="mt-1 text-sm leading-6">1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。</p>
           <form action={readWaitingMail} className="mt-3">
-            <button type="submit" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
-              読み取る
-            </button>
+            <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
           </form>
         </section>
       ) : null}
 
       {confirmUrl ? (
-        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+        <section id="gmail-approval" className="scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">Gmail の転送を承認してください</h2>
           <p className="mt-1 text-sm leading-6">Gmail から転送の確認が届いています。承認済みなら、この案内は無視して大丈夫です。</p>
           <a href={confirmUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
@@ -173,8 +202,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
       <section>
         <h2 className="text-base font-bold">読まなかったメール</h2>
-        <p className="mt-1 text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名だけ 14 日間残します。</p>
-        {flagged ? <p className="mt-2 text-sm text-emerald-800">覚えました。この差出人のメールは次から読みます。今回のメールは、もう一度転送してください。</p> : null}
+        <p className="mt-1 text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名と差出人のドメインだけ 14 日間残します。</p>
+        {note ? (
+          <div className={`mt-2 text-sm leading-6 ${note.ok ? "text-emerald-800" : "text-red-800"}`}>
+            <p>{note.text}</p>
+            {note.register ? (
+              <Link href="/app/parcels/new" className="mt-2 inline-block rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900">
+                荷物を登録する
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
         {droppedError ? (
           <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         ) : dropped && dropped.length > 0 ? (
@@ -192,11 +230,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
                   {d.flagged_at ? (
                     <span className="shrink-0 text-xs text-emerald-800">荷物として記録済み</span>
                   ) : (
-                    <form action={markWronglyDropped}>
+                    <form action={markWronglyDropped} className="shrink-0">
                       <input type="hidden" name="id" value={d.id} />
-                      <button type="submit" className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium">
-                        これは荷物
-                      </button>
+                      <PressButton label="これは荷物" busyLabel="記録しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                     </form>
                   )}
                 </li>
@@ -206,9 +242,31 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
         ) : (
           <p className="mt-2 text-sm text-neutral-500">まだありません</p>
         )}
+        {remembered.length > 0 ? (
+          <div className="mt-3">
+            <h3 className="text-sm font-bold">覚えた差出人</h3>
+            <ul className="mt-2 divide-y divide-neutral-100 rounded-2xl border border-neutral-200 bg-white">
+              {remembered.map((domain) => (
+                <li key={domain} className="flex items-center gap-3 px-4 py-3">
+                  <p className="min-w-0 flex-1 truncate text-sm">{domain}</p>
+                  <form action={forgetSender} className="shrink-0">
+                    <input type="hidden" name="domain" value={domain} />
+                    <PressButton label="外す" busyLabel="外しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <MailHandling />
+      {/* The whole policy, right under the summary of how mail is handled. */}
+      <p className="-mt-6 text-xs text-neutral-500">
+        <Link href="/privacy" className="underline underline-offset-4">
+          プライバシーポリシー
+        </Link>
+      </p>
 
       <section id="demo" className="scroll-mt-4 rounded-2xl border border-dashed border-neutral-300 p-4">
         <h2 className="text-base font-bold">サンプルで試す</h2>
@@ -218,12 +276,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
       <section className="flex flex-col gap-3">
         <p className="text-xs text-neutral-500">ログイン中: {user.email}</p>
-        <form action="/auth/signout" method="post">
-          <button type="submit" className="rounded-lg border border-neutral-300 px-4 py-2 text-sm">
-            ログアウト
-          </button>
-        </form>
+        <LogoutForm />
       </section>
+
+      <AccountDeletion />
     </div>
   );
 }

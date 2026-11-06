@@ -8,7 +8,7 @@ import { MONTH_MIN, monthMax } from "@/lib/month-url";
 import { MonthPicker } from "../month-picker";
 import { PageLink } from "../page-link";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../parcel-card";
-import { FilterLink, FilterScope, FilterSpinner } from "../spend/filter-link";
+import { FilterArea, FilterLink, FilterScope, FilterSpinner } from "../spend/filter-link";
 
 export const metadata = { title: "カレンダー" };
 
@@ -55,9 +55,10 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const days = [...byDay.keys()].sort();
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* 前月・翌月 and the picker share one transition: none moves while another is on the way. */}
-      <FilterScope>
+    // 前月・翌月 and the picker share one transition: none moves while another is on the way, and the
+    // days below are faint from the tap until the new month arrives (a ?m= move shows no loading.tsx).
+    <FilterScope>
+      <div className="flex flex-col gap-6">
         <header className="flex items-center justify-between">
           <FilterLink href={`/app/calendar?m=${shiftMonth(ym, -1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="前の月">
             <FilterSpinner>‹</FilterSpinner> 前月
@@ -69,96 +70,123 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
             翌月 <FilterSpinner>›</FilterSpinner>
           </FilterLink>
         </header>
-      </FilterScope>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white p-2">
-        <div className="grid grid-cols-7 text-center text-[11px] text-neutral-500">
-          {["日", "月", "火", "水", "木", "金", "土"].map((w, i) => (
-            <div key={w} className={`py-1 ${i === 0 ? "text-red-600" : i === 6 ? "text-sky-700" : ""}`}>
-              {w}
+        <FilterArea>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-2">
+            <div className="grid grid-cols-7 text-center text-[11px] text-neutral-500">
+              {["日", "月", "火", "水", "木", "金", "土"].map((w, i) => (
+                <div key={w} className={`py-1 ${i === 0 ? "text-red-600" : i === 6 ? "text-sky-700" : ""}`}>
+                  {w}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-y-1">
-          {cells.map((day, i) => {
-            if (!day) return <div key={`e${i}`} />;
-            const list = byDay.get(day) ?? [];
-            const presence = list.some((p) => faceToFace(p) === true);
-            const isToday = day === today;
-            const dnum = Number(day.slice(8));
-            const Cell = list.length ? "a" : "div";
-            return (
-              <Cell
-                key={day}
-                href={list.length ? `#d-${day}` : undefined}
-                className={`flex min-h-16 flex-col items-center rounded-lg px-0.5 py-1 ${list.length ? "active:bg-neutral-100" : ""}`}
-              >
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-sm ${
-                    isToday ? "bg-neutral-900 font-bold text-white" : i % 7 === 0 ? "text-red-600" : i % 7 === 6 ? "text-sky-700" : ""
-                  }`}
-                >
-                  {dnum}
-                </span>
-                {list.length > 0 ? (
-                  <span
-                    className={`mt-1 w-full truncate rounded px-1 text-center text-[10px] leading-4 ${
-                      presence ? "bg-red-600 font-bold text-white" : "bg-sky-100 text-sky-900"
-                    }`}
+            <div className="grid grid-cols-7 gap-y-1">
+              {cells.map((day, i) => {
+                if (!day) return <div key={`e${i}`} />;
+                const list = byDay.get(day) ?? [];
+                const face = dayFaceToFace(list);
+                const isToday = day === today;
+                const dnum = Number(day.slice(8));
+                const Cell = list.length ? "a" : "div";
+                return (
+                  <Cell
+                    key={day}
+                    href={list.length ? `#d-${day}` : undefined}
+                    aria-label={list.length ? cellLabel(day, list.length, face) : undefined}
+                    className={`flex min-h-16 flex-col items-center rounded-lg px-0.5 py-1 ${list.length ? "active:bg-neutral-100" : ""}`}
                   >
-                    {presence ? "🤝" : ""}
-                    {list.length}件
-                  </span>
-                ) : null}
-              </Cell>
-            );
-          })}
-        </div>
-      </div>
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full text-sm ${
+                        isToday ? "bg-neutral-900 font-bold text-white" : i % 7 === 0 ? "text-red-600" : i % 7 === 6 ? "text-sky-700" : ""
+                      }`}
+                    >
+                      {dnum}
+                    </span>
+                    {list.length > 0 ? (
+                      <span
+                        className={`mt-1 w-full truncate rounded px-1 text-center text-[10px] leading-4 ${
+                          face ? "bg-red-600 font-bold text-white" : "bg-sky-100 text-sky-900"
+                        }`}
+                      >
+                        {/* A red cell counts its face-to-face parcels only (🤝2件 reads as two to be home for). */}
+                        {face ? "🤝" : ""}
+                        {face ? face.count : list.length}件
+                      </span>
+                    ) : null}
+                  </Cell>
+                );
+              })}
+            </div>
+          </div>
 
-      {failed ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
-      ) : days.length === 0 ? (
-        <p className="py-6 text-center text-sm text-neutral-500">この月の予定はありません</p>
-      ) : (
-        <ol className="flex flex-col gap-5">
-          {days.map((day) => {
-            const list = byDay.get(day)!;
-            const inPerson = list.filter((p) => faceToFace(p) === true);
-            // Worded like the cards: the day reads 念のため対面 when no parcel of it was said to be.
-            const presenceLabel = inPerson.length === 0 ? null : inPerson.every((p) => faceToFaceAssumed(p)) ? ASSUMED_FACE_TO_FACE : "対面受け取り";
-            return (
-              <li key={day} id={`d-${day}`} className="scroll-mt-4">
-                <h2 className={`flex items-center gap-2 text-sm font-bold ${day === today ? "text-neutral-900" : "text-neutral-700"}`}>
-                  {formatDateJa(day)}
-                  {day === today ? <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] text-white">今日</span> : null}
-                  {presenceLabel ? <span className="text-[11px] font-bold text-red-700">{presenceLabel}</span> : null}
-                </h2>
-                <ul className="mt-2 flex flex-col gap-2">
-                  {list.map((p) => (
-                    <li key={p.id}>
-                      <Link href={`/app/parcels/${p.id}`} className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3 active:bg-neutral-50">
-                        <div className="w-20 shrink-0 text-sm font-bold">
-                          {p.expected_date_end ? `${formatDateJa(p.expected_date)}〜${formatDateJa(p.expected_date_end)}のどこか` : formatWindow(p.expected_window_start, p.expected_window_end) || <span className="font-normal text-neutral-500">時間未定</span>}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs text-neutral-500">{p.shop}</p>
-                          <p className="line-clamp-2 text-sm font-medium leading-snug">{p.title ?? "品名の記載なし"}</p>
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            <StatusBadge status={p.status} />
-                            <PresenceBadge parcel={p} compact />
-                          </div>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-      <PageLink href="/app/delivered" label="届いた荷物" />
-    </div>
+          {failed ? (
+            <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+          ) : days.length === 0 ? (
+            <p className="py-6 text-center text-sm text-neutral-500">この月の予定はありません</p>
+          ) : (
+            <ol className="flex flex-col gap-5">
+              {days.map((day) => {
+                const list = byDay.get(day)!;
+                const face = dayFaceToFace(list);
+                // Worded like the cards: the day reads 念のため対面 when no parcel of it was said to be.
+                const presenceLabel = face ? (face.assumed ? ASSUMED_FACE_TO_FACE : "対面受け取り") : null;
+                return (
+                  <li key={day} id={`d-${day}`} className="scroll-mt-4">
+                    <h2 className={`flex items-center gap-2 text-sm font-bold ${day === today ? "text-neutral-900" : "text-neutral-700"}`}>
+                      {formatDateJa(day)}
+                      {day === today ? <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] text-white">今日</span> : null}
+                      {presenceLabel ? <span className="text-[11px] font-bold text-red-700">{presenceLabel}</span> : null}
+                    </h2>
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {list.map((p) => (
+                        <li key={p.id}>
+                          <Link href={`/app/parcels/${p.id}`} className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3 active:bg-neutral-50">
+                            <div className="w-20 shrink-0 text-sm font-bold">
+                              {p.expected_date_end ? `${formatDateJa(p.expected_date)}〜${formatDateJa(p.expected_date_end)}のどこか` : formatWindow(p.expected_window_start, p.expected_window_end) || <span className="font-normal text-neutral-500">時間未定</span>}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs text-neutral-500">{p.shop}</p>
+                              <p className="line-clamp-2 text-sm font-medium leading-snug">{p.title ?? "品名の記載なし"}</p>
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                <StatusBadge status={p.status} />
+                                <PresenceBadge parcel={p} compact />
+                              </div>
+                            </div>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          <PageLink href="/app/delivered" label="届いた荷物" />
+        </FilterArea>
+      </div>
+    </FilterScope>
   );
+}
+
+/**
+ * A day's face-to-face parcels, for its cell and its heading alike (one decision, two wordings):
+ * how many (念のため対面 included, as it turns the cell red), and whether every one of them is so
+ * only by the default, with nothing said (then the day is worded 念のため対面). Null: none.
+ */
+function dayFaceToFace(list: ParcelRow[]): { count: number; assumed: boolean } | null {
+  const inPerson = list.filter((p) => faceToFace(p) === true);
+  if (inPerson.length === 0) return null;
+  return { count: inPerson.length, assumed: inPerson.every((p) => faceToFaceAssumed(p)) };
+}
+
+/**
+ * What a screen reader says for a day's cell: the date, the face-to-face parcels and the rest.
+ * The cell shows one number (on a red cell, the face-to-face ones only), so both are said here.
+ */
+function cellLabel(day: string, total: number, face: ReturnType<typeof dayFaceToFace>): string {
+  const [, m, d] = day.split("-").map(Number);
+  const date = `${m}月${d}日`;
+  if (!face) return `${date}、${total} 件`;
+  const said = `${date}、${face.assumed ? ASSUMED_FACE_TO_FACE : "対面"} ${face.count} 件`;
+  return face.count === total ? said : `${said}、ほか ${total - face.count} 件`;
 }

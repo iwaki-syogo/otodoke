@@ -9,18 +9,26 @@ import { isHttpsUrl } from "@/lib/safe-url";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../../parcel-card";
+import { MarkDeliveredButton } from "./mark-delivered-button";
 import { NotDeliveredButton } from "./not-delivered-button";
 import { TrackingButton } from "./tracking-button";
 import { SealedMail } from "./sealed-mail";
 
 type Params = Promise<{ id: string }>;
 
+/**
+ * The tab's title, as on the other pages: what the page is, never which parcel. A product or shop
+ * name in the tab would show to anyone who sees the screen shared or the tab bar.
+ */
+export const metadata = { title: "荷物" };
+
 export default async function ParcelDetailPage({ params }: { params: Params }) {
   const { id } = await params;
   // Postgres answers a malformed id with an error; that is a page that is not there, not a failed read.
   if (!z.uuid().safeParse(id).success) notFound();
   const supabase = await createClient();
-  const userId = (await getUser())?.id ?? "";
+  const user = await getUser();
+  const userId = user?.id ?? "";
 
   const [{ data: parcel, error: parcelError }, { data: items, error: itemsError }, { data: extractions, error: extractionsError }] = await Promise.all([
     supabase.from("parcels").select("*").eq("id", id).maybeSingle(),
@@ -85,6 +93,10 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
         {parcel.status === "delivered" ? (
           <div className="mt-3">
             <NotDeliveredButton id={parcel.id} />
+          </div>
+        ) : parcel.status !== "cancelled" ? (
+          <div className="mt-3">
+            <MarkDeliveredButton id={parcel.id} />
           </div>
         ) : null}
       </header>
@@ -192,8 +204,8 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                     <span>{formatDateTimeJa(email.sent_at)}</span>
                   </div>
                   {email.body_state === "sealed" ? (
-                    // Opened in the browser with the passphrase; the server never sees the content.
-                    <SealedMail userId={userId} emailId={email.id} fromDomain={email.from_domain} notes={notes} confidence={confidence} />
+                    // Opened in the browser with the password; the server never sees the content.
+                    <SealedMail userId={userId} email={user?.email ?? null} emailId={email.id} fromDomain={email.from_domain} notes={notes} confidence={confidence} />
                   ) : email.body_state === "dropped" ? (
                     <>
                       <p className="mt-1 text-sm leading-snug text-neutral-500">本文は保存していません</p>
@@ -202,7 +214,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
-                        <p className="mt-2 text-xs leading-5 text-neutral-600">合言葉を決める前に届いたメールです。件名・差出人・本文は保存していません。</p>
+                        <p className="mt-2 text-xs leading-5 text-neutral-600">メールの鍵ができる前に読み取ったメールです。件名・差出人・本文は残していません。</p>
                       </details>
                     </>
                   ) : (
