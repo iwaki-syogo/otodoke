@@ -48,7 +48,15 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - **Supabase のパスワードの強さの設定を上げない**。`minimum_password_length = 6` と `password_requirements = ""` のまま。authSecret は小文字の hex 64 文字なので、大文字や記号を必須にすると誰も登録もログインもできない。パスワードの強さは、ブラウザで生のパスワードに対して確かめる
 - **Preview と本番は同じ Supabase**。project_ref は下の「外部サービス依存」。Preview でのアカウント作成・パスワードの変更・再設定は、本番のアカウントと鍵を変える。再設定は前の鍵を retire するので、前のメールは開けなくなる。試すアカウントに気をつける
 - メールアドレスを変える画面は作らない。salt が変わり、同じパスワードから同じ値が作れなくなるため。ASCII 以外の文字を含むメールアドレスの登録は断る。Web と iOS で email_norm が割れないようにするため
-- コードは `src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = true`。2026-11-07 から。Supabase の CAPTCHA は、この版を本番で確かめたあとに ON にする。戻すときは Supabase を先に OFF にする。Turnstile のトークンは `signUp`・`resend`・`resetPasswordForEmail`・`signInWithPassword` に渡す。`signInWithPassword` はログイン・鍵を作る・パスワードを変えるの 3 つ。開く・ほかのパスワードで開く・`finishReset` は渡さない
+- CAPTCHA は条件で書く。コードは `src/lib/turnstile.ts` の `CAPTCHA_ENFORCED = true`。2026-11-07 から
+  - Supabase の CAPTCHA を ON にするのは、`CAPTCHA_ENFORCED = true` の版が本番に出て、本番でログイン・アカウント作成・再設定のメールが通るのを確かめてから
+  - ON にした直後に、本番でログイン・アカウント作成・再設定のメールを 1 回ずつ試す。Supabase に入れた secret key と sitekey の組が違うと、トークン付きの押下もすべて断られる
+  - ON にすると、Turnstile に登録していないホストではログイン・作成・再設定が通らない。dev 以外のブランチの Preview も同じ Supabase なので通らない
+  - ON にすると、トークンを送らないクライアントは新しいログイン・作成・再設定のメールが通らない。ログイン済みのセッションは続く
+  - 戻すときは Supabase を先に OFF にする
+  - トークンを渡すのは `signUp`・`resend`・`resetPasswordForEmail`・`signInWithPassword`。`signInWithPassword` はログイン・鍵を作る・パスワードを変えるの 3 つ。開く・ほかのパスワードで開く・`finishReset` は渡さない
+  - iOS は TestFlight の 1.0 (2) 以降が、CAPTCHA の掛かる呼び出しすべてにトークンを送る。1.0 (1) は送らないが、もう使っていない。リポの `ios/` は古い版なので、送るかどうかの根拠にしない
+  - ON にした日時と `supabase/config.toml` の `[auth.captcha]` は、ON にした回にそろえる
 
 ## ディレクトリ
 
