@@ -56,13 +56,13 @@ const optionalDate = (message: string) =>
     .transform((v) => (v === "" ? null : v));
 
 /**
- * Allows "1,980" and full-width digits; still a whole number of yen, up to MANUAL_MAX_AMOUNT. The
+ * Allows "1,980", "¥1,980", "1980 円" and full-width digits; still a whole number of yen, up to MANUAL_MAX_AMOUNT. The
  * stored amount saved back as it is passes too: a mail fills in an amount left empty, up to what
  * the column holds (2,147,483,647), and an edit that leaves it alone must still save.
  */
 const amount = (stored: number | null = null) =>
   text()
-    .transform((v) => v.normalize("NFKC").replace(/,/g, ""))
+    .transform((v) => v.normalize("NFKC").replace(/[,\s]/g, "").replace(/^[¥￥](?=\d)/, "").replace(/(?<=\d)円$/, ""))
     .refine((v) => v === "" || (/^\d{1,10}$/.test(v) && (Number(v) <= MANUAL_MAX_AMOUNT || Number(v) === stored)), "金額が正しくありません")
     .transform((v) => (v === "" ? null : Number(v)));
 

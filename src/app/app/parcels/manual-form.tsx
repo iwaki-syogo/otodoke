@@ -91,9 +91,10 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
             お届け予定日
             <input type="date" name="expected_date" defaultValue={values.expected_date} className={dateField} />
           </label>
-          <label className="text-sm font-medium">
-            金額
-            <input name="total_amount" inputMode="numeric" autoComplete="off" placeholder="2480 円" defaultValue={values.total_amount} className={field} />
+          <label className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+            <span className="w-full">金額</span>
+            <input name="total_amount" inputMode="numeric" autoComplete="off" placeholder="2480" defaultValue={values.total_amount} className={`${field} w-auto min-w-0 flex-1`} />
+            <span className="mt-1 text-base">円</span>
           </label>
           <label className="text-sm font-medium">
             分類
