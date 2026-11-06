@@ -21,12 +21,22 @@ async function signedIn(supabase: Awaited<ReturnType<typeof createClient>>): Pro
   }
 }
 
+/** What the continue page takes from a mail's link: its token, the token's type, where it goes. */
+const LINK_FIELDS = ["token_hash", "type", "next"];
+
 /**
  * Magic-link landing. Opening the link only shows a button: mail security scanners fetch
  * links with GET, and would otherwise use up the one-time token before the person arrives.
+ * Only the link's own fields are carried over. The continue page's link=refused is this site's
+ * answer to a refused switch (set by the POST below) and is never taken from a link: a URL made
+ * with someone's own token and that mark would show 「このリンクは使えませんでした。」 next to a
+ * switch button that signs in to their account.
  */
 export async function GET(request: NextRequest) {
-  return go(`/auth/continue${request.nextUrl.search}`, 307);
+  const carried = new URLSearchParams();
+  for (const name of LINK_FIELDS) for (const value of request.nextUrl.searchParams.getAll(name)) carried.append(name, value);
+  const query = carried.toString();
+  return go(query ? `/auth/continue?${query}` : "/auth/continue", 307);
 }
 
 /** Verifies the token_hash server-side, so the link works in a different browser than the one that asked. */

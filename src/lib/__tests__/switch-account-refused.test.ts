@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,7 +40,8 @@ vi.mock("next/link", async () => {
   return { default: Link };
 });
 
-const { POST } = await import("@/app/auth/confirm/route");
+const { GET, POST } = await import("@/app/auth/confirm/route");
+const { SubmitButton } = await import("@/components/pending-button");
 const ContinuePage = (await import("@/app/auth/continue/page")).default as unknown as (p: {
   searchParams: Promise<Record<string, string | string[]>>;
 }) => Promise<Parameters<typeof renderToStaticMarkup>[0]>;
@@ -92,6 +96,13 @@ async function post(fields: Record<string, string>, headers: Record<string, stri
   return res.headers.get("location")!;
 }
 
+/** Opens a link to /auth/confirm (a path with its query), as a mail's button does; the Location. */
+async function open(url: string): Promise<string> {
+  const res = await GET(new NextRequest(new URL(url, "https://otodoke.app")));
+  expect(res.status).toBe(307);
+  return res.headers.get("location")!;
+}
+
 const notices = (root: HtmlNode) => findAll(root, (n) => textOf(n).trim() === NOTICE && n.children.every((c) => typeof c === "string"));
 const links = (root: HtmlNode) => findAll(root, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()]);
 const heading = (root: HtmlNode) => findAll(root, (n) => n.tag === "h1").map((h) => textOf(h).trim());
@@ -107,8 +118,8 @@ describe("「別のアカウントでログインする」 with a link that cann
     expect(textOf(back)).toContain("a@example.com");
     expect(notices(back)).toHaveLength(1);
     expect(links(back)).toEqual([["/app", "荷物を見る"]]);
-    // The link is not offered again: the page has no token now.
-    expect(findAll(back, (n) => n.tag === "form")).toHaveLength(0);
+    // The link is not offered again: the page has no token now (its one form signs out, R3-35).
+    expect(findAll(back, (n) => n.tag === "form" && n.attrs.action === "/auth/confirm")).toHaveLength(0);
   });
 
   it("still leads where the link was going, and only to a path on this site", async () => {
@@ -195,5 +206,130 @@ describe("the continue page", () => {
     const signedOut = await continuePage("/auth/continue?link=refused");
     expect(notices(signedOut)).toHaveLength(0);
     expect(heading(signedOut)).toEqual(["Otodoke にログインしますか？"]);
+  });
+});
+
+/**
+ * [Review R3-28] A URL made with someone's own token and link=refused (they ask for a login mail
+ * to their address and take its token_hash). GET /auth/confirm passed its whole query on, so a
+ * person signed in saw 「このリンクは使えませんでした。」, a refusal that did not happen, right
+ * above 「別のアカウントでログインする」, which posts that token and signs in to their account.
+ *
+ * Two stops, each tested on its own: either one alone closes the way, so a test that follows the
+ * made URL from end to end stays green with one of them gone.
+ * - The page says nothing when its URL carries a token: the answer to a refused switch never does.
+ * - GET /auth/confirm carries only the link's token_hash, type and next.
+ */
+describe("[R3-28] a URL made with someone's token and link=refused", () => {
+  const MADE = "TOKEN-OF-THE-ONE-WHO-MADE-THE-URL";
+  beforeEach(() => signedInAs("a@example.com"));
+
+  it("the page says nothing when its URL carries a token (the page on its own)", async () => {
+    const made = await continuePage(`/auth/continue?token_hash=${MADE}&type=email&link=refused`);
+    expect(notices(made)).toHaveLength(0);
+    expect(textOf(made)).not.toContain("使えませんでした");
+    // The switch button is as before: it was always there for a link with a token.
+    expect(fieldsOf(formOf(made, "別のアカウントでログインする"))).toMatchObject({ token_hash: MADE, intent: "switch_account" });
+    // A token without a type draws no switch button; nothing is said either.
+    expect(notices(await continuePage(`/auth/continue?token_hash=${MADE}&link=refused`))).toHaveLength(0);
+  });
+
+  it("GET /auth/confirm carries the link's token_hash, type and next, and never link=refused (the route on its own)", async () => {
+    const carried = new URL(await open(`/auth/confirm?token_hash=${MADE}&type=email&next=%2Fapp%2Fsettings&link=refused`), "https://otodoke.app");
+    expect(carried.pathname).toBe("/auth/continue");
+    expect([...carried.searchParams]).toEqual([
+      ["token_hash", MADE],
+      ["type", "email"],
+      ["next", "/app/settings"],
+    ]);
+    // The mark alone, or anything else a link holds, is not carried either.
+    expect(await open("/auth/confirm?link=refused")).toBe("/auth/continue");
+    expect(await open("/auth/confirm?link=refused&error=x&token_hash=t&type=email")).toBe("/auth/continue?token_hash=t&type=email");
+    // A field written twice keeps both, in order: the page takes the first, as before.
+    const twice = new URL(await open("/auth/confirm?token_hash=first&token_hash=second&type=email"), "https://otodoke.app");
+    expect(twice.searchParams.getAll("token_hash")).toEqual(["first", "second"]);
+  });
+
+  it("opened from the mail's button, the made URL shows no refusal", async () => {
+    const location = await open(`/auth/confirm?token_hash=${MADE}&type=email&link=refused`);
+    expect(notices(await continuePage(location))).toHaveLength(0);
+  });
+
+  it("a refused switch still comes back saying so: its answer carries no token", async () => {
+    const location = await post({ token_hash: TOKEN, type: "email", next: "/app/settings", intent: "switch_account" });
+    expect(new URL(location, "https://otodoke.app").searchParams.has("token_hash")).toBe(false);
+    expect(notices(await continuePage(location))).toHaveLength(1);
+  });
+});
+
+/**
+ * [Review R3-35] After a refused switch the page said what failed but not what to do: someone who
+ * wants the other account signs out first, then asks for a new link. 「ログアウト」 sits under the
+ * notice, only with it. It posts to /auth/signout as the button in 設定 does, with the same word,
+ * and shows the press as the other buttons do (SubmitButton).
+ */
+describe("[R3-35] 「ログアウト」 under the notice of a refused switch", () => {
+  beforeEach(() => signedInAs("a@example.com"));
+
+  /** The forms that sign out. */
+  const signOuts = (root: HtmlNode) => findAll(root, (n) => n.tag === "form" && n.attrs.action === "/auth/signout");
+
+  /** Elements of a type in the page's tree as returned (components are not called). */
+  function elementsOf(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>>[] {
+    const out: ReactElement<Record<string, unknown>>[] = [];
+    const walk = (n: ReactNode) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isValidElement<{ children?: ReactNode }>(n)) return;
+      if (n.type === type) out.push(n as ReactElement<Record<string, unknown>>);
+      walk(n.props.children);
+    };
+    walk(node);
+    return out;
+  }
+
+  /** The word on 設定's sign-out button, from its source. */
+  const settingsSignOut = () => {
+    const source = readFileSync(path.resolve(__dirname, "../../app/app/settings/page.tsx"), "utf8");
+    const form = /<form action="\/auth\/signout" method="post">([\s\S]*?)<\/form>/.exec(source);
+    expect(form, "設定 signs out with a form").not.toBeNull();
+    const word = />\s*([^<>{}]+?)\s*<\/(?:button|SubmitButton)>/.exec(form![1]);
+    expect(word, "設定's sign-out button has a word").not.toBeNull();
+    return word![1];
+  };
+
+  it("comes with the notice, under it, as the one way to sign out", async () => {
+    const back = await continuePage(await post(fieldsOf(formOf(await continuePage(linkAt()), "別のアカウントでログインする"))));
+    const forms = signOuts(back);
+    expect(forms).toHaveLength(1);
+    expect(forms[0].attrs.method).toBe("post");
+    expect(findAll(forms[0], (n) => n.tag === "button").map((b) => [b.attrs.type, textOf(b).trim()])).toEqual([["submit", "ログアウト"]]);
+    // In the page's order: the notice, 「ログアウト」, then 「荷物を見る」.
+    const [notice] = notices(back);
+    const [toList] = findAll(back, (n) => n.tag === "a" && textOf(n).trim() === "荷物を見る");
+    expect(findAll(back, (n) => n === notice || n === forms[0] || n === toList)).toEqual([notice, forms[0], toList]);
+  });
+
+  it("is 設定's sign-out: the same word, the same route and method", async () => {
+    expect(settingsSignOut()).toBe("ログアウト");
+    const button = findAll(signOuts(await continuePage("/auth/continue?link=refused"))[0], (n) => n.tag === "button");
+    expect(textOf(button[0]).trim()).toBe(settingsSignOut());
+  });
+
+  it("shows the press with the shared SubmitButton, for a form that leaves the page", async () => {
+    const tree = await ContinuePage({ searchParams: Promise.resolve({ link: "refused" }) });
+    const buttons = elementsOf(tree as ReactNode, SubmitButton);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].props).toMatchObject({ leavesPage: true, pendingLabel: "ログアウトしています…", children: "ログアウト" });
+  });
+
+  it("is not there without the notice", async () => {
+    // The switch offered, nothing refused; no mark; a made URL with a token and the mark.
+    for (const url of [linkAt(), "/auth/continue", "/auth/continue?link=other", `/auth/continue?token_hash=${TOKEN}&type=email&link=refused`]) {
+      const page = await continuePage(url);
+      expect(signOuts(page), url).toHaveLength(0);
+      expect(textOf(page), url).not.toContain("ログアウト");
+    }
+    mocks.user = null;
+    expect(signOuts(await continuePage("/auth/continue?link=refused"))).toHaveLength(0);
   });
 });
