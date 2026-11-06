@@ -417,9 +417,11 @@ class IdMapper:
             b = next(s)
             out.append(str(b % 10) if ch.isdigit() else ch)
         fake = "".join(out)
-        # keep a mod-7 check digit valid if the real number had one (Yamato / Sagawa / JP Post)
+        # If the real number had a valid mod-7 check digit (Yamato / Sagawa / JP Post), make the fake one
+        # deliberately INVALID: a number that passes the check could belong to a real parcel, and this
+        # repo is public. (v + 1) % 10 is never equal to v, which is in 0..6, so the check always fails.
         if re.fullmatch(r"\d{10,14}", real) and int(real[:-1]) % 7 == int(real[-1]):
-            fake = fake[:-1] + str(int(fake[:-1]) % 7)
+            fake = fake[:-1] + str((int(fake[:-1]) % 7 + 1) % 10)
         return fake
 
     def fake_for(self, real: str) -> str:
