@@ -102,6 +102,9 @@ export function tokenNeedsTick(field: TokenField): boolean {
  * can ask for the tick. With `pauseForTick` (CAPTCHA enforced) the clock stops while the checkbox
  * waits: no token comes without the tick, and a send without one would fail. Without it (CAPTCHA
  * off) the press is sent at the limit anyway, and the mail goes out.
+ *
+ * The clock is the wall clock between polls, not the number of polls: a browser runs the timers of
+ * a page it does not show about once a second (or less), and counting polls stretched 10 s to 100.
  */
 export function waitForToken(
   field: TokenField,
@@ -115,17 +118,23 @@ export function waitForToken(
     let needsTick = tokenNeedsTick(field);
     onNeedsTick?.(needsTick);
     let waited = 0;
+    let last = Date.now();
     const poll = setInterval(() => {
+      const now = Date.now();
+      const elapsed = Math.max(0, now - last);
+      last = now;
       if (tokenSettled(field)) {
         clearInterval(poll);
         resolve(true);
         return;
       }
+      // The time since the last poll counts as it was before this poll looked: waiting for the
+      // tick (paused) or Turnstile working on its own.
+      if (!(pauseForTick && needsTick)) waited += elapsed;
       if (tokenNeedsTick(field) !== needsTick) {
         needsTick = !needsTick;
         onNeedsTick?.(needsTick);
       }
-      if (!(pauseForTick && needsTick)) waited += intervalMs;
       if (waited >= limitMs) {
         clearInterval(poll);
         resolve(false);

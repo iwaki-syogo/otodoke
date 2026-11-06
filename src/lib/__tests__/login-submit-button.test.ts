@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
-import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_RESPONSE_FIELD, TURNSTILE_WAIT_MS } from "@/lib/turnstile";
+import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_RESPONSE_FIELD, TURNSTILE_WAIT_MS, waitForToken } from "@/lib/turnstile";
 import { fakeEvent } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
@@ -303,6 +303,28 @@ describe("when the check shows its checkbox (review R2b-1)", () => {
     await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS);
     expect(s.button.click).toHaveBeenCalledTimes(1);
     expect(s.selfClicks).toEqual([false]);
+  });
+
+  it("keeps to the wall clock when the browser runs the page's timers only once a second (a tab it does not show)", async () => {
+    // Found on the real widget in a background tab: counting polls as 100 ms stretched 10 s to 100 s.
+    const fakeSetInterval = globalThis.setInterval;
+    vi.spyOn(globalThis, "setInterval").mockImplementation(((fn: () => void) => fakeSetInterval(fn, 1_000)) as unknown as typeof setInterval);
+    const field = { value: "", dataset: { turnstile: "interactive" } as Record<string, string | undefined> };
+    let result: boolean | null = null;
+    void waitForToken(field, { limitMs: TURNSTILE_WAIT_MS, pauseForTick: false }).then((ok) => (result = ok));
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS - 1_000);
+    expect(result).toBeNull();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(result).toBe(false);
+
+    // Paused for the tick, the slow polls still count only the time Turnstile works on its own.
+    result = null;
+    void waitForToken(field, { limitMs: TURNSTILE_ENFORCED_WAIT_MS, pauseForTick: true }).then((ok) => (result = ok));
+    await vi.advanceTimersByTimeAsync(5 * TURNSTILE_ENFORCED_WAIT_MS);
+    expect(result).toBeNull();
+    delete field.dataset.turnstile;
+    await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS + 1_000);
+    expect(result).toBe(false);
   });
 
   it("is back to 「リンクを送る」 once the hold is over", async () => {
