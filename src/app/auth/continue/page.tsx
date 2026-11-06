@@ -6,7 +6,7 @@ import { ContinueButton } from "./continue-button";
 export const metadata = { title: "ログイン" };
 
 type Param = string | string[] | undefined;
-type SearchParams = Promise<{ token_hash?: Param; type?: Param; next?: Param }>;
+type SearchParams = Promise<{ token_hash?: Param; type?: Param; next?: Param; link?: Param }>;
 
 /** A query value written twice comes as a list: the first one counts. */
 const first = (value: Param) => (Array.isArray(value) ? value[0] : value);
@@ -20,14 +20,32 @@ async function signedInUser() {
   }
 }
 
-/** The form that posts the link's token to /auth/confirm; nothing when the link has no token. */
-function TokenForm({ tokenHash, type, next, className, children }: { tokenHash?: string; type?: string; next: string; className: string; children: React.ReactNode }) {
+/**
+ * The form that posts the link's token to /auth/confirm; nothing when the link has no token.
+ * `intent` is posted with it for /auth/confirm to tell 「別のアカウントでログインする」 apart.
+ */
+function TokenForm({
+  tokenHash,
+  type,
+  next,
+  intent,
+  className,
+  children,
+}: {
+  tokenHash?: string;
+  type?: string;
+  next: string;
+  intent?: "switch_account";
+  className: string;
+  children: React.ReactNode;
+}) {
   if (!tokenHash || !type) return null;
   return (
     <form action="/auth/confirm" method="post" className={className}>
       <input type="hidden" name="token_hash" value={tokenHash} />
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="next" value={next} />
+      {intent ? <input type="hidden" name="intent" value={intent} /> : null}
       {children}
     </form>
   );
@@ -42,12 +60,19 @@ function TokenForm({ tokenHash, type, next, className, children }: { tokenHash?:
  * Pressing 「ログインする」 there ended on the red 「すでに使われたリンク」 for a used link, and
  * switched accounts without a word for another account's link (one somebody else sent). Switching
  * stays possible for someone with two addresses, as its own button that says what it does.
+ *
+ * When that switch is refused (a used link, say), /auth/confirm comes back here with link=refused
+ * and the page says 「このリンクは使えませんでした。」 under the address. Only for that button: a
+ * link pressed again once signed in (used up by this very sign-in, an old one in another tab)
+ * comes back without a word. From the URL, which anyone can write: it is only shown, never
+ * followed, and the wording is fixed.
  */
 export default async function ContinuePage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const tokenHash = first(params.token_hash);
   const type = first(params.type);
   const next = safeNextPath(first(params.next) ?? null);
+  const switchRefused = first(params.link) === "refused";
   const user = await signedInUser();
 
   if (user) {
@@ -55,10 +80,11 @@ export default async function ContinuePage({ searchParams }: { searchParams: Sea
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
         <h1 className="text-2xl font-bold">ログインしています</h1>
         {user.email ? <p className="mt-2 break-all text-sm text-neutral-600">{user.email}</p> : null}
+        {switchRefused ? <p className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">このリンクは使えませんでした。</p> : null}
         <Link href={next} className="mt-6 block w-full rounded-lg bg-neutral-900 px-4 py-3 text-center text-base font-medium text-white active:opacity-80">
           荷物を見る
         </Link>
-        <TokenForm tokenHash={tokenHash} type={type} next={next} className="mt-3">
+        <TokenForm tokenHash={tokenHash} type={type} next={next} intent="switch_account" className="mt-3">
           <ContinueButton label="別のアカウントでログインする" secondary />
         </TokenForm>
       </main>
