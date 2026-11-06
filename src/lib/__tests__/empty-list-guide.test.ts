@@ -102,11 +102,14 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
   const guide = (block: HtmlNode) => findAll(block, (n) => n.tag === "p" && textOf(n).includes("。")).map((p) => textOf(p).trim());
   const mail = (over: Record<string, unknown>) => ({ id: `e-${Math.random()}`, user_id: USER, provider_email_id: "re_123", message_id: "<a@shop.example>", processing_status: "processed", ...over });
 
+  const confirmation = () => mail({ classification: "forwarding_confirmation", from_address: "forwarding-noreply@google.com", from_domain: "google.com" });
+
   it.each([
     ["a mail read into nothing", { emails: [mail({})] }],
     ["a mail still unread (over the limit)", { emails: [mail({ processing_status: "over_limit" })] }],
-    ["Gmail's forwarding confirmation", { emails: [mail({ classification: "forwarding_confirmation" })] }],
     ["a mail the screen dropped", { screen_events: [{ id: "s1", user_id: USER, decision: "dropped", from_domain: "ads.example" }] }],
+    ["Gmail's confirmation and a forwarded mail", { emails: [confirmation(), mail({})] }],
+    ["Gmail's confirmation and a dropped mail", { emails: [confirmation()], screen_events: [{ id: "s1", user_id: USER, decision: "dropped" }] }],
   ])("says mail is arriving after %s, not to set up forwarding again", async (_what, seed) => {
     const block = await render(seed);
     expect(guide(block)).toEqual([RECEIVED]);
@@ -117,9 +120,37 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
     ]);
   });
 
+  /**
+   * [Review R3-3] Gmail's forwarding confirmation is not forwarded mail: Gmail sends it when the
+   * address is added and forwards nothing until it is approved, so 「お待ちください」 would wait
+   * forever. With only that, the list asks about the approval (worded for both: not approved yet,
+   * or approved and no mail since) and its button goes to 設定, where the approval button is.
+   */
+  it("with only Gmail's forwarding confirmation, asks about the approval instead of saying mail arrives", async () => {
+    for (const seed of [{ emails: [confirmation()] }, { emails: [confirmation(), confirmation()] }]) {
+      const block = await render(seed);
+      expect(guide(block)).toEqual(["Gmail の転送は承認しましたか？承認すると、荷物のメールが届きはじめます。"]);
+      expect(textOf(block)).not.toContain("届いています");
+      expect(textOf(block)).not.toContain("お待ちください");
+      expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
+        ["/app/settings", "設定で承認する"],
+        ["/app/settings#demo", "サンプルで試す"],
+      ]);
+    }
+  });
+
+  it("no public sample is a Gmail confirmation (the samples are left out of the count once, not twice)", () => {
+    const dir = path.resolve(__dirname, "../../../fixtures/demo/mails");
+    const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) expect(readFileSync(path.join(dir, f), "utf8"), f).not.toMatch(/forwarding-noreply@google\.com/i);
+  });
+
   it("never reads as sending each mail", async () => {
-    const text = textOf(await render({ emails: [mail({})] }));
-    for (const old of ["送ると", "転送用アドレス", "ここに並びます", "転送するだけ", "（", "("]) expect(text).not.toContain(old);
+    for (const seed of [{ emails: [mail({})] }, { emails: [confirmation()] }]) {
+      const text = textOf(await render(seed));
+      for (const old of ["送ると", "転送用アドレス", "ここに並びます", "転送するだけ", "（", "("]) expect(text).not.toContain(old);
+    }
   });
 
   it("asks the setup question when the only mail is the public samples, and when there is none (the sample cleared)", async () => {

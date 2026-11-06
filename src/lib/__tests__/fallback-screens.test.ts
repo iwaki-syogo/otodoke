@@ -46,7 +46,7 @@ const noEnglish = (root: HtmlNode) => expect(textOf(root)).not.toMatch(/[A-Za-z]
 describe("the 404 screens", () => {
   const rootNotFound = async () => {
     const NotFound = (await import("@/app/not-found")).default;
-    return html(await NotFound());
+    return html(createElement(NotFound));
   };
 
   it("say 「ページが見つかりません」 in Japanese only", async () => {
@@ -55,31 +55,25 @@ describe("the 404 screens", () => {
     noEnglish(root);
   });
 
-  it("lead to the parcel list when signed in, and to the top page when not", async () => {
-    mocks.user = { id: "u1" };
-    expect(links(await rootNotFound())).toEqual([["/app", "荷物の一覧へ"]]);
-    mocks.user = null;
-    expect(links(await rootNotFound())).toEqual([["/", "トップへ"]]);
-  });
-
-  it("lead to the top page when the sign-in cannot be read", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.userError = new Error("network down");
-    expect(links(await rootNotFound())).toEqual([["/", "トップへ"]]);
-  });
-
-  it("let Next's own signals through (they are not a failed sign-in read)", async () => {
-    const { redirect } = await import("next/navigation");
-    let signal: unknown;
-    try {
-      redirect("/login");
-    } catch (err) {
-      signal = err;
+  /**
+   * [Review R3-6] Next renders the root not-found with every page (the root boundary's fallback),
+   * so it must not read the session: that cost every request a round trip to Supabase Auth and
+   * made every page per-request. One way back, the parcel list; proxy.ts sends someone signed
+   * out to /login, and back to the list after signing in.
+   */
+  it("lead to the parcel list, signed in or not, without reading the session", async () => {
+    mocks.userError = new Error("the 404 must not read the session");
+    for (const user of [{ id: "u1" }, null]) {
+      mocks.user = user;
+      expect(links(await rootNotFound())).toEqual([["/app", "荷物の一覧へ"]]);
     }
-    expect(signal).toBeDefined();
-    mocks.userError = signal;
-    const NotFound = (await import("@/app/not-found")).default;
-    await expect(NotFound()).rejects.toBe(signal);
+  });
+
+  it("the root 404 is a plain component: not async, nothing per request", () => {
+    const source = readFileSync(path.join(appDir, "not-found.tsx"), "utf8");
+    expect(source).toMatch(/export default function NotFound\(\)/);
+    expect(source).not.toMatch(/\basync\b|await\b/);
+    for (const perRequest of ["@/lib/supabase", "next/headers", "cookies(", "headers(", "connection(", "searchParams"]) expect(source, perRequest).not.toContain(perRequest);
   });
 
   it("under /app, notFound() keeps the tabs and leads to the parcel list", async () => {
