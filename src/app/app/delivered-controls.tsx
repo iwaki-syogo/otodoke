@@ -1,6 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { PendingButton, usePendingAction } from "@/components/pending-button";
+import { Spinner } from "@/components/spinner";
 import { markDelivered, restoreStatuses } from "./parcel-actions";
 
 type Marked = { id: string; status: string }[];
@@ -11,25 +13,30 @@ interface Toast {
 
 const ToastContext = createContext<(t: Toast) => void>(() => {});
 
+/** What a press shows from the tap until the parcels are saved. */
+const SAVING = "保存しています…";
+const UNDOING = "戻しています…";
+
 /**
  * Holds the "届いたにしました / 元に戻す" notice. It lives above the list because a marked
  * parcel moves to another section, and the card that was swiped is gone by then.
  */
 export function DeliveredToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { pending, run } = usePendingAction();
   const [failed, setFailed] = useState(false);
 
+  // Closes after a while, but never while 元に戻す is on the way: its answer must be seen.
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || pending) return;
     const timer = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [toast, pending]);
 
   const undo = () => {
     const items = toast?.undo;
     if (!items) return;
-    startTransition(async () => {
+    run(async () => {
       try {
         await restoreStatuses(items);
         setToast(null);
@@ -46,9 +53,9 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
         <div role="status" className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
           <span>{failed ? "元に戻せませんでした" : toast.text}</span>
           {toast.undo && !failed ? (
-            <button type="button" onClick={undo} disabled={pending} className="shrink-0 font-bold text-emerald-300 disabled:opacity-60">
-              {pending ? "戻しています…" : "元に戻す"}
-            </button>
+            <PendingButton pending={pending} pendingLabel={UNDOING} tone="light" onClick={undo} className="inline-flex shrink-0 items-center gap-1.5 font-bold text-emerald-300">
+              元に戻す
+            </PendingButton>
           ) : null}
         </div>
       ) : null}
@@ -66,16 +73,22 @@ export function SwipeToDeliver({ id, status, children }: { id: string; status: s
   const [state, setState] = useState<"idle" | "dragging" | "saving" | "error">("idle");
   const start = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
   const moved = useRef(false);
+  // Set before anything is awaited: a second swipe or tap meanwhile saves nothing more.
+  const saving = useRef(false);
   const [, startTransition] = useTransition();
 
   const commit = useCallback(() => {
+    if (saving.current) return;
+    saving.current = true;
     setState("saving");
     setDx(-COMMIT * 3);
     startTransition(async () => {
       try {
-        await markDelivered([id]);
+        // 0: nothing was saved (signed out, or the parcel was cancelled meanwhile). Not 「届いた」.
+        if ((await markDelivered([id])) === 0) throw new Error("nothing saved");
         showToast({ text: "届いたにしました", undo: [{ id, status }] });
       } catch {
+        saving.current = false;
         setState("error");
         setDx(0);
       }
@@ -116,8 +129,21 @@ export function SwipeToDeliver({ id, status, children }: { id: string; status: s
         className={`absolute inset-y-0 right-0 flex items-center bg-emerald-600 pr-4 pl-6 text-sm font-bold text-white ${dx === 0 && state !== "saving" ? "invisible" : ""}`}
         style={{ width: Math.max(REVEAL, -dx) }}
       >
-        <button type="button" onClick={commit} disabled={state === "saving"} className="w-full text-right">
-          {state === "saving" ? "保存中…" : "届いた"}
+        <button
+          type="button"
+          onClick={commit}
+          aria-busy={state === "saving" || undefined}
+          aria-disabled={state === "saving" || undefined}
+          className={`flex w-full items-center justify-end gap-2 ${state === "saving" ? "pointer-events-none" : ""}`}
+        >
+          {state === "saving" ? (
+            <>
+              <Spinner tone="light" />
+              {SAVING}
+            </>
+          ) : (
+            "届いた"
+          )}
         </button>
       </div>
       <div
@@ -148,27 +174,37 @@ export function SwipeToDeliver({ id, status, children }: { id: string; status: s
 export function DeliverAll({ items }: { items: Marked }) {
   const showToast = useContext(ToastContext);
   const [step, setStep] = useState<"idle" | "confirm" | "error">("idle");
-  const [pending, startTransition] = useTransition();
+  const { pending, run } = usePendingAction();
 
-  const run = () => {
-    startTransition(async () => {
+  const save = () =>
+    run(async () => {
       try {
         const n = await markDelivered(items.map((it) => it.id));
+        // 0: nothing was saved (signed out, or all cancelled meanwhile).
+        if (n === 0) {
+          setStep("error");
+          return;
+        }
         setStep("idle");
         showToast({ text: `${n} 件を受取済にしました`, undo: items });
       } catch {
         setStep("error");
       }
     });
-  };
 
   if (step === "confirm" || pending) {
     return (
       <div className="flex gap-2">
-        <button type="button" onClick={run} disabled={pending} className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-70">
-          {pending ? "保存中…" : `${items.length} 件を受取済にする`}
-        </button>
-        <button type="button" onClick={() => setStep("idle")} disabled={pending} className="rounded-xl border border-neutral-300 px-4 py-3 text-sm">
+        <PendingButton
+          pending={pending}
+          pendingLabel={SAVING}
+          tone="light"
+          onClick={save}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white"
+        >
+          {`${items.length} 件を受取済にする`}
+        </PendingButton>
+        <button type="button" onClick={() => setStep("idle")} disabled={pending} className="rounded-xl border border-neutral-300 px-4 py-3 text-sm disabled:opacity-60">
           やめる
         </button>
       </div>

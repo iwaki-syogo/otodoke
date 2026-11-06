@@ -71,6 +71,85 @@ describe("the empty parcel list", () => {
   });
 });
 
+/**
+ * [Review 2026-11-06 R2-5] Once mail of the person's own has come in (a stored mail other than the
+ * public samples, or a mail the screen dropped), forwarding is set up: the empty list says mail is
+ * arriving instead of asking them to set it up again (after 「すべての荷物を消す」, say, when the
+ * mail since was all ads). The samples never count, so clearing them brings the question back.
+ */
+describe("[R2-5] the empty list once mail of one's own has come in", () => {
+  const OTHER = "00000000-0000-4000-8000-00000000000b";
+  const RECEIVED = "メールは届いています。荷物のメールが届くまで、お待ちください。";
+  const QUESTION = "メールの自動転送を設定しますか？設定は最初の 1 回だけです。";
+  /**
+   * The unread-mail notice's count is answered here: fake-db does not read and() inside or(), and
+   * only over-limit or failed mail is unread in these seeds.
+   */
+  const withMail = (seed: Record<string, Array<Record<string, unknown>>>) => {
+    const db = new FakeDb({ parcels: [], emails: [], screen_events: [], ...seed });
+    db.hooks.push((q, d) =>
+      q.table === "emails" && q.filters.some((f) => f.method === "or")
+        ? { data: null, error: null, count: d.rows("emails").filter((e) => ["over_limit", "failed"].includes(String(e.processing_status))).length }
+        : undefined,
+    );
+    mocks.state.db = db;
+    return db;
+  };
+  const render = async (seed: Record<string, Array<Record<string, unknown>>>) => {
+    withMail(seed);
+    return emptyState(await renderEmpty());
+  };
+  const guide = (block: HtmlNode) => findAll(block, (n) => n.tag === "p" && textOf(n).includes("。")).map((p) => textOf(p).trim());
+  const mail = (over: Record<string, unknown>) => ({ id: `e-${Math.random()}`, user_id: USER, provider_email_id: "re_123", message_id: "<a@shop.example>", processing_status: "processed", ...over });
+
+  it.each([
+    ["a mail read into nothing", { emails: [mail({})] }],
+    ["a mail still unread (over the limit)", { emails: [mail({ processing_status: "over_limit" })] }],
+    ["Gmail's forwarding confirmation", { emails: [mail({ classification: "forwarding_confirmation" })] }],
+    ["a mail the screen dropped", { screen_events: [{ id: "s1", user_id: USER, decision: "dropped", from_domain: "ads.example" }] }],
+  ])("says mail is arriving after %s, not to set up forwarding again", async (_what, seed) => {
+    const block = await render(seed);
+    expect(guide(block)).toEqual([RECEIVED]);
+    expect(textOf(block)).not.toContain("設定しますか");
+    expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
+      ["/app/settings", "設定を見る"],
+      ["/app/settings#demo", "サンプルで試す"],
+    ]);
+  });
+
+  it("never reads as sending each mail", async () => {
+    const text = textOf(await render({ emails: [mail({})] }));
+    for (const old of ["送ると", "転送用アドレス", "ここに並びます", "転送するだけ", "（", "("]) expect(text).not.toContain(old);
+  });
+
+  it("asks the setup question when the only mail is the public samples, and when there is none (the sample cleared)", async () => {
+    expect(guide(await render({ emails: [mail({ provider_email_id: "demo:01-amazon-order.json", message_id: "demo:01-amazon-order.json" })] }))).toEqual([QUESTION]);
+    expect(guide(await render({}))).toEqual([QUESTION]);
+  });
+
+  it("does not count another person's mail", async () => {
+    expect(guide(await render({ emails: [mail({ user_id: OTHER })], screen_events: [{ id: "s1", user_id: OTHER, decision: "dropped" }] }))).toEqual([QUESTION]);
+  });
+
+  it("asks the setup question, as before, when the mail cannot be counted", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      withMail({ emails: [mail({})] }).hooks.push((q) => (q.table === "screen_events" ? { data: null, error: { message: "boom" }, count: null } : undefined));
+      expect(guide(emptyState(await renderEmpty()))).toEqual([QUESTION]);
+      expect(log).toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("counts the mail only for the empty list", async () => {
+    const db = new FakeDb({ parcels: [{ id: "p1", user_id: USER, shop: "テスト店", title: "品名", status: "shipped" }], emails: [], screen_events: [] });
+    mocks.state.db = db;
+    await renderEmpty();
+    expect(db.callsOn("screen_events")).toHaveLength(0);
+  });
+});
+
 describe("the screens", () => {
   // The owner's rule (CLAUDE.md): 「転送するだけ」 reads as forwarding each mail by hand.
   const appDir = path.resolve(__dirname, "../../app");
