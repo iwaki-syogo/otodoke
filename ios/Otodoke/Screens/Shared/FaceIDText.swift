@@ -8,7 +8,7 @@ import Foundation
 
 enum FaceIDText {
     /// NSFaceIDUsageDescription.
-    static let usageDescription = "" // TDD-STUB(task 15)
+    static let usageDescription = "メールを開く鍵を Face ID で守って、この端末だけに保存します。"
 
     /// The passphrase field (nil: the device has no biometrics, say neither).
     static func passphraseField(_ kind: BiometryKind?) -> String {
@@ -22,7 +22,10 @@ enum FaceIDText {
 
     /// What keeping the key with Face ID / Touch ID means.
     static func usage(_ kind: BiometryKind) -> String {
-        "" // TDD-STUB(task 15)
+        switch kind {
+        case .faceID: usageDescription
+        case .touchID: usageDescription.replacingOccurrences(of: "Face ID", with: "Touch ID")
+        }
     }
 
     /// The key could not be kept on this device (memory only until the app is closed or goes to the background).

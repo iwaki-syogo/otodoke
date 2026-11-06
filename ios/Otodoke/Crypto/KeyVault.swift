@@ -1,4 +1,4 @@
-// TDD-STUB(task 15, CX3): keeping the opened key on this device with Face ID.
+// Keeping the opened key on this device with Face ID (task 15, CX3).
 //  - The Keychain and LAContext are wrapped in protocols (Keychain, Biometrics) so the flows are tested with
 //    fakes; SystemKeychain / SystemBiometrics are the app's.
 //  - The item: kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, synchronizable false,
@@ -12,7 +12,6 @@
 //  - CX3: whether saving is allowed, and its generation, are one shared state (KeyStorePolicy). Turning it
 //    off forbids saving first and then deletes. A save checks the policy ticket and the caller's own check
 //    right before it adds, on the main actor (so nothing can turn it off in between).
-// Names and signatures are the contract with KeyVaultTests / UnlockModelTests / FaceIDSettingsTests.
 
 import Foundation
 import LocalAuthentication
@@ -69,41 +68,126 @@ protocol Keychain: Sendable {
     func delete(service: String, account: String) -> OSStatus
 }
 
-/// The app's Keychain (SecItem*).
+/// The app's Keychain (SecItem*). The key item is only ever written with the strong attributes; an item that
+/// asks for anything else is refused (errSecParam), never written weaker.
 struct SystemKeychain: Keychain {
     init() {}
 
+    /// user_id and the key id ride on the item as kSecAttrGeneric (readable without Face ID).
+    private struct Owner: Codable {
+        let userID: String
+        let keyID: String
+
+        enum CodingKeys: String, CodingKey {
+            case userID = "user_id"
+            case keyID = "key_id"
+        }
+    }
+
+    private func base(service: String, account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+
     func add(_ item: KeychainItem, secret: Data) -> OSStatus {
-        errSecUnimplemented // TDD-STUB(task 15)
+        guard item.accessibility == .whenPasscodeSetThisDeviceOnly, item.biometryCurrentSet, !item.synchronizable else { return errSecParam }
+        var error: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, &error) else {
+            error?.release()
+            return errSecParam
+        }
+        guard let owner = try? JSONEncoder().encode(Owner(userID: item.userID, keyID: item.keyID)) else { return errSecParam }
+        var query = base(service: item.service, account: item.account)
+        query[kSecValueData as String] = secret
+        query[kSecAttrAccessControl as String] = access
+        query[kSecAttrSynchronizable as String] = kCFBooleanFalse
+        query[kSecAttrGeneric as String] = owner
+        return SecItemAdd(query as CFDictionary, nil)
     }
 
     func readSecret(service: String, account: String, context: any BiometricContext, reason: String) async -> (status: OSStatus, secret: Data?) {
-        (errSecUnimplemented, nil) // TDD-STUB(task 15)
+        guard let system = context as? SystemBiometricContext else { return (errSecParam, nil) }
+        // SecItemCopyMatching waits for Face ID: never on the main thread.
+        let job = Task.detached(priority: .userInitiated) { () -> (OSStatus, Data?) in
+            system.context.localizedReason = reason
+            var query = base(service: service, account: account)
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            query[kSecUseAuthenticationContext as String] = system.context
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            return (status, status == errSecSuccess ? result as? Data : nil)
+        }
+        let (status, secret) = await job.value
+        return (status, secret)
     }
 
     func attributes(service: String, account: String) -> (status: OSStatus, item: KeychainItem?) {
-        (errSecUnimplemented, nil) // TDD-STUB(task 15)
+        // Never any UI: a context that may not interact.
+        let quiet = SystemBiometricContext().context
+        quiet.interactionNotAllowed = true
+        var query = base(service: service, account: account)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecUseAuthenticationContext as String] = quiet
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let attrs = result as? [String: Any] else { return (status, nil) }
+        let owner = (attrs[kSecAttrGeneric as String] as? Data).flatMap { try? JSONDecoder().decode(Owner.self, from: $0) }
+        let accessible = attrs[kSecAttrAccessible as String] as? String
+        let item = KeychainItem(
+            service: attrs[kSecAttrService as String] as? String ?? service,
+            account: attrs[kSecAttrAccount as String] as? String ?? account,
+            accessibility: accessible == (kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly as String) ? .whenPasscodeSetThisDeviceOnly : .other,
+            // The access control's flags cannot be read back; only add(_:secret:) writes one, always .biometryCurrentSet.
+            biometryCurrentSet: attrs[kSecAttrAccessControl as String] != nil,
+            synchronizable: (attrs[kSecAttrSynchronizable as String] as? NSNumber)?.boolValue ?? false,
+            userID: owner?.userID ?? "",
+            keyID: owner?.keyID ?? ""
+        )
+        return (status, item)
     }
 
     func delete(service: String, account: String) -> OSStatus {
-        errSecUnimplemented // TDD-STUB(task 15)
+        SecItemDelete(base(service: service, account: account) as CFDictionary)
     }
 }
 
 /// The app's LAContext, one per use.
 final class SystemBiometricContext: BiometricContext, @unchecked Sendable {
-    let context = LAContext()
+    let context: LAContext
+
+    init() {
+        context = LAContext()
+    }
 }
 
 struct SystemBiometrics: Biometrics {
     init() {}
 
     func newContext() -> any BiometricContext {
-        SystemBiometricContext() // TDD-STUB(task 15)
+        SystemBiometricContext()
     }
 
     func availability(in context: any BiometricContext) -> BiometricAvailability {
-        .unavailable // TDD-STUB(task 15)
+        guard let system = context as? SystemBiometricContext else { return .unavailable }
+        var error: NSError?
+        if system.context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+            switch system.context.biometryType {
+            case .faceID: return .available(.faceID)
+            case .touchID: return .available(.touchID)
+            default: return .unavailable
+            }
+        }
+        switch error.flatMap({ LAError.Code(rawValue: $0.code) }) {
+        case .passcodeNotSet?: return .noPasscode
+        case .biometryNotEnrolled?: return .notEnrolled
+        case .biometryLockout?: return .lockedOut
+        default: return .unavailable
+        }
     }
 }
 
@@ -172,30 +256,35 @@ final class KeyStorePolicy {
     static let defaultsKey = "otodoke.keepKeyWithBiometrics"
 
     /// On unless turned off (and persisted).
-    private(set) var isAllowed: Bool = false
+    private(set) var isAllowed: Bool
     private(set) var generation: Int = 0
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults // TDD-STUB(task 15): read the stored choice
+        self.defaults = defaults
+        isAllowed = defaults.object(forKey: Self.defaultsKey) as? Bool ?? true
     }
 
     func ticket() -> Ticket {
-        Ticket(generation: generation) // TDD-STUB(task 15)
+        Ticket(generation: generation)
     }
 
     /// Allowed, and nothing changed since the ticket.
     func permits(_ ticket: Ticket) -> Bool {
-        false // TDD-STUB(task 15)
+        isAllowed && ticket.generation == generation
     }
 
     /// Forbids saving (and moves the generation) before anything is deleted.
     func turnOff() {
-        // TDD-STUB(task 15)
+        isAllowed = false
+        generation += 1
+        defaults.set(false, forKey: Self.defaultsKey)
     }
 
     func turnOn() {
-        // TDD-STUB(task 15)
+        isAllowed = true
+        generation += 1
+        defaults.set(true, forKey: Self.defaultsKey)
     }
 }
 
@@ -208,49 +297,105 @@ final class KeyVault {
 
     let service: String
     let policy: KeyStorePolicy
+    private let keychain: any Keychain
+    private let biometrics: any Biometrics
 
     init(keychain: any Keychain, biometrics: any Biometrics, policy: KeyStorePolicy, service: String = KeyVault.defaultService) {
         self.service = service
         self.policy = policy
-        // TDD-STUB(task 15)
+        self.keychain = keychain
+        self.biometrics = biometrics
     }
 
     static func shouldDelete(_ event: VaultEvent) -> Bool {
-        false // TDD-STUB(task 15)
+        switch event {
+        case .signedOut, .keyRowKidDiffers, .otherUser, .biometryChanged, .freshInstall, .turnedOff:
+            true
+        case .readFailed, .noKeyRows, .sealedMailKidDiffers, .cancelled, .lockedOut:
+            false
+        }
     }
 
     /// errSecSuccess → opened; errSecUserCanceled → cancelled; errSecItemNotFound → invalidated when the
     /// attributes are there, nothing when not; anything else (errSecAuthFailed, errSecInteractionNotAllowed,
     /// …) → unavailable.
     static func classify(status: OSStatus, itemExists: Bool) -> VaultReadKind {
-        .unavailable // TDD-STUB(task 15)
+        switch status {
+        case errSecSuccess: .opened
+        case errSecUserCanceled: .cancelled
+        case errSecItemNotFound: itemExists ? .invalidated : .nothing
+        default: .unavailable
+        }
     }
 
     /// What this device offers now (a new context each time); nil when it has no biometrics to use.
     var biometry: BiometryKind? {
-        nil // TDD-STUB(task 15)
+        if case let .available(kind) = biometrics.availability(in: biometrics.newContext()) { return kind }
+        return nil
     }
 
     func hasItem() -> Bool {
-        false // TDD-STUB(task 15)
+        keychain.attributes(service: service, account: Self.account).item != nil
     }
 
     /// Saves (replacing an older item) when `policy.permits(ticket)` and `stillCurrent()` right before the add,
     /// and the device can keep it.
     func save(_ key: VaultKey, ticket: KeyStorePolicy.Ticket, stillCurrent: () -> Bool) -> VaultSave {
-        .notAllowed // TDD-STUB(task 15)
+        // One stretch on the main actor from the check to the add: nothing can turn it off in between (CX3).
+        guard policy.permits(ticket), stillCurrent() else { return .notAllowed }
+        guard case .available = biometrics.availability(in: biometrics.newContext()) else { return .memoryOnly }
+        let item = KeychainItem(
+            service: service,
+            account: Self.account,
+            accessibility: .whenPasscodeSetThisDeviceOnly,
+            biometryCurrentSet: true,
+            synchronizable: false,
+            userID: key.userID,
+            keyID: key.keyID
+        )
+        var status = keychain.add(item, secret: key.secret)
+        if status == errSecDuplicateItem {
+            _ = keychain.delete(service: service, account: Self.account)
+            status = keychain.add(item, secret: key.secret)
+        }
+        return status == errSecSuccess ? .saved : .memoryOnly
     }
 
     /// The kept key for `userID`, with Face ID (once, through a new context). No prompt when there is no
     /// item, it is another user's (deleted), keeping is off, or biometrics are unavailable.
     func load(userID: String, reason: String) async -> VaultLoad {
-        .nothing // TDD-STUB(task 15)
+        guard policy.isAllowed else { return .nothing }
+        guard let item = keychain.attributes(service: service, account: Self.account).item else { return .nothing }
+        guard item.userID == userID else {
+            remove(.otherUser)
+            return .otherUser
+        }
+        let context = biometrics.newContext()
+        guard case .available = biometrics.availability(in: context) else { return .unavailable }
+        let (status, secret) = await keychain.readSecret(service: service, account: Self.account, context: context, reason: reason)
+        let exists = status == errSecItemNotFound ? hasItem() : true
+        switch Self.classify(status: status, itemExists: exists) {
+        case .opened:
+            guard let secret else { return .unavailable }
+            return .opened(VaultKey(userID: item.userID, keyID: item.keyID, secret: secret))
+        case .nothing:
+            return .nothing
+        case .cancelled:
+            return .cancelled
+        case .invalidated:
+            remove(.biometryChanged)
+            return .invalidated
+        case .unavailable:
+            return .unavailable
+        }
     }
 
     /// Deletes the item when `shouldDelete(event)`; true when it was deleted (or there was none to delete).
     @discardableResult
     func remove(_ event: VaultEvent) -> Bool {
-        false // TDD-STUB(task 15)
+        guard Self.shouldDelete(event) else { return false }
+        let status = keychain.delete(service: service, account: Self.account)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 }
 
@@ -260,6 +405,8 @@ final class KeyVault {
 final class FaceIDSwitch {
     let policy: KeyStorePolicy
     let vault: KeyVault
+    /// Moves on with each set(_:), so a view reading isOn follows the policy (which is not observable itself).
+    private var revision = 0
 
     init(policy: KeyStorePolicy, vault: KeyVault) {
         self.policy = policy
@@ -267,15 +414,23 @@ final class FaceIDSwitch {
     }
 
     var isOn: Bool {
-        false // TDD-STUB(task 19)
+        _ = revision
+        return policy.isAllowed
     }
 
     /// nil when the device has no biometrics to use (the 「保存できないとき」 line instead).
     var biometry: BiometryKind? {
-        nil // TDD-STUB(task 19)
+        vault.biometry
     }
 
+    /// CX3: off forbids saving first (the policy's generation moves on), then deletes the item.
     func set(_ on: Bool) {
-        // TDD-STUB(task 19)
+        if on {
+            policy.turnOn()
+        } else {
+            policy.turnOff()
+            vault.remove(.turnedOff)
+        }
+        revision += 1
     }
 }

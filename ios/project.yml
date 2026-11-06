@@ -51,6 +51,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        # FaceIDText.usageDescription, word for word (a vitest compares them).
+        NSFaceIDUsageDescription: "メールを開く鍵を Face ID で守って、この端末だけに保存します。"
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
