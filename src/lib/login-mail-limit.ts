@@ -5,7 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /**
  * App-side cap on the mails this website asks Supabase to send (the confirmation of a new account,
  * sending it again, the reset mail), checked before asking Supabase to send one. Further down, the
- * same table caps failed sign-ins (LOGIN_ATTEMPT_LIMITS).
+ * same table caps failed sign-ins (LOGIN_ATTEMPT_LIMITS), every sign-in per IP (LOGIN_TRY_LIMITS)
+ * and every mail's link checked per IP (LOGIN_LINK_LIMITS).
  *
  * Supabase sees every request from Vercel's addresses, so its own per-IP limit is shared by all
  * visitors of the website. This keeps one visitor of the form from using up the project's mail
@@ -110,8 +111,29 @@ export const LOGIN_TRY_LIMITS = {
   ipPerHour: 60,
 } as const;
 
-/** What a limit counts in login_mail_sends: mails sent from the form, failed sign-ins, or every sign-in per IP. */
-export type LimitScope = "login-mail" | "login-attempt" | "login-try";
+/**
+ * Every mail's link this website asks Supabase to check (the POST of /auth/confirm: a confirmation
+ * or a reset), per client IP. Supabase checks at most 30 tokens per 5 minutes per IP, and every
+ * visitor's link is checked from this server's IP: one visitor posting made-up tokens must not use
+ * that up, or every confirmation and reset link fails for everyone meanwhile (review R3-PW-4).
+ * Counted like LOGIN_TRY_LIMITS, under its own namespace: at most 10 in any 10 minutes (so never 30
+ * in 5); the hour adds nothing to that (6 × 10). Never given back: a check Supabase made uses its
+ * allowance whatever it answered.
+ *
+ * Who must not be blocked: someone who opens the mail's link again and presses again a few times,
+ * and a few people behind one network at once. A link held back still works later: its token was
+ * not sent to Supabase. Many IPs at once are not stopped by this.
+ */
+export const LOGIN_LINK_LIMITS = {
+  ipPer10Minutes: 10,
+  ipPerHour: 60,
+} as const;
+
+/** What a limit counts in login_mail_sends: mails sent from the form, failed sign-ins, every sign-in per IP, or every link checked per IP. */
+export type LimitScope = "login-mail" | "login-attempt" | "login-try" | "login-link";
+
+/** The word for a scope in the log. */
+const WHAT: Record<LimitScope, string> = { "login-mail": "mail", "login-attempt": "attempt", "login-try": "attempt", "login-link": "link" };
 
 /** SHA-256 hex. The table keeps only these, never the address or the IP itself. */
 export function limitHash(kind: "email" | "ip", value: string, scope: LimitScope = "login-mail"): string {
@@ -129,7 +151,7 @@ const OPEN: LoginMailClaim = { verdict: "ok", claimId: null };
 type Limits = { emailPer10Minutes: number; emailPerHour: number; ipPerHour: number };
 
 async function claim(scope: LimitScope, limits: Limits, email: string, ip: string | null): Promise<LoginMailClaim> {
-  const what = scope === "login-mail" ? "mail" : "attempt";
+  const what = WHAT[scope];
   try {
     const { data, error } = await createAdminClient().rpc("claim_login_mail", {
       p_email_hash: limitHash("email", email, scope),
@@ -202,5 +224,15 @@ export async function releaseLoginAttempt(email: string, claimId: number | null)
 export async function claimLoginTry(ip: string | null): Promise<LoginMailVerdict> {
   if (!ip) return "ok";
   const { verdict } = await claim("login-try", { emailPer10Minutes: LOGIN_TRY_LIMITS.ipPer10Minutes, emailPerHour: LOGIN_TRY_LIMITS.ipPerHour, ipPerHour: LOGIN_TRY_LIMITS.ipPerHour }, ipLimitKey(ip), null);
+  return verdict;
+}
+
+/**
+ * Take one link check from this IP's allowance (LOGIN_LINK_LIMITS), the same way as claimLoginTry:
+ * the IP's key where claim_login_mail keeps the address. Without a client IP: "ok".
+ */
+export async function claimLoginLink(ip: string | null): Promise<LoginMailVerdict> {
+  if (!ip) return "ok";
+  const { verdict } = await claim("login-link", { emailPer10Minutes: LOGIN_LINK_LIMITS.ipPer10Minutes, emailPerHour: LOGIN_LINK_LIMITS.ipPerHour, ipPerHour: LOGIN_LINK_LIMITS.ipPerHour }, ipLimitKey(ip), null);
   return verdict;
 }

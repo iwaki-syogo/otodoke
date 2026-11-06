@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { throwawayAuthClient } from "@/lib/auth-session";
 import { CONFIRMED_PATH, RESET_PATH, linkFailureCode, loginErrorPath, type AuthFailure, type LoginCode } from "@/lib/login-errors";
+import { claimLoginLink, clientIp } from "@/lib/login-mail-limit";
 import { fromThisSite } from "@/lib/request-origin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -41,6 +42,11 @@ export async function GET(request: NextRequest) {
  *   (any other one signed in here is replaced), and the answer is always RESET_PATH. The link's
  *   next is never read.
  * - anything else: refused.
+ *
+ * Before Supabase checks a token, the check is taken from the client IP's allowance
+ * (src/lib/login-mail-limit.ts LOGIN_LINK_LIMITS): Supabase's own limit is per IP, and every
+ * visitor's link is checked from this server's. Past it, /login?error=link_limited; the token is
+ * not sent, so the link still works later.
  */
 export async function POST(request: NextRequest) {
   // Only the button on /auth/continue may post here. Another site's form would otherwise sign this
@@ -53,10 +59,17 @@ export async function POST(request: NextRequest) {
   const tokenHash = form.get("token_hash");
   const type = form.get("type");
   if (typeof tokenHash !== "string" || !tokenHash || typeof type !== "string" || !type) return go(loginErrorPath("link_incomplete"), 303);
-  if (type === "recovery") return recover(tokenHash);
-  if (isConfirmType(type)) return confirmOnly(tokenHash, type);
-  console.warn("[auth] refused a link of an unknown type:", type.slice(0, 40));
-  return go(loginErrorPath("link_invalid"), 303);
+  const verify = type === "recovery" ? () => recover(tokenHash) : isConfirmType(type) ? () => confirmOnly(tokenHash, type) : null;
+  if (!verify) {
+    console.warn("[auth] refused a link of an unknown type:", type.slice(0, 40));
+    return go(loginErrorPath("link_invalid"), 303);
+  }
+  const limit = await claimLoginLink(clientIp(request.headers));
+  if (limit !== "ok") {
+    console.warn("[auth] link limited:", limit);
+    return go(loginErrorPath("link_limited"), 303);
+  }
+  return verify();
 }
 
 /** The login page with the code for a token Supabase did not accept (its text only to the log). */

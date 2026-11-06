@@ -37,9 +37,10 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  *   (privacy-page.test.ts finds every place that sets one).
  * - メールの送信とログインを試した記録: login_mail_sends (supabase/migrations/20261106100000), claimed
  *   by src/lib/login-mail-limit.ts before a form of this site asks Supabase for a mail
- *   (claimLoginMail) and before every sign-in with the login secret, the change's check of the
+ *   (claimLoginMail), before every sign-in with the login secret, the change's check of the
  *   current one included (claimLoginTry by IP, claimLoginAttempt by address and IP; login-auth.ts
- *   claimSignIn). Each claim first removes the rows older than an hour.
+ *   claimSignIn), and before /auth/confirm asks Supabase to check a mail's link (claimLoginLink by
+ *   IP, the press of 「確認する」 or 「再設定する」). Each claim first removes the rows older than an hour.
  * - 11 月 14 日 and what a reset costs: src/lib/mail-notices.ts, the same words in
  *   mail-handling.tsx, the password panel of 設定 and README. Reword them all once
  *   supabase/pending/20261114090000 has run.
@@ -77,7 +78,7 @@ export default function PrivacyPage() {
             押したメールの差出人のドメインを覚えます。次からその差出人のメールは、ふるいで落ちても Claude Haiku で確かめます。覚えている間は、押したメールの件名と差出人のドメインを残します。設定の「外す」で外すと、ほかと同じく 14 日で消します。Gmail など多くの人が使うドメインは覚えません。
           </Term>
           <Term name="メールの送信とログインを試した記録">
-            送りすぎを防ぐために使います。メールアドレスと接続元の IP アドレスをハッシュ値に変えて、送った時刻と一緒に記録します。ログインを試したときも、続けて試されるのを防ぐため、メールアドレスと接続元の IP アドレスのハッシュ値と日時を記録します。どちらのアドレスも、そのままでは記録しません。1 時間を過ぎた記録は、次に記録するときに消します。
+            送りすぎを防ぐために使います。メールアドレスと接続元の IP アドレスをハッシュ値に変えて、送った時刻と一緒に記録します。ログインを試したときも、続けて試されるのを防ぐため、メールアドレスと接続元の IP アドレスのハッシュ値と日時を記録します。確認や再設定のリンクを使ったときも、混み合うのを防ぐため、接続元の IP アドレスのハッシュ値と日時を記録します。どちらのアドレスも、そのままでは記録しません。1 時間を過ぎた記録は、次に記録するときに消します。
           </Term>
           <Term name="Claude を使った回数">1 日の上限を守るために、あなたのメールに Claude を使った回数を日ごとに記録します。</Term>
           {/* The plans set these periods: Supabase Pro log retention (API & Database) 7 days, Vercel Pro
