@@ -1,7 +1,7 @@
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
-import { CopyButton } from "../copy-button";
-import { ForwardingGuide } from "../forwarding-guide";
+import { CopyButton } from "@/components/copy-button";
+import { ForwardingGuides } from "../forwarding-guide";
 import { readActiveKey, readConfirmUrl } from "../settings-reads";
 import { SubPage } from "../sub-page";
 
@@ -54,7 +54,7 @@ export default async function ForwardingPage() {
         </section>
       ) : null}
 
-      <ForwardingGuide />
+      <ForwardingGuides />
     </SubPage>
   );
 }

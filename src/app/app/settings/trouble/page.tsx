@@ -1,3 +1,5 @@
+import { FoldCard, PitfallBody } from "@/components/forwarding-steps";
+import { FORWARDING_PITFALLS, PITFALLS_HEADING, PITFALLS_LEAD } from "@/lib/forwarding-guide";
 import { createClient } from "@/lib/supabase/server";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import { readWaitingMail } from "../actions";
@@ -33,6 +35,17 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
         <p className="text-sm leading-6 text-neutral-600">未読のメールはありません。</p>
       )}
       {errorMessage ? <p className="-mt-4 break-words text-sm text-red-800">{errorMessage}</p> : null}
+      <section>
+        <h2 className="text-base font-bold">{PITFALLS_HEADING}</h2>
+        <p className="mt-1 text-sm leading-6 text-neutral-600">{PITFALLS_LEAD}</p>
+        <div className="mt-2 flex flex-col gap-2">
+          {FORWARDING_PITFALLS.map((p) => (
+            <FoldCard key={p.title} title={p.title}>
+              <PitfallBody pitfall={p} />
+            </FoldCard>
+          ))}
+        </div>
+      </section>
       <RowCard>
         <RowLink href="/app/settings/dropped" icon="dropped" title="読まなかったメール" />
         <RowLink href="/app/settings/forwarding" icon="forwarding" title="メールの転送" />

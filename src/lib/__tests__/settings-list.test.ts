@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/app/settings",
   useSearchParams: () => new URLSearchParams(),
 }));
+vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => "abcdefghjk@in.example.test" }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => Object.assign(mocks.state.db as FakeDb, { auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) } }),
   getUser: async () => ({ id: USER, email: "qa@example.com" }),
@@ -188,11 +189,61 @@ describe("the trouble page", () => {
     expect(findAll(root, (n) => n.tag === "a").map((a) => a.attrs.href)).toContain("/app/settings/forwarding");
   });
 
+  it("shows every pitfall of the shared words as a fold, between the unread card and the link rows", async () => {
+    const { FORWARDING_PITFALLS, PITFALLS_HEADING, PITFALLS_LEAD } = await import("@/lib/forwarding-guide");
+    const root = await render(0);
+    const text = textOf(root).replace(/\s+/g, " ");
+    expect(text).toContain(PITFALLS_HEADING);
+    expect(text).toContain(PITFALLS_LEAD);
+    const folds = findAll(root, (n) => n.tag === "details");
+    expect(folds).toHaveLength(FORWARDING_PITFALLS.length);
+    for (const p of FORWARDING_PITFALLS) expect(findAll(root, (n) => n.tag === "summary").map((n) => textOf(n).trim())).toContain(p.title);
+    expect(text.indexOf("未読のメールはありません。")).toBeLessThan(text.indexOf(PITFALLS_HEADING));
+    expect(text.indexOf(PITFALLS_HEADING)).toBeLessThan(text.indexOf("読まなかったメール"));
+    for (const a of findAll(root, (n) => n.tag === "a" && /^https?:/.test(n.attrs.href ?? ""))) {
+      expect(a.attrs.target).toBe("_blank");
+      expect(a.attrs.rel).toContain("noopener");
+    }
+  });
+
   it("a failed count says 「読み込めませんでした」, never 「未読のメールはありません。」", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const root = await render("fail");
     expect(textOf(root)).toContain("読み込めませんでした");
     expect(textOf(root)).not.toContain("未読のメールはありません。");
     log.mockRestore();
+  });
+});
+
+describe("the forwarding page's guides", () => {
+  it("renders every guide of the shared words as a fold, and links to the full guide", async () => {
+    activeKey();
+    const { FORWARDING_GUIDES, GMAIL_FILTER } = await import("@/lib/forwarding-guide");
+    const Page = (await import("@/app/app/settings/forwarding/page")).default;
+    const root = parseHtml(renderToStaticMarkup(await Page()));
+    const titles = findAll(root, (n) => n.tag === "summary").map((n) => textOf(n).trim());
+    expect(titles).toEqual(FORWARDING_GUIDES.map((g) => g.title));
+    const text = textOf(root).replace(/\s+/g, " ");
+    for (const g of FORWARDING_GUIDES) for (const s of g.groups.flatMap((x) => x.steps)) expect(text, s.text).toContain(s.text);
+    expect(text).toContain(GMAIL_FILTER);
+    expect(text).toContain("自動転送の設定は最初の 1 回だけ");
+    expect(text).toContain("店ごとの設定はいりません。新しい店で買っても、そのまま読み取ります。");
+    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "くわしい手順を見る").map((a) => a.attrs.href)).toEqual(["/guide/forwarding"]);
+  });
+});
+
+describe("the Gmail filter words", () => {
+  it("are written once, in src/lib/forwarding-guide.ts", () => {
+    const root = path.resolve(__dirname, "../..");
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.(ts|tsx)$/.test(e.name) && !full.includes("__tests__") && readFileSync(full, "utf8").includes("{注文 発送 出荷")) hits.push(path.relative(root, full));
+      }
+    };
+    walk(root);
+    expect(hits).toEqual(["lib/forwarding-guide.ts"]);
   });
 });

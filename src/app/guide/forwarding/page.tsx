@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
-import { CopyButton } from "@/app/app/settings/copy-button";
+import { GuideGroups, PitfallBody } from "@/components/forwarding-steps";
 import {
   BEFORE_YOU_START,
   BEFORE_YOU_START_HEADING,
@@ -12,7 +12,6 @@ import {
   FORWARDING_LEAD_NOTE,
   FORWARDING_PITFALLS,
   FORWARDING_TITLE,
-  GMAIL_FILTER,
   PITFALLS_HEADING,
   PITFALLS_LEAD,
   type ForwardingGuide,
@@ -49,49 +48,7 @@ function ExternalButton({ href, label }: { href: string; label: string }) {
   );
 }
 
-function TextLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm leading-6 text-sky-700 underline">
-      {label}
-    </a>
-  );
-}
-
-function StepList({ steps, start = 1 }: { steps: { text: string; copy?: "gmailFilter" }[]; start?: number }) {
-  return (
-    <ol className="flex flex-col gap-3">
-      {steps.map((step, i) => (
-        <li key={start + i} className="flex gap-3">
-          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-medium text-white">{start + i}</span>
-          <div className="min-w-0 flex-1 text-sm leading-6 text-neutral-600">
-            {step.text}
-            {step.copy === "gmailFilter" && (
-              <div className="mt-2 flex items-center gap-2 rounded-xl bg-neutral-50 p-2">
-                <code className="min-w-0 flex-1 break-all text-xs">{GMAIL_FILTER}</code>
-                <CopyButton text={GMAIL_FILTER} />
-              </div>
-            )}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function CodeList({ codes }: { codes: string[] }) {
-  return (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {codes.map((c) => (
-        <code key={c} className="break-all rounded-lg bg-neutral-50 px-2 py-1 text-xs">
-          {c}
-        </code>
-      ))}
-    </div>
-  );
-}
-
 function GuideSection({ guide }: { guide: ForwardingGuide }) {
-  const starts = guide.groups.map((_, i) => 1 + guide.groups.slice(0, i).reduce((n, g) => n + g.steps.length, 0));
   return (
     <section id={guide.id} className={`${CARD} scroll-mt-4`}>
       <h2 className="text-base font-bold">{guide.title}</h2>
@@ -104,15 +61,7 @@ function GuideSection({ guide }: { guide: ForwardingGuide }) {
         </div>
       )}
       {guide.intro && <p className="mt-3 text-sm leading-6 text-neutral-600">{guide.intro}</p>}
-      {guide.groups.map((group, gi) => {
-        const start = starts[gi];
-        return (
-          <div key={gi} className="mt-4">
-            {group.heading && <h3 className="mb-3 text-sm font-bold">{group.heading}</h3>}
-            <StepList steps={group.steps} start={start} />
-          </div>
-        );
-      })}
+      <GuideGroups groups={guide.groups} />
       {guide.notes.map((note) => (
         <p key={note} className="mt-4 text-xs leading-5 text-neutral-500">
           {note}
@@ -123,45 +72,12 @@ function GuideSection({ guide }: { guide: ForwardingGuide }) {
 }
 
 function Pitfall({ pitfall, n }: { pitfall: ForwardingPitfall; n: number }) {
-  const [first, ...rest] = pitfall.body;
-  const body = (t: string) => (
-    <p key={t} className="mt-2 text-sm leading-6 text-neutral-600">
-      {t}
-    </p>
-  );
   return (
     <div className="mt-5">
       <h3 className="text-sm font-bold">
         {n}. {pitfall.title}
       </h3>
-      {first && body(first)}
-      {pitfall.steps && (
-        <>
-          {pitfall.stepsLabel && <p className="mt-2 text-sm leading-6 text-neutral-600">{pitfall.stepsLabel}</p>}
-          <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm leading-6 text-neutral-600">
-            {pitfall.steps.map((s) => (
-              <li key={s}>{s}</li>
-            ))}
-          </ol>
-        </>
-      )}
-      {pitfall.codes && (
-        <>
-          {pitfall.codesLead && body(pitfall.codesLead)}
-          <CodeList codes={pitfall.codes} />
-        </>
-      )}
-      {pitfall.after?.map(body)}
-      {rest.map(body)}
-      {pitfall.links && (
-        <ul className="mt-2 flex flex-col gap-1">
-          {pitfall.links.map((l) => (
-            <li key={l.href}>
-              <TextLink href={l.href} label={l.label} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <PitfallBody pitfall={pitfall} />
     </div>
   );
 }
@@ -213,7 +129,7 @@ export default function ForwardingGuidePage() {
             <li key={t}>{t}</li>
           ))}
         </ul>
-        <Link href="/app/settings" className={`${SECONDARY_BUTTON} mt-4`}>
+        <Link href="/app/settings/forwarding" className={`${SECONDARY_BUTTON} mt-4`}>
           {FORWARDING_CHECK_ACTION}
         </Link>
       </section>

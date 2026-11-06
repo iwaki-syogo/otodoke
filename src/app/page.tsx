@@ -8,9 +8,11 @@ export default async function Home() {
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 py-10">
       <header className="flex items-center justify-between">
         <Wordmark className="text-2xl" />
-        <Link href={user ? "/app" : "/login"} className="text-sm font-medium text-neutral-700 underline-offset-4 hover:underline">
-          {user ? "荷物を見る" : "ログイン"}
-        </Link>
+        {user ? (
+          <Link href="/app" className="text-sm font-medium text-neutral-700 underline-offset-4 hover:underline">
+            荷物を見る
+          </Link>
+        ) : null}
       </header>
 
       <section className="mt-16">
@@ -22,13 +24,21 @@ export default async function Home() {
         <p className="mt-5 text-base leading-7 text-neutral-600">
           どの店で買った荷物も、いつ届くか・いつ家にいればいいかが 1 つのカレンダーに並びます。設定は最初の 1 回だけ。
         </p>
-        {/* Signed out: the account first (the address and a password); the header has the login. */}
+        {/* Signed out: the account first (the address and a password), then the login right under it. */}
         <Link
           href={user ? "/app" : "/signup"}
           className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-neutral-900 px-5 py-4 text-base font-medium text-white active:opacity-80"
         >
           {user ? "荷物を見る" : "アカウントを作る"}
         </Link>
+        {user ? null : (
+          <Link
+            href="/login"
+            className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-neutral-300 bg-white px-5 py-4 text-base font-medium text-neutral-900 active:opacity-80"
+          >
+            ログイン
+          </Link>
+        )}
       </section>
 
       <section className="mt-14 grid gap-4">

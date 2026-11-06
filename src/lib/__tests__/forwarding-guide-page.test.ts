@@ -23,7 +23,7 @@ vi.mock("next/link", async () => {
 vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
 
 const PAGE_SOURCE = path.join(process.cwd(), "src/app/guide/forwarding/page.tsx");
-const SETTINGS_SOURCE = path.join(process.cwd(), "src/app/app/settings/page.tsx");
+const SETTINGS_SOURCE = path.join(process.cwd(), "src/app/app/settings/forwarding-guide.tsx");
 const HOSTS = ["mail.google.com", "www.icloud.com", "outlook.live.com", "www.kuronekoyamato.co.jp", "faq.kuronekoyamato.co.jp"];
 
 async function render(): Promise<HtmlNode> {
@@ -130,7 +130,13 @@ describe("/guide/forwarding", () => {
     const source = readFileSync(SETTINGS_SOURCE, "utf8");
     const own = /const GMAIL_FILTER = "([^"]*)"/.exec(source);
     if (own) expect(own[1]).toBe(GMAIL_FILTER);
-    else expect(source).toContain("forwarding-guide");
+    // The settings guide imports the words; it has no copy of its own.
+    else expect(source).toContain('from "@/lib/forwarding-guide"');
+  });
+
+  it("sends 「設定を開く」 to the 「メールの転送」 page", async () => {
+    const root = await render();
+    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "設定を開く").map((a) => a.attrs.href)).toEqual(["/app/settings/forwarding"]);
   });
 
   it("reads nothing from the database or the request", () => {
