@@ -5,6 +5,7 @@ import Testing
 /// [Batch 2, task 12] iOS-12 (back in front, the screen shown is read again, and only that one) and
 /// 「古くなった」 reaching the list and the detail. CX1 (11/6 13:20): the writer publishes, the other
 /// screens read again when next shown; the two paths of M1 are tested end to end.
+/// [N-new3] By token (appeared / disappeared, the tab selected), as the app tells the refresher since N3.
 @Suite("ScreenRefresher (batch 2, task 12)")
 @MainActor
 struct ScreenRefresherTests {
@@ -12,21 +13,32 @@ struct ScreenRefresherTests {
         var calls: [ScreenID] = []
     }
 
-    private func refresher(_ ids: [ScreenID], _ counter: Counter) -> ScreenRefresher {
-        let r = ScreenRefresher()
-        for id in ids {
-            r.register(id) { counter.calls.append(id) }
+    final class Box {}
+
+    final class Weak {
+        weak var value: Box?
+        init(_ value: Box) { self.value = value }
+    }
+
+    /// Each tab's root, appeared in its tab.
+    private func roots(_ r: ScreenRefresher, _ counter: Counter) -> [MainTab: ScreenToken] {
+        let ids: [(MainTab, ScreenID)] = [(.parcels, .parcels), (.calendar, .calendar), (.spend, .spend), (.settings, .settings)]
+        var tokens: [MainTab: ScreenToken] = [:]
+        for (tab, id) in ids {
+            tokens[tab] = r.appeared(id, in: tab) { counter.calls.append(id) }
         }
-        return r
+        return tokens
     }
 
     @Test func onlyTheScreenInFrontReadsAgain() async {
         let counter = Counter()
-        let r = refresher([.parcels, .calendar, .spend, .settings], counter)
-        r.shown(.calendar)
+        let r = ScreenRefresher()
+        // Every tab's root is there (a TabView keeps them); the selected one is in front.
+        _ = roots(r, counter)
+        r.select(.calendar)
         await r.sceneBecameActive()
         #expect(counter.calls == [.calendar])
-        r.shown(.spend)
+        r.select(.spend)
         await r.sceneBecameActive()
         #expect(counter.calls == [.calendar, .spend])
     }
@@ -34,38 +46,81 @@ struct ScreenRefresherTests {
     @Test func aDetailOverTheListIsTheOneInFront() async {
         let counter = Counter()
         let id = Rows.id(1)
-        let r = refresher([.parcels, .detail(id)], counter)
-        r.shown(.parcels)
-        r.shown(.detail(id))
+        let r = ScreenRefresher()
+        r.select(.parcels)
+        let root = r.appeared(.parcels, in: .parcels) { counter.calls.append(.parcels) }
+        let detail = r.appeared(.detail(id), in: .parcels) { counter.calls.append(.detail(id)) }
         await r.sceneBecameActive()
         #expect(counter.calls == [.detail(id)])
+        // The list reports again later (its onAppear again): the detail over it stays in front.
+        r.disappeared(root)
+        let again = r.appeared(.parcels, in: .parcels) { counter.calls.append(.parcels) }
+        await r.sceneBecameActive()
+        #expect(counter.calls == [.detail(id), .detail(id)])
+        r.disappeared(detail)
+        r.disappeared(again)
     }
 
     @Test func nothingInFrontReadsNothing() async {
         let counter = Counter()
-        let r = refresher([.calendar], counter)
-        r.shown(.calendar)
-        r.hidden(.calendar)
+        let r = ScreenRefresher()
+        r.select(.calendar)
+        let calendar = r.appeared(.calendar, in: .calendar) { counter.calls.append(.calendar) }
+        r.disappeared(calendar)
         await r.sceneBecameActive()
         #expect(counter.calls.isEmpty)
+        // A screen of another tab is not in front of the selected tab with nothing shown.
+        let spend = r.appeared(.spend, in: .spend) { counter.calls.append(.spend) }
+        await r.sceneBecameActive()
+        #expect(counter.calls.isEmpty)
+        r.disappeared(spend)
     }
 
     @Test func anUnregisteredScreenIsNotCalled() async {
         let counter = Counter()
-        let r = refresher([.settings], counter)
-        r.shown(.settings)
-        r.unregister(.settings)
+        let r = ScreenRefresher()
+        r.select(.settings)
+        var box: Box? = Box()
+        let ref = Weak(box!)
+        let token = r.appeared(.settings, in: .settings) { [box] in
+            _ = box
+            counter.calls.append(.settings)
+        }
+        box = nil
+        #expect(ref.value != nil)
+        r.disappeared(token)
+        // Let go: never called, and its refresh (and what it holds) is gone.
         await r.sceneBecameActive()
         #expect(counter.calls.isEmpty)
+        #expect(ref.value == nil)
+        // Giving the old token back again lets go of nothing else (ShownScreen may do so on a re-appear).
+        let again = r.appeared(.settings, in: .settings) { counter.calls.append(.settings) }
+        r.disappeared(token)
+        await r.sceneBecameActive()
+        #expect(counter.calls == [.settings])
+        r.disappeared(again)
     }
 
     @Test func eachComingBackReadsOnce() async {
         let counter = Counter()
-        let r = refresher([.spend], counter)
-        r.shown(.spend)
-        r.shown(.spend)
+        let r = ScreenRefresher()
+        r.select(.spend)
+        // The same screen reported twice (two appearances on the way): one coming back, one read, the
+        // later appearance's.
+        var labels: [String] = []
+        let first = r.appeared(.spend, in: .spend) {
+            counter.calls.append(.spend)
+            labels.append("first")
+        }
+        let second = r.appeared(.spend, in: .spend) {
+            counter.calls.append(.spend)
+            labels.append("second")
+        }
         await r.sceneBecameActive()
         #expect(counter.calls == [.spend])
+        #expect(labels == ["second"])
+        r.disappeared(first)
+        r.disappeared(second)
     }
 }
 

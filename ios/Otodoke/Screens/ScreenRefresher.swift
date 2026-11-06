@@ -3,9 +3,7 @@
 // the front is the selected tab's top screen: the deepest on its stack (the root 0, a page pushed on it
 // 1, a detail pushed on a delivered or cancelled page 2), and of two at the same depth the one that
 // appeared later, whatever order the appear and disappear calls come in. A screen that disappears is
-// let go. The older API (register / shown / hidden / unregister) is not used by the app any more; it
-// stays only for RefreshWiringTests and ScreenRefresherOrderTests (moving them needs a test change
-// approval, N-new3), and is read only when no screen appeared by token.
+// let go. [N-new3] The older id-keyed API is gone: every screen and test tells the refresher by token.
 
 import Foundation
 
@@ -81,61 +79,16 @@ final class ScreenRefresher {
             .map { (token: $0.key, appearance: $0.value) }
     }
 
-    // MARK: by id (the older API)
-
-    /// More than this many shown at once only happens when appearances are missed: the oldest go.
-    private static let maxShown = 16
-
-    private var refreshes: [ScreenID: Refresh] = [:]
-    /// The screens shown, oldest first; the last is in front. The same id may be in twice (a detail of
-    /// one parcel open in two tabs): each `hidden` takes out the older one, as the screen that goes
-    /// is the one that appeared before (the new tab may appear before the old one disappears).
-    private var shownStack: [ScreenID] = []
-    /// The screens being read again for a coming back: a second coming back meanwhile does not read
-    /// them once more.
-    private var refreshing: Set<ScreenID> = []
-
     init() {}
-
-    /// The read again of a screen. A second register of the same id replaces the first (the screen
-    /// that appeared last is the one shown).
-    func register(_ id: ScreenID, _ refresh: @escaping Refresh) {
-        refreshes[id] = refresh
-    }
-
-    func unregister(_ id: ScreenID) {
-        refreshes[id] = nil
-    }
-
-    /// The screen in front now (a tab, or a detail pushed over the list).
-    func shown(_ id: ScreenID) {
-        guard shownStack.last != id else { return }
-        shownStack.append(id)
-        if shownStack.count > Self.maxShown {
-            shownStack.removeFirst(shownStack.count - Self.maxShown)
-        }
-    }
-
-    func hidden(_ id: ScreenID) {
-        guard let i = shownStack.firstIndex(of: id) else { return }
-        shownStack.remove(at: i)
-    }
 
     // MARK: coming back
 
     /// scenePhase became active: the screen in front reads again, once.
     func sceneBecameActive() async {
-        if !appearances.isEmpty {
-            guard let front, !refreshingTokens.contains(front.token) else { return }
-            refreshingTokens.insert(front.token)
-            defer { refreshingTokens.remove(front.token) }
-            await front.appearance.refresh()
-            return
-        }
-        guard let id = shownStack.last, let refresh = refreshes[id], !refreshing.contains(id) else { return }
-        refreshing.insert(id)
-        defer { refreshing.remove(id) }
-        await refresh()
+        guard let front, !refreshingTokens.contains(front.token) else { return }
+        refreshingTokens.insert(front.token)
+        defer { refreshingTokens.remove(front.token) }
+        await front.appearance.refresh()
     }
 }
 

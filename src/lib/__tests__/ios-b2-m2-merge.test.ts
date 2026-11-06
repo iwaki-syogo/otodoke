@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 /**
  * [iOS batch 2, M2 merge] After the approved M1 (ScreenRefresher by token, N3) came into M2: the delivered
  * and cancelled pages tell the refresher by token too, and no app screen calls the older id-keyed API
- * (register / shown / hidden / unregister). With a screen by token in the app, the older API is never
+ * (register / shown / hidden / unregister). With a screen by token in the app, the older API was never
  * read (ScreenRefresher.sceneBecameActive), so a page on it would never read again back in front.
+ * [N-new3] The older API is gone from ScreenRefresher (its tests were moved to tokens).
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
@@ -58,6 +59,43 @@ describe("M2 merge: the delivered and cancelled pages by token", () => {
     expect(groups).toMatch(/detail\(parcel\.id\)\s*\.environment\(\\\.detailDepth,\s*detailDepth\)/);
     const tabs = stripComments(readFileSync(path.join(APP, "Screens/MainTabView.swift"), "utf8"));
     expect(tabs).toMatch(/\.shownScreen\(\.detail\(model\.id\),\s*in:\s*tab,\s*depth:\s*depth/);
+  });
+});
+
+/** A name of the older id-keyed API (declarations, its stored state, its fallback). */
+const OLDER_NAMES = /\bfunc\s+(register|unregister|shown|hidden)\s*\(|\b(shownStack|maxShown|refreshes|refreshing)\b/;
+
+describe("N-new3: the older ScreenRefresher API is gone", () => {
+  it("ScreenRefresher.swift holds none of its names", () => {
+    const src = stripComments(readFileSync(path.join(APP, "Screens/ScreenRefresher.swift"), "utf8"));
+    expect(src).toMatch(/func appeared\(/);
+    expect(src).toMatch(/func disappeared\(/);
+    const found = src.split("\n").filter((line) => OLDER_NAMES.test(line));
+    expect(found).toEqual([]);
+  });
+
+  it("the check catches the older names (negative control)", () => {
+    for (const line of [
+      "    func register(_ id: ScreenID, _ refresh: @escaping Refresh) {",
+      "    func unregister(_ id: ScreenID) {",
+      "    func shown(_ id: ScreenID) {",
+      "    func hidden(_ id: ScreenID) {",
+      "    private var shownStack: [ScreenID] = []",
+      "    private static let maxShown = 16",
+      "    private var refreshes: [ScreenID: Refresh] = [:]",
+      "    private var refreshing: Set<ScreenID> = []",
+      "        guard let id = shownStack.last, let refresh = refreshes[id], !refreshing.contains(id) else { return }",
+    ]) {
+      expect(OLDER_NAMES.test(line), line).toBe(true);
+    }
+    for (const line of [
+      "    private var refreshingTokens: Set<ScreenToken> = []",
+      "    func appeared(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, refresh: @escaping Refresh) -> ScreenToken {",
+      "    func disappeared(_ token: ScreenToken) {",
+      "        await front.appearance.refresh()",
+    ]) {
+      expect(OLDER_NAMES.test(line), line).toBe(false);
+    }
   });
 });
 
