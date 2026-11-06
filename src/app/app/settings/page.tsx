@@ -8,6 +8,7 @@ import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { formatDateTimeJa } from "@/lib/format";
 import { DemoLoader } from "./demo-loader";
+import { PressButton } from "./press";
 import { MailKeyPanel } from "./mail-key-panel";
 import { MailHandling } from "./mail-handling";
 import { readAll } from "@/lib/supabase/read-all";
@@ -153,9 +154,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           <h2 className="text-base font-bold">未読のメールが {waiting} 通あります</h2>
           <p className="mt-1 text-sm leading-6">1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。</p>
           <form action={readWaitingMail} className="mt-3">
-            <button type="submit" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
-              読み取る
-            </button>
+            <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
           </form>
         </section>
       ) : null}
@@ -227,11 +226,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
                   {d.flagged_at ? (
                     <span className="shrink-0 text-xs text-emerald-800">荷物として記録済み</span>
                   ) : (
-                    <form action={markWronglyDropped}>
+                    <form action={markWronglyDropped} className="shrink-0">
                       <input type="hidden" name="id" value={d.id} />
-                      <button type="submit" className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium">
-                        これは荷物
-                      </button>
+                      <PressButton label="これは荷物" busyLabel="記録しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                     </form>
                   )}
                 </li>
@@ -248,11 +245,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
               {remembered.map((domain) => (
                 <li key={domain} className="flex items-center gap-3 px-4 py-3">
                   <p className="min-w-0 flex-1 truncate text-sm">{domain}</p>
-                  <form action={forgetSender}>
+                  <form action={forgetSender} className="shrink-0">
                     <input type="hidden" name="domain" value={domain} />
-                    <button type="submit" className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium">
-                      外す
-                    </button>
+                    <PressButton label="外す" busyLabel="外しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                   </form>
                 </li>
               ))}

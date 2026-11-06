@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { passphraseProblem, PASSPHRASE_MIN_LENGTH, PASSPHRASE_RULE } from "@/lib/crypto/key-wrap";
 import { changePassphrase, createMailKey, keyErrorText, PassphraseChangeUnconfirmedError, useTabKey } from "@/lib/crypto/tab-key";
 import { UnlockForm } from "../unlock-form";
 import { sealStoredMail } from "./key-actions";
+import { BUSY, pressLabel } from "./press";
 
 export interface MailKeyState {
   userId: string;
@@ -30,7 +31,9 @@ const PLAINTEXT_DROP_NOTICE = "決めないままだと、11 月 14 日に件名
 const PLAIN_COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
 
 const input = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base";
-const primary = "rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white disabled:opacity-60";
+// Busy is shown with aria-disabled and BUSY, never `disabled` (src/app/app/settings/press.tsx).
+const primary = "inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white disabled:opacity-60";
+const busyClass = (busy: boolean) => (busy ? ` ${BUSY}` : "");
 
 export function MailKeyPanel({ state }: { state: MailKeyState }) {
   const { userId, keyCreatedAt, currentKeyId, plainCount, oldKeyCount } = state;
@@ -91,14 +94,17 @@ function NewKeyForm({ userId, expectedKeyId, button, busyLabel, acknowledge }: {
   const [again, setAgain] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A ref, not state: a second press (or Enter) can come before React has drawn the first.
+  const running = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (running.current) return;
     const problem = passphraseProblem(first, again);
     if (problem) return setError(problem);
     if (!agreed) return setError("チェックを入れてください");
+    running.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -109,6 +115,7 @@ function NewKeyForm({ userId, expectedKeyId, button, busyLabel, acknowledge }: {
     } catch (err) {
       setError(keyErrorText(err));
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -124,8 +131,8 @@ function NewKeyForm({ userId, expectedKeyId, button, busyLabel, acknowledge }: {
         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" />
         {acknowledge}
       </label>
-      <button type="submit" disabled={busy} className={primary}>
-        {busy ? busyLabel : button}
+      <button type="submit" aria-disabled={busy || undefined} aria-busy={busy || undefined} className={`${primary}${busyClass(busy)}`}>
+        {pressLabel(busy, button, busyLabel)}
       </button>
       {error ? <p className="text-sm text-red-800">{error}</p> : null}
     </form>
@@ -137,13 +144,15 @@ function ChangeForm({ userId }: { userId: string }) {
   const [first, setFirst] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (running.current || !old) return;
     const problem = passphraseProblem(first, again);
     if (problem) return setMessage({ ok: false, text: problem });
+    running.current = true;
     setBusy(true);
     setMessage(null);
     try {
@@ -161,6 +170,7 @@ function ChangeForm({ userId }: { userId: string }) {
       }
       setMessage({ ok: false, text: keyErrorText(err) });
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -173,8 +183,9 @@ function ChangeForm({ userId }: { userId: string }) {
       <input type="password" autoComplete="new-password" aria-label="新しい合言葉" placeholder={`新しい合言葉（${PASSPHRASE_MIN_LENGTH} 文字以上）`} value={first} onChange={(e) => setFirst(e.target.value)} className={input} />
       <input type="password" autoComplete="new-password" aria-label="新しい合言葉をもう一度" placeholder="もう一度" value={again} onChange={(e) => setAgain(e.target.value)} className={input} />
       <p className="text-xs leading-5 text-neutral-500">{PASSPHRASE_RULE}</p>
-      <button type="submit" disabled={busy || !old} className={primary}>
-        {busy ? "変えています…" : "変える"}
+      {/* disabled only while 「今の合言葉」 is empty (nothing to send yet), never while busy. */}
+      <button type="submit" disabled={!busy && !old} aria-disabled={busy || undefined} aria-busy={busy || undefined} className={`${primary}${busyClass(busy)}`}>
+        {pressLabel(busy, "変える", "変えています…")}
       </button>
       {message ? <p className={`text-sm ${message.ok ? "text-emerald-800" : "text-red-800"}`}>{message.text}</p> : null}
     </form>
@@ -182,16 +193,18 @@ function ChangeForm({ userId }: { userId: string }) {
 }
 
 /** 「暗号化する」: batches of 50 until none is left, showing what remains (public samples are not counted). */
-function SealBanner({ count }: { count: number }) {
+export function SealBanner({ count }: { count: number }) {
   const router = useRouter();
   const [remaining, setRemaining] = useState(count);
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [unsealable, setUnsealable] = useState(0);
 
   async function run() {
-    if (busy) return;
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError(null);
     // Where this run is (the server's cursor), and how many rows could not be sealed on the way.
@@ -218,6 +231,7 @@ function SealBanner({ count }: { count: number }) {
     } catch {
       setError("途中で止まりました。もう一度押すと続きから暗号化します");
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -227,8 +241,8 @@ function SealBanner({ count }: { count: number }) {
     <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <p className="text-sm font-bold">暗号化されていないメールが {remaining} 通あります</p>
       <p className="mt-1 text-sm leading-6">暗号化を始める前に読み取ったメールなどです。押すまでは、運営者が読める形で残ります。</p>
-      <button type="button" onClick={run} disabled={busy} className={`mt-3 ${primary}`}>
-        {busy ? `暗号化しています…あと ${remaining} 通` : "暗号化する"}
+      <button type="button" onClick={run} aria-disabled={busy || undefined} aria-busy={busy || undefined} className={`mt-3 ${primary}${busyClass(busy)}`}>
+        {pressLabel(busy, "暗号化する", `暗号化しています…あと ${remaining} 通`)}
       </button>
       {error ? <p className="mt-2 text-sm text-red-800">{error}</p> : null}
       {unsealable > 0 && !busy ? <p className="mt-2 text-sm text-red-800">暗号化できなかったメールが {unsealable} 通ありました。もう一度押すと試し直します</p> : null}
