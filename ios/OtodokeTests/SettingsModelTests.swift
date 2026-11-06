@@ -543,8 +543,8 @@ struct SettingsModelTests {
     @Test func theKeyBadgeForTheCountsThatCouldNotBeRead() async throws {
         let sampleFails = try await setUp(faults: { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) })
         #expect(SettingsView.keyBadge(for: sampleFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
-        let allFail = try await setUp(faults: { await $0.fail(where: { $0.url.lastPathComponent == "emails" }, with: .http(503)) })
-        #expect(SettingsView.keyBadge(for: allFail.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        let oldKeyFails = try await setUp(faults: { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) })
+        #expect(SettingsView.keyBadge(for: oldKeyFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
         #expect(SettingsMenuText.keyUnknownBadge == "確認できません")
     }
 
