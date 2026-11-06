@@ -82,9 +82,9 @@ final class MainScreens {
     var unlock: UnlockModel?
     var faceID: FaceIDSwitch?
 
-    /// TDD-STUB(task 21): the delivered page's model, told of the changes.
+    /// The delivered page's model, told of the changes.
     func delivered() -> DeliveredModel {
-        DeliveredModel(reader: StatusListReader(provider: list.reader.provider), changes: nil) // TDD-STUB(task 21)
+        DeliveredModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
     }
 
     /// TDD-STUB(task 22): the cancelled page's model, told of the changes.
@@ -157,6 +157,8 @@ struct MainTabView: View {
                 break
             }
         }
+        // The delivered and cancelled pages the 荷物 and カレンダー tabs open (StatusPages.swift).
+        .environment(\.statusPages, screens.statusPages)
     }
 
     @ViewBuilder

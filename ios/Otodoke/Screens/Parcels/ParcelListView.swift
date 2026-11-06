@@ -27,6 +27,8 @@ struct ParcelListView<Detail: View>: View {
     @State private var showsRest = false
     @State private var confirmingDeliverAll = false
     @Environment(\.openURL) private var openURL
+    /// The delivered and cancelled pages (MainTabView hands them down).
+    @Environment(\.statusPages) private var pages
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -42,7 +44,12 @@ struct ParcelListView<Detail: View>: View {
                 .navigationDestination(for: ParcelRoute.self) { route in
                     switch route {
                     case let .parcel(id): detail(id)
-                    case .delivered: PlaceholderScreen(title: "届いた荷物")
+                    case .delivered:
+                        if let pages {
+                            StatusPage(pages.delivered, .delivered, pages.refresher, refresh: { await $0.sceneBecameActive() }) { model in
+                                DeliveredView(model: model, detail: detail)
+                            }
+                        }
                     case .cancelled: PlaceholderScreen(title: "キャンセルした荷物")
                     }
                 }

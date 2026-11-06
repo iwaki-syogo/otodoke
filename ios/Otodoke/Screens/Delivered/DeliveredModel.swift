@@ -1,9 +1,8 @@
-// TDD-STUB(task 21): the view model of DeliveredView (src/app/app/delivered/page.tsx + filter-form.tsx, 2541793).
+// The view model of DeliveredView (src/app/app/delivered/page.tsx + filter-form.tsx, 2541793).
 // Both reads (the parcels and the item names) at once; either failing is 「読み込めませんでした」. The search
 // word, the shop, the category and the month ("" = all, as the page's values) narrow through
 // Delivered.filterDelivered; the results are grouped by Delivered.groupByOrderMonth. Old reads are dropped
 // through ReadFence; 「古くなった」 (DataChanges) and coming back to the front read again.
-// Names and signatures are the contract with StatusListsTests.
 
 import Foundation
 import Observation
@@ -25,6 +24,8 @@ final class DeliveredModel {
 
     private(set) var parcels: LoadResult<[ParcelRow]>?
     private(set) var items: LoadResult<[ParcelItemName]>?
+    /// A read is on the way (the first one, or one again with the old results on screen).
+    private(set) var isLoading = false
 
     /// The search box as typed; the filter takes Delivered.searchWord of it.
     var query = ""
@@ -33,66 +34,98 @@ final class DeliveredModel {
     var month = ""
 
     @ObservationIgnored let changes: DataChanges?
+    @ObservationIgnored private var fence = ReadFence()
+    @ObservationIgnored private let mark: ChangeMark
+    /// Moves on each time a read's results are taken.
+    @ObservationIgnored private var resultNumber = 0
+    /// filterDelivered of the last values asked for (the view reads `shown` several times a frame).
+    @ObservationIgnored private var memo: (result: Int, values: DeliveredFilterValues, rows: [ParcelRow])?
 
     init(reader: StatusListReader, changes: DataChanges?) {
         self.reader = reader
         self.changes = changes
+        mark = ChangeMark(changes)
     }
 
     /// The values the filter is called with (query, shop, category, month; "" as given).
     var values: DeliveredFilterValues {
-        DeliveredFilterValues() // TDD-STUB(task 21)
+        DeliveredFilterValues(q: query, s: shop, c: category, m: month)
     }
 
     /// filterDelivered of what was read; nil before a read or when a read failed.
     var shown: [ParcelRow]? {
-        nil // TDD-STUB(task 21)
+        guard case let .loaded(rows)? = parcels, case let .loaded(names)? = items else { return nil }
+        let values = self.values
+        if let memo, memo.result == resultNumber, memo.values == values { return memo.rows }
+        let result = Delivered.filterDelivered(rows, itemNames: Delivered.itemNamesByParcel(names), values: values)
+        memo = (resultNumber, values, result)
+        return result
     }
 
     var groups: [(label: String, parcels: [ParcelRow])] {
-        [] // TDD-STUB(task 21)
+        shown.map(Delivered.groupByOrderMonth) ?? []
     }
 
     /// deliveredFilterOptions of every delivered parcel read.
     var options: DeliveredFilterOptions? {
-        nil // TDD-STUB(task 21)
+        guard case let .loaded(rows)? = parcels else { return nil }
+        return Delivered.deliveredFilterOptions(rows)
     }
 
     /// monthChoices(options.months, month).
     var monthOptions: [String] {
-        [] // TDD-STUB(task 21)
+        guard let options else { return [] }
+        return Delivered.monthChoices(options.months, m: month)
     }
 
-    /// Some value is set (「クリア」 shows).
+    /// Some value is set (「クリア」 shows). The word counts as the Web counts it: trimmed.
     var isNarrowed: Bool {
-        false // TDD-STUB(task 21)
+        !Delivered.searchWord(query).isEmpty || !shop.isEmpty || !category.isEmpty || !month.isEmpty
     }
 
     /// The number by the heading (shown.count); nil when not read or failed.
     var count: Int? {
-        nil // TDD-STUB(task 21)
+        shown?.count
     }
 
     /// 読み込めませんでした / 届いた荷物はありません / 見つかりません, or nil when there are results.
     var message: String? {
-        nil // TDD-STUB(task 21)
+        if parcels == .failed || items == .failed { return Self.failedText }
+        guard case let .loaded(rows)? = parcels, let shown else { return nil }
+        if rows.isEmpty { return Self.emptyText }
+        return shown.isEmpty ? Self.noMatchText : nil
     }
 
     func clear() {
-        // TDD-STUB(task 21)
+        query = ""
+        shop = ""
+        category = ""
+        month = ""
     }
 
     func load() async {
-        // TDD-STUB(task 21)
+        let ticket = fence.beginRead()
+        mark.markRead()
+        isLoading = true
+        async let readParcels = reader.parcels(.delivered)
+        async let readItems = reader.itemNames()
+        let (p, i) = await (readParcels, readItems)
+        // A newer read was started meanwhile: this one is older than what it would replace.
+        guard fence.verdict(ticket) == .current else { return }
+        resultNumber &+= 1
+        parcels = p
+        items = i
+        isLoading = false
     }
 
     /// Shown: reads the first time, and again when DataChanges moved since the last read.
     func onAppear() async {
-        // TDD-STUB(task 21)
+        guard parcels == nil || mark.isStale else { return }
+        await load()
     }
 
     /// iOS-12: back in front.
     func sceneBecameActive() async {
-        // TDD-STUB(task 21)
+        await load()
     }
 }
