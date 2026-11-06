@@ -88,6 +88,18 @@ describe("/app/settings?error= shows fixed words only", () => {
     expect(settingsErrorMessage(undefined)).toBeNull();
   });
 
+  it("the delete checkboxes say 「本当に消す」, the words the server asks for, and the warning stands outside them", () => {
+    const asked = SETTINGS_ERROR_MESSAGES.clear_confirm.match(/「(.+)」/)![1];
+    expect(asked).toBe("本当に消す");
+    for (const file of ["src/app/app/settings/demo-loader.tsx", "src/app/app/parcels/manual-form.tsx"]) {
+      const source = withoutComments(read(appSourceFiles().find((f) => f.endsWith(file))!));
+      const label = source.match(/<label[^>]*>\s*<input type="checkbox" name="confirm"[^>]*\/>\s*([^<]*?)\s*<\/label>/);
+      expect(label, file).not.toBeNull();
+      expect(label![1], file).toBe(asked);
+      expect(source, file).toContain("消すと元に戻せません。");
+    }
+  });
+
   it("the settings actions put only codes in ?error= (never a message)", () => {
     const source = withoutComments(read(appSourceFiles().find((f) => f.endsWith("src/app/app/settings/actions.ts"))!));
     expect(source).not.toMatch(/error=\$\{/);

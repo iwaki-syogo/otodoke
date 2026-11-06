@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
+import { NO_BODY_TEXT } from "@/lib/mail-notices";
 import { fakeEvent, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
@@ -13,7 +14,7 @@ const USER = "00000000-0000-4000-8000-00000000000a";
 const EMAIL = "qa@example.com";
 const KEY = { keyId: "a".repeat(32), publicKey: new Uint8Array(65), privateKey: {} as CryptoKey };
 
-const mocks = vi.hoisted(() => ({ open: vi.fn(), readSealedMail: vi.fn(), key: null as unknown }));
+const mocks = vi.hoisted(() => ({ open: vi.fn(), readSealedMail: vi.fn(), openMail: vi.fn(), key: null as unknown }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -21,6 +22,7 @@ vi.mock("react", async (importOriginal) => {
   return harnessHooks(actual);
 });
 vi.mock("@/lib/crypto/password-flows", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/crypto/password-flows")>()), openKeyAgain: mocks.open }));
+vi.mock("@/lib/crypto/envelope", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/crypto/envelope")>()), openMail: mocks.openMail }));
 vi.mock("@/lib/crypto/tab-key", () => ({ useTabKey: () => mocks.key }));
 vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), readSealedMail: mocks.readSealedMail }));
 
@@ -41,6 +43,7 @@ const press = (view: Mounted) => (view.host((h) => h.type === "form").props.onSu
 beforeEach(() => {
   mocks.open.mockReset();
   mocks.readSealedMail.mockReset();
+  mocks.openMail.mockReset();
   mocks.key = null;
 });
 
@@ -97,6 +100,19 @@ describe("a sealed mail", () => {
     expect(html).toContain("パスワードで開きます。このタブを閉じるまで覚えます。");
     expect(html).toContain('type="password"');
     expect(mocks.readSealedMail).not.toHaveBeenCalled();
+  });
+
+  it("an opened mail with no body says NO_BODY_TEXT, and one with a body shows the body", async () => {
+    mocks.key = KEY;
+    mocks.readSealedMail.mockResolvedValue({ ok: true, envelope: envelope(KEY.keyId) });
+    mocks.openMail.mockResolvedValue({ subject: "件名", from_name: null, from_address: "shop@example.test", text: "  ", html: null });
+    const empty = sealed();
+    await vi.waitFor(() => expect(empty.hosts((h) => h.type === "pre")).toHaveLength(1));
+    expect(textOfHost(empty.host((h) => h.type === "pre"))).toBe(NO_BODY_TEXT);
+    mocks.openMail.mockResolvedValue({ subject: "件名", from_name: null, from_address: "shop@example.test", text: "ご注文ありがとう", html: null });
+    const full = sealed();
+    await vi.waitFor(() => expect(full.hosts((h) => h.type === "pre")).toHaveLength(1));
+    expect(textOfHost(full.host((h) => h.type === "pre"))).toBe("ご注文ありがとう");
   });
 
   it("a read that fails is told as such, never as an earlier key", async () => {
