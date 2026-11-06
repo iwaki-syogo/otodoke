@@ -11,6 +11,13 @@
 export const NO_BODY_TEXT = "本文はありません。";
 
 /**
+ * What a mail with no subject says: in the list of mail not read (設定), in the plain mail of a
+ * parcel's history and in the sealed mail once it is opened. Never for a sealed mail that is not
+ * open yet: its subject is in the envelope, not unknown.
+ */
+export const NO_SUBJECT_TEXT = "件名はありません。";
+
+/**
  * What a reset costs (decision 3). The key that opens the stored mail is wrapped with a key made
  * from the password (docs/crypto/password-v1.md), so a new password cannot open what the old one
  * wrapped. Changing the password while knowing the current one wraps the same key again and keeps

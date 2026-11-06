@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { openMail, WrongKeyError, type MailPlaintext } from "@/lib/crypto/envelope";
 import { useTabKey } from "@/lib/crypto/tab-key";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
-import { NO_BODY_TEXT } from "@/lib/mail-notices";
+import { NO_BODY_TEXT, NO_SUBJECT_TEXT } from "@/lib/mail-notices";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { readSealedMail } from "@/app/app/settings/key-actions";
 import { UnlockForm } from "../../unlock-form";
@@ -61,7 +61,11 @@ export function SealedMail({ userId, email, emailId, fromDomain, notes, confiden
     <>
       {mail ? (
         <>
-          <p className="mt-1 text-sm leading-snug">{mail.subject}</p>
+          {mail.subject?.trim() ? (
+            <p className="mt-1 text-sm leading-snug">{mail.subject}</p>
+          ) : (
+            <p className="mt-1 text-sm leading-snug text-neutral-500">{NO_SUBJECT_TEXT}</p>
+          )}
           <p className="mt-0.5 truncate text-xs text-neutral-500">{mail.from_name ? `${mail.from_name} <${mail.from_address}>` : mail.from_address}</p>
         </>
       ) : (
