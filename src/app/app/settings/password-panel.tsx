@@ -209,7 +209,7 @@ export function MakeKeyForm({ email }: { email: string }) {
  * when the page is hydrated, because a details opened before React attached its handlers
  * (a slow phone) has fired its toggle already and would otherwise stay "closed" here, with no bot
  * check drawn and a form that can be pressed.
- * The hook is exported for its tests (password-panel-forms.test.ts).
+ * The hook and ChangeDetails are exported for their tests (password-panel-forms.test.ts).
  */
 export function useDetailsOpen() {
   const [open, setOpen] = useState(false);
@@ -220,7 +220,7 @@ export function useDetailsOpen() {
   return { open, element, onToggle: (e: { currentTarget: { open: boolean } }) => setOpen(e.currentTarget.open) };
 }
 
-function ChangeDetails({ userId, email }: { userId: string; email: string }) {
+export function ChangeDetails({ userId, email }: { userId: string; email: string }) {
   const { open, element, onToggle } = useDetailsOpen();
   return (
     <details ref={element} className="rounded-2xl border border-neutral-200 bg-white" onToggle={onToggle}>
