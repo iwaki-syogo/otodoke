@@ -149,7 +149,9 @@ describe("/privacy: what it says", () => {
     expect(cookie).toContain("広告やアクセス解析のための cookie は使いません");
     expect(cookie).toContain("ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます");
     // The hour first: a sign-in on another device leaves the sending browser its cookie (R3-22).
-    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。");
+    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に入れます。1 時間で消えます。送った端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します。");
+    // Not "this device", which could be read as the reader's: the one that sent the mail.
+    expect(cookie).not.toContain("この" + "端末");
     expect(cookie.match(/1 時間/g)).toHaveLength(1);
     // The old claim, untrue next to the login screen's cookie.
     expect(cookie).not.toContain("ログインの状態を保つためだけに使います");
@@ -239,7 +241,7 @@ describe("/privacy: what it says matches the code it describes", () => {
     expect(LOGIN_EMAIL_COOKIE_PATH).toBe("/login");
   });
 
-  it("「この端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します」: each of those removes it", () => {
+  it("「送った端末でログインしたとき・ログアウトしたとき・アカウントを削除したときにも消します」: each of those removes it", () => {
     const read = (file: string) => readFileSync(path.join(process.cwd(), file), "utf8");
     const login = read("src/app/login/actions.ts");
     const sending = login.slice(login.indexOf("export async function sendMagicLink"), login.indexOf("export async function verifyLoginCode"));
