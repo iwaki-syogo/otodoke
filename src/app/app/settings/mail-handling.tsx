@@ -7,6 +7,7 @@ export function MailHandling() {
       <h2 className="text-base font-bold">あなたのメールの扱い</h2>
       <ul className="mt-2 flex list-disc flex-col gap-2 rounded-2xl border border-neutral-200 bg-white py-3 pl-8 pr-4 text-sm leading-6 text-neutral-700">
         <li>届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。</li>
+        <li>読み取って買い物に関係ないと分かったメールは消します。</li>
         <li>読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。パスワードそのものはサーバーに送らないので、運営者もデータベースからは読めません。</li>
         <li>
           ただし、暗号化を始める前に読み取ったメールは、暗号化していません。「暗号化する」を押すまで、運営者が読める形で残ります。{PLAINTEXT_DROP_NOTICE}

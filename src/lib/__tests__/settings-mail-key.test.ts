@@ -159,6 +159,8 @@ const SAID_IN_BOTH = [
   `「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE.replace(/。$/, "")}`,
   // A reset loses the mail sealed before; a change keeps it (decision 3).
   `パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます`,
+  // Read and found unrelated to shopping: the mail is deleted (src/lib/pipeline.ts, step 3). No final 「。」.
+  "読み取って買い物に関係ないと分かったメールは消します",
   "Message-ID",
   "承認リンク",
   "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します",
