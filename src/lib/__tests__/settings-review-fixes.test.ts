@@ -9,9 +9,9 @@ import { appSourceFiles, read, withoutComments } from "./source-scan";
  * /app/settings after the review of 2026-11-06:
  *  - ?error= is a code; a crafted link cannot put its own words on the page (review A-3 / D2-2,
  *    whose reproduction this turns around).
- *  - A failed key read is not worded as "no passphrase yet" under 転送先アドレス (D2-12).
+ *  - A failed key read is not worded as "no key yet" under 転送先アドレス (D2-12).
  *  - The public sample mails are not counted as mail the operator can read (F-9).
- *  - The signed-in address is shown next to the passphrase (login-CSRF defence in depth).
+ *  - The signed-in address is shown next to the password panel (login-CSRF defence in depth).
  *  - The Gmail filter note does not promise that private mail never arrives (D2-4).
  */
 
@@ -45,6 +45,7 @@ vi.mock("@/app/app/settings/key-actions", () => ({
   readRetiredMailKeys: vi.fn(),
   readSealedMail: vi.fn(),
 }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
 let db: FakeDb;
 beforeEach(() => {
@@ -62,7 +63,7 @@ async function render(searchParams: Record<string, string> = {}) {
 const sectionTitled = (root: ReturnType<typeof parseHtml>, title: string) => findAll(root, (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h) === title).length > 0);
 
 // A message anybody can put in a link: long, and pointing somewhere else.
-const CRAFTED = "【重要】合言葉の確認が必要です。24時間以内に example.invalid/otodoke で再設定しないと、保存したメールが消えます。".repeat(4);
+const CRAFTED = "【重要】パスワードの確認が必要です。24時間以内に example.invalid/otodoke で再設定しないと、保存したメールが消えます。".repeat(4);
 
 describe("/app/settings?error= shows fixed words only", () => {
   it("a crafted text is not on the page; fixed words are shown instead", async () => {
@@ -97,13 +98,13 @@ describe("/app/settings?error= shows fixed words only", () => {
 });
 
 describe("/app/settings: a failed key read", () => {
-  it("says the read failed under 転送先アドレス, not 「合言葉を決めると、ここに出ます」", async () => {
+  it("says the read failed under 転送先アドレス, not 「メールの鍵を作ると、ここに出ます」", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     db.hooks.push((q) => (q.table === "user_keys" ? { data: null, error: { message: "boom" } } : undefined));
     const root = await render();
-    expect(textOf(sectionTitled(root, "合言葉")[0])).toContain("読み込めませんでした");
+    expect(textOf(sectionTitled(root, "パスワード")[0])).toContain("読み込めませんでした");
     const address = textOf(sectionTitled(root, "転送先アドレス")[0]);
-    expect(address).not.toContain("合言葉を決めると、ここに出ます");
+    expect(address).not.toContain("メールの鍵を作ると、ここに出ます");
     expect(address).toContain("読み込めなかった");
     expect(address).not.toContain(ADDRESS);
     log.mockRestore();
@@ -115,19 +116,19 @@ describe("/app/settings: the sample mails are not counted as readable by the ope
     for (let i = 0; i < 3; i++) db.rows("emails").push({ id: `e${i}`, user_id: USER, provider_email_id: `re_${i}`, processing_status: "processed", body_state: "plain", subject: `件名${i}` });
     for (let i = 0; i < 17; i++) db.rows("emails").push({ id: `d${i}`, user_id: USER, provider_email_id: `demo:sample-${i}.eml`, message_id: `demo:sample-${i}.eml`, processing_status: "processed", body_state: "plain", subject: `サンプル${i}` });
     const root = await render();
-    const text = textOf(sectionTitled(root, "合言葉を決める")[0]);
+    const text = textOf(sectionTitled(root, "メールの鍵を作る")[0]);
     expect(text).toContain("保存済みのメール 3 通も");
   });
 
   it("with only samples, there is no warning at all", async () => {
     for (let i = 0; i < 17; i++) db.rows("emails").push({ id: `d${i}`, user_id: USER, provider_email_id: `demo:sample-${i}.eml`, processing_status: "processed", body_state: "plain", subject: `サンプル${i}` });
     const root = await render();
-    expect(textOf(sectionTitled(root, "合言葉を決める")[0])).not.toContain("運営者が読める形");
+    expect(textOf(sectionTitled(root, "メールの鍵を作る")[0])).not.toContain("運営者が読める形");
   });
 });
 
 describe("/app/settings: the signed-in address and the Gmail note", () => {
-  it("shows which account is signed in right below the passphrase panel, without a standing note in brackets (R2-7)", async () => {
+  it("shows which account is signed in right below the password panel, without a standing note in brackets (R2-7)", async () => {
     const root = await render();
     const lines = findAll(root, (n) => n.tag === "p" && textOf(n).startsWith("ログイン中: qa@example.com"));
     expect(lines.length).toBeGreaterThanOrEqual(1);

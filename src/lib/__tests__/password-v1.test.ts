@@ -5,13 +5,8 @@ import { fromBase64, toBase64, toHex, utf8, type Bytes } from "@/lib/crypto/byte
 import { challengeAad, openBytes, sealBytes } from "@/lib/crypto/envelope";
 import {
   createWrappedKey,
-  isWeakPassphrase,
   KDF_ITERATIONS,
-  normalizePassphrase,
   openStoredKeyWithKek,
-  PASSPHRASE_MIN_LENGTH,
-  PASSPHRASE_RULE,
-  passphraseProblem,
   rewrapStoredKey,
   wrapPrivateKeyWithKek,
   type StoredKey,
@@ -344,56 +339,33 @@ describe("password v1: the constants and kekFor's input", () => {
   );
 });
 
-describe("the rule for a new password is the passphrase's, in the words of a password", () => {
-  // The inputs of passphrase-strength.test.ts, and more around the edges.
-  const inputs = [
-    "aaaaaaaaaa",
-    "ああああああああああ",
-    "1212121212",
-    "abcabcabcabc",
-    "ＡＡＡＡＡＡＡＡＡＡ",
-    "1234567890",
-    "0987654321",
-    "abcdefghijk",
-    "zyxwvutsrqp",
-    "2345678901",
-    "password1234",
-    "Password!!!!",
-    "qwerty123456",
-    "iloveyou2026",
-    "1234otodoke",
-    "password 1234",
-    "aikotoba2026!",
-    "テスト用の合言葉です1234",
-    "うちの猫は三毛で7歳",
-    "correct horse battery",
-    "ka9-Fm2!pq",
-    "password と猫と 2026 年の春",
-    "Tr0ub4dor&3",
-    "Ｔｒ０ｕｂ４ｄｏｒ＆３ｘｘ",
-    "ﾃﾞｼﾞﾀﾙﾃﾞｼﾞﾀﾙ",
-    "123456789",
-    "短い",
-    "",
-    "a",
-    "ab",
-    "  ",
-  ];
+describe("the rule for a new password: the passphrase's, in the words of a password", () => {
+  // What both rules answered for these while the passphrase's was still there to compare
+  // (2026-11-06): the inputs of password-strength.test.ts, and more around the edges.
+  const TOO_SHORT = ["ﾃﾞｼﾞﾀﾙﾃﾞｼﾞﾀﾙ", "123456789", "短い", "", "a", "ab", "  "];
+  const WEAK = ["aaaaaaaaaa", "ああああああああああ", "1212121212", "abcabcabcabc", "ＡＡＡＡＡＡＡＡＡＡ", "1234567890", "0987654321", "abcdefghijk", "zyxwvutsrqp", "2345678901", "password1234", "Password!!!!", "qwerty123456", "iloveyou2026", "1234otodoke", "password 1234", "aikotoba2026!"];
+  const FINE = ["テスト用の合言葉です1234", "うちの猫は三毛で7歳", "correct horse battery", "ka9-Fm2!pq", "password と猫と 2026 年の春", "Tr0ub4dor&3", "Ｔｒ０ｕｂ４ｄｏｒ＆３ｘｘ"];
 
-  it("isWeakPassword answers as isWeakPassphrase on every input", () => {
-    for (const p of inputs) expect(isWeakPassword(normalizePassword(p)), p).toBe(isWeakPassphrase(normalizePassphrase(p)));
-    expect(normalizePassword("ﾃﾞｼﾞﾀﾙ")).toBe(normalizePassphrase("ﾃﾞｼﾞﾀﾙ"));
+  it("isWeakPassword: the weak ones (and every one shorter than 2), never the ordinary ones", () => {
+    for (const p of WEAK) expect(isWeakPassword(normalizePassword(p)), p).toBe(true);
+    for (const p of ["123456789", "", "a", "ab", "  "]) expect(isWeakPassword(normalizePassword(p)), p).toBe(true);
+    for (const p of [...FINE, "ﾃﾞｼﾞﾀﾙﾃﾞｼﾞﾀﾙ", "短い"]) expect(isWeakPassword(normalizePassword(p)), p).toBe(false);
+    expect(normalizePassword("ﾃﾞｼﾞﾀﾙ")).toBe("デジタル");
   });
 
-  it("passwordProblem says what passphraseProblem says, パスワード for 合言葉", () => {
-    for (const a of inputs) {
-      for (const b of [a, `${a}x`, normalizePassword(a)]) expect(passwordProblem(a, b), `${a} / ${b}`).toBe(passphraseProblem(a, b)?.replaceAll("合言葉", "パスワード") ?? null);
+  it("passwordProblem: the length first (after NFKC), then the rule, then the two entries", () => {
+    for (const a of TOO_SHORT) for (const b of [a, `${a}x`, normalizePassword(a)]) expect(passwordProblem(a, b), `${a} / ${b}`).toBe("10 文字以上にしてください");
+    for (const a of WEAK) for (const b of [a, `${a}x`, normalizePassword(a)]) expect(passwordProblem(a, b), `${a} / ${b}`).toBe("推測されやすいパスワードです。同じ文字のくり返し・連番・よくある言葉は避けてください");
+    for (const a of FINE) {
+      expect(passwordProblem(a, a), a).toBeNull();
+      expect(passwordProblem(a, normalizePassword(a)), a).toBeNull();
+      expect(passwordProblem(a, `${a}x`), a).toBe("2 回の入力が違います");
     }
   });
 
   it("the words: the rule as the screen states it, and each problem", () => {
-    expect(PASSWORD_RULE).toBe(PASSPHRASE_RULE);
-    expect(PASSWORD_MIN_LENGTH).toBe(PASSPHRASE_MIN_LENGTH);
+    expect(PASSWORD_RULE).toBe("10 文字以上。同じ文字のくり返し、1234… や abcd… のような連番、password のようなよくある言葉と数字だけの組み合わせは使えません。");
+    expect(PASSWORD_MIN_LENGTH).toBe(10);
     expect(passwordProblem("123", "123")).toBe("10 文字以上にしてください");
     expect(passwordProblem("1234567890", "1234567890")).toBe("推測されやすいパスワードです。同じ文字のくり返し・連番・よくある言葉は避けてください");
     expect(passwordProblem("うちの猫は三毛で7歳", "うちの猫は三毛で8歳")).toBe("2 回の入力が違います");

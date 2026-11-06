@@ -44,8 +44,10 @@ export const LOGIN_MESSAGES = {
   secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。",
   // Supabase refused the new password; the key opens with the old one again.
   secret_change_refused: "パスワードを変えられませんでした。もう一度お試しください。",
-  // The same, but the key could not be put back: it opens with the new password, the login is the old one.
-  secret_change_refused_key_new: "パスワードを変えられませんでした。もう一度お試しください。",
+  // The same, but the wrap could not be put back: the login is the old password, and the key opens
+  // with the new one, or with another tab's password when that tab wrapped it again meanwhile. The
+  // same change again brings both to the new password (changePassword opens with the new one too).
+  secret_change_refused_key_new: "パスワードを変えられませんでした。同じ新しいパスワードで、もう一度お試しください。",
 
   // The key steps (src/lib/mail-keys.ts).
   key_in_use_changed: "ほかの画面で鍵が変わりました。ページを読み込み直してください。",
@@ -55,6 +57,22 @@ export const LOGIN_MESSAGES = {
   key_challenge_failed: "鍵を確かめられませんでした。もう一度お試しください。",
   key_failed: "保存できませんでした。もう一度お試しください。",
   invalid_input: "うまくいきませんでした。ページを読み込み直してください。",
+
+  // What the browser finds itself, without the server's answer (src/lib/crypto/password-flows.ts).
+  // The key in use does not open with the password given (opening it again in a tab).
+  wrong_password: "パスワードが違います。",
+  // A change: the key opens with neither password given, or Supabase refused the current one.
+  wrong_current_password: "今のパスワードが違います。",
+  // There is no key in use to open.
+  no_key: "メールの鍵がまだありません。設定で作れます。",
+  // The address typed at the sign-in and the session's are not the same for password-v1 (letters
+  // outside ASCII): no first key is made, since every later step would make another master.
+  address_mismatch: "このアカウントでは、メールの鍵を作れませんでした。",
+  // A sign-in that went through, with a password that does not open the key in use (a key made
+  // before password-v1, or a change that stopped half-way: the key opens with its new password).
+  key_not_opened: "このパスワードでは、メールの鍵を開けませんでした。",
+  // 「ほかのパスワードで開く」 after that, with a password that does not open it either.
+  other_password_wrong: "このパスワードでも、メールの鍵を開けませんでした。",
 
   // The mail's links (/auth/confirm).
   link_invalid: "このリンクは使えませんでした。確認が済んでいれば、ログインできます。",
@@ -139,6 +157,12 @@ export function loginErrorMessage(code: string | undefined): string | null {
 
 /** The held login button, while the bot check shows its checkbox and waits for the tick. */
 export const TURNSTILE_TICK_PROMPT = "確認のチェックを押してください";
+
+/**
+ * The button after key_not_opened that asks for a password that opened the key before: opened with
+ * it, the key is wrapped again for the password that signed in (password-flows.ts openWithAnother).
+ */
+export const OPEN_WITH_ANOTHER_PASSWORD = "ほかのパスワードで開く";
 
 /** Shown in the bot check's place when its script cannot load (blocked, offline, Cloudflare down). */
 export const TURNSTILE_UNAVAILABLE_MESSAGE = "確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。";

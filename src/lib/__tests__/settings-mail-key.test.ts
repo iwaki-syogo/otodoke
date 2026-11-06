@@ -7,9 +7,9 @@ import { FakeDb } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
 /**
- * /app/settings: the forwarding address appears only once a passphrase is set; mail stored in
- * plaintext gets a banner with its count; mail sealed to a retired key is told honestly; and
- * 「あなたのメールの扱い」 states what is and is not encrypted.
+ * /app/settings: the forwarding address appears only once the mail key is made (with the login
+ * password); mail stored in plaintext gets a banner with its count; mail sealed to an earlier key
+ * is told honestly; and 「あなたのメールの扱い」 states what is and is not encrypted.
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
@@ -33,7 +33,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => ADDRESS }));
 vi.mock("@/app/app/settings/actions", () => ({ loadDemo: vi.fn(), readWaitingMail: vi.fn(), markWronglyDropped: vi.fn(), forgetSender: vi.fn(), clearAllParcels: vi.fn() }));
-vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readMailKey: vi.fn(), readSealedMail: vi.fn() }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
 let db: FakeDb;
 beforeEach(() => {
@@ -57,52 +58,61 @@ async function render() {
 
 const sectionTitled = (root: ReturnType<typeof parseHtml>, title: string) => findAll(root, (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h) === title).length > 0);
 
-describe("/app/settings: passphrase first", () => {
-  it("without a key: asks for a passphrase (twice, with the checkbox) and hides the forwarding address", async () => {
+describe("/app/settings: the mail key first", () => {
+  it("without a key: asks for the login password once, says where one is set, and hides the forwarding address", async () => {
     plainRead(3);
     const root = await render();
-    const [keySection] = sectionTitled(root, "合言葉を決める");
-    expect(findAll(keySection, (n) => n.tag === "input" && n.attrs.type === "password")).toHaveLength(2);
-    expect(findAll(keySection, (n) => n.tag === "input" && n.attrs.type === "checkbox")).toHaveLength(1);
+    const [keySection] = sectionTitled(root, "メールの鍵を作る");
+    expect(findAll(keySection, (n) => n.tag === "input" && n.attrs.type === "password")).toHaveLength(1);
+    expect(findAll(keySection, (n) => n.tag === "input" && n.attrs.type === "checkbox")).toHaveLength(0);
+    expect(findAll(keySection, (n) => n.tag === "button" && textOf(n) === "鍵を作る")).toHaveLength(1);
     expect(textOf(keySection)).toContain("保存済みのメール 3 通も");
+    // Those who never set a password (a session from the time of the mail's link) set it there.
+    expect(findAll(keySection, (n) => n.tag === "a" && n.attrs.href === "/login/forgot" && textOf(n) === "パスワードを忘れた")).toHaveLength(1);
     const [addressSection] = sectionTitled(root, "転送先アドレス");
     expect(textOf(addressSection)).not.toContain(ADDRESS);
-    expect(textOf(addressSection)).toContain("合言葉を決めると");
+    expect(textOf(addressSection)).toContain("メールの鍵を作ると");
     // The sample still works without a key.
     expect(textOf(sectionTitled(root, "サンプルで試す")[0])).toContain("サンプルのメールを読み込む");
+    expect(textOf(root)).not.toContain("合言葉");
   });
 
-  it("with a key: shows the address, the unlock field, and a 「暗号化する」 banner while plaintext remains", async () => {
+  it("with a key: shows the address, the field that opens it, and a 「暗号化する」 banner while plaintext remains", async () => {
     activeKey();
     plainRead(2);
     const root = await render();
     expect(textOf(sectionTitled(root, "転送先アドレス")[0])).toContain(ADDRESS);
-    const [keySection] = sectionTitled(root, "合言葉");
+    const [keySection] = sectionTitled(root, "パスワード");
     expect(textOf(keySection)).toContain("暗号化されていないメールが 2 通あります");
     expect(findAll(keySection, (n) => n.tag === "button" && textOf(n) === "暗号化する")).toHaveLength(1);
-    expect(textOf(keySection)).toContain("合言葉を変える");
-    expect(textOf(keySection)).toContain("合言葉を忘れたとき");
+    expect(findAll(keySection, (n) => n.tag === "input" && n.attrs["aria-label"] === "パスワード")).toHaveLength(1);
+    expect(findAll(keySection, (n) => n.tag === "summary").map(textOf)).toEqual(["パスワードを変える", "パスワードを忘れたとき"]);
+    // A reset loses the mail sealed before, in mail-notices' words, next to the way to it.
+    expect(textOf(keySection)).toContain(RESET_LOSES_MAIL);
+    expect(findAll(keySection, (n) => n.tag === "a" && n.attrs.href === "/login/forgot" && textOf(n) === "再設定のメールを送る")).toHaveLength(1);
+    expect(textOf(root)).not.toContain("合言葉");
   });
 
   it("with a key and nothing in plaintext: no banner", async () => {
     activeKey();
     const root = await render();
-    expect(textOf(sectionTitled(root, "合言葉")[0])).not.toContain("暗号化されていないメール");
+    expect(textOf(sectionTitled(root, "パスワード")[0])).not.toContain("暗号化されていないメール");
   });
 
-  it("tells how many mails are sealed to a retired key", async () => {
+  it("tells how many mails are sealed to an earlier key, which the password does not open", async () => {
     activeKey();
     db.hooks.push((q) => (q.table === "emails" && q.filters.some((f) => f.args[0] === "body_envelope->>kid") ? { data: null, error: null, count: 4 } : undefined));
     const root = await render();
-    // Retired keys stay, and the parcel page opens such mail with the passphrase it had.
-    expect(textOf(sectionTitled(root, "合言葉")[0])).toContain("前の合言葉で暗号化したメールが 4 通あります。前の合言葉を覚えていれば、メールの画面から開けます");
+    // A reset, or a key from before password-v1: no form opens such mail (the parcel page says so too).
+    expect(textOf(sectionTitled(root, "パスワード")[0])).toContain("前の鍵で暗号化したメールが 4 通あります。開けませんが、荷物は残っています。");
   });
 
   it("a failed key read hides the address too (never shown as 'no key')", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     db.hooks.push((q) => (q.table === "user_keys" ? { data: null, error: { message: "boom" } } : undefined));
     const root = await render();
-    expect(textOf(sectionTitled(root, "合言葉")[0])).toContain("読み込めませんでした");
+    expect(textOf(sectionTitled(root, "パスワード")[0])).toContain("読み込めませんでした");
+    expect(sectionTitled(root, "メールの鍵を作る")).toEqual([]);
     expect(textOf(sectionTitled(root, "転送先アドレス")[0])).not.toContain(ADDRESS);
     log.mockRestore();
   });
@@ -188,11 +198,11 @@ describe("/app/settings: あなたのメールの扱い", () => {
   it("the plaintext banner says the operator can read those mails until they are sealed", async () => {
     activeKey();
     plainRead(2);
-    expect(textOf(sectionTitled(await render(), "合言葉")[0])).toContain("押すまでは、運営者が読める形で残ります");
+    expect(textOf(sectionTitled(await render(), "パスワード")[0])).toContain("押すまでは、運営者が読める形で残ります");
     db = new FakeDb();
     db.hooks.push((q) => (q.table === "emails" && q.filters.some((f) => f.method === "or") ? { data: null, error: null, count: 0 } : undefined));
     mocks.state.db = db;
     plainRead(3);
-    expect(textOf(sectionTitled(await render(), "合言葉を決める")[0])).toContain("それまでは運営者が読める形です");
+    expect(textOf(sectionTitled(await render(), "メールの鍵を作る")[0])).toContain("それまでは運営者が読める形です");
   });
 });

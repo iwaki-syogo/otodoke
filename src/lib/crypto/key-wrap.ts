@@ -5,12 +5,15 @@
  *   kek      PBKDF2-SHA256(NFKC(passphrase) as UTF-8, salt = 16 random bytes, >= 600,000 rounds) -> AES-256
  *   wrapped  AES-256-GCM(kek, iv = 12 random bytes, aad = "otodoke/key/v1|<user_id>", PKCS#8 of the private key)
  *
+ * That is the form of the keys made before password-v1 (decision 8 retires them; the tests and
+ * scripts/crypto-vectors.ts still make such rows). The screens wrap with a given KEK (the functions
+ * below: password-flows.ts), and the rule for a new password is password-v1.ts's.
+ *
  * Server code must not import this file (src/lib/__tests__/passphrase-stays-in-browser.test.ts).
  */
 import { fromBase64, randomBytes, toBase64, utf8, equalBytes, type Bytes } from "./bytes";
 import { keyIdOf, publicKeyOf, type PrivateRecipient } from "./envelope";
 
-export const PASSPHRASE_MIN_LENGTH = 10;
 export const KDF_ITERATIONS = 600_000;
 /** Far above what we write; a stored value above it would only make the browser hang. */
 const KDF_ITERATIONS_MAX = 10_000_000;
@@ -19,85 +22,6 @@ const ECDH = { name: "ECDH", namedCurve: "P-256" } as const;
 
 export function normalizePassphrase(passphrase: string): string {
   return passphrase.normalize("NFKC");
-}
-
-/** The rule as the screen states it, next to the fields. */
-export const PASSPHRASE_RULE = `${PASSPHRASE_MIN_LENGTH} 文字以上。同じ文字のくり返し、1234… や abcd… のような連番、password のようなよくある言葉と数字だけの組み合わせは使えません。`;
-
-/**
- * Words people pick first. The wrapped key can be tried offline by anyone who gets the database
- * row, so a passphrase that is only one of these (plus digits or symbols) is refused. Kept short
- * on purpose: the rule must stay simple enough to state in one line on the screen.
- */
-const COMMON_WORDS = new Set([
-  "password",
-  "passwd",
-  "passw0rd",
-  "qwerty",
-  "qwertyuiop",
-  "asdfghjkl",
-  "zxcvbnm",
-  "qazwsx",
-  "iloveyou",
-  "letmein",
-  "welcome",
-  "admin",
-  "administrator",
-  "login",
-  "otodoke",
-  "monkey",
-  "dragon",
-  "sunshine",
-  "princess",
-  "football",
-  "baseball",
-  "secret",
-  "pokemon",
-  "aikotoba",
-  "himitsu",
-  "abc",
-  "abcd",
-  "abcde",
-]);
-
-/** Only one short unit repeated ("aaaa…", "1212…", "abcabc…"). */
-function isRepetition(chars: string[]): boolean {
-  for (let unit = 1; unit <= 3; unit++) {
-    if (chars.length >= unit * 2 && chars.every((c, i) => c === chars[i % unit])) return true;
-  }
-  return false;
-}
-
-/** Each character one code point up (or down) from the one before ("1234…", "abcd…", "9876…"); 9 → 0 counts as up. */
-function isSequence(chars: string[]): boolean {
-  const step = (a: string, b: string) => {
-    if (a === "9" && b === "0") return 1;
-    if (a === "0" && b === "9") return -1;
-    return (b.codePointAt(0) ?? 0) - (a.codePointAt(0) ?? 0);
-  };
-  const first = step(chars[0], chars[1]);
-  if (first !== 1 && first !== -1) return false;
-  for (let i = 1; i < chars.length; i++) if (step(chars[i - 1], chars[i]) !== first) return false;
-  return true;
-}
-
-/** Too easy to guess, by the rule in PASSPHRASE_RULE. Input is the normalized passphrase. */
-export function isWeakPassphrase(normalized: string): boolean {
-  const lower = normalized.toLowerCase();
-  const chars = [...lower];
-  if (chars.length < 2 || isRepetition(chars) || isSequence(chars)) return true;
-  // A common word with only digits, spaces or symbols around it ("password1234", "qwerty!!!!").
-  const letters = lower.replace(/[\d\s\p{P}\p{S}]/gu, "");
-  return COMMON_WORDS.has(letters);
-}
-
-/** What is wrong with a new passphrase, in words for the screen, or null when it is fine. */
-export function passphraseProblem(passphrase: string, again: string): string | null {
-  const p = normalizePassphrase(passphrase);
-  if ([...p].length < PASSPHRASE_MIN_LENGTH) return `${PASSPHRASE_MIN_LENGTH} 文字以上にしてください`;
-  if (isWeakPassphrase(p)) return "推測されやすい合言葉です。同じ文字のくり返し・連番・よくある言葉は避けてください";
-  if (p !== normalizePassphrase(again)) return "2 回の入力が違います";
-  return null;
 }
 
 export function keyWrapAad(userId: string): string {

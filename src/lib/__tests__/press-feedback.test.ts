@@ -342,13 +342,13 @@ describe("the presses wired to the shared parts", () => {
     expect(source).toMatch(/if \(saving\.current\) return;\s*saving\.current = true;/);
   });
 
-  it("the passphrase form spins with 「開いています…」, one press at a time", () => {
+  it("the password form spins with 「開いています…」, one press at a time", () => {
     const source = read("unlock-form.tsx");
     expect(source).toMatch(/<Spinner tone="light" \/>\s*開いています…/);
-    expect(source).toMatch(/if \(opening\.current \|\| !passphrase\) return;\s*opening\.current = true;/);
+    expect(source).toMatch(/if \(opening\.current \|\| !password\) return;\s*opening\.current = true;/);
   });
 
-  it("no submit button under /app (settings aside, G1/G2) is disabled: only the passphrase form's, which never posts", () => {
+  it("no submit button under /app (settings aside, G1/G2) is disabled: only the password form's, which never posts", () => {
     const root = path.resolve(__dirname, "../../app/app");
     const files = (dir: string): string[] =>
       readdirSync(dir).flatMap((name) => {

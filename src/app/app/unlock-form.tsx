@@ -2,14 +2,16 @@
 
 import { useRef, useState } from "react";
 import { Spinner } from "@/components/spinner";
-import { keyErrorText, unlock, unlockRetired } from "@/lib/crypto/tab-key";
+import { flowMessage, openKeyAgain } from "@/lib/crypto/password-flows";
+import { readMailKey } from "@/app/app/settings/key-actions";
 
 /**
- * Ask for the passphrase once; the key stays open in this tab (memory only). With `retiredKeyId`,
- * it opens that retired key instead (mail sealed before the key was made again).
+ * Ask for the password once; the key stays open in this tab (memory only, src/lib/crypto/tab-key.ts).
+ * `email` is the session's address (the server page hands it down): with the password it makes the
+ * KEK again (openKeyAgain). Supabase Auth is not asked.
  */
-export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId: string; label?: string; retiredKeyId?: string }) {
-  const [passphrase, setPassphrase] = useState("");
+export function UnlockForm({ userId, email }: { userId: string; email: string }) {
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set before anything is awaited: a second press (or Enter) meanwhile opens nothing more.
@@ -17,16 +19,14 @@ export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId:
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (opening.current || !passphrase) return;
+    if (opening.current || !password) return;
     opening.current = true;
     setBusy(true);
     setError(null);
     try {
-      if (retiredKeyId) await unlockRetired(userId, retiredKeyId, passphrase);
-      else await unlock(userId, passphrase);
-      setPassphrase("");
-    } catch (err) {
-      setError(keyErrorText(err));
+      const result = await openKeyAgain({ email, password, userId }, { readMailKey });
+      if (result.ok) setPassword("");
+      else setError(flowMessage(result.code));
     } finally {
       opening.current = false;
       setBusy(false);
@@ -35,23 +35,23 @@ export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId:
 
   return (
     // No field has a `name` and the method is POST: a press before the page's script runs (or
-    // when it fails to load) sends nothing, never the passphrase in a URL (passphrase-forms.test.ts).
+    // when it fails to load) sends nothing, never the password in a URL (password-forms.test.ts).
     <form method="post" onSubmit={submit} className="flex flex-col gap-2">
-      {/* Lets a password manager keep the passphrase under one name. */}
-      <input type="text" autoComplete="username" value="Otodoke 合言葉" readOnly hidden />
+      {/* The account's address, so a password manager fills the password it keeps for it. */}
+      <input type="text" autoComplete="username" value={email} readOnly hidden />
       <div className="flex gap-2">
         <input
           type="password"
           autoComplete="current-password"
-          aria-label={retiredKeyId ? "前の合言葉" : "合言葉"}
-          placeholder={retiredKeyId ? "前の合言葉" : "合言葉"}
-          value={passphrase}
-          onChange={(e) => setPassphrase(e.target.value)}
+          aria-label="パスワード"
+          placeholder="パスワード"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
           className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
         />
         <button
           type="submit"
-          disabled={busy || !passphrase}
+          disabled={busy || !password}
           aria-busy={busy || undefined}
           className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
         >
@@ -61,7 +61,7 @@ export function UnlockForm({ userId, label = "開く", retiredKeyId }: { userId:
               開いています…
             </>
           ) : (
-            label
+            "開く"
           )}
         </button>
       </div>

@@ -25,7 +25,10 @@ export const CAPTCHA_ENFORCED = false;
  */
 export const TURNSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
-/** Turnstile's own default field name; the form carries the token under it. */
+/**
+ * Turnstile's own default field name. No form has it: the widget is drawn with `response-field`
+ * off, and the token is kept off the form (TokenField).
+ */
 export const TURNSTILE_RESPONSE_FIELD = "cf-turnstile-response";
 
 /** Cloudflare's documented maximum token length. Anything longer is not a token. */
@@ -83,8 +86,13 @@ export function turnstileErrorIsFatal(code: unknown): boolean {
  */
 export const TURNSTILE_INTERACTIVE = "interactive";
 
-/** The token field as the login button reads it. */
-type TokenField = { value: string; dataset: Record<string, string | undefined> };
+/**
+ * Where the widget keeps the token for the next press (src/app/login/turnstile-widget.tsx): a
+ * plain object, never a form field (the forms that take a password have no named field at all).
+ * `dataset.turnstile` says when no token will come (TURNSTILE_UNAVAILABLE) or the checkbox waits
+ * for its tick (TURNSTILE_INTERACTIVE).
+ */
+export type TokenField = { value: string; dataset: Record<string, string | undefined> };
 
 /** Nothing more to wait for: the token is there, or none will come (the script could not load). */
 export function tokenSettled(field: TokenField): boolean {
@@ -144,14 +152,13 @@ export function waitForToken(
 }
 
 /**
- * The token from a submitted form, or undefined when there is none (script blocked, not solved
- * yet, no JavaScript). Undefined is passed on as "no token": Supabase ignores it while CAPTCHA
- * is off and answers `captcha_failed` once it is on.
+ * The token a press sends, once the field is settled (waitForToken, as long as tokenWaitMs), or
+ * undefined when none came: Supabase decides then, as with a form sent without one. The caller
+ * moves the widget on to a new token afterwards (each token is checked once).
  */
-export function turnstileToken(formData: FormData): string | undefined {
-  const value = formData.get(TURNSTILE_RESPONSE_FIELD);
-  if (typeof value !== "string") return undefined;
-  const token = value.trim();
-  if (!token || token.length > TURNSTILE_TOKEN_MAX_LENGTH) return undefined;
-  return token;
+export async function tokenForPress(field: TokenField, { captchaEnforced = CAPTCHA_ENFORCED, onNeedsTick }: { captchaEnforced?: boolean; onNeedsTick?: (needsTick: boolean) => void } = {}): Promise<string | undefined> {
+  await waitForToken(field, { limitMs: tokenWaitMs(captchaEnforced), pauseForTick: captchaEnforced, onNeedsTick });
+  const token = field.value.trim();
+  return token && token.length <= TURNSTILE_TOKEN_MAX_LENGTH ? token : undefined;
 }
+
