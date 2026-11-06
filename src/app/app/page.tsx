@@ -56,7 +56,7 @@ export default async function ParcelsPage() {
   );
 
   const waitingNotice = waiting ? (
-    <Link href="/app/settings" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
+    <Link href="/app/settings/trouble" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
       まだ読んでいないメールが {waiting} 通あります。この一覧は最新ではないかもしれません。
     </Link>
   ) : null;
@@ -206,13 +206,13 @@ async function mailSoFar(supabase: Awaited<ReturnType<typeof createClient>>, use
 /** The empty list's words and its first button, by what has come in so far. */
 const EMPTY_GUIDE: Record<MailSoFar, { lines: [string, string]; button: string; href: string }> = {
   // Setting up is once, never a mail at a time; the button does not promise the address at once.
-  none: { lines: ["メールの自動転送を設定しますか？", "設定は最初の 1 回だけです。"], button: "設定する", href: "/app/settings" },
+  none: { lines: ["メールの自動転送を設定しますか？", "設定は最初の 1 回だけです。"], button: "設定する", href: "/app/settings/forwarding" },
   // Forwarding is there: asking again would send them to set it up twice.
   received: { lines: ["メールは届いています。", "荷物のメールが届くまで、お待ちください。"], button: "設定を見る", href: "/app/settings" },
   // Worded for both: not approved yet, or approved and no mail since. The button goes to the
   // approval in 設定 (its section is id="gmail-approval"; the loading screen scrolls there once
   // the page is in). Without that id the hash is ignored and it is 設定 as before.
-  approval: { lines: ["Gmail の転送は承認しましたか？", "承認すると、荷物のメールが届きはじめます。"], button: "設定で承認する", href: "/app/settings#gmail-approval" },
+  approval: { lines: ["Gmail の転送は承認しましたか？", "承認すると、荷物のメールが届きはじめます。"], button: "設定で承認する", href: "/app/settings/forwarding#gmail-approval" },
 };
 
 function EmptyState({ mail }: { mail: MailSoFar }) {
@@ -229,7 +229,7 @@ function EmptyState({ mail }: { mail: MailSoFar }) {
       <Link href={guide.href} className="mt-6 w-full rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
         {guide.button}
       </Link>
-      <Link href="/app/settings#demo" className="mt-3 w-full rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">
+      <Link href="/app/settings/demo" className="mt-3 w-full rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">
         サンプルで試す
       </Link>
     </div>

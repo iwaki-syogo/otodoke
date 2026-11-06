@@ -1,6 +1,7 @@
 /**
- * What /app/settings?error=<code> may say. The query carries only a code; the words come from
- * here, so a crafted link cannot put its own text on the settings page (next to the passphrase).
+ * What ?error=<code> on the 設定 pages (/app/settings/demo, /trouble, /dropped) may say. The query
+ * carries only a code; the words come from here, so a crafted link cannot put its own text on a
+ * settings page.
  * The actions log the database's own message on the server instead of putting it in the URL.
  */
 export const SETTINGS_ERROR_MESSAGES = {
@@ -16,8 +17,17 @@ export type SettingsErrorCode = keyof typeof SETTINGS_ERROR_MESSAGES;
 /** Shown for a code this version does not know (an old link, or one somebody typed). */
 export const UNKNOWN_SETTINGS_ERROR = "うまくいきませんでした。もう一度お試しください。";
 
+/** The page that shows each code: the one whose action failed. */
+export const SETTINGS_ERROR_PAGES: Record<SettingsErrorCode, string> = {
+  demo_failed: "/app/settings/demo",
+  clear_confirm: "/app/settings/demo",
+  clear_failed: "/app/settings/demo",
+  read_failed: "/app/settings/trouble",
+  flag_failed: "/app/settings/dropped",
+};
+
 export function settingsErrorPath(code: SettingsErrorCode, extra = ""): string {
-  return `/app/settings?error=${code}${extra}`;
+  return `${SETTINGS_ERROR_PAGES[code]}?error=${code}${extra}`;
 }
 
 /** The message for a query value; null when there is no error to show. */

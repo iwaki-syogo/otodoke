@@ -112,7 +112,7 @@ export async function readWaitingMail(): Promise<void> {
     console.error("readWaitingMail:", failure);
     redirect(settingsErrorPath("read_failed"));
   }
-  redirect("/app/settings");
+  redirect("/app/settings/trouble");
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -144,7 +144,8 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
     }
   }
   revalidatePath("/app/settings");
-  redirect(`/app/settings?flagged=${outcome}`);
+  revalidatePath("/app/settings/dropped");
+  redirect(`/app/settings/dropped?flagged=${outcome}`);
 }
 
 /**
@@ -162,7 +163,8 @@ export async function forgetSender(formData: FormData): Promise<void> {
     else ok = true;
   }
   revalidatePath("/app/settings");
-  redirect(`/app/settings?unflagged=${ok ? "done" : "failed"}`);
+  revalidatePath("/app/settings/dropped");
+  redirect(`/app/settings/dropped?unflagged=${ok ? "done" : "failed"}`);
 }
 
 /** Remove everything this user has (used to reset a demo account). */
@@ -182,5 +184,5 @@ export async function clearAllParcels(formData: FormData): Promise<void> {
     console.error("clearAllParcels:", failure);
     redirect(settingsErrorPath("clear_failed"));
   }
-  redirect("/app/settings?cleared=1");
+  redirect("/app/settings/demo?cleared=1");
 }

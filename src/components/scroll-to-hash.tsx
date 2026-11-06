@@ -15,8 +15,8 @@ export function hashTarget(hash: string): HTMLElement | null {
 }
 
 /**
- * Inside a loading screen. A link such as /app/settings#demo first draws the loading screen,
- * where the #demo section is not yet: the router finds no target then and drops the scroll. When
+ * Inside a loading screen. A link such as /app/settings/forwarding#gmail-approval first draws the loading screen,
+ * where the #gmail-approval card is not yet: the router finds no target then and drops the scroll. When
  * the page replaces the loading screen, this one is removed, and its cleanup (run after the page
  * is in the document) scrolls to the URL's #fragment, if it names an element.
  */
