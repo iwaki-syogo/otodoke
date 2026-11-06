@@ -49,7 +49,7 @@ const flip = (b64: string, at: number) => {
   return toBase64(bytes);
 };
 
-/** The error a failed AES-GCM open gives, as tab-key.ts keyErrorText reads it (「合言葉が違います」 today). */
+/** The error a failed AES-GCM open gives, as password-flows.ts reads it (another password: wrong_password). */
 const isOperationError = (e: unknown) => e instanceof Error && e.name === "OperationError";
 
 afterEach(() => {
@@ -132,7 +132,7 @@ describe("key-wrap with a KEK: what does not open", () => {
     const row = await newRow(await rawKek());
     const err = await openStoredKeyWithKek(row, await rawKek(), USER).catch((e: unknown) => e);
     expect(isOperationError(err)).toBe(true);
-    // The same as the passphrase opener's, which the screen reads (tab-key.ts keyErrorText).
+    // The same as the passphrase opener's, which the passphrase screens read.
     const pair = await createKeyPair();
     const passRow: StoredKey = { key_id: pair.keyId, public_key: toBase64(pair.publicKey), ...(await wrapPrivateKey(pair.pkcs8, "うちの猫は三毛で7歳", USER)) };
     const passErr = await openStoredKey(passRow, "うちの猫は三毛で8歳", USER).catch((e: unknown) => e);

@@ -3,7 +3,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { fromBase64, fromUtf8, toBase64, equalBytes, type Bytes } from "@/lib/crypto/bytes";
 import { keyIdOf, mailAad, openBytes, openMail, parseEnvelope, sealMail, WrongKeyError, type EnvelopeV1, type PrivateRecipient } from "@/lib/crypto/envelope";
-import { createKeyPair, openStoredKey, passphraseProblem, unwrapPrivateKeyBytes, wrapPrivateKey, KDF_ITERATIONS } from "@/lib/crypto/key-wrap";
+import { createKeyPair, openStoredKey, unwrapPrivateKeyBytes, wrapPrivateKey, KDF_ITERATIONS } from "@/lib/crypto/key-wrap";
+import { passwordProblem } from "@/lib/crypto/password-v1";
 
 /** Fixed vectors shared with the iOS app. Written once by scripts/crypto-vectors.ts. */
 const V = JSON.parse(readFileSync(path.join(process.cwd(), "fixtures", "crypto", "envelope-v1.json"), "utf8"));
@@ -180,13 +181,13 @@ describe("key wrap v1: fails closed", () => {
   });
 });
 
-describe("passphrase rules", () => {
+describe("the rule for a new password (the passphrase's before password-v1)", () => {
   it("needs 10 characters after NFKC and the same twice", () => {
-    expect(passphraseProblem("短い合言葉", "短い合言葉")).toMatch("10 文字以上");
-    expect(passphraseProblem("ながいあいことばです", "ながいあいことばでず")).toMatch("違います");
-    expect(passphraseProblem("ながいあいことばです", "ながいあいことばです")).toBeNull();
-    // Full-width and half-width digits are the same passphrase.
-    expect(passphraseProblem("あいことば１２３４５", "あいことば12345")).toBeNull();
+    expect(passwordProblem("短いパスワード", "短いパスワード")).toMatch("10 文字以上");
+    expect(passwordProblem("ながいぱすわーどです", "ながいぱすわーどでず")).toMatch("違います");
+    expect(passwordProblem("ながいぱすわーどです", "ながいぱすわーどです")).toBeNull();
+    // Full-width and half-width digits are the same password.
+    expect(passwordProblem("ぱすわーど１２３４５", "ぱすわーど12345")).toBeNull();
     expect(KDF_ITERATIONS).toBeGreaterThanOrEqual(600_000);
   });
 });

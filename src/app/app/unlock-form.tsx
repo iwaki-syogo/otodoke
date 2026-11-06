@@ -35,7 +35,7 @@ export function UnlockForm({ userId, email }: { userId: string; email: string })
 
   return (
     // No field has a `name` and the method is POST: a press before the page's script runs (or
-    // when it fails to load) sends nothing, never the password in a URL (passphrase-forms.test.ts).
+    // when it fails to load) sends nothing, never the password in a URL (password-forms.test.ts).
     <form method="post" onSubmit={submit} className="flex flex-col gap-2">
       {/* The account's address, so a password manager fills the password it keeps for it. */}
       <input type="text" autoComplete="username" value={email} readOnly hidden />

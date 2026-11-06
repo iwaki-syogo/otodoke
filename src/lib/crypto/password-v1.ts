@@ -98,9 +98,8 @@ export function newKdfSalt(): string {
 
 // ---- The rule for a new password -------------------------------------------------------------
 //
-// The same rule as the passphrase's (key-wrap.ts PASSPHRASE_RULE, isWeakPassphrase,
-// passphraseProblem), in the words of a password. A copy while the passphrase screens remain; the
-// passphrase's goes with them. src/lib/__tests__/password-v1.test.ts checks both give the same answers.
+// The rule the passphrase had, in the words of a password (the passphrase's went with its screens;
+// password-v1.test.ts keeps the answers both gave, and password-strength.test.ts the kinds refused).
 
 export const PASSWORD_MIN_LENGTH = 10;
 
