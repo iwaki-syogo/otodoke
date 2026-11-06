@@ -113,21 +113,53 @@ describe("sendMagicLink passes the Turnstile token to Supabase", () => {
     expect(mocks.otp[0].options?.captchaToken).toBeUndefined();
   });
 
-  it("shows the fixed captcha message, and gives the send back, when Supabase answers captcha_failed", async () => {
+  it("says to reload or try another browser, and gives the send back, when Supabase wanted a token the press did not have", async () => {
     mocks.otpError = { status: 400, code: "captcha_failed", message: "captcha protection: request disallowed (no captcha_token found)" };
-    expect(await submit({})).toBe("REDIRECT:/login?error=captcha");
+    expect(await submit({})).toBe("REDIRECT:/login?error=captcha_missing");
     // No mail went out, so the app's own allowance is given back.
     expect(mocks.rpc.mock.calls.filter(([fn]) => fn === "release_login_mail")).toHaveLength(1);
+    expect(await loginPage({ error: "captcha_missing" })).toContain("確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。");
+  });
+
+  it("says to send again, and gives the send back, when Supabase refused the token the press sent", async () => {
+    mocks.otpError = { status: 400, code: "captcha_failed", message: "captcha protection: request disallowed (timeout-or-duplicate)" };
+    expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?error=captcha_refused");
+    expect(mocks.rpc.mock.calls.filter(([fn]) => fn === "release_login_mail")).toHaveLength(1);
+    expect(await loginPage({ error: "captcha_refused" })).toContain("確認が切れました。もう一度リンクを送ってください。");
+  });
+
+  it("tells missing from refused by what the press sent, not by Supabase's English text", async () => {
+    // Supabase says "no token" although one was sent: still the refused case.
+    mocks.otpError = { status: 400, code: "captcha_failed", message: "captcha protection: request disallowed (no captcha_token found)" };
+    expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?error=captcha_refused");
+    // Supabase names Cloudflare's codes although nothing usable was sent: still the missing case.
+    mocks.otpError = { status: 400, code: "captcha_failed", message: "captcha protection: request disallowed (invalid-input-response)" };
+    expect(await submit({ "cf-turnstile-response": "   " })).toBe("REDIRECT:/login?error=captcha_missing");
+    expect(await submit({ "cf-turnstile-response": "x".repeat(2049) })).toBe("REDIRECT:/login?error=captcha_missing");
+
+    const missing = await loginPage({ error: "captcha_missing" });
+    const refused = await loginPage({ error: "captcha_refused" });
+    expect(missing).toContain("別のブラウザ");
+    expect(missing).not.toContain("確認が切れました");
+    expect(refused).toContain("もう一度リンクを送ってください");
+    expect(refused).not.toContain("別のブラウザ");
+    // The query carries the code only; Supabase's words never reach the page.
+    for (const page of [missing, refused]) expect(page).not.toMatch(/captcha|disallowed|timeout-or-duplicate/);
+  });
+
+  it("keeps the wording of the code used before the two were told apart", async () => {
     expect(await loginPage({ error: "captcha" })).toContain("確認が切れました。もう一度お試しください。");
   });
 
   it("decides by the code, not the English text", async () => {
     mocks.otpError = { status: 400, code: "captcha_failed", message: "something else entirely" };
-    expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?error=captcha");
+    expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?error=captcha_refused");
     mocks.otpError = { status: 500, message: "captcha verification process failed" };
     expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?error=send_failed");
+    expect(await submit({})).toBe("REDIRECT:/login?error=send_failed");
     mocks.otpError = { status: 429, code: "over_email_send_rate_limit", message: "captcha" };
     expect(await submit({ "cf-turnstile-response": TOKEN })).toBe("REDIRECT:/login?error=busy");
+    expect(await submit({})).toBe("REDIRECT:/login?error=busy");
   });
 
   it("never writes the token to the log, on success or failure", async () => {
@@ -144,11 +176,13 @@ describe("sendMagicLink passes the Turnstile token to Supabase", () => {
 });
 
 describe("the login form carries the widget", () => {
-  it("renders the hidden token field and the widget slot inside the form, above the button", async () => {
+  it("renders the hidden token field (empty, no value attribute for React to re-apply) and the widget slot inside the form, above the button", async () => {
     const html = await loginPage();
     const form = html.slice(html.indexOf("<form"), html.indexOf("</form>"));
-    expect(form).toContain('<input type="hidden" name="cf-turnstile-response" value=""/>');
-    expect(form).toContain("data-turnstile-widget");
+    expect(form).toContain('<input type="hidden" name="cf-turnstile-response"/>');
+    // While the page loads the slot keeps the widget's height (not hidden) and there is no notice.
+    expect(form).toContain('<div data-turnstile-widget="true" class="min-h-[65px] w-full"></div>');
+    expect(form).not.toContain("確認を読み込めませんでした");
     const email = form.indexOf('name="email"');
     const widget = form.indexOf("data-turnstile-widget");
     const button = form.indexOf('type="submit"');
@@ -163,12 +197,14 @@ describe("the login form carries the widget", () => {
   });
 
   it("is a client component that renders explicitly with the Otodoke sitekey and resets after each send", () => {
+    // How it behaves over time is in login-turnstile-widget.test.ts and login-submit-button.test.ts.
     const source = readFileSync(path.resolve(__dirname, "../../app/login/turnstile-widget.tsx"), "utf8");
     expect(source.startsWith('"use client";')).toBe(true);
     expect(source).toContain("turnstile.render(");
     expect(source).toContain('"response-field": false');
     expect(source).toContain('"error-callback"');
     expect(source).toContain("turnstile.reset(");
+    expect(source).toContain("turnstile.remove(");
     const page = readFileSync(path.resolve(__dirname, "../../app/login/page.tsx"), "utf8");
     const form = page.slice(page.indexOf("<form action={sendMagicLink}"), page.indexOf("</form>"));
     expect(form).toContain("<TurnstileWidget />");

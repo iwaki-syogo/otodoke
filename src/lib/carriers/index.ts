@@ -71,9 +71,13 @@ const HINTS: Array<[RegExp, CarrierKey]> = [
   [/福山通運|fukutsu/i, "fukutsu"],
 ];
 
-/** Normalize a tracking number: keep letters and digits only. */
+/**
+ * Normalize a tracking number: keep letters and digits only. Full-width ones (１２３４, typed in
+ * Japanese input or printed in a mail) count as their half-width forms first (NFKC), or they would
+ * be dropped and the number lost. Empty when nothing of it is left.
+ */
 export function normalizeTracking(raw: string): string {
-  return raw.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  return raw.normalize("NFKC").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
 }
 
 /**

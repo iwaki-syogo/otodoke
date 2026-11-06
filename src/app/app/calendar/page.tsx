@@ -2,12 +2,12 @@ import Link from "next/link";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient } from "@/lib/supabase/server";
 import { daysInMonth, formatDateJa, formatWindow, monthParam, shiftMonth, todayJst, weekdayOf } from "@/lib/format";
-import { faceToFace, type ParcelRow } from "@/lib/match";
+import { faceToFace, faceToFaceAssumed, type ParcelRow } from "@/lib/match";
 import { upcomingByDay } from "@/lib/calendar";
 import { MONTH_MIN, monthMax } from "@/lib/month-url";
 import { MonthPicker } from "../month-picker";
 import { PageLink } from "../page-link";
-import { PresenceBadge, StatusBadge } from "../parcel-card";
+import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../parcel-card";
 import { FilterLink, FilterScope, FilterSpinner } from "../spend/filter-link";
 
 export const metadata = { title: "カレンダー" };
@@ -124,13 +124,15 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
         <ol className="flex flex-col gap-5">
           {days.map((day) => {
             const list = byDay.get(day)!;
-            const presence = list.some((p) => faceToFace(p) === true);
+            const inPerson = list.filter((p) => faceToFace(p) === true);
+            // Worded like the cards: the day reads 念のため対面 when no parcel of it was said to be.
+            const presenceLabel = inPerson.length === 0 ? null : inPerson.every((p) => faceToFaceAssumed(p)) ? ASSUMED_FACE_TO_FACE : "対面受け取り";
             return (
               <li key={day} id={`d-${day}`} className="scroll-mt-4">
                 <h2 className={`flex items-center gap-2 text-sm font-bold ${day === today ? "text-neutral-900" : "text-neutral-700"}`}>
                   {formatDateJa(day)}
                   {day === today ? <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] text-white">今日</span> : null}
-                  {presence ? <span className="text-[11px] font-bold text-red-700">対面受け取り</span> : null}
+                  {presenceLabel ? <span className="text-[11px] font-bold text-red-700">{presenceLabel}</span> : null}
                 </h2>
                 <ul className="mt-2 flex flex-col gap-2">
                   {list.map((p) => (

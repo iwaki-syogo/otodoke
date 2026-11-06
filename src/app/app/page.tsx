@@ -176,13 +176,14 @@ function EmptyState() {
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <p className="text-5xl">📬</p>
       <h2 className="mt-4 text-lg font-bold">まだ荷物がありません</h2>
+      {/* Setting up is once, never a mail at a time; the button does not promise the address at once. */}
       <p className="mt-2 text-sm leading-6 text-neutral-600">
-        注文メールを転送用アドレスに送ると、ここに並びます。
+        メールの自動転送を設定しますか？
         <br />
-        まずは設定から転送先を確認してください。
+        設定は最初の 1 回だけです。
       </p>
       <Link href="/app/settings" className="mt-6 w-full rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">
-        転送先を見る
+        設定する
       </Link>
       <Link href="/app/settings#demo" className="mt-3 w-full rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">
         サンプルで試す

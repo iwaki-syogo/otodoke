@@ -1,5 +1,5 @@
 import type { Database } from "@/lib/db/database.types";
-import type { Extraction, OtherOrder, Relevance } from "@/lib/extract/schema";
+import { DB_INT_MAX, storableInt, type Extraction, type OtherOrder, type Relevance } from "@/lib/extract/schema";
 import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
 import { addDays, todayJst } from "@/lib/format";
 import { categoryForInsert, categoryForUpdate } from "./category";
@@ -55,9 +55,12 @@ export function isParcelRelevant(r: Relevance): boolean {
   return r !== "unrelated";
 }
 
-/** Normalize an order number for matching: drop spaces/dashes, uppercase. */
+/**
+ * Normalize an order number for matching: full-width forms as half-width (NFKC: ＡＢ－１２３ is
+ * AB-123), then drop spaces and dashes, uppercase. "−" and "ー" are dashes too: NFKC keeps them.
+ */
 export function normalizeOrderNumber(raw: string): string {
-  return raw.replace(/[\s\-‐–—]/g, "").toUpperCase();
+  return raw.normalize("NFKC").replace(/[\s\-‐–—−ー]/g, "").toUpperCase();
 }
 
 const MIN_CONFIDENCE = 0.6;
@@ -79,6 +82,12 @@ export function asTime(v: string | null): string | null {
 
 function confident<T>(f: { value: T | null; confidence: number }): T | null {
   return f.value !== null && f.confidence >= MIN_CONFIDENCE ? f.value : null;
+}
+
+/** The tracking number to store and compare: normalized, or null when nothing of it is left (never ""). */
+function trackingOf(x: Pick<Extraction, "tracking_number">): string | null {
+  const stated = confident(x.tracking_number);
+  return stated === null ? null : normalizeTracking(stated) || null;
 }
 
 /** Shown when no mail names who sent the parcel. */
@@ -135,7 +144,7 @@ function orderDate(x: Extraction, emailSentAt: string | null): string | null {
 
 /** Fields to write for a brand-new parcel from one extraction. */
 export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: string | null): ParcelInsert {
-  const tracking = confident(x.tracking_number);
+  const tracking = trackingOf(x);
   const carrierHint = x.carrier.value;
   const carrier = tracking || carrierHint ? identifyCarrier(tracking, carrierHint) : null;
   const status = statusOf(x) ?? "unknown";
@@ -155,7 +164,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
     expected_window_end: asTime(confident(x.expected_window_end)),
     expected_text: x.expected_text,
     carrier: carrier && carrier.key !== "unknown" ? carrier.name : carrierHint,
-    tracking_number: tracking ? normalizeTracking(tracking) : null,
+    tracking_number: tracking,
     tracking_url: trackingUrlFor(tracking, carrierHint),
     requires_presence: confident(x.requires_presence),
     presence_evidence: x.requires_presence.evidence,
@@ -184,9 +193,9 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   const orderNumber = confident(x.order_number);
   if (orderNumber && !existing.order_number) update.order_number = orderNumber;
 
-  const tracking = confident(x.tracking_number);
+  const tracking = trackingOf(x);
   if (tracking && (!existing.tracking_number || isNewer)) {
-    update.tracking_number = normalizeTracking(tracking);
+    update.tracking_number = tracking;
     const info = identifyCarrier(tracking, x.carrier.value ?? existing.carrier);
     update.carrier = info.key !== "unknown" ? info.name : (x.carrier.value ?? existing.carrier);
     update.tracking_url = trackingUrlFor(tracking, x.carrier.value ?? existing.carrier);
@@ -251,9 +260,9 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   const orderNumber = confident(x.order_number);
   if (orderNumber && !existing.order_number) update.order_number = orderNumber;
 
-  const tracking = confident(x.tracking_number);
+  const tracking = trackingOf(x);
   if (tracking && !existing.tracking_number) {
-    update.tracking_number = normalizeTracking(tracking);
+    update.tracking_number = tracking;
     if (!existing.tracking_url) update.tracking_url = trackingUrlFor(tracking, existing.carrier ?? x.carrier.value);
   }
   if (!existing.carrier) {
@@ -320,8 +329,7 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
     );
     if (hit) return hit;
   }
-  const statedTracking = confident(x.tracking_number);
-  const tracking = statedTracking ? normalizeTracking(statedTracking) : null;
+  const tracking = trackingOf(x);
   if (tracking) {
     const hit = newestFirst.find((p) => p.tracking_number === tracking);
     if (hit) return hit;
@@ -388,23 +396,27 @@ const STATED_OUTRIGHT = 0.9;
  */
 export function parcelTotal(mails: Extraction[]): number | null {
   const orderMails = mails.filter((m) => ORDER_MAILS.includes(m.relevance));
-  const stated = orderMails.map((m) => m.total_amount).filter((f) => f.value && f.confidence >= MIN_CONFIDENCE);
+  // storableInt: a reading saved before extract.ts bounded its numbers may hold one the column cannot.
+  const stated = orderMails.map((m) => m.total_amount).filter((f) => storableInt(f.value) && f.confidence >= MIN_CONFIDENCE);
   const firm = stated.filter((f) => f.confidence >= STATED_OUTRIGHT).at(-1)?.value ?? null;
   const weak = stated.at(-1)?.value ?? 0;
 
   const listed = orderMails.find((m) => m.items.length > 0)?.items ?? [];
-  const itemSum = listed.length > 0 && listed.every((i) => i.unit_price !== null) ? listed.reduce((sum, i) => sum + (i.unit_price ?? 0) * (i.quantity ?? 1), 0) : 0;
+  const listedSum = listed.length > 0 && listed.every((i) => i.unit_price !== null) ? listed.reduce((sum, i) => sum + (i.unit_price ?? 0) * (i.quantity ?? 1), 0) : 0;
+  // Each price fits the column, their sum may not: then the item list says nothing about the cost.
+  const itemSum = listedSum <= DB_INT_MAX ? listedSum : 0;
 
   // A set: the same mail may be delivered twice, while parts of one order state different amounts.
   const shipments = new Set<number>();
   for (const m of mails) {
-    const total = m.total_amount;
-    if (SHIPMENT_MAILS.includes(m.relevance) && total.value && total.confidence >= MIN_CONFIDENCE) shipments.add(total.value);
+    const amount = storableInt(m.total_amount.value);
+    if (SHIPMENT_MAILS.includes(m.relevance) && amount && m.total_amount.confidence >= MIN_CONFIDENCE) shipments.add(amount);
   }
   const shipped = [...shipments].reduce((a, b) => a + b, 0);
 
   const total = shipped > 0 ? Math.max(shipped, firm ?? 0) : (firm ?? Math.max(weak, itemSum));
-  return total > 0 ? total : null;
+  // Shipments that add up past the column are unknown too, rather than a write that always fails.
+  return total > 0 && total <= DB_INT_MAX ? total : null;
 }
 
 /** How long past its date a parcel waits before the user is asked whether it came. */
@@ -437,6 +449,15 @@ export function needsCheck(p: DatedParcel, today: string): boolean {
  */
 export function faceToFace(p: Pick<ParcelRow, "requires_presence" | "shop_key">): boolean | null {
   return p.requires_presence ?? (p.shop_key === "amazon" ? null : true);
+}
+
+/**
+ * Whether `faceToFace` says face-to-face only by that default, with nothing stored. Worded apart
+ * on screen (念のため対面) so a guess never reads like what a mail said; it is still coloured and
+ * counted as face-to-face. Never true unless `faceToFace` is.
+ */
+export function faceToFaceAssumed(p: Pick<ParcelRow, "requires_presence" | "shop_key">): boolean {
+  return faceToFace(p) === true && p.requires_presence !== true;
 }
 
 /** Past its date with no delivery mail yet, but not long enough to ask. */

@@ -20,6 +20,17 @@ export const StrField = z.object({ value: z.string().nullable(), evidence, confi
 export const IntField = z.object({ value: z.number().int().nullable(), evidence, confidence });
 export const BoolField = z.object({ value: z.boolean().nullable(), evidence, confidence });
 
+/** The largest Postgres `integer`: parcels.total_amount, parcel_items.quantity and unit_price. */
+export const DB_INT_MAX = 2_147_483_647;
+
+/**
+ * A count or an amount in yen that those columns can hold, else null (unknown). The schema holds
+ * the model to whole numbers but not to their size, and a mail can say "合計 3,000,000,000円".
+ */
+export function storableInt(value: number | null): number | null {
+  return value !== null && Number.isInteger(value) && value >= 0 && value <= DB_INT_MAX ? value : null;
+}
+
 export const Relevance = z.enum([
   "order", // 注文を受け付けた
   "payment", // 決済完了・処方箋確認など、注文に付随する中間連絡

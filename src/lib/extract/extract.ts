@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { env, requireEnv } from "@/lib/env";
 import { EXTRACT_SYSTEM_PROMPT, buildUserMessage, type EmailForPrompt } from "./prompt";
-import { ExtractionSchema, type Extraction } from "./schema";
+import { ExtractionSchema, storableInt, type Extraction } from "./schema";
 
 export interface ExtractionResult {
   data: Extraction;
@@ -25,6 +25,23 @@ function getClient(): Anthropic {
 }
 
 const EMPTY_FIELD = { value: null, evidence: null, confidence: 0 } as const;
+
+/** Where a reading has whole numbers: an amount (the only `value` that is a number) and an item's quantity and price. */
+const WHOLE_NUMBER_KEYS = new Set(["value", "quantity", "unit_price"]);
+
+/**
+ * Reads the model's answer. A whole number the database cannot store (below 0, above
+ * 2,147,483,647, or past 2^53, which the schema check itself refuses) would fail the mail on
+ * every delivery Resend retries, each one a paid call. So it is read as unknown (null) before the
+ * check; its evidence and confidence stay.
+ */
+export function readAnswer(content: string): Extraction {
+  const answer: unknown = JSON.parse(content, (key, value) => (typeof value === "number" && WHOLE_NUMBER_KEYS.has(key) ? storableInt(value) : value));
+  return ExtractionSchema.parse(answer);
+}
+
+/** The model is held to the same JSON schema as before; only the reading of its answer is ours. */
+const OUTPUT_FORMAT = { ...zodOutputFormat(ExtractionSchema), parse: readAnswer };
 
 function unrelatedPlaceholder(notes: string): Extraction {
   return {
@@ -66,7 +83,7 @@ export async function extractEmail(email: EmailForPrompt): Promise<ExtractionRes
     max_tokens: 16000,
     system: [{ type: "text", text: EXTRACT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: text }],
-    output_config: { format: zodOutputFormat(ExtractionSchema), effort },
+    output_config: { format: OUTPUT_FORMAT, effort },
   });
 
   const usage = {

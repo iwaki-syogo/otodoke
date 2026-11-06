@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY } from "@/lib/turnstile";
+import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
+import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY, TURNSTILE_UNAVAILABLE } from "@/lib/turnstile";
 
 /** The part of Cloudflare's `window.turnstile` this form uses. */
 type TurnstileApi = {
@@ -27,13 +28,15 @@ function loadTurnstile(): Promise<TurnstileApi> {
     const script = document.createElement("script");
     script.src = TURNSTILE_SCRIPT_URL;
     script.async = true;
-    script.onload = () => (window.turnstile ? resolve(window.turnstile) : reject(new Error("turnstile missing")));
-    script.onerror = () => {
-      // Let a later mount try again (e.g. a blocked request on a flaky connection).
+    // Lets a later mount try again (the form is drawn anew after every send).
+    const fail = (reason: string) => {
       scriptPromise = null;
       script.remove();
-      reject(new Error("turnstile script failed to load"));
+      reject(new Error(reason));
     };
+    // Loaded but no Turnstile: something else answered the URL (a proxy's block page).
+    script.onload = () => (window.turnstile ? resolve(window.turnstile) : fail("turnstile missing"));
+    script.onerror = () => fail("turnstile script failed to load");
     document.head.appendChild(script);
   });
   return scriptPromise;
@@ -44,14 +47,20 @@ function loadTurnstile(): Promise<TurnstileApi> {
  * checkmark without doing anything. The token goes into a hidden field that this component owns,
  * so the form posts it to the server action, which hands it to Supabase.
  *
- * The button never waits for the token: while Supabase's CAPTCHA is off the login works without
- * one, and once it is on a missing token comes back as a fixed message (error=captcha). Each
- * token can be checked once, so after every send the widget is reset for the next press.
+ * - Only this component writes the field; React never sets its value (no value or defaultValue):
+ *   React re-applies defaultValue on every re-render, and on a hidden input that is the value.
+ * - The login button holds a press until the field has a token (src/app/login/submit-button.tsx).
+ *   When the script cannot load, a short notice takes the widget's place and the field is marked
+ *   unavailable, so the button sends at once.
+ * - Each token can be checked once. After a send the form comes back drawn anew (Next.js remounts
+ *   it after a Server Action redirects), and if it stays mounted the widget is reset here: either
+ *   way the next press gets a new token.
  */
 export function TurnstileWidget() {
   const container = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const widgetId = useRef<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
   const { pending } = useFormStatus();
   const wasPending = useRef(false);
 
@@ -60,6 +69,8 @@ export function TurnstileWidget() {
     const setToken = (token: string) => {
       if (field.current) field.current.value = token;
     };
+    // A new widget has no token yet, whatever the browser may have restored into the field.
+    setToken("");
     loadTurnstile()
       .then((turnstile) => {
         if (cancelled || !container.current) return;
@@ -82,7 +93,8 @@ export function TurnstileWidget() {
           }) ?? null;
       })
       .catch(() => {
-        // Script blocked or offline: the form still posts, without a token.
+        // Script blocked, offline or Cloudflare down (or the widget would not draw).
+        if (!cancelled) setUnavailable(true);
       });
     return () => {
       cancelled = true;
@@ -91,7 +103,7 @@ export function TurnstileWidget() {
     };
   }, []);
 
-  // A send has finished (sent, refused or redirected back with an error): the token is used up.
+  // A send has finished while this form stayed mounted: the token went with it, get a new one.
   useEffect(() => {
     if (wasPending.current && !pending) {
       if (field.current) field.current.value = "";
@@ -102,8 +114,11 @@ export function TurnstileWidget() {
 
   return (
     <>
-      <input ref={field} type="hidden" name={TURNSTILE_RESPONSE_FIELD} defaultValue="" />
-      <div ref={container} data-turnstile-widget className="min-h-[65px] w-full" />
+      <input ref={field} type="hidden" name={TURNSTILE_RESPONSE_FIELD} data-turnstile={unavailable ? TURNSTILE_UNAVAILABLE : undefined} />
+      {unavailable ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{TURNSTILE_UNAVAILABLE_MESSAGE}</p>
+      ) : null}
+      <div ref={container} data-turnstile-widget hidden={unavailable} className="min-h-[65px] w-full" />
     </>
   );
 }

@@ -8,7 +8,13 @@ export const LOGIN_ERROR_MESSAGES = {
   send_failed: "メールを送れませんでした。少し時間をおいて、もう一度お試しください。",
   // Supabase refused to send (one address once a minute, or the project's hourly allowance).
   busy: "いまはリンクを送れませんでした。少し時間をおいて、もう一度お試しください。",
-  // Supabase's CAPTCHA refused the Turnstile token (missing, expired or already used).
+  // Supabase's CAPTCHA wanted a Turnstile token and the press had none: the check did not finish
+  // (script blocked, host not allowed, not solved within the button's wait).
+  captcha_missing: "確認が終わりませんでした。ページを読み込み直すか、別のブラウザでお試しください。",
+  // Supabase's CAPTCHA refused the token the press sent (expired, already used or invalid). The
+  // form comes back with a new check, so sending again works.
+  captcha_refused: "確認が切れました。もう一度リンクを送ってください。",
+  // The code used before missing and refused were told apart. No longer sent; kept for old links.
   captcha: "確認が切れました。もう一度お試しください。",
   // The app's own limits (src/lib/login-mail-limit.ts).
   email_10m:
@@ -24,18 +30,22 @@ export type LoginErrorCode = keyof typeof LOGIN_ERROR_MESSAGES;
 /** Shown for a code this version does not know (an old link, or one somebody typed). */
 export const UNKNOWN_LOGIN_ERROR = "ログインできませんでした。もう一度リンクを送ってください。";
 
+/** Shown in the bot check's place when its script cannot load (blocked, offline, Cloudflare down). */
+export const TURNSTILE_UNAVAILABLE_MESSAGE = "確認を読み込めませんでした。ページを読み込み直すか、別のブラウザでお試しください。";
+
 export function loginErrorPath(code: LoginErrorCode): string {
   return `/login?error=${code}`;
 }
 
 /**
  * Which fixed message a refused signInWithOtp gets. Decided by Supabase's error code and status,
- * never by the English message text.
+ * and by whether this press sent a token; never by the English message text.
  * - `captcha_failed` (400): CAPTCHA is on and the token is missing, expired, used or invalid.
+ *   Supabase answers the same code for all of them, so what this press sent tells them apart.
  * - 429: Supabase's own send limits.
  */
-export function loginSendErrorCode(error: { status?: number; code?: string }): LoginErrorCode {
-  if (error.code === "captcha_failed") return "captcha";
+export function loginSendErrorCode(error: { status?: number; code?: string }, sentCaptchaToken: boolean): LoginErrorCode {
+  if (error.code === "captcha_failed") return sentCaptchaToken ? "captcha_refused" : "captcha_missing";
   if (error.status === 429) return "busy";
   return "send_failed";
 }
