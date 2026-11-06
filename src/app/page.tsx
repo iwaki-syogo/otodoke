@@ -22,11 +22,12 @@ export default async function Home() {
         <p className="mt-5 text-base leading-7 text-neutral-600">
           どの店で買った荷物も、いつ届くか・いつ家にいればいいかが 1 つのカレンダーに並びます。設定は最初の 1 回だけ。
         </p>
+        {/* Signed out: the account first (the address and a password); the header has the login. */}
         <Link
-          href={user ? "/app" : "/login"}
+          href={user ? "/app" : "/signup"}
           className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-neutral-900 px-5 py-4 text-base font-medium text-white active:opacity-80"
         >
-          {user ? "荷物を見る" : "メールアドレスで始める"}
+          {user ? "荷物を見る" : "アカウントを作る"}
         </Link>
       </section>
 
