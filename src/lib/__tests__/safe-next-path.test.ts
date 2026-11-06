@@ -79,6 +79,45 @@ const LEGIT: Array<[string, string, string]> = [
   ["the top page", "/", "/"],
 ];
 
+/**
+ * [Review R3-36] Nothing after login leads back into /auth/ (nor /auth itself): a next there showed
+ * this site's own answer after a login that worked (/auth/continue?link=refused, a refusal that did
+ * not happen), or put another person's token behind 「荷物を見る」. Refused however it is written,
+ * as far as safeNextPath reads a path (parsed, then its ASCII escapes decoded up to MAX_DECODES).
+ */
+const INTO_AUTH: Array<[string, string]> = [
+  ["the continue page with the refusal's mark", "/auth/continue?link=refused"],
+  ["the continue page with someone's token", "/auth/continue?token_hash=OTHER&type=email"],
+  ["the confirm route", "/auth/confirm?token_hash=OTHER&type=email"],
+  ["the sign-out route", "/auth/signout"],
+  ["/auth itself", "/auth"],
+  ["/auth/ with nothing after it", "/auth/"],
+  ["the continue page at a fragment", "/auth/continue#x"],
+  ["in capitals", "/AUTH/CONTINUE?link=refused"],
+  ["in mixed case", "/Auth/Continue"],
+  ["after a dot segment", "/./auth/continue"],
+  ["through a dot segment", "/app/../auth/continue?link=refused"],
+  ["through an encoded dot segment", "/app/%2e%2e/auth/continue"],
+  ["through a doubly encoded dot segment", "/app/%252e%252e/auth/continue"],
+  ["with an encoded slash", "/auth%2Fcontinue?link=refused"],
+  ["with an encoded slash in lower case", "/auth%2fcontinue"],
+  ["with a doubly encoded slash", "/auth%252Fcontinue"],
+  ["with an encoded letter", "/%61uth/continue"],
+  ["with a doubly encoded letter in capitals", "/%2541UTH/continue"],
+  ["with an encoded question mark", "/auth%3Flink=refused"],
+  ["with a backslash", "/auth\\continue"],
+  ["with a tab inside", "/au\tth/continue"],
+  ["nested deeper than any server decodes", `/%${"25".repeat(20)}61uth/continue`],
+];
+
+/** Next to /auth but not in it: kept as they are (only the path counts, and only /auth/). */
+const BESIDE_AUTH: Array<[string, string, string]> = [
+  ["/auth/ resolved away by its dot segment", "/auth/../app", "/app"],
+  ["/auth named in the query", "/app?from=%2Fauth%2Fcontinue", "/app?from=%2Fauth%2Fcontinue"],
+  ["/auth named in the fragment", "/app/settings#/auth", "/app/settings#/auth"],
+  ["a path that only starts with the letters", "/authors", "/authors"],
+];
+
 describe("safeNextPath", () => {
   it.each(HOSTILE)("sends %s to /app", (_what, value) => {
     expect(safeNextPath(value)).toBe("/app");
@@ -92,8 +131,27 @@ describe("safeNextPath", () => {
     expect(safeNextPath(value)).toBe(expected);
   });
 
+  it.each(INTO_AUTH)("[R3-36] sends %s to /app", (_what, value) => {
+    expect(safeNextPath(value)).toBe("/app");
+  });
+
+  it.each(BESIDE_AUTH)("[R3-36] keeps %s", (_what, value, expected) => {
+    expect(safeNextPath(value)).toBe(expected);
+  });
+
+  it("[R3-36] never answers with a path into /auth/, however it is read", () => {
+    for (const [, value] of [...HOSTILE, ...NOT_A_PATH, ...LEGIT, ...INTO_AUTH, ...BESIDE_AUTH]) {
+      const location = safeNextPath(value);
+      // As the browser resolves the Location, and once more as a server that decodes the path would.
+      const resolved = new URL(location, SITE).pathname;
+      for (const path of [resolved, new URL(decodeURIComponent(resolved), SITE).pathname]) {
+        expect(path.toLowerCase(), JSON.stringify(value)).not.toMatch(/^\/auth(\/|$)/);
+      }
+    }
+  });
+
   it("never answers with something a browser reads as another site", () => {
-    for (const [, value] of [...HOSTILE, ...NOT_A_PATH, ...LEGIT]) {
+    for (const [, value] of [...HOSTILE, ...NOT_A_PATH, ...LEGIT, ...INTO_AUTH, ...BESIDE_AUTH]) {
       const location = safeNextPath(value);
       expect(lands(location), JSON.stringify(value)).toBe(SITE);
       expect(location, JSON.stringify(value)).toMatch(/^\/(?![/\\])/);
@@ -202,7 +260,28 @@ describe("a next from a link stays on this site at every step", () => {
     expect(await hiddenNext({ token_hash: TOKEN, type: "email" })).toBe("/app");
   });
 
+  it.each(INTO_AUTH)("[R3-36] POST /auth/confirm sends %s to /app after login", async (_what, value) => {
+    expect(await postConfirm(value)).toBe("/app");
+  });
+
+  it.each(INTO_AUTH)("[R3-36] /auth/continue posts /app for %s", async (_what, value) => {
+    expect(await hiddenNext({ token_hash: TOKEN, type: "email", next: value })).toBe("/app");
+  });
+
   const THROUGH_THE_MAIL: Array<[string, string]> = [...HOSTILE.slice(0, 12), ...[LEGIT[1], LEGIT[6], LEGIT[7]].map(([what, value]): [string, string] => [what, value])];
+
+  // [R3-36] A link whose next is the continue page with the refusal's mark, or with a token:
+  // from the mail's button to the Location after login, it ends on the parcel list.
+  it.each(INTO_AUTH.slice(0, 2))("[R3-36] a mail's link with a next into /auth/ ends on /app: %s", async (_what, value) => {
+    const link = `${SITE}/auth/confirm?next=${encodeURIComponent(value)}&token_hash=${TOKEN}&type=email`;
+    const continueUrl = new URL((await GET(new NextRequest(link))).headers.get("location")!, SITE);
+    expect(continueUrl.searchParams.get("next")).toBe(value);
+    const posted = await hiddenNext(Object.fromEntries(continueUrl.searchParams));
+    expect(posted).toBe("/app");
+    expect(await postConfirm(posted)).toBe("/app");
+    // And had the page posted the next as it came, the route would still send it to /app.
+    expect(await postConfirm(value)).toBe("/app");
+  });
 
   it.each(THROUGH_THE_MAIL)(
     "from the login form to the Location after login: %s",
