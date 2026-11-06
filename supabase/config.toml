@@ -242,14 +242,22 @@ pass = "env(RESEND_SMTP_KEY)"
 admin_email = "noreply@otodoke.app"
 sender_name = "Otodoke"
 
-# signInWithOtp uses the confirmation template for a brand-new user and magic_link afterwards.
-# Both use type=email, which verifies either kind of token.
-[auth.email.template.magic_link]
-subject = "Otodoke のログインリンク"
-content_path = "./supabase/templates/magic_link.html"
-
+# The Web signs in with a password. signUp sends the confirmation and resetPasswordForEmail the
+# recovery; both links land on /auth/confirm (type=email / type=recovery), and the redirect URL
+# they are given already carries a query, so the templates add "&token_hash=". The iOS app's
+# second build signs in with the code: signInWithOtp sends the confirmation to a new address and
+# magic_link afterwards. Code and link sign-in stay on in Supabase for it; no Web screen sends a
+# magic link any more, so that mail carries the code only.
 [auth.email.template.confirmation]
-subject = "Otodoke のログインリンク"
+subject = "Otodoke のメールアドレスの確認"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Otodoke のパスワードの再設定"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.magic_link]
+subject = "Otodoke のログインコード"
 content_path = "./supabase/templates/magic_link.html"
 
 # [auth.email.smtp]

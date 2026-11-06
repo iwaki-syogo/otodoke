@@ -3,6 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { PLAINTEXT_DROP_NOTICE } from "@/lib/mail-notices";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
 /**
@@ -45,13 +46,23 @@ describe("decision 7 is announced with its date", () => {
   it("「あなたのメールの扱い」 says the same, next to the mail read before encryption", () => {
     const item = findAll(parseHtml(renderToStaticMarkup(createElement(MailHandling))), (n) => n.tag === "li" && textOf(n).includes("暗号化を始める前に読み取ったメールは、暗号化していません"));
     expect(item).toHaveLength(1);
-    expect(textOf(item[0])).toContain(`合言葉を決めていない場合は、${NOTICE}`);
+    // password-v1: the key is made at the password sign-in, so "no key" is said in those words.
+    expect(textOf(item[0])).toContain(`「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE}`);
+    expect(PLAINTEXT_DROP_NOTICE).toBe(`パスワードでログインしていない場合は、${NOTICE}。`);
+    expect(textOf(item[0])).not.toContain("合言葉");
   });
 
-  it("the pending SQL's header no longer claims a notice that is not there", () => {
+  it("the pending SQL's header names where users are told, with the password sign-in's files", () => {
     const sql = readFileSync(path.resolve(__dirname, "../../../supabase/pending/20261114090000_drop_unsealed_plaintext.sql"), "utf8");
     expect(sql).not.toContain("the settings screen / README say so");
-    expect(sql).toContain("mail-key-panel.tsx");
+    // The passphrase panel is replaced by the password panel (password-v1); the sentence is one constant.
+    expect(sql).not.toContain("mail-key-panel.tsx");
+    expect(sql).toContain("src/app/app/settings/password-panel.tsx");
+    expect(sql).toContain("src/lib/mail-notices.ts");
+    expect(sql).toContain("PLAINTEXT_DROP_NOTICE");
+    for (const told of ["mail-handling.tsx", "src/app/privacy/page.tsx", "README.md"]) expect(sql).toContain(told);
+    // Decision 8's retire makes those users keyless until they sign in with a password.
+    expect(sql).toContain("supabase/pending/20261107090000_retire_passphrase_keys.sql");
   });
 });
 

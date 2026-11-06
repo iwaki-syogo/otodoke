@@ -1,16 +1,22 @@
--- Decision 7 (2026-11-06): the plaintext subject, sender and body that users who never set a
--- passphrase left behind are removed on 2026-11-14. Their parcels stay; the original mail does
--- not come back. A one-off data change, written ahead and NOT applied.
+-- Decision 7 (2026-11-06): the plaintext subject, sender and body that users with no mail key in
+-- use left behind are removed on 2026-11-14. Since the password sign-in (password-v1) the key is
+-- made when a user signs in with the password, so users are told it as "not signed in with the
+-- password". Their parcels stay; the original mail does not come back. A one-off data change,
+-- written ahead and NOT applied.
 --
 -- 🚨 Not applied yet, and not to be applied without the owner's YES on the day. Before running:
 --   1. supabase/verify/20261114090000_drop_unsealed_plaintext.before.sql: the counts of what this
 --      removes, by user state (one row). Look at them; nothing here can be undone. And
 --      supabase/verify/20261114090000_drop_unsealed_plaintext.count-control.sql: its verdict must
 --      be 'OK' (the counting itself finds what it should).
---   2. Users must have been told, with the date. 設定 says so since the review fixes of 2026-11-06:
---      src/app/app/settings/mail-key-panel.tsx (to a user with plaintext mail and no passphrase)
---      and mail-handling.tsx (「あなたのメールの扱い」). README.md's 「あなたのメールの扱い」 needs
---      the same sentence. Check that both are in production well before the day.
+--   2. Users must have been told, with the date, in the one sentence of src/lib/mail-notices.ts
+--      (PLAINTEXT_DROP_NOTICE): 設定's src/app/app/settings/password-panel.tsx (to a user with
+--      plaintext mail and no key), mail-handling.tsx (「あなたのメールの扱い」), the privacy policy
+--      (src/app/privacy/page.tsx) and README.md's 「あなたのメールの扱い」. Check that all of them
+--      are in production well before the day.
+--   Decision 8 (supabase/pending/20261107090000_retire_passphrase_keys.sql) retires the keys made
+--   with a passphrase: until such a user signs in with a password, they count here as having no
+--   key, and their read plaintext mail goes too.
 -- Run with `supabase db query --linked -f` (or move to supabase/migrations/ renamed with a fresh
 -- timestamp, supabase/pending/README.md). Then
 -- supabase/verify/20261114090000_drop_unsealed_plaintext.after.sql: its verdict must be 'OK'.

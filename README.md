@@ -33,7 +33,7 @@
 
 実際のメールは要りません。
 
-1. https://otodoke.app を開き、メールアドレスでログインします。パスワードはありません。届いたメールのリンクを開くか、メールにある 8 桁のコードを入れます
+1. https://otodoke.app を開き、「アカウントを作る」でメールアドレスとパスワードを決めます。届いた確認のメールのリンクを開いてから、そのパスワードでログインします
 2. 「設定」タブの「サンプルで試す」で「サンプルのメールを読み込む」を押します。匿名化した実際のメール 17 通が、今日の日付に合わせて入ります（保存済みの読み取り結果を使うので、Claude API は呼びません）
 3. 見てほしいところ
    - 「荷物」: 17 通が 6 つの荷物にまとまります。赤い 🤝 の印が、家にいる必要のある荷物です。メールに書いてあったものは「対面受け取り」、書いていないものは「念のため対面」と出ます
@@ -43,10 +43,10 @@
 
 ## 仕組み
 
-1. 登録して合言葉を決めると、あなた専用の受信アドレスが出ます（合言葉は保存するメールの暗号化に使います。下の「あなたのメールの扱い」）
+1. アカウントを作ってパスワードでログインすると、あなた専用の受信アドレスが出ます（パスワードは、保存するメールの暗号化にも使います。下の「あなたのメールの扱い」）
 2. 自分のメール（Gmail / iCloud / Outlook など）で、そのアドレスへの自動転送を最初に 1 回だけ設定します。店ごとの設定はありません
 3. 届いたメールは Resend の webhook（署名を検証）で受け取り、広告を落としてから Claude が読みます。荷物へのまとめと運送会社の判定はコードです
-4. 一覧・カレンダー・支出として表示します。画面からはいつでも元メールに戻れます（合言葉で開きます）
+4. 一覧・カレンダー・支出として表示します。画面からはいつでも元メールに戻れます（パスワードで開きます）
 
 ## Claude をどう使ったか
 
@@ -83,13 +83,13 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 ## 安全への配慮
 
 - **データ**: 全テーブルで RLS。メール本文・読み取り結果・品目は、ログインした利用者からは読むだけで、書くのはサーバーだけです（実際に書き込みを試し、拒否されることを確かめました）
-- **保存したメール**: 読み取った後の件名・差出人・本文は、利用者の合言葉でしか開けない形で保存します（下の「あなたのメールの扱い」）
+- **保存したメール**: 読み取った後の件名・差出人・本文は、利用者のパスワードでしか開けない形で保存します（下の「あなたのメールの扱い」）
 - **費用**: 有料の呼び出しの前に、DB の関数 `claim_claude_call` で 1 人 1 日と全体 1 日の枠を取ります。超えたメールは保存しておき、あとで読み直せます
 - **広告メール**: 本文は保存せず、件名と差出人のドメインだけを 14 日残して、毎日まとめて消します。「これは荷物」で覚えた差出人は、設定の「外す」で外せます
 - **運送会社**: 追跡ページをスクレイピングしません。押したときにリンクを開くだけです
-- **ログイン**: リンクを開くと確認ボタンが出て、押したときに検証します（メールの検査がリンクを踏んでも使い切られない）。ほかのサイトから送られた確認は断ります。メールにある 8 桁のコードでもログインできます。戻り先はホスト名ちょうどで許可
+- **ログイン**: メールアドレスとパスワード。パスワードはブラウザで 2 つに分け、ログイン用の値だけをサーバーに送ります。パスワードそのものは送りません。確認と再設定のメールのリンクは、開くと確認ボタンが出て、押したときに検証します（メールの検査がリンクを踏んでも使い切られない）。ほかのサイトから送られた確認は断ります。リンクの行き先はコードで決め、リンクの中の行き先は読みません。Web と iOS で同じ計算にするため、メールアドレスは ASCII の文字だけ受け付けます
 - **退会**: 設定の「アカウントを削除」で、アカウントごと消せます。消した人の受信アドレスは、ほかの人に渡しません
-- **ログインのメール**: ログイン画面から送るリンクには、メールアドレスごと・接続ごとに回数の上限を置きます。どの画面も、ほかのサイトの中に埋め込ませません（ボタンを押させる罠を防ぐ）
+- **確認と再設定のメール**: Web の画面から送るメールには、メールアドレスごと・接続ごとに回数の上限を置きます。どの画面も、ほかのサイトの中に埋め込ませません（ボタンを押させる罠を防ぐ）
 - **公開リポジトリ**: 実メールは置かず、デモの 17 通は匿名化済み。鍵は gitleaks で止めます
 
 **まだできないこと**: Amazon の分割発送では、品目が最初の便の分だけになることがあります。メールが来ない注文は、手で登録する画面から入れます。
@@ -99,25 +99,25 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 アプリの「設定」にも同じことを書いています。全体は [プライバシーポリシー](https://otodoke.app/privacy) にまとめています。
 
 - 届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使わず、30 日以内に消すと定めています（2026-11-06 に privacy.claude.com で確認）
-- 読み取った後のメール（件名・差出人の名前とアドレス・本文）は、あなたの合言葉でしか開けない形で保存します。運営者もデータベースからは読めません
-- ただし、暗号化を始める前に読み取ったメールは、暗号化していません。設定で合言葉を決めて「暗号化する」を押すまで、運営者が読める形で残ります。合言葉を決めていない場合は、2026 年 11 月 14 日に件名・差出人・本文を消します。荷物は残ります
+- 読み取った後のメール（件名・差出人の名前とアドレス・本文）は、あなたのパスワードでしか開けない形で保存します。パスワードそのものはサーバーに送らないので、運営者もデータベースからは読めません
+- ただし、暗号化を始める前に読み取ったメールは、暗号化していません。設定で「暗号化する」を押すまで、運営者が読める形で残ります。パスワードでログインしていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります
 - 荷物の情報（店・品名・金額・日付・注文番号・伝票番号・根拠の行・読み取り結果）と、差出人のドメイン（例 amazon.co.jp）は暗号化しません。根拠の行は本文の抜粋です。一覧・カレンダー・支出を出すのと、読み取った値を元の文で確かめるのと、同じメールを見分けるのに使うためです
 - メールごとの識別子（Message-ID）と、Gmail の転送の確認メールにある承認リンクも暗号化しません。同じメールを二度読まないためと、承認ページを出すためです
 - 読み取る前のメール（1 日の上限を超えた分など）は、読み取るまで暗号化せずに置いておきます。読み取ったら暗号化します
-- Otodoke が暗号化を始めた後、合言葉を決める前に読み取ったメールは、件名・差出人・本文を残しません。荷物の情報は残ります。サンプルのメール（匿名化して公開しているもの）は、合言葉がなくても読めるまま入ります
-- 合言葉を忘れると、前のメールは誰にも戻せません。荷物は残ります。合言葉を変えるだけなら、前のメールもそのまま開けます
+- Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません。荷物の情報は残ります。サンプルのメール（匿名化して公開しているもの）は、パスワードでログインする前でも読めるまま入ります
+- パスワードを忘れたときは、メールで再設定できます。パスワードを決め直すと、前に暗号化して保存したメールは開けなくなります。荷物は残ります。パスワードを変えるだけなら、前のメールもそのまま開けます
 - 受信を受け持つ Resend にも、メールの写しが一定期間残ります
 - 暗号化していない状態のメール（読み取る前のもの、暗号化する前のもの）は、データベースのバックアップにも最大 7 日間残ります
 - 広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します。毎日まとめて消します。「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します。Gmail など多くの人が使うドメインは覚えません
 - 運営者が正しいプログラムを動かしていることが前提です。コードはすべてこのリポジトリで公開しています
 
-**仕組み。** 合言葉を決めると、ブラウザが鍵の組（ECDH P-256）を作ります。秘密鍵は合言葉から作った鍵（PBKDF2-SHA256 60 万回）で包んでから保存するので、サーバーには合言葉も開いた秘密鍵も届きません。サーバーは公開鍵だけを持ち、メールを読み取った時点で件名・差出人・本文を 1 つの封筒（HKDF-SHA256 ＋ AES-256-GCM）にして、平文の列を同じ書き込みで空にします。登録のときは、データベースから読み戻した包みが合言葉で開き、公開鍵と対になっていることをブラウザで確かめてから鍵を使い始めます。元メールはブラウザで合言葉から開き、文字だけを表示します（HTML は描画しません）。包んだ鍵と封筒は、ログイン中の本人の分だけをサーバーの処理（Server Action）から受け取ります。ブラウザ用のデータベースの鍵は配っていません。開いた鍵はそのタブのメモリにだけ置きます。形式は `src/lib/crypto/`、固定のテストベクトルは `fixtures/crypto/envelope-v1.json` です。
+**仕組み。** パスワードはブラウザの中で、メールアドレスから作った salt で PBKDF2-SHA256 を 60 万回かけ、その結果を HKDF-SHA256 で 2 つに分けます。1 つはログイン用の値で、これだけを Supabase Auth にパスワードとして送ります。もう 1 つは秘密鍵を包む鍵で、ブラウザの外に出ません。最初にパスワードでログインしたとき、ブラウザが鍵の組（ECDH P-256）を作り、秘密鍵をこの鍵で AES-256-GCM で包んでから保存するので、サーバーにはパスワードも、包む鍵も、開いた秘密鍵も届きません。サーバーは公開鍵だけを持ち、メールを読み取った時点で件名・差出人・本文を 1 つの封筒（HKDF-SHA256 ＋ AES-256-GCM）にして、平文の列を同じ書き込みで空にします。登録のときは、データベースから読み戻した包みがパスワードで開き、公開鍵と対になっていることをブラウザで確かめてから鍵を使い始めます。元メールはブラウザで開き、文字だけを表示します（HTML は描画しません）。包んだ鍵と封筒は、ログイン中の本人の分だけをサーバーの処理（Server Action）から受け取ります。ブラウザ用のデータベースの鍵は配っていません。開いた鍵はそのタブのメモリにだけ置き、再読み込みや新しいタブでは、元メールを開くときにパスワードを入れ直します。パスワードを変えるときは、同じ秘密鍵を新しいパスワードで包み直すので、前のメールも開けます。再設定では前のパスワードが無いので、新しい鍵の組を作ります。iOS アプリも同じ計算をします。取り決めは `docs/crypto/password-v1.md`、形式は `src/lib/crypto/` です。固定のテストベクトルは、パスワードから作る 2 つの値と包みが `fixtures/crypto/password-v1.json`、封筒が `fixtures/crypto/envelope-v1.json` です。
 
 ## 技術
 
 - Next.js 16 / React 19 / TypeScript / Tailwind CSS v4
-- Supabase（Postgres、ログインはメールのリンク）
-- Resend（受信 webhook と、ログインメールの送信）
+- Supabase（Postgres、ログインはメールアドレスとパスワード）
+- Resend（受信 webhook と、確認・再設定のメールの送信）
 - Claude API（Haiku 5.5 が既定。判定と構造化抽出）
 - Vercel
 - テスト: Vitest（API を呼ばない）
@@ -157,7 +157,7 @@ MIT
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home (no 置き配), and how much you spent this month.
 Set up mail forwarding once; nothing else is needed, even for shops you have never used.
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
-Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your passphrase opens (ECDH P-256 + HKDF + AES-256-GCM; the private key is wrapped in the browser with PBKDF2). The operator cannot read it from the database; parcel data and sender domains stay plaintext, and this is disclosed in the app.
+Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database; parcel data and sender domains stay plaintext, and this is disclosed in the app.
 A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement (71/73 fields vs 73/73 for Opus, at about 1/20 of the cost).
 Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and a field-by-field check of 341 real emails.
-Try it: sign in with your email at https://otodoke.app, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed).
+Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), open the link in the confirmation mail, log in with the password, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed).
