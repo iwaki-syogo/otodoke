@@ -33,6 +33,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ admin: true }) }));
 vi.mock("@/lib/login-mail-limit", () => ({
   clientIp: () => "203.0.113.7",
+  claimLoginTry: async () => "ok",
   claimLoginAttempt: mocks.claim,
   releaseLoginAttempt: mocks.release,
   claimLoginMail: mocks.claim,

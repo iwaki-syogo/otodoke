@@ -10,8 +10,12 @@ import { SRC, appSourceFiles, codeOnly, consoleCalls, read } from "./source-scan
  *
  * A call is refused when the code among its arguments (string contents ignored, `${...}` kept)
  * names any of these. Log ids, counts, statuses and error messages instead.
+ *
+ * password-v1 adds the password and what is made from it (master, the KEK, the login secret), the
+ * account's address, and the tokens a sign-in carries (the bot check's, the access token).
  */
-const FORBIDDEN = /\b(subject|text_body|html_body|from_name|from_address|fromName|text|html|body|bodies|mail|mails|recipients|plaintext|passphrase|pkcs8|privateKey|challenge|envelope|body_envelope|extraction|result)\b/;
+const FORBIDDEN =
+  /\b(subject|text_body|html_body|from_name|from_address|fromName|text|html|body|bodies|mail|mails|recipients|plaintext|passphrase|pkcs8|privateKey|challenge|envelope|body_envelope|extraction|result|password|master|kek|authSecret|currentAuthSecret|newAuthSecret|email|captchaToken|accessToken)\b/;
 
 /** Each refused call as "<file relative to base>:<line> console.<method>(… <name> …)". */
 function violations(files: string[], base = process.cwd()): string[] {
@@ -61,6 +65,23 @@ describe("no mail content or passphrase in logs", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
     expect(existsSync(tmp)).toBe(false);
+  });
+
+  it("negative control: the words of password-v1 are caught, in arguments and template holes, not in the words of the message", () => {
+    const planted = [
+      'console.warn("sign-in refused:", authSecret);',
+      'console.warn("sign-in refused:", input.email);',
+      "console.warn(`sign-in refused: ${parsed.data.newAuthSecret}`);",
+      'console.error("derived", master, kek);',
+      'console.warn("bot check", captchaToken);',
+      'console.warn("session", session.accessToken);',
+      'console.warn("change", { password: x });',
+    ].join("\n");
+    expect(consoleCalls(planted).map((c) => codeOnly(c.args).match(FORBIDDEN)?.[1])).toEqual(["authSecret", "email", "newAuthSecret", "master", "captchaToken", "accessToken", "password"]);
+    // The same words inside the message's string are not code: allowed.
+    expect(codeOnly('"[login] sign-in with the login secret (authSecret) and the email refused:", error.status').match(FORBIDDEN)).toBeNull();
+    // Names that only contain one of them are not it.
+    expect(codeOnly("p_email_hash, emailRedirectTo, kekFor").match(FORBIDDEN)).toBeNull();
   });
 
   it("reads strings as strings and template holes as code", () => {

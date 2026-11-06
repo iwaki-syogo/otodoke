@@ -26,6 +26,7 @@ vi.mock("@/lib/login-mail-limit", () => ({
   clientIp: () => null,
   claimLoginMail: async () => ({ verdict: "ok", claimId: null }),
   releaseLoginMail: async () => {},
+  claimLoginTry: async () => "ok",
   claimLoginAttempt: async () => ({ verdict: "ok", claimId: null }),
   releaseLoginAttempt: async () => {},
 }));

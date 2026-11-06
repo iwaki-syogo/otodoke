@@ -97,8 +97,21 @@ export const LOGIN_ATTEMPT_LIMITS = {
   ipPerHour: 50,
 } as const;
 
-/** What a limit counts in login_mail_sends: mails sent from the form, or failed sign-ins. */
-export type LimitScope = "login-mail" | "login-attempt";
+/**
+ * Every sign-in this website asks Supabase for, failed or not, per client IP. Supabase allows 30
+ * sign-ins and sign-ups per 5 minutes per IP, and every visitor of the website comes from this
+ * server's IP: one visitor must not be able to use that up for everyone (successes included, which
+ * the attempt limit gives back). Counted under its own namespace with the IP in the address column,
+ * so the function's 10-minute window applies to the IP: at most 15 in any 10 minutes (so never 30
+ * in 5), 60 in an hour. Never given back.
+ */
+export const LOGIN_TRY_LIMITS = {
+  ipPer10Minutes: 15,
+  ipPerHour: 60,
+} as const;
+
+/** What a limit counts in login_mail_sends: mails sent from the form, failed sign-ins, or every sign-in per IP. */
+export type LimitScope = "login-mail" | "login-attempt" | "login-try";
 
 /** SHA-256 hex. The table keeps only these, never the address or the IP itself. */
 export function limitHash(kind: "email" | "ip", value: string, scope: LimitScope = "login-mail"): string {
@@ -180,4 +193,14 @@ export async function claimLoginAttempt(email: string, ip: string | null): Promi
 /** Give back an attempt that did not fail on the address or the secret. Never throws. */
 export async function releaseLoginAttempt(email: string, claimId: number | null): Promise<void> {
   return release("login-attempt", email, claimId);
+}
+
+/**
+ * Take one sign-in from this IP's allowance (LOGIN_TRY_LIMITS). Without a client IP there is
+ * nothing to count it by: "ok". The IP's key goes where claim_login_mail keeps the address.
+ */
+export async function claimLoginTry(ip: string | null): Promise<LoginMailVerdict> {
+  if (!ip) return "ok";
+  const { verdict } = await claim("login-try", { emailPer10Minutes: LOGIN_TRY_LIMITS.ipPer10Minutes, emailPerHour: LOGIN_TRY_LIMITS.ipPerHour, ipPerHour: LOGIN_TRY_LIMITS.ipPerHour }, ipLimitKey(ip), null);
+  return verdict;
 }
