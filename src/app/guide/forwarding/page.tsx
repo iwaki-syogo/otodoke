@@ -15,6 +15,8 @@ import {
   FORWARDING_TITLE,
   PITFALLS_HEADING,
   PITFALLS_LEAD,
+  VIDEO_CREDIT,
+  VIDEO_LABEL,
   type ForwardingGuide,
   type ForwardingPitfall,
 } from "@/lib/forwarding-guide";
@@ -49,12 +51,27 @@ function ExternalButton({ href, label }: { href: string; label: string }) {
   );
 }
 
+function GuideVideo({ video }: { video: NonNullable<ForwardingGuide["video"]> }) {
+  const minutes = Math.max(1, Math.round(video.seconds / 60));
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-bold">
+        {VIDEO_LABEL}（約 {minutes} 分）
+      </h3>
+      <video controls preload="none" playsInline poster={video.poster} className="mx-auto mt-2 block w-56 rounded-2xl border border-neutral-200 bg-white">
+        <source src={video.src} type="video/mp4" />
+      </video>
+    </div>
+  );
+}
+
 function GuideSection({ guide }: { guide: ForwardingGuide }) {
   return (
     <section id={guide.id} className={`${CARD} scroll-mt-4`}>
       <h2 className="text-base font-bold">{guide.title}</h2>
       {guide.addresses && <p className="mt-1 text-xs text-neutral-500">{guide.addresses}</p>}
       {guide.time && <p className="mt-1 text-xs text-neutral-500">目安: {guide.time}</p>}
+      {guide.video && <GuideVideo video={guide.video} />}
       {guide.link && (
         <div className="mt-3">
           <ExternalButton href={guide.link.href} label={guide.link.label} />
@@ -137,6 +154,8 @@ export default function ForwardingGuidePage() {
           {FORWARDING_CHECK_ACTION}
         </Link>
       </section>
+
+      <p className="text-xs text-neutral-500">{VIDEO_CREDIT}</p>
     </main>
   );
 }
