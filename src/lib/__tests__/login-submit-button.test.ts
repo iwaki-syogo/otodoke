@@ -3,7 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TURNSTILE_RESPONSE_FIELD, TURNSTILE_WAIT_MS } from "@/lib/turnstile";
+import { TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_RESPONSE_FIELD, TURNSTILE_WAIT_MS } from "@/lib/turnstile";
 import { fakeEvent } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
@@ -40,7 +40,7 @@ const TOKEN = "0.token-from-cloudflare";
  * whether the press was cancelled. `selfClicks` are the clicks the button made itself, each
  * recorded as cancelled or not (not = the browser goes on to send the form).
  */
-function setup({ token = "", unavailable = false, valid = true } = {}) {
+function setup({ token = "", unavailable = false, valid = true, enforced = false } = {}) {
   const field = { value: token, dataset: (unavailable ? { turnstile: "unavailable" } : {}) as Record<string, string> };
   const form = {
     elements: { namedItem: vi.fn((name: string) => (name === TURNSTILE_RESPONSE_FIELD ? field : null)) },
@@ -48,7 +48,7 @@ function setup({ token = "", unavailable = false, valid = true } = {}) {
   };
   const selfClicks: boolean[] = [];
   const button = { form, isConnected: true, click: vi.fn(() => selfClicks.push(press())) };
-  const view: Mounted = mount(() => LoginSubmitButton());
+  const view: Mounted = mount(() => LoginSubmitButton({ captchaEnforced: enforced }));
   function press(): boolean {
     const event = fakeEvent(button);
     (view.host((h) => h.type === "button").props.onClick as (e: unknown) => void)(event);
@@ -202,5 +202,41 @@ describe("a press before the bot check has its token", () => {
     s.field.value = TOKEN;
     await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS);
     expect(s.button.click).not.toHaveBeenCalled();
+  });
+});
+
+describe("once CAPTCHA is enforced, a slow check is waited for (review R2b-4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("waits up to a minute while Turnstile is still working, not 10 seconds", async () => {
+    expect(TURNSTILE_ENFORCED_WAIT_MS).toBe(60_000);
+    const s = setup({ enforced: true });
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_WAIT_MS + 5_000);
+    expect(s.button.click).not.toHaveBeenCalled();
+    expect(s.view.text()).toContain("送信中…");
+    // A slow phone's token after 30 s: sent then, with it.
+    await vi.advanceTimersByTimeAsync(15_000);
+    s.field.value = TOKEN;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+    expect(s.selfClicks).toEqual([false]);
+  });
+
+  it("sends without a token after a minute of nothing (Supabase's answer then says what to do)", async () => {
+    const s = setup({ enforced: true });
+    expect(s.press()).toBe(true);
+    await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS - 100);
+    expect(s.button.click).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(s.button.click).toHaveBeenCalledTimes(1);
+    expect(s.field.value).toBe("");
+  });
+
+  it("still sends at once when no token will come (unavailable)", () => {
+    const s = setup({ enforced: true, unavailable: true });
+    expect(s.press()).toBe(false);
   });
 });

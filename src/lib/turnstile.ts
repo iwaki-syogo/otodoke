@@ -31,8 +31,26 @@ export const TURNSTILE_RESPONSE_FIELD = "cf-turnstile-response";
 /** Cloudflare's documented maximum token length. Anything longer is not a token. */
 export const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 
-/** How long a press of the login button waits for the token before sending without one. */
+/**
+ * How long a press of the login button waits for the token before sending without one, while
+ * CAPTCHA is not enforced (the mail goes out without a token anyway).
+ */
 export const TURNSTILE_WAIT_MS = 10_000;
+
+/**
+ * The same once CAPTCHA is enforced: a press without a token can only fail then, so the button
+ * waits as long as Turnstile is still working on a token (no token, no error it does not retry).
+ * A slow phone can need more than 10 s for the challenge, and a failed send draws the form anew,
+ * which starts the challenge over: waiting 10 s from the press sent it round in circles. Counting
+ * from the widget's start would not help (it is shorter still). One minute bounds a widget that
+ * never answers; then the press is sent and Supabase's answer (captcha_missing) says what to do.
+ */
+export const TURNSTILE_ENFORCED_WAIT_MS = 60_000;
+
+/** How long a press waits for the token, by whether Supabase enforces the check. */
+export function tokenWaitMs(captchaEnforced: boolean): number {
+  return captchaEnforced ? TURNSTILE_ENFORCED_WAIT_MS : TURNSTILE_WAIT_MS;
+}
 
 /**
  * The token field's `data-turnstile` when no token will come: the check's script could not load,

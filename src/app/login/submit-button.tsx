@@ -2,15 +2,16 @@
 
 import { useRef, useState, type MouseEvent } from "react";
 import { useFormStatus } from "react-dom";
-import { TURNSTILE_RESPONSE_FIELD, tokenSettled, waitUntil } from "@/lib/turnstile";
+import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, tokenSettled, tokenWaitMs, waitUntil } from "@/lib/turnstile";
 
 /**
  * 「リンクを送る」 with a visible press: a spinner and 「送信中…」 from the press until the form
  * has been sent.
  *
  * A press before the bot check has its token is held, with the same spinner, until the token is
- * in the form (at most TURNSTILE_WAIT_MS). Then the form is sent, with or without a token:
- * Supabase decides (it ignores a missing token while its CAPTCHA is off). There is no wait when
+ * in the form: at most TURNSTILE_WAIT_MS while Supabase does not enforce the check, and
+ * TURNSTILE_ENFORCED_WAIT_MS once it does (a send without a token can only fail then; see
+ * turnstile.ts). Then the form is sent, with or without a token: Supabase decides. There is no wait when
  * the token is already there, the check could not load, or the address is not valid yet (the
  * browser says so, and nothing is sent).
  *
@@ -19,7 +20,7 @@ import { TURNSTILE_RESPONSE_FIELD, tokenSettled, waitUntil } from "@/lib/turnsti
  * field, which the browser turns into a click on this button. Without JavaScript this is a plain
  * submit button.
  */
-export function LoginSubmitButton() {
+export function LoginSubmitButton({ captchaEnforced = CAPTCHA_ENFORCED }: { captchaEnforced?: boolean } = {}) {
   const { pending } = useFormStatus();
   const [holding, setHolding] = useState(false);
   // Refs, not state: a second press can come before React has drawn the first one.
@@ -47,7 +48,7 @@ export function LoginSubmitButton() {
         event.preventDefault();
         held.current = true;
         setHolding(true);
-        void waitUntil(() => tokenSettled(field)).then(() => {
+        void waitUntil(() => tokenSettled(field), tokenWaitMs(captchaEnforced)).then(() => {
           held.current = false;
           setHolding(false);
           if (!button.isConnected) return;
