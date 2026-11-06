@@ -22,7 +22,7 @@
 
 店のアプリは店ごと、運送会社のアプリは運送会社ごとです。全部をまとめて見る場所がありません。
 
-宅配便の再配達率は約 7.6%（[国土交通省](https://www.mlit.go.jp/report/press/tokatsu01_hh_001025.html)、宅配に関わる大手 6 社、令和 8 年 4 月）。受け取る側が「いつ家にいればいいか」を知らないことは、その一因です。
+日本では年に約 50 億個の宅配便のうち、およそ 3.8 億個が再配達になっています。宅配便の取扱個数 50 億 3147 万個（[国土交通省](https://www.mlit.go.jp/report/press/jidosha04_hh_000341.html)、令和 6 年度）に、再配達率 約 7.6%（[国土交通省](https://www.mlit.go.jp/report/press/tokatsu01_hh_001025.html)、宅配に関わる大手 6 社、令和 8 年 4 月）を掛けた数です。受け取る側が「いつ家にいればいいか」を知らないことは、その一因です。
 
 ## 何が変わるか
 
@@ -77,7 +77,7 @@ Haiku の外れは時間帯の書式の違いで、コード側で吸収しま�
 
 - **CLAUDE.md をリポジトリの約束にする。** コミットしてはいけないもの、Claude に任せないこと、本番設定の罠を書き、別のエージェント（Codex）も `AGENTS.md` から同じ文書を読みます
 - **フックで止める。** `.claude/settings.json` の PreToolUse が force push・実メール（`fixtures/raw/`）のコミット・gitleaks に引っかかるコミットを止め、PostToolUse が編集したファイルを eslint にかけて結果を Claude に返します。`.githooks/pre-commit` は誰がコミットしても同じ検査をし、ふるい（`src/lib/screen.ts`）を変えると `npm run check:screen` を走らせます。荷物のメールを 1 通でも落とすとコミットできません
-- **サブエージェントで分業する。** まとまった直しは、作者が以前から使っている自作のスキル `/orchestrate` で、計画 → 失敗するテスト → 実装 → レビュー・セキュリティ・QA → 直し、をサブエージェントに分け、作業用の worktree で進めてから `dev` にまとめました。コミットの `[TDD]` `[task-N]` `[SEC-…]` `[QA-…]` がその跡です。例: 「届いた荷物」の検索は、[失敗するテストを先に書き](https://github.com/iwaki-syogo/otodoke/commit/df36805a372e4b8c9af242d7f3244746777f24e9)、[実装し](https://github.com/iwaki-syogo/otodoke/commit/f40eb215185a7e0fd51247f7530bd5a598902f8c)、[レビューと Codex の指摘を直しました](https://github.com/iwaki-syogo/otodoke/commit/8a0aa63eb4aa80adcbdca71ad0201f5bf9c75773)
+- **サブエージェントで分業する。** まとまった直しは、開発の進め方を決めた作者の自作スキル `/orchestrate`（開発用の道具で、Otodoke のコードには含まれません）で、計画 → 失敗するテスト → 実装 → レビュー・セキュリティ・QA → 直し、をサブエージェントに分け、作業用の worktree で進めてから `dev` にまとめました。コミットの `[TDD]` `[task-N]` `[SEC-…]` `[QA-…]` がその跡です。例: 「届いた荷物」の検索は、[失敗するテストを先に書き](https://github.com/iwaki-syogo/otodoke/commit/df36805a372e4b8c9af242d7f3244746777f24e9)、[実装し](https://github.com/iwaki-syogo/otodoke/commit/f40eb215185a7e0fd51247f7530bd5a598902f8c)、[レビューと Codex の指摘を直しました](https://github.com/iwaki-syogo/otodoke/commit/8a0aa63eb4aa80adcbdca71ad0201f5bf9c75773)
 - **別の目でレビューする。** 実装したエージェントとは別のエージェントがレビューし、別の会社のモデル（Codex）にもレビューさせました（コミットの `[Codex-…]`）。メールの処理に手が入る変更は、本番の前に作者でない目のレビューを通しました
 - **本番は人が決める。** `main` への反映＝本番デプロイなので、毎回人が承認してから進めました
 - **画面で確かめる。** ブラウザを操作する MCP（作者の自作の Chrome 拡張）でスマホ幅（390px）の全画面を開き、ボタンの幅や行数を測り、支出の合計を DB の集計と突き合わせました
