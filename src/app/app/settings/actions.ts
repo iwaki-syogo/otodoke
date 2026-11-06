@@ -96,8 +96,8 @@ export async function readWaitingMail(): Promise<void> {
           text: m.text_body,
           html: m.html_body,
         },
-        // Without a Message-ID the pipeline cannot find this row again, so it would be duplicated:
-        // it replaces this row instead, removed only once nothing can fail before the new one is stored.
+        // Without a Message-ID the pipeline cannot find this row again, so it is named: the mail is
+        // read again in this row, in place (never removed and stored anew, so it cannot be lost).
         m.message_id ? {} : { replacesEmailId: m.id },
       );
       if (outcome.kind === "over_limit") break;
