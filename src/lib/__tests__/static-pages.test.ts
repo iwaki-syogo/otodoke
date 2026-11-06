@@ -3,12 +3,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The pages that read nothing from the request stay prerendered (○ in `next build`) next to a root
- * 404 that reads the session (src/app/not-found.tsx: signed in, its way back is the parcel list).
- * Next renders the root not-found with every page as its fallback, so that cookie read made
- * /privacy and /account-deleted per request (ƒ) once the two were merged. Each page now says
- * `dynamic = "force-static"`. The build's route list is the proof; this keeps the line from being
- * dropped as if it did nothing.
+ * The pages that read nothing from the request stay prerendered (○ in `next build`). Next renders
+ * the root not-found with every page as its fallback, so a root 404 that reads the request makes
+ * them per request (ƒ): the one that read the session did so to /privacy and /account-deleted once
+ * the two were merged. src/app/not-found.tsx reads no session now (review R3-6) and its one way
+ * back is トップへ (/). Each page keeps `dynamic = "force-static"`, so it stays static if the root
+ * 404 ever reads the request again. The build's route list is the proof; this keeps the line from
+ * being dropped as if it did nothing.
  */
 
 const STATIC_PAGES = ["src/app/privacy/page.tsx", "src/app/account-deleted/page.tsx"];
