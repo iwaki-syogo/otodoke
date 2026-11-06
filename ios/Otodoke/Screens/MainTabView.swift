@@ -203,6 +203,8 @@ private struct TrackedDetail: View {
     let refresher: ScreenRefresher
     let tab: MainTab
     @State private var model: ParcelDetailModel
+    /// 1 from a tab's root, 2 from a delivered or cancelled page (StatusPage).
+    @Environment(\.detailDepth) private var depth
 
     init(screens: MainScreens, id: String, tab: MainTab) {
         refresher = screens.refresher
@@ -213,15 +215,17 @@ private struct TrackedDetail: View {
     var body: some View {
         let model = self.model
         ParcelDetailView(model: model)
-            .shownScreen(.detail(model.id), in: tab, refresher) { [weak model] in await model?.load() }
+            .shownScreen(.detail(model.id), in: tab, depth: depth, refresher) { [weak model] in await model?.load() }
     }
 }
 
 /// [N3] One appearance of a screen at a time: a token from `appeared`, given back on `disappeared`
 /// (the refresh is let go then).
-private struct ShownScreen: ViewModifier {
+struct ShownScreen: ViewModifier {
     let id: ScreenID
     let tab: MainTab
+    /// On the tab's stack (`id.depth` when nil).
+    let depth: Int?
     let refresher: ScreenRefresher
     let refresh: ScreenRefresher.Refresh
     @State private var token: ScreenToken?
@@ -230,7 +234,7 @@ private struct ShownScreen: ViewModifier {
         content
             .onAppear {
                 if let token { refresher.disappeared(token) }
-                token = refresher.appeared(id, in: tab, refresh: refresh)
+                token = refresher.appeared(id, in: tab, depth: depth, refresh: refresh)
             }
             .onDisappear {
                 if let token { refresher.disappeared(token) }
@@ -239,9 +243,23 @@ private struct ShownScreen: ViewModifier {
     }
 }
 
-private extension View {
-    /// Tells the refresher while this screen of `tab` is shown, and how it reads again.
-    func shownScreen(_ id: ScreenID, in tab: MainTab, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh) -> some View {
-        modifier(ShownScreen(id: id, tab: tab, refresher: refresher, refresh: refresh))
+extension View {
+    /// Tells the refresher while this screen of `tab` is shown (`depth` deep on the tab's stack,
+    /// `id.depth` when nil), and how it reads again.
+    func shownScreen(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh) -> some View {
+        modifier(ShownScreen(id: id, tab: tab, depth: depth, refresher: refresher, refresh: refresh))
+    }
+}
+
+private struct DetailDepthKey: EnvironmentKey {
+    static let defaultValue = 1
+}
+
+extension EnvironmentValues {
+    /// How deep a parcel's detail opened here sits on the tab's stack: 1 from a tab's root; a delivered
+    /// or cancelled page sets 2 (StatusPage), and its links hand it to the detail they push.
+    var detailDepth: Int {
+        get { self[DetailDepthKey.self] }
+        set { self[DetailDepthKey.self] = newValue }
     }
 }

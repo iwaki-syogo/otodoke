@@ -30,7 +30,7 @@ struct CalendarView<Detail: View>: View {
                     case let .parcel(id): detail(id)
                     case .delivered:
                         if let pages {
-                            StatusPage(pages.delivered, .delivered, pages.refresher, refresh: { await $0.sceneBecameActive() }) { model in
+                            StatusPage(pages.delivered, .delivered, pages.refresher, in: .calendar, refresh: { await $0.sceneBecameActive() }) { model in
                                 DeliveredView(model: model, detail: detail)
                             }
                         }

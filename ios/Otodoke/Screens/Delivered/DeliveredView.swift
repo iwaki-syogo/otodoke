@@ -171,9 +171,12 @@ struct StatusPageGroups<Detail: View>: View {
     let groups: [(label: String, parcels: [ParcelRow])]
     let today: String
     @ViewBuilder let detail: (String) -> Detail
+    /// Set by StatusPage; handed to the detail each link pushes (whatever SwiftUI passes on a push).
+    @Environment(\.detailDepth) private var detailDepth
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        let detailDepth = self.detailDepth
+        return VStack(alignment: .leading, spacing: 24) {
             ForEach(Array(groups.enumerated()), id: \.element.label) { _, group in
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -183,6 +186,7 @@ struct StatusPageGroups<Detail: View>: View {
                     ForEach(group.parcels) { parcel in
                         NavigationLink {
                             detail(parcel.id)
+                                .environment(\.detailDepth, detailDepth)
                         } label: {
                             ParcelCardView(parcel: parcel, today: today)
                         }

@@ -1,9 +1,11 @@
 // iOS-12: when the app comes back to the front, the screen shown is read again (only that one).
 // [N3] Each appearance of a screen gets its own token (a detail of one parcel may be open in two tabs);
-// the front is the selected tab's top screen: a detail pushed on its stack over the tab's root, and of
-// two at the same depth the one that appeared later, whatever order the appear and disappear calls
-// come in. A screen that disappears is let go. The older API (register / shown / hidden / unregister)
-// stays for its tests; it is used only when no screen appeared by token.
+// the front is the selected tab's top screen: the deepest on its stack (the root 0, a page pushed on it
+// 1, a detail pushed on a delivered or cancelled page 2), and of two at the same depth the one that
+// appeared later, whatever order the appear and disappear calls come in. A screen that disappears is
+// let go. The older API (register / shown / hidden / unregister) is not used by the app any more; it
+// stays only for RefreshWiringTests and ScreenRefresherOrderTests (moving them needs a test change
+// approval, N-new3), and is read only when no screen appeared by token.
 
 import Foundation
 
@@ -16,6 +18,15 @@ enum ScreenID: Hashable, Sendable {
     /// The delivered and cancelled pages (tasks 21, 22).
     case delivered
     case cancelled
+
+    /// How deep the screen sits on its tab's stack when the caller does not say: a tab's root 0, a
+    /// detail or a delivered / cancelled page pushed on it 1.
+    var depth: Int {
+        switch self {
+        case .detail, .delivered, .cancelled: 1
+        case .parcels, .calendar, .spend, .settings: 0
+        }
+    }
 }
 
 @MainActor
@@ -29,13 +40,9 @@ final class ScreenRefresher {
         let tab: MainTab
         /// The order it appeared in (larger is later).
         let order: Int
+        /// On the tab's stack: the root 0; deeper is over it.
+        let depth: Int
         let refresh: Refresh
-
-        /// A pushed detail is over its tab's root.
-        var depth: Int {
-            if case .detail = id { return 1 }
-            return 0
-        }
     }
 
     private var appearances: [ScreenToken: Appearance] = [:]
@@ -50,12 +57,12 @@ final class ScreenRefresher {
         selected = tab
     }
 
-    /// A screen of `tab` appeared (its root, or a detail pushed on its stack); `refresh` is kept until
-    /// `disappeared` with the token given back.
-    func appeared(_ id: ScreenID, in tab: MainTab, refresh: @escaping Refresh) -> ScreenToken {
+    /// A screen of `tab` appeared (its root, or a screen pushed on its stack, `depth` deep: `id.depth`
+    /// when nil); `refresh` is kept until `disappeared` with the token given back.
+    func appeared(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, refresh: @escaping Refresh) -> ScreenToken {
         lastToken += 1
         let token = ScreenToken(raw: lastToken)
-        appearances[token] = Appearance(id: id, tab: tab, order: lastToken, refresh: refresh)
+        appearances[token] = Appearance(id: id, tab: tab, order: lastToken, depth: depth ?? id.depth, refresh: refresh)
         return token
     }
 

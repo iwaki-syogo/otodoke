@@ -1,7 +1,7 @@
 // The delivered and cancelled pages as the 荷物 and カレンダー tabs open them (tasks 21, 22): the models come
 // from MainScreens (one DataChanges for every screen), and each page tells the ScreenRefresher while it is
-// shown, so it reads again when the app comes back to the front (iOS-12). Kept apart from MainTabView.swift,
-// which only hands these down through the environment.
+// shown (by token, in the tab that pushed it), so it reads again when the app comes back to the front
+// (iOS-12). Kept apart from MainTabView.swift, which only hands these down through the environment.
 
 import SwiftUI
 
@@ -41,9 +41,11 @@ extension EnvironmentValues {
     }
 }
 
-/// One appearance of a page: its model is made once, and the refresher knows it while it is shown.
+/// One appearance of a page: its model is made once, and the refresher knows it while it is shown (by
+/// token, as the tabs' screens: a page pushed on `tab`'s root, so 1 deep; the details it opens 2 deep).
 struct StatusPage<Model: AnyObject, Content: View>: View {
     let id: ScreenID
+    let tab: MainTab
     let refresher: ScreenRefresher
     let refresh: @MainActor (Model) async -> Void
     @ViewBuilder let content: (Model) -> Content
@@ -53,10 +55,12 @@ struct StatusPage<Model: AnyObject, Content: View>: View {
         _ make: () -> Model,
         _ id: ScreenID,
         _ refresher: ScreenRefresher,
+        in tab: MainTab,
         refresh: @escaping @MainActor (Model) async -> Void,
         @ViewBuilder content: @escaping (Model) -> Content
     ) {
         self.id = id
+        self.tab = tab
         self.refresher = refresher
         self.refresh = refresh
         self.content = content
@@ -67,13 +71,11 @@ struct StatusPage<Model: AnyObject, Content: View>: View {
         let model = self.model
         let refresh = self.refresh
         content(model)
-            .onAppear {
-                refresher.register(id) { [weak model] in
-                    guard let model else { return }
-                    await refresh(model)
-                }
-                refresher.shown(id)
+            // The page's links hand this to the detail they push (StatusPageGroups).
+            .environment(\.detailDepth, id.depth + 1)
+            .shownScreen(id, in: tab, refresher) { [weak model] in
+                guard let model else { return }
+                await refresh(model)
             }
-            .onDisappear { refresher.hidden(id) }
     }
 }
