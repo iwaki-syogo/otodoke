@@ -19,6 +19,10 @@ final class CancelledModel {
     @ObservationIgnored let changes: DataChanges?
     @ObservationIgnored private var fence = ReadFence()
     @ObservationIgnored private let mark: ChangeMark
+    /// [B2-1] The last read was cut off (its .task cancelled): the next appearance reads again.
+    @ObservationIgnored private var wasCutOff = false
+    /// [B2-1, as CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
+    @ObservationIgnored private var cutOff: CutOffSignal?
 
     init(reader: StatusListReader, changes: DataChanges?) {
         self.reader = reader
@@ -47,18 +51,34 @@ final class CancelledModel {
 
     func load() async {
         let ticket = fence.beginRead()
+        let signal = CutOffSignal()
+        cutOff = signal
         mark.markRead()
         isLoading = true
-        let read = await reader.parcels(.cancelled)
-        // A newer read was started meanwhile: this one is older than what it would replace.
+        let reader = self.reader
+        let read = await withTaskCancellationHandler {
+            await reader.parcels(.cancelled)
+        } onCancel: {
+            signal.raise()
+        }
+        // A newer read was started meanwhile: this one is older than what it would replace (and it owns
+        // the state: this one being cut off changes nothing, N-new2).
         guard fence.verdict(ticket) == .current else { return }
-        parcels = read
         isLoading = false
+        // [B2-1] Cut off (the .task cancelled when the tab is left): dropped, not shown as
+        // 「読み込めませんでした」, and the next appearance reads again.
+        guard !Task.isCancelled else {
+            wasCutOff = true
+            return
+        }
+        wasCutOff = false
+        parcels = read
     }
 
-    /// Shown: reads the first time, and again when DataChanges moved since the last read.
+    /// Shown: reads the first time, again when DataChanges moved since the last read, after a failed or
+    /// cut-off read, and at once when the read on the way was cut off (CX-f2: not waiting for it to end).
     func onAppear() async {
-        guard parcels == nil || mark.isStale else { return }
+        guard parcels == nil || parcels == .failed || mark.isStale || wasCutOff || cutOff?.isRaised == true else { return }
         await load()
     }
 

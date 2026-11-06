@@ -437,7 +437,7 @@ private struct MailCard: View {
         }
         Button {
             isOpen.toggle()
-            if isOpen, kind == .sealed, let emailID = entry.emailID, sealedState == .closed {
+            if isOpen, kind == .sealed, let emailID = entry.emailID, model.startsOpening(emailID: emailID) {
                 model.startOpeningSealed(emailID: emailID)
             }
         } label: {

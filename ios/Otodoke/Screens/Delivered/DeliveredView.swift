@@ -82,12 +82,18 @@ struct DeliveredView<Detail: View>: View {
     }
 
     private func picker(_ all: String, selection: Binding<String>, choices: [(value: String, label: String)]) -> some View {
-        let current = choices.first { $0.value == selection.wrappedValue }?.label ?? all
+        let current = DeliveredPickerKey.label(selected: selection.wrappedValue, choices: choices, all: all)
+        // [B2-2] Identified, tagged and chosen by the value's UTF-16 units: two names the Web tells apart
+        // (=== on code units) are two choices here too, not one id / tag (Swift's == on String).
+        let chosen = Binding<[UInt16]>(
+            get: { DeliveredPickerKey.tag(selection.wrappedValue) },
+            set: { selection.wrappedValue = DeliveredPickerKey.value($0) }
+        )
         return Menu {
-            Picker(all, selection: selection) {
-                Text(all).tag("")
-                ForEach(choices, id: \.value) { choice in
-                    Text(choice.label).tag(choice.value)
+            Picker(all, selection: chosen) {
+                Text(all).tag(DeliveredPickerKey.tag(""))
+                ForEach(choices, id: \.value.utf16Key) { choice in
+                    Text(choice.label).tag(DeliveredPickerKey.tag(choice.value))
                 }
             }
         } label: {
@@ -211,4 +217,25 @@ enum StatusPageText {
     static func number(_ n: Int) -> String {
         grouping.string(from: NSNumber(value: n)) ?? String(n)
     }
+}
+
+/// [B2-2, as N-new1] The pickers' ids, tags and chosen label compare the values as the Web does (=== on
+/// UTF-16 units, JSText.equal), as Delivered.deliveredFilterOptions and filterDelivered do: "Caf\u{00E9}" and
+/// "Cafe\u{0301}" are two shops there, while Swift's == on String takes them for one.
+enum DeliveredPickerKey {
+    /// The value's UTF-16 units: the id and the tag of its choice.
+    static func tag(_ value: String) -> [UInt16] { Array(value.utf16) }
+
+    /// The value back from its tag (the very same units).
+    static func value(_ tag: [UInt16]) -> String { String(decoding: tag, as: UTF16.self) }
+
+    /// The label of the chosen value, or `all` when none is chosen (or the value is not among the choices).
+    static func label(selected: String, choices: [(value: String, label: String)], all: String) -> String {
+        choices.first { JSText.equal($0.value, selected) }?.label ?? all
+    }
+}
+
+private extension String {
+    /// DeliveredPickerKey.tag(self), as a key path for ForEach's id.
+    var utf16Key: [UInt16] { DeliveredPickerKey.tag(self) }
 }

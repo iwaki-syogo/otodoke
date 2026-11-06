@@ -198,6 +198,17 @@ final class ParcelDetailModel {
         return entry.state
     }
 
+    /// Whether a press of 「元メールを見る」 starts opening this sealed mail: never opened (closed), or the last
+    /// try failed on a read (.failed: the envelope; .readFailed: the key row), so a lost read is tried again
+    /// once the network is back (B1-2). Not while it is opening (no second start), once opened, while the key
+    /// is asked for (UnlockView opens it), nor for an older passphrase's mail.
+    func startsOpening(emailID: String) -> Bool {
+        switch sealedState(emailID: emailID) {
+        case .closed, .failed, .readFailed: return true
+        case .unlocking, .opening, .opened, .oldKey: return false
+        }
+    }
+
     /// 「元メールを見る」 from the screen: openSealed in a task the key's store cancels in the background.
     func startOpeningSealed(emailID: String) {
         guard let store = unlock?.store else { return }
@@ -213,7 +224,11 @@ final class ParcelDetailModel {
     func openSealed(emailID: String) async {
         guard let unlock, let mailKeys, let stamp = unlock.store.stamp() else { return }
         unlock.store.hold(self)
-        if case .opened = sealedState(emailID: emailID) { return }
+        // [B1-2] Opened, or being opened in this period of the key: nothing more is started.
+        switch sealedState(emailID: emailID) {
+        case .opened, .opening: return
+        default: break
+        }
         setSealed(emailID, .opening, stamp)
         guard let key = await unlock.key() else {
             setSealed(emailID, .unlocking, stamp)

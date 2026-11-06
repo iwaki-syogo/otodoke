@@ -57,8 +57,11 @@ enum LoginText {
 
     // MARK: the key does not open, or was never made (the owner's decision 11/6 23:4x)
 
-    /// The Web's sentence, to be in LOGIN_MESSAGES under a key not named yet.
+    /// The Web's key_not_opened of LOGIN_MESSAGES on integrate/password-v1 (not in this tree's copy yet).
     static let keyDoesNotOpen = "このパスワードでは、メールの鍵を開けませんでした。"
+    /// N4: the Web's address_mismatch of LOGIN_MESSAGES on integrate/password-v1 (not in this tree's copy yet): the
+    /// sign-in made no key for this address (letters outside ASCII); signing in again does not help.
+    static let addressMismatch = "このアカウントでは、メールの鍵を作れませんでした。"
     /// The app's own, after it.
     static let webLoginPrompt = "Web でログインしてください。"
     /// The two, shown as one line.
@@ -156,13 +159,28 @@ enum PasswordRule {
         return true
     }
 
-    /// /[\d\s\p{P}\p{S}]/u: an ASCII digit (JS \d), white space, punctuation or a symbol.
+    /// /[\d\s\p{P}\p{S}]/u: an ASCII digit (JS \d), white space (JS \s), punctuation or a symbol.
     private static func isDigitSpacePunctOrSymbol(_ s: Unicode.Scalar) -> Bool {
         let p = s.properties
-        if (0x30...0x39).contains(s.value) || p.isWhitespace { return true }
+        if (0x30...0x39).contains(s.value) || isJSWhiteSpace(s) { return true }
         switch p.generalCategory {
         case .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation,
              .finalPunctuation, .otherPunctuation, .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// [A3-2] JavaScript's \s (ECMA-262, CharacterClassEscape :: s = WhiteSpace or LineTerminator, §12.2 and
+    /// §12.3; with the u flag the same set), which password-v1.ts isWeakPassword removes (src/lib/crypto/
+    /// password-v1.ts, /[\d\s\p{P}\p{S}]/gu). Not Unicode's White_Space (Swift's isWhitespace): that holds U+0085
+    /// and not U+FEFF. WhiteSpace: U+0009 TAB, U+000B VT, U+000C FF, U+FEFF ZWNBSP, and every Zs (U+0020, U+00A0,
+    /// U+1680, U+2000–U+200A, U+202F, U+205F, U+3000); LineTerminator: U+000A LF, U+000D CR, U+2028 LS, U+2029 PS.
+    /// The list was checked against Node's /\s/u over every code point.
+    static func isJSWhiteSpace(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680, 0x2000...0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF:
             return true
         default:
             return false

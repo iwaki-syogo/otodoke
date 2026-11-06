@@ -147,6 +147,8 @@ const APP_OWN_WORDS: Record<string, string> = {
  */
 const TO_BE_WEB_WORDS: Record<string, string> = {
   keyDoesNotOpen: "このパスワードでは、メールの鍵を開けませんでした。",
+  // N4 (review fix 1): the Web's address_mismatch on integrate/password-v1.
+  addressMismatch: "このアカウントでは、メールの鍵を作れませんでした。",
 };
 
 describe("the Web's words", () => {
