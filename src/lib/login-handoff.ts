@@ -2,8 +2,8 @@ import type { LoginCode } from "@/lib/login-errors";
 
 /**
  * What /signup's waiting screen hands to /login when it stops waiting (the sign-in was refused
- * with `credentials`: an account with another password has the address): the address to fill in
- * and the code whose words to show. Never the password.
+ * with `credentials` right after a sign-up: the address is already registered): the address to fill
+ * in and the reason (EXISTING_ACCOUNT, or a login code) whose notice to show. No password is handed off.
  *
  * Kept in this module's memory, which a move inside the tab (the router) keeps and a reload or a new
  * tab does not: nothing goes into the URL, a cookie or storage. One shot: /login reads it when it

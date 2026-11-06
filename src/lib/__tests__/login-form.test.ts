@@ -482,6 +482,16 @@ describe("from /signup's waiting screen after `credentials` (login-handoff.ts)",
     expect(nav.to).toEqual([NEXT]);
   });
 
+  it("existing_account: a login whose key was made lands on the first-run guide", async () => {
+    vi.stubGlobal("window", {});
+    handOffToLogin({ email: EMAIL, code: EXISTING_ACCOUNT });
+    flows.signIn.mockResolvedValue({ ok: true, key: "made" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(nav.to).toEqual(["/app/welcome"]);
+  });
+
   it("negative control: a wrong password on /login itself still says the generic words only", async () => {
     flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
     const view = await filled();
