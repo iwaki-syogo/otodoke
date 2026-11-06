@@ -15,7 +15,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
 const USER = "00000000-0000-4000-8000-00000000000a";
 const ADDRESS = "abcdefghjk@in.example.test";
 
-const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
+const mocks = vi.hoisted(() => ({ state: { db: null as unknown }, noDomain: false }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -31,13 +31,14 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => Object.assign(mocks.state.db as FakeDb, { auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) } }),
   getUser: async () => ({ id: USER, email: "qa@example.com" }),
 }));
-vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => ADDRESS }));
+vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => (mocks.noDomain ? null : ADDRESS) }));
 vi.mock("@/app/app/settings/actions", () => ({ loadDemo: vi.fn(), readWaitingMail: vi.fn(), markWronglyDropped: vi.fn(), forgetSender: vi.fn(), clearAllParcels: vi.fn() }));
 vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readMailKey: vi.fn(), readSealedMail: vi.fn() }));
 vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
 let db: FakeDb;
 beforeEach(() => {
+  mocks.noDomain = false;
   db = new FakeDb();
   // The unread count's or(and(...)) filter is beyond the fake; nothing here is unread.
   db.hooks.push((q) => (q.table === "emails" && q.filters.some((f) => f.method === "or") ? { data: null, error: null, count: 0 } : undefined));
@@ -191,6 +192,33 @@ describe("/app/settings: あなたのメールの扱い", () => {
     }
     expect(text).not.toContain("読み取り結果の根拠の行・読み取りメモ、差出人");
     expect(text).not.toContain("読み取る前のものも暗号化する前のものも");
+  });
+
+  it("with no inbound domain set, it says so and builds no address that looks real", async () => {
+    activeKey();
+    mocks.noDomain = true;
+    const root = await render();
+    const [section] = sectionTitled(root, "転送先アドレス");
+    const text = textOf(section);
+    expect(text).toContain("受信ドメインがまだ設定されていません。");
+    expect(text).not.toContain("@");
+    expect(text).not.toContain("abcdefghjk");
+    expect(findAll(section, (n) => n.tag === "button" && textOf(n).includes("コピー"))).toHaveLength(0);
+  });
+
+  it("a dropped mail with no subject says so with a full stop and in paler type than a real subject", async () => {
+    activeKey();
+    db.rows("screen_events").push(
+      { id: "s1", user_id: USER, decision: "dropped", subject: "", from_domain: "a.example.test", created_at: "2026-11-05T00:00:00Z", flagged_at: null },
+      { id: "s2", user_id: USER, decision: "dropped", subject: "本物の件名", from_domain: "b.example.test", created_at: "2026-11-05T01:00:00Z", flagged_at: null },
+    );
+    const root = await render();
+    const none = findAll(root, (n) => n.tag === "p" && textOf(n) === "件名はありません。");
+    const real = findAll(root, (n) => n.tag === "p" && textOf(n) === "本物の件名");
+    expect(none).toHaveLength(1);
+    expect(real).toHaveLength(1);
+    expect(none[0].attrs.class).toContain("text-neutral-500");
+    expect(real[0].attrs.class).not.toContain("text-neutral");
   });
 
   it("README says the same about mail read before encryption or with no key, decision 7, a reset, Message-ID, the approval link, screened ads and 「これは荷物」", () => {
