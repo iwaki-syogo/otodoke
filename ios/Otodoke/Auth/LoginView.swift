@@ -87,8 +87,22 @@ struct LoginView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
+        // The toast 「送り直しました」: goes by itself.
+        .overlay(alignment: .bottom) {
+            if let toast = model.toast {
+                ToastBanner(text: toast)
+            }
+        }
+        .animation(.default, value: model.toast)
+        // A Turnstile token arrives while waiting (the tap on the widget): the screen goes on at once, without
+        // another button. The same rationing as every try by itself.
+        .onChange(of: model.turnstile?.hasToken ?? false) { _, has in
+            guard has, scenePhase == .active, model.isWaitingForConfirmation else { return }
+            Task { await model.checkConfirmation() }
+        }
         // Back in front (from the mail's link in Safari): the sign-in is tried once, never in a quick loop.
         .onChange(of: scenePhase) { _, phase in
+            model.isInFront = phase == .active
             guard phase == .active, model.isWaitingForConfirmation else { return }
             Task { await model.checkConfirmation() }
         }

@@ -155,4 +155,6 @@ enum ForwardingGuideText {
         "次に買い物をしたら、Otodoke の一覧に荷物が出るか見てください。",
         "出ないときは、設定の「うまく届かないとき」を開いてください。",
     ]
+    /// The Web's FORWARDING_CHECK_ACTION: the button under the lines, opening 「うまく届かないとき」.
+    static let checkAction = "「うまく届かないとき」を開く"
 }

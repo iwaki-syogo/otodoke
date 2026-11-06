@@ -30,8 +30,5 @@ enum OnboardingText {
     static let doneButton = "設定しました"
     static let laterButton = "あとで"
 
-    // MARK: the address when there is no key (the same words as 「メールの転送」)
-
-    static let addressNoKey = "鍵ができると、ここに出ます。サンプルは鍵なしで試せます。"
-    static let addressKeyFailed = "鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。"
+    // The address when there is no key uses the words of 「メールの転送」 (SettingsWebText.keyReadFailed, keyNotMade).
 }

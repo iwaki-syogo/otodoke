@@ -90,15 +90,15 @@ struct OnboardingView: View {
         } else {
             switch model.keyPanel {
             case .failed?, nil:
-                SettingsParts.errorBox(OnboardingText.addressKeyFailed)
+                SettingsParts.errorBox(SettingsWebText.keyReadFailed)
             case .none?:
-                SettingsParts.secondaryText(OnboardingText.addressNoKey)
+                SettingsParts.secondaryText(SettingsWebText.keyNotMade)
             case .present?:
                 switch model.address {
                 case let .loaded(address)?:
                     HStack(spacing: 8) {
                         Text(address)
-                            .font(.subheadline.monospaced())
+                            .font(model.addressCanBeCopied ? .subheadline.monospaced() : .subheadline)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)

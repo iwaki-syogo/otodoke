@@ -117,6 +117,18 @@ struct ForwardingGuideView: View {
             ForEach(T.verify, id: \.self) { line in
                 bullet(line)
             }
+            // The Web's button to 「うまく届かないとき」: a link to that page on the settings stack.
+            NavigationLink(value: SettingsPage.delivery) {
+                Text(T.checkAction)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.separator)))
+                    .contentShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
         }
     }
 

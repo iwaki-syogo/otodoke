@@ -28,8 +28,13 @@ final class TurnstileToken {
     private(set) var isUnavailable = false
     /// The token of the current generation, not sent yet.
     private var token: String?
+    /// When the held token came (the clock below).
+    private var tokenAt: Date?
+    @ObservationIgnored private let now: @Sendable () -> Date
 
-    init() {}
+    init(now: @escaping @Sendable () -> Date = { Date() }) {
+        self.now = now
+    }
 
     /// A token is held for the current generation.
     var hasToken: Bool { token != nil }
@@ -43,25 +48,42 @@ final class TurnstileToken {
         switch event {
         case let .token(value):
             token = value.isEmpty ? nil : value
+            tokenAt = token == nil ? nil : now()
             isUnavailable = false
         case .expired, .error, .timeout:
             token = nil
+            tokenAt = nil
         case .unavailable:
             token = nil
+            tokenAt = nil
             isUnavailable = true
         }
     }
 
     /// The token, removed from here (each token is sent once). nil when there is none.
     func take() -> String? {
-        defer { token = nil }
+        defer {
+            token = nil
+            tokenAt = nil
+        }
         return token
+    }
+
+    /// The held token is older than `staleMs` (Turnstile.tokenStaleMs): a page the system froze in the
+    /// background can be shown again with its old token still held. It is dropped and true is returned; the caller
+    /// moves the widget on (reset), as the Web's tokenForAutoAttempt does.
+    func dropIfStale(staleMs: Int = Turnstile.tokenStaleMs) -> Bool {
+        guard token != nil, let tokenAt, now().timeIntervalSince(tokenAt) * 1000 > Double(staleMs) else { return false }
+        token = nil
+        self.tokenAt = nil
+        return true
     }
 
     /// Clears the token, moves the generation on and asks the view to reset the widget.
     /// The new widget finds out again whether its script loads.
     func reset() {
         token = nil
+        tokenAt = nil
         isUnavailable = false
         generation += 1
         resetCount += 1

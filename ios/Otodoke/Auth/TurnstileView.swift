@@ -20,6 +20,8 @@ enum Turnstile {
     static let tokenMaxLength = 2048
     /// TURNSTILE_WAIT_MS (10,000 ms): how long a press waits for the token.
     static let waitForToken: Duration = .milliseconds(10_000)
+    /// TURNSTILE_TOKEN_STALE_MS (280,000 ms): a token older than this is taken as gone (Cloudflare's last 300 s).
+    static let tokenStaleMs = 280_000
     /// The page the HTML is loaded as (way (a)).
     static let baseURL = URL(string: "https://otodoke.app/")!
     /// window.webkit.messageHandlers.<name>

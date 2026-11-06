@@ -63,6 +63,19 @@ final class LoginModel {
     /// LoginView always has one.
     private(set) var turnstile: TurnstileToken?
     @ObservationIgnored let tokenWait: Duration
+    @ObservationIgnored private let now: @Sendable () -> Date
+    /// 「送り直しました」: a toast that goes by itself after a few seconds (not a box that stays).
+    private(set) var toast: String?
+    /// How long the toast stays.
+    static let toastSeconds = 3
+    @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
+    /// The app is in front (set by the screen from the scene phase): the try at the end of the gap goes only then.
+    @ObservationIgnored var isInFront = true
+    /// The one try waiting for the end of the 20-second gap (a return inside the gap): never more than one.
+    @ObservationIgnored private var catchUpTask: Task<Void, Never>?
+    /// The tries by itself of this waiting screen (AutoSignInGate): reset when a new wait begins.
+    @ObservationIgnored private var autoGate = AutoSignInGate()
     /// The address the last not_confirmed sign-in was for (email_norm).
     @ObservationIgnored private var unconfirmedAddress: String?
 
@@ -71,11 +84,14 @@ final class LoginModel {
         launch: LaunchOptions = .current,
         now: @escaping @Sendable () -> Date = { Date() },
         turnstile: TurnstileToken? = nil,
-        tokenWait: Duration = Turnstile.waitForToken
+        tokenWait: Duration = Turnstile.waitForToken,
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
+        self.sleep = sleep
         self.auth = auth
         self.turnstile = turnstile
         self.tokenWait = tokenWait
+        self.now = now
     }
 
     /// https://otodoke.app/login/forgot, opened in Safari.
@@ -97,9 +113,11 @@ final class LoginModel {
     }
 
     /// 「別のアドレスでやり直す」: the wait for the confirmation is dropped (the password with it) and the sign-up form
-    /// is shown again, the address kept.
+    /// is shown again, empty: the address is let go too (it was the wrong one).
     func startOver() {
+        guard !isWorking else { return }
         setMode(.signUp)
+        email = ""
     }
 
     /// The button 「確認しました」 can be pressed: waiting, with the password still held, and nothing in flight.
@@ -112,9 +130,41 @@ final class LoginModel {
         isWaitingForConfirmation && notice == LoginText.signupExistsOrSent ? nil : notice
     }
 
+    /// Shows `text` as a toast and takes it away after `toastSeconds`.
+    private func showToast(_ text: String) {
+        toast = text
+        toastTask?.cancel()
+        let sleep = self.sleep
+        toastTask = Task { [weak self] in
+            try? await sleep(.seconds(Self.toastSeconds))
+            guard !Task.isCancelled else { return }
+            self?.toast = nil
+        }
+    }
+
+    /// A return to the front inside the 20-second gap would do nothing: one try is kept for the end of the gap, if
+    /// the screen is still waiting and in front then. It does not keep itself going: that try schedules no other.
+    private func scheduleCatchUp() {
+        guard catchUpTask == nil, isWaitingForConfirmation, let end = autoGate.gapEnd(now: now()) else { return }
+        let ms = Int((end.timeIntervalSince(now()) * 1000).rounded(.up))
+        let sleep = self.sleep
+        catchUpTask = Task { [weak self] in
+            try? await sleep(.milliseconds(ms))
+            guard !Task.isCancelled, let self else { return }
+            self.catchUpTask = nil
+            guard self.isInFront, self.isWaitingForConfirmation else { return }
+            await self.checkConfirmation(catchUp: true)
+        }
+    }
+
     private func dropWait() {
+        catchUpTask?.cancel()
+        catchUpTask = nil
+        toastTask?.cancel()
+        toast = nil
         confirmationAddress = nil
         heldPassword = nil
+        autoGate = AutoSignInGate()
     }
 
     /// The new password's problem on the sign-up form (PasswordRule on the password as typed); nil on the
@@ -169,6 +219,7 @@ final class LoginModel {
                 // Wait for the mail's link; the mail can be sent again from the waiting screen.
                 confirmationAddress = address
                 heldPassword = typed
+                autoGate = AutoSignInGate()
                 canResendConfirmation = true
                 unconfirmedAddress = address
             }
@@ -183,38 +234,90 @@ final class LoginModel {
     }
 
     /// While waiting for the confirmation (after making an account): tries the existing password sign-in, when the
-    /// app comes back to the front and when 「確認しました」 is pressed. not_confirmed is a quiet wait (no error). The
-    /// address having an account with another password (credentials) ends the wait: the sign-in form with the
-    /// Web's words. One try at a time; the Turnstile token of each try is taken once and the widget reset.
-    /// `pressed`: the button was pressed (not the automatic try): a still unconfirmed address then says so.
-    func checkConfirmation(pressed: Bool = false) async {
+    /// app comes back to the front, when a Turnstile token arrives while waiting, and when 「確認しました」 is
+    /// pressed. not_confirmed is a quiet wait (no error). The address having an account with another password
+    /// (credentials) ends the wait: the sign-in form with the Web's words. One try at a time.
+    /// `pressed`: the button was pressed (not a try by itself):
+    ///  - the words on the screen are cleared, the Turnstile token is waited for (as a press of the login does), a
+    ///    still unconfirmed address says so, a captcha refusal says so, and it is not rationed or counted;
+    ///  - a try by itself is rationed (AutoSignIn, the Web's numbers), never waits for a token (nobody is asked to
+    ///    tap for a try they did not press for: with none there is nothing to send, the tap later tries), drops a token
+    ///    older than Turnstile.tokenStaleMs, leaves the words on the screen as they are, and says nothing about a
+    ///    captcha refusal (it tries once more when a fresh token is there, else waits for the next trigger).
+    /// `catchUp`: the try kept for the end of the gap (it schedules no other).
+    func checkConfirmation(pressed: Bool = false, catchUp: Bool = false) async {
         guard let address = confirmationAddress, let typed = heldPassword, !isWorking else { return }
-        isWorking = true
+        var captchaToken: String?
+        if pressed {
+            isWorking = true
+            errorMessage = nil
+            notice = nil
+        } else {
+            guard autoGate.allows(now: now()) else {
+                if !catchUp { scheduleCatchUp() }
+                return
+            }
+            let got = takeTokenForAutoTry()
+            guard got.send else { return }
+            captchaToken = got.token
+            autoGate.begin(now: now())
+            autoGate.countSend()
+            isWorking = true
+        }
         defer { isWorking = false }
-        errorMessage = nil
-        notice = nil
-        let captchaToken = await takeToken()
-        do {
-            try await auth.signIn(email: address, password: typed, captchaToken: captchaToken)
+        if pressed { captchaToken = await takeToken() }
+        var failure = await signInOnce(address: address, typed: typed, captchaToken: captchaToken)
+        // A try by itself refused for its token (it ran out while the app was away): once more, if the widget has
+        // a fresh one by now (Turnstile renews an expired token); else the next trigger tries again.
+        if !pressed, failure == .captcha, autoGate.sends < AutoSignIn.max, let fresh = turnstile?.take() {
+            autoGate.countSend()
+            failure = await signInOnce(address: address, typed: typed, captchaToken: fresh)
+        }
+        turnstile?.reset()
+        guard let failure else {
             // Signed in (the screens come up from AuthService's state): the password is not needed any more.
+            catchUpTask?.cancel()
+            catchUpTask = nil
             heldPassword = nil
             canResendConfirmation = false
             unconfirmedAddress = nil
-        } catch {
-            switch error {
-            case .notConfirmed:
-                if pressed { notice = OnboardingText.notConfirmedYet }
-            case .credentials:
-                dropWait()
-                mode = .signIn
-                canResendConfirmation = false
-                unconfirmedAddress = nil
-                errorMessage = error.message
-            default:
-                errorMessage = error.message
-            }
+            return
         }
-        turnstile?.reset()
+        switch failure {
+        case .notConfirmed:
+            if pressed { notice = OnboardingText.notConfirmedYet }
+        case .credentials:
+            dropWait()
+            mode = .signIn
+            canResendConfirmation = false
+            unconfirmedAddress = nil
+            errorMessage = failure.message
+        case .captcha where !pressed:
+            // Silent. No 60 seconds of waiting either: the tap on the widget gives a token and tries at once.
+            break
+        default:
+            errorMessage = failure.message
+            autoGate.refused(now: now())
+        }
+    }
+
+    private func signInOnce(address: String, typed: String, captchaToken: String?) async -> LoginFailure? {
+        do {
+            try await auth.signIn(email: address, password: typed, captchaToken: captchaToken)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// The token for a try by itself, as the Web's tokenForAutoAttempt: no widget sends at once without one; a
+    /// token past Turnstile.tokenStaleMs is dropped and the widget moved on (it needs a new tap); with a token it is
+    /// taken; with none nothing is sent (the widget's tap brings one, and the screen tries then).
+    private func takeTokenForAutoTry() -> (send: Bool, token: String?) {
+        guard let turnstile else { return (true, nil) }
+        if turnstile.dropIfStale() { turnstile.reset() }
+        if let token = turnstile.take() { return (true, token) }
+        return (false, nil)
     }
 
     /// After not_confirmed: the confirmation mail again (the same answer for every address). While waiting after
@@ -228,7 +331,11 @@ final class LoginModel {
         let captchaToken = await takeToken()
         do {
             try await auth.resendConfirmation(email: address, captchaToken: captchaToken)
-            notice = isWaitingForConfirmation ? OnboardingText.resent : LoginText.confirmationSent
+            if isWaitingForConfirmation {
+                showToast(OnboardingText.resent)
+            } else {
+                notice = LoginText.confirmationSent
+            }
         } catch {
             errorMessage = error.message
         }

@@ -1,7 +1,7 @@
-// Settings words copied word for word from the Web (origin/dev 173667c, src/app/app/settings/ and
-// src/lib/mail-notices.ts). The line of each sentence is in the comment above it. No sentence is written
-// here: src/lib/__tests__/ios-settings-align.test.ts pins each one (when dev is merged into this branch that
-// test turns into a comparison with the Web files themselves). The views draw only what is listed here.
+// Settings words copied word for word from the Web (src/app/app/settings/ and src/lib/mail-notices.ts, merged
+// from origin/dev). The file of each sentence is named in the comment above it.
+// src/lib/__tests__/ios-settings-align.test.ts looks each one up in the Web's own source. The views draw only
+// what is listed here.
 
 import Foundation
 
@@ -34,7 +34,7 @@ enum SettingsWebText {
     static func droppedSummary(_ n: Int) -> String {
         "荷物のメールが混ざっていないか、\(n) 通を見る"
     }
-    /// dropped/page.tsx:89
+    /// src/lib/mail-notices.ts NO_SUBJECT_TEXT (the dropped page draws it)
     static let noSubject = "件名はありません。"
 
     // MARK: 「パスワードとメールの鍵」, no key yet (password-panel.tsx)

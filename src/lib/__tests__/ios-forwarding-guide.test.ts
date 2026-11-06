@@ -3,8 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BEFORE_YOU_START,
+  BEFORE_YOU_START_ACTION,
   BEFORE_YOU_START_HEADING,
   FORWARDING_CHECK,
+  FORWARDING_CHECK_ACTION,
   FORWARDING_GUIDES,
   FORWARDING_LEAD,
   FORWARDING_LEAD_NOTE,
@@ -20,8 +22,10 @@ import {
  * the same sentences as the Web: src/lib/forwarding-guide.ts is the one copy of the words. Nothing outside this repo is read.
  *
  * The Web draws the pitfall numbers (1. 2. 3.) and the step numbers itself; iOS draws them in its views too, so the
- * numbers are not in the data and not in the Swift literals. The Web's chip labels and the button to the settings
- * (FORWARDING_CHECK_ACTION) have no place on iOS.
+ * numbers are not in the data and not in the Swift literals. The Web's chip labels have no place on iOS.
+ * BEFORE_YOU_START_ACTION (「転送先アドレスを開く」) is left out on purpose: the Web's button jumps from the guide page to
+ * the settings' address, while iOS draws the guide on the same 「メールの転送」 page that holds the address, so there
+ * is nowhere to go. FORWARDING_CHECK_ACTION (「「うまく届かないとき」を開く」) is on iOS: a link to that page.
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
@@ -44,6 +48,13 @@ const iosHelpLiterals = () => literals(read(HELP));
 /** The Web draws a service's title alone and its addresses on a line of their own under it (C13); iOS does the same. */
 const iosTitle = (g: { title: string; addresses?: string }) => (g.addresses ? [g.title, g.addresses] : [g.title]);
 
+/** Every `static let <name> = "<literal>"`. */
+function swiftConstants(src: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of src.matchAll(/^\s*static let (\w+)(?:\s*:\s*\w+)?\s*=\s*"([^"\\]*)"/gm)) out.set(m[1], m[2]);
+  return out;
+}
+
 /** What the iOS text file must hold, in the order of its source: every sentence of the Web data except the chips. */
 function expectedGuideLiterals(): string[] {
   const out: string[] = [FORWARDING_TITLE, FORWARDING_LEAD, FORWARDING_LEAD_NOTE, BEFORE_YOU_START_HEADING, ...BEFORE_YOU_START];
@@ -59,7 +70,7 @@ function expectedGuideLiterals(): string[] {
     if (g.intro) out.push(g.intro);
     out.push(...g.notes);
   }
-  out.push(FORWARDING_CHECK.heading, ...FORWARDING_CHECK.lines);
+  out.push(FORWARDING_CHECK.heading, ...FORWARDING_CHECK.lines, FORWARDING_CHECK_ACTION);
   return out;
 }
 
@@ -120,6 +131,15 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
 
   it("the Yamato domains are the Web's three", () => {
     expect(FORWARDING_PITFALLS[0].codes).toEqual(["@kuronekoyamato.co.jp", "@ml.kuronekoyamato.co.jp", "@ml2.kuronekoyamato.co.jp"]);
+  });
+
+  it("the button under 「設定できたか確かめる」 is the Web's FORWARDING_CHECK_ACTION and opens the 「うまく届かないとき」 page", () => {
+    expect(FORWARDING_CHECK_ACTION).toBe("「うまく届かないとき」を開く");
+    expect(swiftConstants(stripComments(read(TEXT))).get("checkAction")).toBe(FORWARDING_CHECK_ACTION);
+    const view = stripComments(read(VIEWS[0]));
+    expect(view).toMatch(/NavigationLink\(value: SettingsPage\.delivery\)\s*\{\s*Text\(T\.checkAction\)/);
+    // BEFORE_YOU_START_ACTION is not on iOS.
+    expect(iosTextLiterals()).not.toContain(BEFORE_YOU_START_ACTION);
   });
 
   it("the views draw no Japanese literal of their own about the guide (the words come from the text files)", () => {

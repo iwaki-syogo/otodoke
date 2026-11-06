@@ -1,13 +1,15 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { TURNSTILE_TOKEN_STALE_MS } from "../turnstile";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX, CONFIRM_WAIT, WELCOME } from "../onboarding";
 
 /**
  * [iOS onboarding] From making an account to the forwarding setup:
  *  - the words: every OnboardingText constant is the sentence of the owner's wording file
- *    (docs/ux-redo/onboarding-wording.md, outside this repo). The Web's constants are not in src yet, so the
- *    comparison is with WORDING below, a copy of that file's sentences (when the Web's constants land, compare with
- *    them instead). The Swift side is pinned both ways: no constant without a copy, no copy without a constant;
+ *    (docs/ux-redo/onboarding-wording.md, outside this repo), which the Web holds in src/lib/onboarding.ts
+ *    (CONFIRM_WAIT, WELCOME): the comparison is with those exports. No constant without a Web sentence and no Web
+ *    sentence without a constant;
  *  - the views hold none of those words as literals; the waiting screen and the guide read OnboardingText;
  *  - the password is held in memory only (no Keychain, UserDefaults or file in LoginModel);
  *  - the guide is gated on KeySetupOutcome.created; the empty list's button opens 「メールの転送」.
@@ -34,30 +36,25 @@ function swiftConstants(src: string): Map<string, string> {
   return out;
 }
 
-/** A copy of onboarding-wording.md (2026-11-07), by OnboardingText name. */
+/** The Web's constants (src/lib/onboarding.ts, the same words as the owner's wording file), by OnboardingText name. */
 const WORDING: Record<string, string> = {
   // screen 1
-  waitingTitle: "確認のメールを送りました",
-  waitingLead: "メールのリンクを押してこの画面に戻ると、自動で次へ進みます。",
-  confirmedButton: "確認しました",
-  resendButton: "メールを送り直す",
-  notConfirmedYet: "まだ確認できていません。メールのリンクを押しましたか？",
-  resent: "送り直しました",
-  startOver: "別のアドレスでやり直す",
+  waitingTitle: CONFIRM_WAIT.title,
+  waitingLead: CONFIRM_WAIT.body,
+  confirmedButton: CONFIRM_WAIT.done,
+  resendButton: CONFIRM_WAIT.resend,
+  notConfirmedYet: CONFIRM_WAIT.notYet,
+  resent: CONFIRM_WAIT.resent,
+  startOver: CONFIRM_WAIT.restart,
   // screen 3
-  guideTitle: "最後に、メールの自動転送を設定しますか？",
-  guideLead: "設定は最初の 1 回だけです。",
-  step1Heading: "1. 転送先アドレスをコピー",
-  step2Heading: "2. お使いのメールで設定",
-  doneButton: "設定しました",
-  laterButton: "あとで",
+  guideTitle: WELCOME.title,
+  guideLead: WELCOME.body,
+  step1Heading: WELCOME.copyStep,
+  step2Heading: WELCOME.setUpStep,
+  doneButton: WELCOME.done,
+  laterButton: WELCOME.later,
 };
 
-/** The words copied from 「メールの転送」. */
-const SAME_AS_FORWARD_PAGE: Record<string, string> = {
-  addressNoKey: "鍵ができると、ここに出ます。サンプルは鍵なしで試せます。",
-  addressKeyFailed: "鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。",
-};
 const APP_ONLY: Record<string, string> = {};
 
 describe("the words", () => {
@@ -68,16 +65,20 @@ describe("the words", () => {
     for (const [name, words] of Object.entries(WORDING)) expect(all.get(name), `OnboardingText.${name}`).toBe(words);
   });
 
-  it("the address words are 「メールの転送」's", () => {
-    const all = swift();
-    for (const [name, words] of Object.entries(SAME_AS_FORWARD_PAGE)) expect(all.get(name), name).toBe(words);
-    const page = read("ios/Otodoke/Screens/Settings/SettingsPages.swift");
-    for (const words of Object.values(SAME_AS_FORWARD_PAGE)) expect(page, words).toContain(words);
+  it("the address words (no key, key not read) are 「メールの転送」's: the guide reads the same SettingsWebText constants", () => {
+    const guide = stripComments(read("ios/Otodoke/Screens/Onboarding/OnboardingView.swift"));
+    const page = stripComments(read("ios/Otodoke/Screens/Settings/SettingsPages.swift"));
+    for (const name of ["keyReadFailed", "keyNotMade"]) {
+      expect(guide, name).toContain(`SettingsWebText.${name}`);
+      expect(page, name).toContain(`SettingsWebText.${name}`);
+    }
+    // No sentence of its own about the address in OnboardingText.
+    expect([...swift().keys()]).not.toContain("addressNoKey");
   });
 
   it("OnboardingText has these constants, nothing else", () => {
     const names = [...swift().keys()].sort();
-    expect(names).toEqual([...Object.keys(WORDING), ...Object.keys(SAME_AS_FORWARD_PAGE), ...Object.keys(APP_ONLY)].sort());
+    expect(names).toEqual([...Object.keys(WORDING), ...Object.keys(APP_ONLY)].sort());
   });
 
   it("the sentences follow the wording file's rules: no 「転送するだけ」, no 「このアプリ」, no shop or domain", () => {
@@ -91,6 +92,53 @@ describe("the words", () => {
     expect(swiftConstants(src).get("resent")).toBe(WORDING.resent);
     expect(swiftConstants(src.replace("送り直しました", "送り直しました。")).get("resent")).not.toBe(WORDING.resent);
     expect([...swiftConstants(src.replace("}", '    static let extra = "あ"\n}')).keys()]).toEqual(["resent", "extra"]);
+  });
+});
+
+describe("the tries by itself are rationed with the Web's numbers", () => {
+  const swiftAuto = () => read("ios/Otodoke/Auth/AutoSignIn.swift");
+  const num = (src: string, name: string) => Number(src.match(new RegExp(`static let ${name} = ([0-9_]+)`))?.[1]?.replace(/_/g, ""));
+
+  it("the iOS constants are onboarding.ts's AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_AFTER_FAILURE_MS and AUTO_SIGN_IN_MAX", () => {
+    const src = stripComments(swiftAuto());
+    expect(num(src, "gapMs")).toBe(AUTO_SIGN_IN_GAP_MS);
+    expect(num(src, "afterFailureMs")).toBe(AUTO_SIGN_IN_AFTER_FAILURE_MS);
+    expect(num(src, "max")).toBe(AUTO_SIGN_IN_MAX);
+  });
+
+  it("negative control: a changed number is caught", () => {
+    const src = stripComments(swiftAuto()).replace("20_000", "10_000");
+    expect(num(src, "gapMs")).not.toBe(AUTO_SIGN_IN_GAP_MS);
+  });
+
+  it("only the try by itself is rationed: the pressed button skips the gate; the front-return path goes through it", () => {
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/\} else \{\s*guard autoGate\.allows\(now: now\(\)\) else \{\s*if !catchUp \{ scheduleCatchUp\(\) \}\s*return\s*\}/);
+    expect(model).toMatch(/autoGate\.countSend\(\)/);
+    expect(model).toMatch(/autoGate\.refused\(now: now\(\)\)/);
+  });
+
+  it("the stale limit of a Turnstile token is the Web's TURNSTILE_TOKEN_STALE_MS", () => {
+    const src = stripComments(read("ios/Otodoke/Auth/TurnstileView.swift"));
+    expect(Number(src.match(/static let tokenStaleMs = ([0-9_]+)/)?.[1]?.replace(/_/g, ""))).toBe(TURNSTILE_TOKEN_STALE_MS);
+  });
+
+  it("a try by itself never waits for a token and sends none without one; the tap that brings a token tries on its own", () => {
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    const auto = model.match(/private func takeTokenForAutoTry\(\)[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    expect(auto).toContain("dropIfStale()");
+    expect(auto).not.toMatch(/await|waitUntilSettled/);
+    expect(auto).toMatch(/return \(false, nil\)/);
+    const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
+    expect(view).toMatch(/onChange\(of: model\.turnstile\?\.hasToken \?\? false\)[\s\S]*?checkConfirmation\(\)/);
+  });
+
+  it("「送り直しました」 is a toast that goes by itself (ToastBanner over the screen, the model clears it), not a box", () => {
+    const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
+    expect(view).toMatch(/if let toast = model\.toast \{\s*ToastBanner\(text: toast\)/);
+    const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/showToast\(OnboardingText\.resent\)/);
+    expect(model).not.toMatch(/notice = OnboardingText\.resent/);
   });
 });
 
@@ -156,9 +204,10 @@ describe("the wiring", () => {
 
   it("the sign-in after the mail's link is the existing one (AuthService.signIn), not a new route", () => {
     const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
+    expect(model).toMatch(/auth\.signIn\(email: address, password: typed/);
     const body = model.match(/func checkConfirmation\([\s\S]*?\n    \}\n/)?.[0] ?? "";
-    expect(body).toMatch(/auth\.signIn\(email:/);
-    expect(body).not.toMatch(/signInWith|verifyOTP|URLSession/);
+    expect(body).toMatch(/signInOnce\(/);
+    expect(model).not.toMatch(/signInWith|verifyOTP|URLSession/);
   });
 
   it("coming back to the front tries once; there is no timer or loop", () => {
