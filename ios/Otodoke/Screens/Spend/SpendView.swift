@@ -241,7 +241,7 @@ struct SpendView<Detail: View>: View {
     }
 
     private func shopRow(_ r: ShopAmount, top: Int) -> some View {
-        let selected = model.shop == r.name
+        let selected = model.shop.map { JSText.equal($0, r.name) } ?? false
         let key = "shop-\(r.name)"
         return Button {
             press(key) { await model.toggleShop(r.name) }
