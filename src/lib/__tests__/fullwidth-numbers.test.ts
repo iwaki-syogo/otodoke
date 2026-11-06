@@ -81,12 +81,12 @@ describe("an order number in full-width characters", () => {
   it("joins the half-width shipment mail into the order's parcel, so the amount counts once", async () => {
     const db = new FakeDb();
     const order = reading({ relevance: "order", shop_name: "小さな店", order_number: sure("ＡＢ－１２３４５６７８"), items: [item("品物", 3300)], total_amount: sure(3300) });
-    const shipped = reading({ relevance: "shipped", shop_name: "小さな店", order_number: sure("AB-12345678"), carrier: sure("ヤマト運輸"), tracking_number: sure("5111-7266-6093"), total_amount: sure(3300) });
+    const shipped = reading({ relevance: "shipped", shop_name: "小さな店", order_number: sure("AB-12345678"), carrier: sure("ヤマト運輸"), tracking_number: sure("6203-9184-5571"), total_amount: sure(3300) });
     await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-01T01:00:00Z"), messageId: "<order@test>" }, { precomputed: precomputed(order) });
     await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-02T01:00:00Z"), messageId: "<shipped@test>" }, { precomputed: precomputed(shipped) });
     const parcels = db.rows("parcels").filter((r) => r.user_id === USER);
     expect(parcels).toHaveLength(1);
-    expect(parcels[0]).toMatchObject({ status: "shipped", tracking_number: "511172666093", total_amount: 3300 });
+    expect(parcels[0]).toMatchObject({ status: "shipped", tracking_number: "620391845571", total_amount: 3300 });
   });
 });
 
