@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
+import { Spinner } from "@/components/spinner";
 
 const TABS = [
   { href: "/app", label: "荷物", icon: "M3 8l9-5 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v8" },
@@ -27,9 +28,7 @@ export function TabBar() {
                 aria-current={active ? "page" : undefined}
                 className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${active ? "font-bold text-neutral-900" : "text-neutral-500"}`}
               >
-                <svg aria-hidden viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.7} strokeLinecap="round" strokeLinejoin="round">
-                  <path d={t.icon} />
-                </svg>
+                <TabIcon path={t.icon} active={active} />
                 {t.label}
               </Link>
             </li>
@@ -37,5 +36,24 @@ export function TabBar() {
         })}
       </ul>
     </nav>
+  );
+}
+
+/**
+ * The tab's icon, or a spinner in its place while the tab's page is on the way and its loading
+ * screen is not there yet (a slow network, before the prefetch is done). Same size, so nothing moves.
+ */
+function TabIcon({ path, active }: { path: string; active: boolean }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span aria-hidden className="flex h-5 w-5 items-center justify-center">
+      {pending ? (
+        <Spinner size="lg" />
+      ) : (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.7} strokeLinecap="round" strokeLinejoin="round">
+          <path d={path} />
+        </svg>
+      )}
+    </span>
   );
 }
