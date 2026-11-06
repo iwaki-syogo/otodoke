@@ -21,6 +21,14 @@ enum WebLink {
         return page("/app/parcels/\(segment)/edit")
     }
 
+    // TDD-STUB(task 3, task 11): the pages of task.md's 「Web で開く」 list.
+    /// https://otodoke.app/app/parcels/{id} (a sealed mail, M1)
+    static func parcel(id: String) -> URL { base }
+    /// https://otodoke.app/app/settings
+    static let settings = base
+    /// https://otodoke.app/app
+    static let app = base
+
     /// base + path ("/app/..."), as an absolute URL. Falls back to the base for a path that is not a URL.
     private static func page(_ path: String) -> URL {
         URL(string: base.absoluteString + path) ?? base

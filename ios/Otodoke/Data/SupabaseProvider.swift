@@ -177,6 +177,10 @@ final class SupabaseProvider: Sendable {
         ))
     }
 
+    /// TDD-STUB(task 6) iOS-10: the session the app's provider uses for PostgREST and Auth. Mail bodies
+    /// come back in its answers, so nothing of them may stay in a disk cache (ephemeral, or no urlCache).
+    static func liveURLSession() -> URLSession { .shared }
+
     /// The app's provider: URLSession.shared and the Keychain.
     static func live(config: AppConfig) -> SupabaseProvider {
         SupabaseProvider(config: config, storage: KeychainSessionStorage())

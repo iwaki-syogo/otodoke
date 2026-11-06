@@ -144,6 +144,12 @@ final class ParcelListModel {
         )
     }
 
+    /// TDD-STUB(task 12): 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads
+    /// again when it moved since this screen's last read (and does nothing otherwise).
+    @ObservationIgnored var changes: DataChanges?
+
+    func onAppear() async {}
+
     /// Today (YYYY-MM-DD, JST), for the cards.
     var todayJst: String { today() }
 

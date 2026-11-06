@@ -30,6 +30,8 @@ struct TimelineEntry: Equatable, Sendable, Identifiable {
     /// text_body trimmed if not empty, else htmlToText(html_body), else "".
     let body: String
     let notes: String?
+    /// TDD-STUB(task 3): MailBody.display(email) of this mail (what the row shows, by body_state).
+    var mail: MailDisplay? = nil
 }
 
 /// The fields of the detail card, as the Web words them.
@@ -53,6 +55,9 @@ struct ParcelDetailFields: Equatable, Sendable {
     let orderNumber: String?
     /// yen(total_amount)
     let amount: String
+    /// TDD-STUB(task 27): when faceToFaceAssumed, the line where the evidence would be:
+    /// 「指定なし」 (source = manual) or 「メールに記載なし」; nil otherwise (presenceEvidence is nil then).
+    var presenceAssumedNote: String? = nil
 
     static func make(_ p: ParcelRow, today: String) -> ParcelDetailFields {
         let face = ParcelRules.faceToFace(p)
@@ -152,6 +157,12 @@ final class ParcelDetailModel {
 
     /// The three reads at once (parcel, items, mails), each kept apart. The mails' text is made off the
     /// main thread. A parcel read that a write overlapped is not shown but read again.
+    /// TDD-STUB(task 12): 「古くなった」 from the other tabs (CX1). Set by MainTabView; `onAppear()` reads
+    /// again when it moved since this screen's last read (and does nothing otherwise).
+    @ObservationIgnored var changes: DataChanges?
+
+    func onAppear() async {}
+
     func load() async {
         parcelReadNumber += 1
         restReadNumber += 1

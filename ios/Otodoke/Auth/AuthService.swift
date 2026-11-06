@@ -11,6 +11,10 @@ enum LoginError: Error, Equatable, Sendable {
     /// No answer from the server.
     case network
     case other
+    // TDD-STUB(task 2): Supabase's captcha_failed (400). Missing: this press sent no token;
+    // refused: it sent one. The words are CaptchaText's (login-errors.ts captcha_missing / captcha_refused).
+    case captchaMissing
+    case captchaRefused
 
     /// The text shown on the login screen.
     var message: String {
@@ -20,8 +24,18 @@ enum LoginError: Error, Equatable, Sendable {
         case .rateLimited: "しばらく待ってから、もう一度お試しください"
         case .network: "通信できませんでした。もう一度お試しください"
         case .other: "ログインできませんでした。もう一度お試しください"
+        case .captchaMissing: CaptchaText.missing
+        case .captchaRefused: CaptchaText.refused
         }
     }
+}
+
+/// TDD-STUB(task 2): the two words of src/lib/login-errors.ts, in one place (a vitest compares them).
+enum CaptchaText {
+    /// captcha_missing
+    static let missing = ""
+    /// captcha_refused
+    static let refused = ""
 }
 
 @MainActor
@@ -71,6 +85,13 @@ final class AuthService {
             // A refused refresh token makes the client drop the session; no answer keeps it (offline).
             apply(provider.auth.currentSession)
         }
+    }
+
+    /// TDD-STUB(task 2): signInWithOTP(email:, redirectTo:, captchaToken:). The body carries
+    /// gotrue_meta_security.captcha_token only when a token is given. captcha_failed is
+    /// .captchaMissing without a token and .captchaRefused with one.
+    func sendCode(email: String, captchaToken: String?) async throws(LoginError) {
+        try await sendCode(email: email)
     }
 
     /// signInWithOTP(email: normalized, redirectTo: AppConfig.authRedirect). Nothing is sent for an invalid address.

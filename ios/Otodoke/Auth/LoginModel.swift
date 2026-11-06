@@ -41,13 +41,27 @@ final class LoginModel {
     private(set) var errorMessage: String?
 
     let auth: AuthService
+    /// TDD-STUB(task 2): the Turnstile token of this screen (taken at each send, then reset), and how
+    /// long a press waits for it (Turnstile.waitForToken; tests pass a short one). nil: no widget on
+    /// this screen (batch 1's tests, DEBUG previews): a press sends at once, without a token. LoginView
+    /// always passes one.
+    let turnstile: TurnstileToken?
+    @ObservationIgnored let tokenWait: Duration
     @ObservationIgnored private let now: @Sendable () -> Date
     private var lastSentAt: Date?
     /// The address the last code went to (normalized).
     private var lastSentTo: String?
 
-    init(auth: AuthService, launch: LaunchOptions = .current, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        auth: AuthService,
+        launch: LaunchOptions = .current,
+        now: @escaping @Sendable () -> Date = { Date() },
+        turnstile: TurnstileToken? = nil,
+        tokenWait: Duration = Turnstile.waitForToken
+    ) {
         self.auth = auth
+        self.turnstile = turnstile
+        self.tokenWait = tokenWait
         self.now = now
         if let address = launch.startAtCodeEntryEmail {
             email = address

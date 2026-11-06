@@ -10,6 +10,13 @@ enum BadgeText {
         Format.statusLabel[status] ?? status
     }
 
+    /// TDD-STUB(task 27): ASSUMED_FACE_TO_FACE of parcel-card.tsx.
+    static let assumedFaceToFace = ""
+
+    /// TDD-STUB(task 27): PresenceBadge of parcel-card.tsx (2541793): "🤝 念のため対面" when
+    /// faceToFaceAssumed, else as `presence(_:compact:)`.
+    static func presence(for p: ParcelRow, compact: Bool) -> String? { presence(ParcelRules.faceToFace(p), compact: compact) }
+
     /// faceToFace → "🤝 対面受け取り" (compact) / "🤝 対面受け取りが必要" / "置き配・投函OK" / nil.
     static func presence(_ faceToFace: Bool?, compact: Bool) -> String? {
         switch faceToFace {

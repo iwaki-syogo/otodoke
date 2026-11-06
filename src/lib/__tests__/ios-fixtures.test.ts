@@ -81,13 +81,15 @@ describe("scripts/ios-fixtures.ts output", () => {
 
   it("has exactly the agreed top-level keys", () => {
     expect(Object.keys(fx).sort()).toEqual(
-      ["generatedBy", "format", "match", "sections", "undelivered", "unread", "carriers", "safeUrl", "category", "text"].sort(),
+      // iOS batch 2, task 4: calendar, spend, shop, month and forwarding (src/lib/__tests__/ios-fixtures-m1.test.ts).
+      ["generatedBy", "format", "match", "sections", "undelivered", "unread", "carriers", "safeUrl", "category", "text", "calendar", "spend", "shop", "month", "forwarding"].sort(),
     );
     expect(fx.generatedBy).toBe("scripts/ios-fixtures.ts");
     expect(Object.keys(fx.format).sort()).toEqual(
       ["todayJst", "formatDateJa", "relativeDateJa", "formatWindow", "yen", "formatDateTimeJa", "statusLabel", "relevanceLabel"].sort(),
     );
-    expect(Object.keys(fx.match).sort()).toEqual(["lastExpectedDay", "needsCheck", "isLate", "faceToFace"].sort());
+    // faceToFaceAssumed: iOS batch 2, task 27.
+    expect(Object.keys(fx.match).sort()).toEqual(["lastExpectedDay", "needsCheck", "isLate", "faceToFace", "faceToFaceAssumed"].sort());
     expect(Object.keys(fx.carriers).sort()).toEqual(["normalizeTracking", "identifyCarrier", "trackingLinkFor", "amazonOrderTrackingUrl"].sort());
     expect(Object.keys(fx.category).sort()).toEqual(["keys", "labels", "colors", "uncategorizedLabel", "uncategorizedColor", "isCategory"].sort());
     expect(Object.keys(fx.text).sort()).toEqual(["htmlToText", "decodeEntities", "stripInvisible"].sort());
@@ -332,7 +334,8 @@ describe("no real person's data", () => {
   it("mail addresses are made-up ones on example domains only", () => {
     const all = strings(fx);
     const mails = all.flatMap((s) => s.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []);
-    for (const m of mails) expect(m, m).toMatch(/@([a-z0-9-]+\.)*example\.(com|jp|org|net|test)$/i);
+    // Gmail's own public sender of the forwarding confirmation (iOS batch 2, isForwardingConfirmation) is the one exception.
+    for (const m of mails) if (m.toLowerCase() !== "forwarding-noreply@google.com") expect(m, m).toMatch(/@([a-z0-9-]+\.)*example\.(com|jp|org|net|test)$/i);
   });
 
   it("holds no project ref or key", () => {

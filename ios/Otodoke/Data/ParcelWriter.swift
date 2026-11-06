@@ -66,9 +66,13 @@ struct ParcelWriter: Sendable {
     static let maxAtOnce = 500
 
     let provider: SupabaseProvider
+    /// TDD-STUB(task 6, CX1): where a write tells the other tabs 「古くなった」: published on a success or
+    /// an unknown result, once per bulk call (none when nothing of it succeeded or is unknown).
+    let changes: DataChanges?
 
-    init(provider: SupabaseProvider) {
+    init(provider: SupabaseProvider, changes: DataChanges? = nil) {
         self.provider = provider
+        self.changes = changes
     }
 
     /// 「届いた」 on the version shown: status → delivered where id, user_id = me, status != cancelled,

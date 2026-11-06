@@ -108,6 +108,10 @@ struct EmailSummary: Decodable, Equatable, Sendable {
     var classification: String?
     var textBody: String?
     var htmlBody: String?
+    /// TDD-STUB(task 3): emails.body_state ("plain" / "sealed" / "dropped", any other value kept as
+    /// it came) and emails.from_domain. Not decoded yet: the implementer adds their CodingKeys.
+    var bodyState: String? = nil
+    var fromDomain: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id

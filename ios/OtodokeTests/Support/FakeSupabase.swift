@@ -30,7 +30,9 @@ actor FakeSupabase {
     nonisolated let config: AppConfig
     nonisolated let urlSession: URLSession
 
-    enum OTPMode: Sendable { case ok, rateLimited }
+    /// captchaFailed: GoTrue's 400 captcha_failed (CAPTCHA on, the token missing or refused).
+    /// cloudflareDown: the captcha check itself failed (500, no error code), as GoTrue answers then.
+    enum OTPMode: Sendable { case ok, rateLimited, captchaFailed, cloudflareDown }
     enum VerifyMode: Sendable { case ok, rejected, rateLimited }
     enum RefreshMode: Sendable { case ok, invalidGrant }
 
@@ -251,6 +253,8 @@ actor FakeSupabase {
             switch otpMode {
             case .ok: return .json(200, [String: Any]())
             case .rateLimited: return Self.gotrueError(request, 429, "over_email_send_rate_limit", "email rate limit exceeded")
+            case .captchaFailed: return Self.gotrueError(request, 400, "captcha_failed", "captcha protection: request disallowed")
+            case .cloudflareDown: return .json(500, ["code": 500, "msg": "Internal Server Error"])
             }
         case ("POST", "verify"):
             if verifyMode == .rateLimited {
@@ -462,9 +466,22 @@ actor FakeSupabase {
 
     private func matches(_ row: Row, _ request: StubRequest) -> Bool {
         for (name, expression) in request.queryPairs where !Self.reserved.contains(name) {
-            if !Self.test(row[name] ?? .null, expression) { return false }
+            if !Self.test(Self.value(row, name), expression) { return false }
         }
         return true
+    }
+
+    /// A column, or `column->>key` (a JSON object's value as text, null when absent), as PostgREST reads it.
+    static func value(_ row: Row, _ name: String) -> JSONValue {
+        guard let arrow = name.range(of: "->>") else { return row[name] ?? .null }
+        let column = String(name[..<arrow.lowerBound])
+        let key = String(name[arrow.upperBound...])
+        guard case let .object(object)? = row[column], let inner = object[key] else { return .null }
+        switch inner {
+        case .null: return .null
+        case .string: return inner
+        default: return inner.text.map(JSONValue.string) ?? .null
+        }
     }
 
     /// One PostgREST filter, with SQL's null semantics (a null value matches only `is.null`).
@@ -472,7 +489,16 @@ actor FakeSupabase {
         guard let dot = expression.firstIndex(of: ".") else { return false }
         let op = String(expression[..<dot])
         let arg = String(expression[expression.index(after: dot)...])
+        // not.<op>.<arg>: SQL's NOT, so a null value still matches neither side (except not.is.null).
+        if op == "not" {
+            if arg.hasPrefix("is.") { return !test(value, arg) }
+            guard value != .null else { return false }
+            return !test(value, arg)
+        }
         switch op {
+        case "like", "ilike":
+            guard case let .string(s) = value else { return false }
+            return likeMatches(s, arg, caseInsensitive: op == "ilike")
         case "is":
             switch arg {
             case "null": return value == .null
@@ -519,6 +545,21 @@ actor FakeSupabase {
             guard let a = Bool(arg) else { return nil }
             return b == a ? .orderedSame : (b ? .orderedDescending : .orderedAscending)
         }
+    }
+
+    /// LIKE with % (or PostgREST's *) for any run and _ for one character.
+    static func likeMatches(_ s: String, _ pattern: String, caseInsensitive: Bool) -> Bool {
+        var regex = "^"
+        for ch in pattern {
+            switch ch {
+            case "%", "*": regex += ".*"
+            case "_": regex += "."
+            default: regex += NSRegularExpression.escapedPattern(for: String(ch))
+            }
+        }
+        regex += "$"
+        let options: String.CompareOptions = caseInsensitive ? [.regularExpression, .caseInsensitive] : [.regularExpression]
+        return s.range(of: regex, options: options) != nil
     }
 
     static func parseList(_ arg: String) -> [String] {
