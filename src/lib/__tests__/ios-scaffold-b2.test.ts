@@ -62,7 +62,9 @@ describe("task 2: Turnstile", () => {
 
   it("the constants equal src/lib/turnstile.ts", () => {
     expect(swiftConstant(view, "sitekey")).toBe(TURNSTILE_SITEKEY);
-    const script = stripComments(view).match(/static let scriptURL\s*=\s*URL\(string:\s*"([^"]+)"\)/);
+    // Not through stripComments: it would cut the literal at "https://". Anchored at the line start
+    // instead, so a commented-out line does not match.
+    const script = view.match(/^\s*static let scriptURL\s*=\s*URL\(string:\s*"([^"]+)"\)/m);
     expect(script?.[1]).toBe(TURNSTILE_SCRIPT_URL);
     expect(stripComments(view)).toMatch(new RegExp(`static let tokenMaxLength\\s*=\\s*${TURNSTILE_TOKEN_MAX_LENGTH}\\b`));
     const wait = stripComments(view).match(/static let waitForToken(?:\s*:\s*Duration)?\s*=\s*\.(seconds|milliseconds)\((\d[\d_]*)\)/);
