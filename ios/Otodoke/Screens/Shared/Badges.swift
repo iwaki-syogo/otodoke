@@ -10,12 +10,19 @@ enum BadgeText {
         Format.statusLabel[status] ?? status
     }
 
-    /// TDD-STUB(task 27): ASSUMED_FACE_TO_FACE of parcel-card.tsx.
-    static let assumedFaceToFace = ""
+    /// ASSUMED_FACE_TO_FACE of parcel-card.tsx: the same words everywhere.
+    static let assumedFaceToFace = "念のため対面"
 
-    /// TDD-STUB(task 27): PresenceBadge of parcel-card.tsx (2541793): "🤝 念のため対面" when
-    /// faceToFaceAssumed, else as `presence(_:compact:)`.
-    static func presence(for p: ParcelRow, compact: Bool) -> String? { presence(ParcelRules.faceToFace(p), compact: compact) }
+    /// PresenceBadge of parcel-card.tsx (2541793): "🤝 念のため対面" when faceToFaceAssumed, else as
+    /// `presence(_:compact:)`.
+    static func presence(for p: ParcelRow, compact: Bool) -> String? {
+        presence(ParcelRules.faceToFace(p), assumed: ParcelRules.faceToFaceAssumed(p), compact: compact)
+    }
+
+    static func presence(_ faceToFace: Bool?, assumed: Bool, compact: Bool) -> String? {
+        if faceToFace == true && assumed { return "🤝 \(assumedFaceToFace)" }
+        return presence(faceToFace, compact: compact)
+    }
 
     /// faceToFace → "🤝 対面受け取り" (compact) / "🤝 対面受け取りが必要" / "置き配・投函OK" / nil.
     static func presence(_ faceToFace: Bool?, compact: Bool) -> String? {
@@ -85,13 +92,24 @@ struct StatusBadge: View {
     }
 }
 
-/// Face-to-face or not (ParcelRules.faceToFace): nothing when unknown.
+/// Face-to-face or not (ParcelRules.faceToFace): nothing when unknown. The default (念のため対面) keeps the red.
 struct PresenceBadge: View {
     let faceToFace: Bool?
     var compact = false
+    var assumed = false
+
+    init(faceToFace: Bool?, compact: Bool = false, assumed: Bool = false) {
+        self.faceToFace = faceToFace
+        self.compact = compact
+        self.assumed = assumed
+    }
+
+    init(parcel: ParcelRow, compact: Bool = false) {
+        self.init(faceToFace: ParcelRules.faceToFace(parcel), compact: compact, assumed: ParcelRules.faceToFaceAssumed(parcel))
+    }
 
     var body: some View {
-        if let text = BadgeText.presence(faceToFace, compact: compact) {
+        if let text = BadgeText.presence(faceToFace, assumed: assumed, compact: compact) {
             let face = faceToFace == true
             Text(text)
                 .font(.caption2.weight(face ? .bold : .medium))

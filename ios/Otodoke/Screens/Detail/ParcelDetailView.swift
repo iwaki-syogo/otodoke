@@ -87,7 +87,7 @@ struct ParcelDetailView: View {
                 .padding(.top, 4)
             WrappingRow {
                 StatusBadge(status: p.status)
-                PresenceBadge(faceToFace: ParcelRules.faceToFace(p))
+                PresenceBadge(parcel: p)
                 if f.needsReview { ReviewBadge() }
             }
             .padding(.top, 12)
@@ -149,7 +149,9 @@ struct ParcelDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(f.presence)
                         .foregroundStyle(ParcelRules.faceToFace(p) == nil ? .secondary : .primary)
-                    if let evidence = f.presenceEvidence {
+                    if let note = f.presenceAssumedNote {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
+                    } else if let evidence = f.presenceEvidence {
                         Text("根拠: 「\(evidence)」").font(.caption).foregroundStyle(.secondary)
                     }
                 }

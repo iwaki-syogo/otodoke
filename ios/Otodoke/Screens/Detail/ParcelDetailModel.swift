@@ -40,14 +40,14 @@ struct ParcelDetailFields: Equatable, Sendable {
     /// title ?? "品名の記載なし"
     let title: String
     let statusLabel: String
-    /// BadgeText.presence(faceToFace, compact: false)
+    /// BadgeText.presence(for: parcel, compact: false)
     let presenceBadge: String?
     let needsReview: Bool
     /// "11/5(木)〜11/7(土) 午前中"; nil when there is no date (shown as 未定).
     let expected: String?
     /// expected_text as stored (shown as 原文).
     let expectedOriginal: String?
-    /// 対面受け取りが必要 / 置き配・投函でOK / メールに記載なし
+    /// 対面受け取りが必要 / 念のため対面 / 置き配・投函でOK / メールに記載なし
     let presence: String
     let presenceEvidence: String?
     /// formatDateJa(ordered_at, withYear: true); nil when unknown (shown as 不明).
@@ -55,12 +55,13 @@ struct ParcelDetailFields: Equatable, Sendable {
     let orderNumber: String?
     /// yen(total_amount)
     let amount: String
-    /// TDD-STUB(task 27): when faceToFaceAssumed, the line where the evidence would be:
-    /// 「指定なし」 (source = manual) or 「メールに記載なし」; nil otherwise (presenceEvidence is nil then).
+    /// When faceToFaceAssumed, the line where the evidence would be: 「指定なし」 (source = manual) or
+    /// 「メールに記載なし」; nil otherwise. The evidence (presenceEvidence) is nil then.
     var presenceAssumedNote: String? = nil
 
     static func make(_ p: ParcelRow, today: String) -> ParcelDetailFields {
         let face = ParcelRules.faceToFace(p)
+        let assumed = ParcelRules.faceToFaceAssumed(p)
         let expected: String? = {
             guard let start = p.expectedDate.jsTruthy else { return nil }
             var text = Format.formatDateJa(start, today: today)
@@ -71,7 +72,7 @@ struct ParcelDetailFields: Equatable, Sendable {
         }()
         let presence: String
         switch face {
-        case true?: presence = "対面受け取りが必要"
+        case true?: presence = assumed ? BadgeText.assumedFaceToFace : "対面受け取りが必要"
         case false?: presence = "置き配・投函でOK"
         case nil: presence = "メールに記載なし"
         }
@@ -79,15 +80,17 @@ struct ParcelDetailFields: Equatable, Sendable {
             shop: p.shop,
             title: p.title ?? "品名の記載なし",
             statusLabel: BadgeText.status(p.status),
-            presenceBadge: BadgeText.presence(face, compact: false),
+            presenceBadge: BadgeText.presence(for: p, compact: false),
             needsReview: p.needsReview,
             expected: expected,
             expectedOriginal: p.expectedText.jsTruthy,
             presence: presence,
-            presenceEvidence: p.presenceEvidence.jsTruthy,
+            // The default rests on nothing being said, so that fact stands where evidence would.
+            presenceEvidence: assumed ? nil : p.presenceEvidence.jsTruthy,
             ordered: p.orderedAt.jsTruthy.map { Format.formatDateJa($0, withYear: true, today: today) },
             orderNumber: p.orderNumber.jsTruthy,
-            amount: Format.yen(p.totalAmount)
+            amount: Format.yen(p.totalAmount),
+            presenceAssumedNote: assumed ? (p.source == "manual" ? "指定なし" : "メールに記載なし") : nil
         )
     }
 }

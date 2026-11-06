@@ -13,7 +13,7 @@ struct ParcelCardContent: Equatable, Sendable {
     let window: String
     /// 「お届け日はまだ未定」: no date and status ordered.
     let undecided: Bool
-    /// BadgeText.presence(faceToFace, compact: true)
+    /// BadgeText.presence(for: parcel, compact: true)
     let presenceBadge: String?
     let needsReview: Bool
 
@@ -35,7 +35,7 @@ struct ParcelCardContent: Equatable, Sendable {
             when: when,
             window: Format.formatWindow(start: p.expectedWindowStart, end: p.expectedWindowEnd),
             undecided: when == nil && p.status == "ordered",
-            presenceBadge: BadgeText.presence(ParcelRules.faceToFace(p), compact: true),
+            presenceBadge: BadgeText.presence(for: p, compact: true),
             needsReview: p.needsReview
         )
     }
@@ -78,7 +78,7 @@ struct ParcelCardView: View {
                         .foregroundStyle(.secondary)
                 }
                 if c.presenceBadge != nil {
-                    PresenceBadge(faceToFace: ParcelRules.faceToFace(parcel), compact: true)
+                    PresenceBadge(parcel: parcel, compact: true)
                 }
                 if c.needsReview {
                     Text("要確認")
