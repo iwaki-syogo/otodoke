@@ -146,7 +146,6 @@ describe("what it does", () => {
     ["activate", "no key is waiting to be activated", 409, "key_not_pending"],
     ["activate", "the key did not open its challenge", 422, "key_challenge_failed"],
     ["register", KEY_IN_USE_CHANGED, 409, "key_in_use_changed"],
-    ["register", "wrap iv must be 12 bytes", 400, "invalid_input"],
     // A key registered already, or a point off the curve: what only the step can tell.
     ["register", KEY_INPUT_INVALID, 400, "invalid_input"],
     ["rewrap", KEY_INPUT_INVALID, 400, "invalid_input"],

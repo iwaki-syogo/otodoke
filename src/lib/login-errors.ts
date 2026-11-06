@@ -1,4 +1,4 @@
-import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_INPUT_INVALID, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 
 /**
  * The result codes of the login, sign-up, reset and change steps, and the fixed words for each.
@@ -110,12 +110,15 @@ export type KeyStepFailure = "key_in_use_changed" | "key_wrap_changed" | "key_no
 export function keyStepCode(error: string): KeyStepFailure {
   if (error === KEY_IN_USE_CHANGED) return "key_in_use_changed";
   if (error === KEY_WRAP_CHANGED) return "key_wrap_changed";
+  // A value of the wrong form, a rewrap to the wrap it replaces, a key registered already: the
+  // app's mistake, which sending it again does not mend.
+  if (error === KEY_INPUT_INVALID) return "invalid_input";
   // activateKey's own check, and activate_user_key_checked's P0002 (passed on in its message).
   if (error === "no key is waiting to be activated" || error.includes("no matching key is waiting to be activated")) return "key_not_pending";
   if (error === "the key did not open its challenge") return "key_challenge_failed";
   if (error === "no key in use with this id") return "key_not_in_use";
-  // checkWrap, and restoreKeyWrap's refusal to put back the wrap stored now.
-  if (/^(wrapped key has an unexpected size|wrap iv must be 12 bytes|salt must be 16 bytes|the wrap to put back is the one stored now)$/.test(error)) return "invalid_input";
+  // restoreKeyWrap's refusal to put back the wrap stored now.
+  if (error === "the wrap to put back is the one stored now") return "invalid_input";
   return "key_failed";
 }
 
