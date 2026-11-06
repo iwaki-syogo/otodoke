@@ -261,11 +261,12 @@ describe("/privacy: the contact address and the page's source", () => {
     expect(links.map((a) => [a.attrs.href, textOf(a)])).toEqual([[`mailto:${probe.contact}`, probe.contact]]);
   });
 
-  it("keeps the address in contact.ts only, marked to be replaced before release", async () => {
+  it("is Otodoke's support address, kept in contact.ts only", async () => {
     const actual = await vi.importActual<typeof import("@/app/privacy/contact")>("@/app/privacy/contact");
-    expect(actual.CONTACT_EMAIL).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+    expect(actual.CONTACT_EMAIL).toBe("support@otodoke.app");
     expect(readFileSync(PAGE_SOURCE, "utf8")).not.toContain(actual.CONTACT_EMAIL);
-    expect(readFileSync(CONTACT_SOURCE, "utf8")).toContain("TODO(before release)");
+    // No placeholder left behind.
+    expect(readFileSync(CONTACT_SOURCE, "utf8")).not.toMatch(/TODO|example\.com/);
   });
 
   it("is static: no database, cookies, request or client code", () => {
