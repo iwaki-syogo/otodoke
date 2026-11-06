@@ -192,16 +192,32 @@ struct MainTabView: View {
         }
         // The delivered and cancelled pages the 荷物 and カレンダー tabs open (StatusPages.swift).
         .environment(\.statusPages, screens.statusPages)
-        // The login that made the first key: the guide over the tabs; both buttons close it onto the 荷物 tab.
-        .fullScreenCover(isPresented: Binding(
-            get: { !guideClosed && OnboardingGate.shouldShow(after: screens.keySetup?.lastOutcome) },
-            set: { if !$0 { guideClosed = true } }
-        )) {
-            OnboardingView(model: screens.settings) {
-                route.tab = .parcels
-                guideClosed = true
+        // The landing (Landing): the tabs stay built but unseen while the key step of a password sign-in is running,
+        // then the guide covers them (no slide, so the tabs are never in view first), or they are shown.
+        .opacity(landing == .tabs ? 1 : 0)
+        .allowsHitTesting(landing == .tabs)
+        .accessibilityHidden(landing != .tabs)
+        .overlay {
+            switch landing {
+            case .waiting:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemBackground).ignoresSafeArea())
+                    .ignoresSafeArea()
+            case .guide:
+                OnboardingView(model: screens.settings) {
+                    route.tab = .parcels
+                    guideClosed = true
+                }
+                .transition(.identity)
+            case .tabs:
+                EmptyView()
             }
         }
+    }
+
+    private var landing: Landing {
+        Landing.of(deciding: screens.keySetup?.isDeciding == true, outcome: screens.keySetup?.lastOutcome, guideClosed: guideClosed)
     }
 
     @ViewBuilder

@@ -15,6 +15,20 @@ enum OnboardingGate {
     }
 }
 
+/// What the signed-in screen shows over the tabs. The tabs are built from the start (their lists read meanwhile)
+/// but are never seen before the landing is known: after a password sign-in the waiting display stays until the
+/// key step has ended, then the guide (the first key was made) or the tabs. Never the tabs first and the guide after.
+enum Landing: Equatable {
+    case waiting
+    case guide
+    case tabs
+
+    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool) -> Landing {
+        if deciding { return .waiting }
+        return !guideClosed && OnboardingGate.shouldShow(after: outcome) ? .guide : .tabs
+    }
+}
+
 struct OnboardingView: View {
     let model: SettingsModel
     /// 「設定しました」 and 「あとで」: both go to the 荷物 tab.
@@ -61,7 +75,7 @@ struct OnboardingView: View {
             .padding(.top, 32)
             .padding(.bottom, 40)
         }
-        .background(Color(.systemBackground))
+        .background(Color(.systemBackground).ignoresSafeArea())
         .task {
             await model.load()
             hasRead = true

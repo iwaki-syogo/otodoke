@@ -42,8 +42,11 @@ extension MainScreens {
         let takeHandOff: @MainActor () -> Void = { [weak auth, weak setup] in
             guard let auth, let setup else { return }
             if let signIn = auth.takeSignInSecret() {
+                // The landing waits for this key step (Landing): held now, let go when its outcome is set.
+                setup.holdLanding()
                 Task {
                     await setup.run(signIn)
+                    setup.releaseLanding()
                     signIn.wipe()
                 }
             } else if auth.takeAddressMismatch() {

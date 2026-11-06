@@ -43,6 +43,7 @@ const WORDING: Record<string, string> = {
   resendButton: "メールを送り直す",
   notConfirmedYet: "まだ確認できていません。メールのリンクを押しましたか？",
   resent: "送り直しました",
+  startOver: "別のアドレスでやり直す",
   // screen 3
   guideTitle: "最後に、メールの自動転送を設定しますか？",
   guideLead: "設定は最初の 1 回だけです。",
@@ -52,12 +53,12 @@ const WORDING: Record<string, string> = {
   laterButton: "あとで",
 };
 
-/** Not in the wording file: the app's way out of the wait, and the words copied from 「メールの転送」. */
+/** The words copied from 「メールの転送」. */
 const SAME_AS_FORWARD_PAGE: Record<string, string> = {
   addressNoKey: "鍵ができると、ここに出ます。サンプルは鍵なしで試せます。",
   addressKeyFailed: "鍵を読み込めなかったので、アドレスを出せませんでした。ページを読み込み直してください。",
 };
-const APP_ONLY: Record<string, string> = { startOver: "別のアドレスでやり直す" };
+const APP_ONLY: Record<string, string> = {};
 
 describe("the words", () => {
   const swift = () => swiftConstants(stripComments(read("ios/Otodoke/Auth/OnboardingText.swift")));
@@ -74,10 +75,9 @@ describe("the words", () => {
     for (const words of Object.values(SAME_AS_FORWARD_PAGE)) expect(page, words).toContain(words);
   });
 
-  it("OnboardingText has these constants and the listed app-only one, nothing else", () => {
+  it("OnboardingText has these constants, nothing else", () => {
     const names = [...swift().keys()].sort();
     expect(names).toEqual([...Object.keys(WORDING), ...Object.keys(SAME_AS_FORWARD_PAGE), ...Object.keys(APP_ONLY)].sort());
-    expect(Object.fromEntries([...swift()].filter(([n]) => n in APP_ONLY))).toEqual(APP_ONLY);
   });
 
   it("the sentences follow the wording file's rules: no 「転送するだけ」, no 「このアプリ」, no shop or domain", () => {
@@ -138,13 +138,20 @@ describe("the password is in memory only", () => {
 });
 
 describe("the wiring", () => {
-  it("the guide is shown when the key step made the key, over the tabs, and both buttons close it onto 荷物", () => {
+  it("the landing is decided before the tabs are seen: held while the key step runs, the guide covers the tabs without a slide", () => {
     const gate = stripComments(read("ios/Otodoke/Screens/Onboarding/OnboardingView.swift"));
     expect(gate).toMatch(/if case \.created\? = outcome \{ return true \}/);
+    expect(gate).toMatch(/if deciding \{ return \.waiting \}/);
     const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
-    expect(tabs).toMatch(/fullScreenCover\(isPresented:/);
-    expect(tabs).toMatch(/OnboardingGate\.shouldShow\(after: screens\.keySetup\?\.lastOutcome\)/);
+    expect(tabs).not.toMatch(/fullScreenCover/);
+    expect(tabs).toMatch(/Landing\.of\(deciding: screens\.keySetup\?\.isDeciding == true, outcome: screens\.keySetup\?\.lastOutcome/);
+    expect(tabs).toMatch(/\.opacity\(landing == \.tabs \? 1 : 0\)/);
+    expect(tabs).toMatch(/\.transition\(\.identity\)/);
     expect(tabs).toMatch(/route\.tab = \.parcels/);
+    // The tabs are not built conditionally (their lists read while the landing is held).
+    expect(tabs).not.toMatch(/if landing[^\n]*\{\s*TabView/);
+    const keys = stripComments(read("ios/Otodoke/Screens/MainScreens+Keys.swift"));
+    expect(keys).toMatch(/setup\.holdLanding\(\)[\s\S]*await setup\.run\(signIn\)\s*setup\.releaseLanding\(\)/);
   });
 
   it("the sign-in after the mail's link is the existing one (AuthService.signIn), not a new route", () => {

@@ -213,6 +213,17 @@ final class KeySetup {
 
     /// The last run's outcome (the unlock and settings screens can show a failure).
     private(set) var lastOutcome: KeySetupOutcome?
+    /// Key steps of a password sign-in's hand-off that are not over yet. While it is above 0 the tabs are held
+    /// behind the waiting display (Landing): where the login lands (the guide or the 荷物 tab) is not known yet.
+    /// A launch with a stored session has no hand-off, so it is 0 from the start.
+    private(set) var pendingRuns = 0
+    var isDeciding: Bool { pendingRuns > 0 }
+
+    /// Taken at the hand-off, in the same step as the main screens are made (before any frame is drawn).
+    func holdLanding() { pendingRuns += 1 }
+
+    /// The key step of that hand-off ended (its outcome is in lastOutcome by now).
+    func releaseLanding() { pendingRuns = max(0, pendingRuns - 1) }
     /// The run in flight, with the sign-in's user and the session stamp it started under: shared by a second run
     /// of the same (S5).
     @ObservationIgnored private var running: (task: Task<KeySetupOutcome, Never>, userID: String, session: SessionStamp)?
