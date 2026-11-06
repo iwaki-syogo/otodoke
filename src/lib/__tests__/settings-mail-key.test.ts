@@ -165,6 +165,8 @@ const SAID_IN_BOTH = [
   // A marked mail is kept while its sender is remembered, and goes 14 days after 「外す」, as /privacy
   // says. No final 「。」: README's list items end without one.
   "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します",
+  // The iOS app's keychain copy of the opened key. No final 「。」: README's list items end without one.
+  "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます",
 ];
 
 describe("/app/settings: あなたのメールの扱い", () => {
