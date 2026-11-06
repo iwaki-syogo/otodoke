@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NO_BODY_TEXT } from "@/lib/mail-notices";
 import { FakeDb } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 import { appSourceFiles, read, withoutComments } from "./source-scan";
@@ -91,6 +92,15 @@ describe("parcel page: mail history with sealed mail", () => {
     expect(textOf(item)).toContain("発送のお知らせ");
     expect(textOf(findAll(item, (n) => n.tag === "pre")[0])).toBe("ご注文ありがとう");
     expect(html).not.toContain("<script>alert");
+  });
+});
+
+describe("a plain mail with no body", () => {
+  it("says NO_BODY_TEXT in the place of the text", async () => {
+    addMail("e-empty", { body_state: "plain", subject: "発送のお知らせ", from_address: "shop@example.test", text_body: "  ", html_body: null });
+    const { root } = await render();
+    const [item] = historyItems(root);
+    expect(textOf(findAll(item, (n) => n.tag === "pre")[0])).toBe(NO_BODY_TEXT);
   });
 });
 
