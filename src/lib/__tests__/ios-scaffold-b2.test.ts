@@ -144,9 +144,9 @@ describe("task 6: iOS-10 and CX1", () => {
 });
 
 describe("task 11: the settings words", () => {
-  it("GMAIL_FILTER is the settings page's", () => {
-    const page = read("src/app/app/settings/page.tsx");
-    const web = page.match(/const GMAIL_FILTER = "([^"]+)"/)?.[1];
+  it("GMAIL_FILTER is the forwarding guide's (moved out of the settings page on dev)", () => {
+    const page = read("src/lib/forwarding-guide.ts");
+    const web = page.match(/export const GMAIL_FILTER = "([^"]+)"/)?.[1];
     expect(web).toBeTruthy();
     const swift = swiftFiles()
       .filter((f) => f.includes(`${path.sep}Settings${path.sep}`))

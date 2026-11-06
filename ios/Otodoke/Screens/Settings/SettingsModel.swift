@@ -37,7 +37,7 @@ final class SettingsModel {
     }
 
     static let failedText = "読み込めませんでした"
-    /// GMAIL_FILTER of settings/page.tsx.
+    /// GMAIL_FILTER of src/lib/forwarding-guide.ts.
     static let gmailFilter = "{注文 発送 出荷 配達 お届け 配送 到着 荷物}"
     /// 「暗号化されていないメールの数を読み込めませんでした」
     static let plainCountFailedText = "暗号化されていないメールの数を読み込めませんでした"

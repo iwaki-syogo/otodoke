@@ -22,6 +22,10 @@ import {
  * The Web draws the pitfall numbers (1. 2. 3.) and the step numbers itself; iOS draws them in its views too, so the
  * numbers are not in the data and not in the Swift literals. The Web's chip labels and the button to the settings
  * (FORWARDING_CHECK_ACTION) have no place on iOS.
+ *
+ * Left out on purpose, for now: the explainer videos (ForwardingGuide.video, VIDEO_LABEL, VIDEO_CREDIT) and the Web's
+ * button label BEFORE_YOU_START_ACTION. The videos are not in production yet, so iOS does not show them; they are put
+ * into the iOS text (and into the comparison above) when the videos are live.
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
