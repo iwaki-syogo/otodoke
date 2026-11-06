@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_INPUT_INVALID, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import { FRESH_AUTH_MS } from "@/lib/auth-session";
 
 /**
@@ -33,11 +33,16 @@ const routes = {
 };
 
 const KEY_ID = "a".repeat(32);
+/** Base64 of `n` bytes of `fill`: the forms the schemas take (65-byte point, 12-byte IV, 16-byte salt, 32-byte answer, wraps of 64 to 512 bytes). */
+const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString("base64");
+const POINT = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 1)]).toString("base64");
+const OLD_WRAP = b64(154, 0x4f);
+const NEW_WRAP = b64(154, 0x4e);
 const BODIES = {
-  register: { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, expectedCurrentKeyId: null },
-  activate: { keyId: KEY_ID, challenge: "AA==", expectedCurrentKeyId: null },
-  rewrap: { keyId: KEY_ID, previousWrappedPrivateKey: "T0xE", wrappedPrivateKey: "TkVX", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 },
-  restore: { keyId: KEY_ID, rewrappedPrivateKey: "TkVX", wrappedPrivateKey: "T0xE", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 },
+  register: { publicKey: POINT, wrappedPrivateKey: b64(154), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000, expectedCurrentKeyId: null },
+  activate: { keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null },
+  rewrap: { keyId: KEY_ID, previousWrappedPrivateKey: OLD_WRAP, wrappedPrivateKey: NEW_WRAP, wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000 },
+  restore: { keyId: KEY_ID, rewrappedPrivateKey: NEW_WRAP, wrappedPrivateKey: OLD_WRAP, wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000 },
 };
 type Step = keyof typeof routes;
 const STEPS = Object.keys(routes) as Step[];
@@ -142,6 +147,9 @@ describe("what it does", () => {
     ["activate", "the key did not open its challenge", 422, "key_challenge_failed"],
     ["register", KEY_IN_USE_CHANGED, 409, "key_in_use_changed"],
     ["register", "wrap iv must be 12 bytes", 400, "invalid_input"],
+    // A key registered already, or a point off the curve: what only the step can tell.
+    ["register", KEY_INPUT_INVALID, 400, "invalid_input"],
+    ["rewrap", KEY_INPUT_INVALID, 400, "invalid_input"],
     ["rewrap", KEY_WRAP_CHANGED, 409, "key_wrap_changed"],
     ["rewrap", "no key in use with this id", 409, "key_not_in_use"],
     ["rewrap", "user_keys update failed: deadlock detected (row (a, b, c))", 500, "key_failed"],

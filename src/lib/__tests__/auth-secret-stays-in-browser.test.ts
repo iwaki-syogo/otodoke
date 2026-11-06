@@ -27,19 +27,22 @@ const SECRET_NAME = /passphrase|password|合言葉/i;
 
 const HEX64 = "0123456789abcdef".repeat(4);
 const KEY_ID = "a".repeat(32);
-const REWRAP = { keyId: KEY_ID, previousWrappedPrivateKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 };
+/** Base64 of `n` bytes of `fill`: the forms the key schemas take (mail-keys.ts). */
+const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString("base64");
+const POINT = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 1)]).toString("base64");
+const REWRAP = { keyId: KEY_ID, previousWrappedPrivateKey: b64(154, 2), wrappedPrivateKey: b64(154, 3), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000 };
 
 /** Each input with a value it takes. */
 const INPUTS: Array<[string, z.ZodType, Record<string, unknown>]> = [
   ["signInWithAuthSecret", SignInInputSchema, { email: "someone@example.com", authSecret: HEX64, captchaToken: null }],
   ["signUpWithAuthSecret", SignUpInputSchema, { email: "someone@example.com", authSecret: HEX64 }],
   ["resendConfirmation / sendResetMail", MailRequestInputSchema, { email: "someone@example.com" }],
-  ["finishReset", FinishResetInputSchema, { authSecret: HEX64, keyId: KEY_ID, challenge: "AA==", expectedCurrentKeyId: null }],
+  ["finishReset", FinishResetInputSchema, { authSecret: HEX64, keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null }],
   ["changeLoginSecret", ChangeSecretInputSchema, { currentAuthSecret: HEX64, newAuthSecret: HEX64.replace("0", "f"), rewrap: REWRAP }],
-  ["POST /api/keys/register", KeyRegistrationSchema, { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, expectedCurrentKeyId: null }],
-  ["POST /api/keys/activate", KeyActivationSchema, { keyId: KEY_ID, challenge: "AA==", expectedCurrentKeyId: null }],
+  ["POST /api/keys/register", KeyRegistrationSchema, { publicKey: POINT, wrappedPrivateKey: b64(154), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000, expectedCurrentKeyId: null }],
+  ["POST /api/keys/activate", KeyActivationSchema, { keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null }],
   ["POST /api/keys/rewrap", KeyRewrapSchema, REWRAP],
-  ["POST /api/keys/restore", KeyRestoreSchema, { keyId: KEY_ID, rewrappedPrivateKey: "AQ==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 }],
+  ["POST /api/keys/restore", KeyRestoreSchema, { keyId: KEY_ID, rewrappedPrivateKey: b64(154, 3), wrappedPrivateKey: b64(154, 2), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000 }],
 ];
 
 /** Every field name of an object schema, with those of the objects inside it. */

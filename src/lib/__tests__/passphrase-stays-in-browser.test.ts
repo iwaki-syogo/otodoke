@@ -74,18 +74,24 @@ describe("the passphrase stays in the browser", () => {
       expect(schema.safeParse({ passphrase: "x" }).success).toBe(false);
       expect(schema.safeParse({ password: "x" }).success).toBe(false);
     }
-    const restore: KeyRestore = { keyId: "0".repeat(32), rewrappedPrivateKey: "AQ==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000 };
+    // Values of the forms the schemas take: a 65-byte point, wraps of 154 bytes, a 12-byte IV, a 16-byte salt.
+    const b64 = (n: number, fill = 1) => Buffer.alloc(n, fill).toString("base64");
+    const restore: KeyRestore = { keyId: "0".repeat(32), rewrappedPrivateKey: b64(154, 3), wrappedPrivateKey: b64(154, 2), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000 };
     expect(KeyRestoreSchema.safeParse(restore).success).toBe(true);
     expect(KeyRestoreSchema.safeParse({ ...restore, password: "x" }).success).toBe(false);
-    const input: KeyRegistration = { publicKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, expectedCurrentKeyId: null };
+    const input: KeyRegistration = { publicKey: Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 1)]).toString("base64"), wrappedPrivateKey: b64(154), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000, expectedCurrentKeyId: null };
     expect(KeyRegistrationSchema.safeParse(input).success).toBe(true);
     expect(KeyRegistrationSchema.safeParse({ ...input, passphrase: "x" }).success).toBe(false);
     // The types say the same (checked by `npm run typecheck`).
     // @ts-expect-error a registration has no passphrase
     const typed: KeyRegistration = { ...input, passphrase: "x" };
     // @ts-expect-error a rewrap has no passphrase
-    const rewrap: KeyRewrap = { keyId: "0".repeat(32), previousWrappedPrivateKey: "AA==", wrappedPrivateKey: "AA==", wrapIv: "AA==", kdfSalt: "AA==", kdfIterations: 600_000, passphrase: "x" };
+    const rewrap: KeyRewrap = { keyId: "0".repeat(32), previousWrappedPrivateKey: b64(154, 2), wrappedPrivateKey: b64(154, 3), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000, passphrase: "x" };
     expect(KeyRewrapSchema.safeParse(rewrap).success).toBe(false);
+    // Control: the same rewrap without the passphrase is taken (so the refusal above is the field).
+    const { passphrase: _passphrase, ...withoutPassphrase } = rewrap as KeyRewrap & { passphrase: string };
+    void _passphrase;
+    expect(KeyRewrapSchema.safeParse(withoutPassphrase).success).toBe(true);
     void typed;
   });
 });

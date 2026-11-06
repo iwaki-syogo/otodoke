@@ -13,9 +13,9 @@
  * The inputs are strict: an unknown field (a passphrase, say) is refused, never ignored.
  */
 import { z } from "zod";
-import { fromBase64, randomBytes, sha256, toHex } from "@/lib/crypto/bytes";
+import { fromBase64, randomBytes, sha256, toHex, type Bytes } from "@/lib/crypto/bytes";
 import { challengeAad, importPublicKey, keyIdOf, sealBytes, type EnvelopeV1 } from "@/lib/crypto/envelope";
-import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_INPUT_INVALID, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import type { Json } from "@/lib/db/database.types";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
@@ -27,9 +27,49 @@ export const SEAL_BATCH_SIZE = 50;
 /** Retired keys the browser tries the passphrase on when it opens the key (newest first). */
 export const MAX_RETIRED_KEYS_TRIED = 3;
 
-const b64 = z.string().max(4096);
 const keyIdField = z.string().regex(/^[0-9a-f]{32}$/);
 const uuidField = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+
+/**
+ * Standard base64 (src/lib/crypto/bytes.ts) of `min` to `max` bytes, and `also` of those bytes.
+ * The forms the database's checks (migration 20261106120000) and the key code take: a value of
+ * another form is refused with the input (invalid_input), before it reaches either (reviews
+ * R3-PW-5, R3-PW-8). Every client makes these with a base64 encoder of the standard alphabet with
+ * padding (btoa, Data.base64EncodedString), and its own sizes are the ones below.
+ */
+function base64Of(min: number, max: number, also: (bytes: Bytes) => boolean = () => true) {
+  return z
+    .string()
+    .max(4096)
+    .refine((text) => {
+      try {
+        const bytes = fromBase64(text);
+        return bytes.length >= min && bytes.length <= max && also(bytes);
+      } catch {
+        return false;
+      }
+    }, "not base64 of the expected size");
+}
+
+/** The uncompressed P-256 point, 0x04 || X || Y (public_key: 88 characters). Whether it is on the curve is checked on use. */
+const publicKeyField = base64Of(65, 65, (bytes) => bytes[0] === 0x04);
+/** AES-256-GCM of the PKCS#8 private key, with its 16-byte tag (about 154 bytes for P-256). */
+const wrappedKeyField = base64Of(64, 512);
+/** A wrap as the database holds it, only compared with the stored one: every wrap it holds came through wrappedKeyField. */
+const storedWrapField = base64Of(1, 3072);
+/** wrap_iv: 16 characters. */
+const wrapIvField = base64Of(12, 12);
+/** kdf_salt: 24 characters. */
+const kdfSaltField = base64Of(16, 16);
+/** The 32 random bytes of a registration challenge, as the browser opened them. */
+const challengeField = base64Of(32, 32);
+
+/** `input` by `schema`; anything else throws KEY_INPUT_INVALID (zod's text, which can name the fields sent, is not passed on). */
+function parseInput<T>(schema: z.ZodType<T>, input: unknown): T {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) throw new Error(KEY_INPUT_INVALID);
+  return parsed.data;
+}
 
 /**
  * What the browser sends to register a key. There is no field for the passphrase.
@@ -39,10 +79,10 @@ const uuidField = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
  */
 export const KeyRegistrationSchema = z
   .object({
-    publicKey: b64,
-    wrappedPrivateKey: b64,
-    wrapIv: b64,
-    kdfSalt: b64,
+    publicKey: publicKeyField,
+    wrappedPrivateKey: wrappedKeyField,
+    wrapIv: wrapIvField,
+    kdfSalt: kdfSaltField,
     kdfIterations: z.number().int().min(MIN_KDF_ITERATIONS).max(MAX_KDF_ITERATIONS),
     expectedCurrentKeyId: keyIdField.nullable(),
   })
@@ -50,24 +90,26 @@ export const KeyRegistrationSchema = z
 export type KeyRegistration = z.infer<typeof KeyRegistrationSchema>;
 
 /** The answer to the registration challenge: the bytes the browser opened, base64. */
-export const KeyActivationSchema = z.object({ keyId: keyIdField, challenge: b64, expectedCurrentKeyId: keyIdField.nullable() }).strict();
+export const KeyActivationSchema = z.object({ keyId: keyIdField, challenge: challengeField, expectedCurrentKeyId: keyIdField.nullable() }).strict();
 export type KeyActivation = z.infer<typeof KeyActivationSchema>;
 
 /**
  * A new wrap of the same private key (the passphrase changed). `previousWrappedPrivateKey` is the
  * wrap the browser opened with the old passphrase: the new one is stored only over that one, never
- * over a wrap it has not seen (another tab's change, say).
+ * over a wrap it has not seen (another tab's change, say). The new wrap is never the one it
+ * replaces (a new salt and IV make another one): the restore after it could not tell them apart.
  */
 export const KeyRewrapSchema = z
   .object({
     keyId: keyIdField,
-    previousWrappedPrivateKey: b64,
-    wrappedPrivateKey: b64,
-    wrapIv: b64,
-    kdfSalt: b64,
+    previousWrappedPrivateKey: storedWrapField,
+    wrappedPrivateKey: wrappedKeyField,
+    wrapIv: wrapIvField,
+    kdfSalt: kdfSaltField,
     kdfIterations: z.number().int().min(MIN_KDF_ITERATIONS).max(MAX_KDF_ITERATIONS),
   })
-  .strict();
+  .strict()
+  .refine((r) => r.wrappedPrivateKey !== r.previousWrappedPrivateKey, { message: "the new wrap is the one it replaces", path: ["wrappedPrivateKey"] });
 export type KeyRewrap = z.infer<typeof KeyRewrapSchema>;
 
 /**
@@ -78,10 +120,10 @@ export type KeyRewrap = z.infer<typeof KeyRewrapSchema>;
 export const KeyRestoreSchema = z
   .object({
     keyId: keyIdField,
-    rewrappedPrivateKey: b64,
-    wrappedPrivateKey: b64,
-    wrapIv: b64,
-    kdfSalt: b64,
+    rewrappedPrivateKey: storedWrapField,
+    wrappedPrivateKey: wrappedKeyField,
+    wrapIv: wrapIvField,
+    kdfSalt: kdfSaltField,
     kdfIterations: z.number().int().min(MIN_KDF_ITERATIONS).max(MAX_KDF_ITERATIONS),
   })
   .strict();
@@ -108,14 +150,6 @@ export interface StoredKeyColumns {
 }
 const STORED_KEY_COLUMNS = "key_id, public_key, wrapped_private_key, wrap_iv, kdf_salt, kdf_iterations";
 
-function checkWrap(wrappedPrivateKey: string, wrapIv: string, kdfSalt: string): void {
-  // A P-256 PKCS#8 is about 138 bytes; the GCM tag adds 16.
-  const wrapped = fromBase64(wrappedPrivateKey);
-  if (wrapped.length < 64 || wrapped.length > 512) throw new Error("wrapped key has an unexpected size");
-  if (fromBase64(wrapIv).length !== 12) throw new Error("wrap iv must be 12 bytes");
-  if (fromBase64(kdfSalt).length !== 16) throw new Error("salt must be 16 bytes");
-}
-
 function fail(err: unknown): { ok: false; error: string } {
   return { ok: false, error: err instanceof Error ? err.message : String(err) };
 }
@@ -134,10 +168,13 @@ async function currentKeyId(db: AdminClient, userId: string): Promise<string | n
  */
 export async function registerKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>> {
   try {
-    const k = KeyRegistrationSchema.parse(input);
+    const k = parseInput(KeyRegistrationSchema, input);
     const publicKey = fromBase64(k.publicKey);
-    await importPublicKey(publicKey); // a point on the curve, or it throws
-    checkWrap(k.wrappedPrivateKey, k.wrapIv, k.kdfSalt);
+    try {
+      await importPublicKey(publicKey); // a point on the curve, or it throws
+    } catch {
+      throw new Error(KEY_INPUT_INVALID);
+    }
     const keyId = await keyIdOf(publicKey);
 
     // Checked again, atomically, when the key is put in use (activate_user_key_checked).
@@ -157,7 +194,9 @@ export async function registerKey(db: AdminClient, userId: string, input: unknow
       kdf_iterations: k.kdfIterations,
       challenge_hash: toHex(await sha256(challenge)),
     });
-    if (error) throw new Error(`user_keys insert failed: ${error.message}`);
+    // 23505 (the primary key user_id, key_id): this user has this key in use or retired already
+    // (a waiting one was removed above), so the same registration came again. Not the database's fault.
+    if (error) throw new Error(error.code === "23505" ? KEY_INPUT_INVALID : `user_keys insert failed: ${error.message}`);
     return { ok: true, keyId, challenge: await sealBytes({ keyId, publicKey }, challengeAad(userId, keyId), challenge) };
   } catch (err) {
     return fail(err);
@@ -170,7 +209,7 @@ export async function registerKey(db: AdminClient, userId: string, input: unknow
  */
 export async function activateKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string }>> {
   try {
-    const a = KeyActivationSchema.parse(input);
+    const a = parseInput(KeyActivationSchema, input);
     const { data: pending, error } = await db
       .from("user_keys")
       .select("key_id, challenge_hash")
@@ -210,8 +249,7 @@ export async function activateKey(db: AdminClient, userId: string, input: unknow
  */
 export async function rewrapKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string }>> {
   try {
-    const r = KeyRewrapSchema.parse(input);
-    checkWrap(r.wrappedPrivateKey, r.wrapIv, r.kdfSalt);
+    const r = parseInput(KeyRewrapSchema, input);
     const { data, error } = await db
       .from("user_keys")
       .update({ wrapped_private_key: r.wrappedPrivateKey, wrap_iv: r.wrapIv, kdf_salt: r.kdfSalt, kdf_iterations: r.kdfIterations })
@@ -242,9 +280,8 @@ export async function rewrapKey(db: AdminClient, userId: string, input: unknown)
  */
 export async function restoreKeyWrap(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ keyId: string }>> {
   try {
-    const r = KeyRestoreSchema.parse(input);
+    const r = parseInput(KeyRestoreSchema, input);
     if (r.rewrappedPrivateKey === r.wrappedPrivateKey) throw new Error("the wrap to put back is the one stored now");
-    checkWrap(r.wrappedPrivateKey, r.wrapIv, r.kdfSalt);
     const { data, error } = await db
       .from("user_keys")
       .update({ wrapped_private_key: r.wrappedPrivateKey, wrap_iv: r.wrapIv, kdf_salt: r.kdfSalt, kdf_iterations: r.kdfIterations })
@@ -281,7 +318,7 @@ export async function restoreKeyWrap(db: AdminClient, userId: string, input: unk
  */
 export async function readStoredKey(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ key: StoredKeyColumns | null }>> {
   try {
-    const { keyId } = KeyReadSchema.parse(input);
+    const { keyId } = parseInput(KeyReadSchema, input);
     const query = db.from("user_keys").select(STORED_KEY_COLUMNS).eq("user_id", userId);
     const { data, error } = await (keyId ? query.eq("key_id", keyId) : query.not("activated_at", "is", null).is("retired_at", null)).maybeSingle();
     if (error) throw new Error(`user_keys lookup failed: ${error.message}`);
@@ -314,7 +351,7 @@ export async function readRetiredKeys(db: AdminClient, userId: string): Promise<
  */
 export async function readSealedEnvelope(db: AdminClient, userId: string, input: unknown): Promise<KeyResult<{ envelope: Json | null }>> {
   try {
-    const { emailId } = SealedMailReadSchema.parse(input);
+    const { emailId } = parseInput(SealedMailReadSchema, input);
     const { data, error } = await db.from("emails").select("body_envelope").eq("id", emailId).eq("user_id", userId).eq("body_state", "sealed").maybeSingle();
     if (error) throw new Error(`emails lookup failed: ${error.message}`);
     return { ok: true, envelope: data?.body_envelope ?? null };
@@ -367,7 +404,7 @@ export type SealBatchResult = KeyResult<{ sealed: number; failed: string[]; next
  */
 export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { after: null }): Promise<SealBatchResult> {
   try {
-    const { after } = SealBatchSchema.parse(input);
+    const { after } = parseInput(SealBatchSchema, input);
     const key = await currentSealKey(db, userId);
     if (!key) throw new Error("no key in use");
     let query = db

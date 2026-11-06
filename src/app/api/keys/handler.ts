@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import { checkFresh, readBearerSession } from "@/lib/auth-session";
+import { KEY_INPUT_INVALID } from "@/lib/crypto/key-messages";
 import { keyStepCode, type KeyStepFailure } from "@/lib/login-errors";
 import type { KeyResult } from "@/lib/mail-keys";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
@@ -13,7 +14,8 @@ import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
  *   (getUser(token)), and fresh: signed in with the password in the last 15 minutes, for every step
  *   (src/lib/auth-session.ts `login`). A session from the 8-digit code, a magic link or a reset link
  *   is refused (review R3-PW-2): the app does not reset, and the code still signs in to its second build.
- * - The body is parsed strictly (the mail-keys schemas): an unknown field is refused.
+ * - The body is parsed strictly (the mail-keys schemas): an unknown field, or a value of the wrong
+ *   form (base64, the sizes), is refused as invalid_input before anything is read or stored.
  * - The answer: 200 { ok: true, ... } or { ok: false, code } with the status below. docs/api/keys.md.
  */
 
@@ -78,7 +80,9 @@ export async function keyStep<I, T extends object>(
     return failure("key_failed");
   }
   if (!result.ok) {
-    const code = keyStepCode(result.error);
+    // KEY_INPUT_INVALID: what only the step can tell (a key registered already, a point off the
+    // curve). The body's form was refused above, by the same schemas.
+    const code = result.error === KEY_INPUT_INVALID ? "invalid_input" : keyStepCode(result.error);
     // The code only: the text can carry a database message.
     console.warn(`[keys-api] ${step} refused:`, code);
     return failure(code);
