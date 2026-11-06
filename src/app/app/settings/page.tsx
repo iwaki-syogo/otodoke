@@ -12,6 +12,7 @@ import { readAll } from "@/lib/supabase/read-all";
 import { countPlainRead } from "@/lib/mail-keys";
 import { demoCount, settingsErrorMessage } from "@/lib/settings-errors";
 import type { Tables } from "@/lib/db/database.types";
+import { AccountDeletion } from "./account-deletion";
 
 export const metadata = { title: "設定" };
 
@@ -224,6 +225,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           </button>
         </form>
       </section>
+
+      <AccountDeletion />
     </div>
   );
 }
