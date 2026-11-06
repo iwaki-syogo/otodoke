@@ -234,7 +234,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
 
   it("the clear-all warning names the mail too, and the checkbox is described by it", async () => {
     const root = await render("demo");
-    const warning = findAll(root, (n) => n.tag === "p" && textOf(n) === "荷物とメールをすべて消します。消すと元に戻せません。");
+    const warning = findAll(root, (n) => n.tag === "p" && textOf(n) === "荷物と保存したメールを消します。消すと元に戻せません。");
     expect(warning).toHaveLength(1);
     expect(warning[0].attrs.id).toBeTruthy();
     const box = findAll(root, (n) => n.tag === "input" && n.attrs.type === "checkbox" && n.attrs.name === "confirm");
