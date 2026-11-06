@@ -1,4 +1,4 @@
-import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
+import { KEY_IN_USE_CHANGED, KEY_INPUT_INVALID, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 
 /**
  * The result codes of the login, sign-up, reset and change steps, and the fixed words for each.
@@ -33,7 +33,10 @@ export const LOGIN_MESSAGES = {
 
   // The session.
   signed_out: "ログインし直してください。",
-  // A key step more than 15 minutes after the password or the reset (auth-session.ts).
+  // A key step the session may not take (auth-session.ts, key-actions.ts): putting a key in use
+  // and rewrapping it need a sign-in with the password in the last 15 minutes; a reset link's
+  // session of the last 15 minutes registers a key only. /reset-password says reset_expired
+  // instead (password-flows.ts finishPasswordReset): that user cannot log in.
   stale_session: "続けるには、もう一度ログインしてください。",
   // finishReset without a reset link opened in the last 15 minutes.
   reset_expired: "再設定の期限が切れました。もう一度、再設定のメールを送ってください。",
@@ -41,7 +44,9 @@ export const LOGIN_MESSAGES = {
   // Changing the password.
   same_secret: "いまと同じパスワードです。別のパスワードを決めてください。",
   // Supabase did not answer whether the new password was set; the key opens with the new one.
-  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。",
+  // The new one first; if it was not set after all, the old one signs in, and a key that opens
+  // with the new one is then opened with 「ほかのパスワードで開く」 (R3-PW-15).
+  secret_change_unknown: "パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。入れないときは、前のパスワードでログインしてください。",
   // Supabase refused the new password; the key opens with the old one again.
   secret_change_refused: "パスワードを変えられませんでした。もう一度お試しください。",
   // The same, but the wrap could not be put back: the login is the old password, and the key opens
@@ -77,8 +82,10 @@ export const LOGIN_MESSAGES = {
   // The mail's links (/auth/confirm).
   link_invalid: "このリンクは使えませんでした。確認が済んでいれば、ログインできます。",
   reset_link_invalid: "再設定のリンクは使えませんでした。もう一度、再設定のメールを送ってください。",
-  // Supabase's limit on verifications (429, per IP, before the token is looked at: the link still works).
-  link_limited: "ただいま混み合っています。1分ほど待ってから、もう一度メールのリンクを開いてください。",
+  // Supabase's limit on verifications (429, per IP, before the token is looked at), or the app's own
+  // before Supabase is asked (login-mail-limit.ts LOGIN_LINK_LIMITS: 10 checks per IP in any 10
+  // minutes, which can mean a wait of up to 10 minutes). Either way the link still works later.
+  link_limited: "ただいま混み合っています。少し時間をおいてから、もう一度メールのリンクを開いてください。",
   // Supabase did not answer, or answered 5xx: nothing says the token was refused.
   link_failed: "いまは確認できませんでした。少し時間をおいて、もう一度メールのリンクを開いてください。",
   link_incomplete: "リンクが不完全です。いちばん新しいメールのリンクを開いてください。",
@@ -110,12 +117,15 @@ export type KeyStepFailure = "key_in_use_changed" | "key_wrap_changed" | "key_no
 export function keyStepCode(error: string): KeyStepFailure {
   if (error === KEY_IN_USE_CHANGED) return "key_in_use_changed";
   if (error === KEY_WRAP_CHANGED) return "key_wrap_changed";
+  // A value of the wrong form, a rewrap to the wrap it replaces, a key registered already: the
+  // app's mistake, which sending it again does not mend.
+  if (error === KEY_INPUT_INVALID) return "invalid_input";
   // activateKey's own check, and activate_user_key_checked's P0002 (passed on in its message).
   if (error === "no key is waiting to be activated" || error.includes("no matching key is waiting to be activated")) return "key_not_pending";
   if (error === "the key did not open its challenge") return "key_challenge_failed";
   if (error === "no key in use with this id") return "key_not_in_use";
-  // checkWrap, and restoreKeyWrap's refusal to put back the wrap stored now.
-  if (/^(wrapped key has an unexpected size|wrap iv must be 12 bytes|salt must be 16 bytes|the wrap to put back is the one stored now)$/.test(error)) return "invalid_input";
+  // restoreKeyWrap's refusal to put back the wrap stored now.
+  if (error === "the wrap to put back is the one stored now") return "invalid_input";
   return "key_failed";
 }
 
@@ -137,8 +147,11 @@ export type ChangeSecretFailure =
 export type ChangeSecretResult = { ok: true } | { ok: false; code: ChangeSecretFailure };
 
 /**
- * The `error` a key Action of 設定 (key-actions.ts) answers when the session is older than 15
- * minutes since the password or the reset: the screen asks to log in again (LOGIN_MESSAGES.stale_session).
+ * The `error` a key Action (key-actions.ts) answers for a session that may not take the step:
+ * putting a key in use and rewrapping it need a sign-in with the password in the last 15 minutes;
+ * registering one takes a reset link's session of the last 15 minutes too (src/lib/auth-session.ts).
+ * The screens ask to log in again (LOGIN_MESSAGES.stale_session); /reset-password, whose user has
+ * no password to log in with, asks for a new reset mail (reset_expired).
  */
 export const KEY_SESSION_STALE = "stale_session";
 

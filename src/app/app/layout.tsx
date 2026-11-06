@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/supabase/server";
 import { TabBar } from "./tab-bar";
+import { TabKeyGuard } from "./tab-key-guard";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser();
@@ -9,6 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
       <main className="flex-1 px-4 pb-28 pt-6">{children}</main>
       <TabBar />
+      <TabKeyGuard />
     </div>
   );
 }

@@ -375,8 +375,17 @@ export async function changePassword(input: { email: string; userId: string; cur
  *
  * Safe to run again from the start when it did not go through (a new key replaces the waiting one;
  * a login secret set already is taken as set): the screen's 「もう一度試す」 does that.
+ *
+ * A session too old for a key step (registerMailKey takes a reset link's session of the last 15
+ * minutes) is reset_expired here, never stale_session: whoever resets has no password to log in
+ * again with, and the way on is a new reset mail.
  */
 export async function finishPasswordReset(input: { email: string; userId: string; password: string }, ports: ResetPorts): Promise<{ ok: true } | Failed> {
+  const result = await resetSteps(input, ports);
+  return result.ok || result.code !== "stale_session" ? result : { ok: false, code: "reset_expired" };
+}
+
+async function resetSteps(input: { email: string; userId: string; password: string }, ports: ResetPorts): Promise<{ ok: true } | Failed> {
   forgetTabKey();
   try {
     const [master, current] = await Promise.all([deriveMaster(input.email, input.password), ports.readMailKey({ keyId: null })]);

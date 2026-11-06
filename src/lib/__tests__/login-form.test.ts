@@ -24,7 +24,7 @@ const flows = vi.hoisted(() => ({ signIn: vi.fn() }));
 const widget = vi.hoisted(() => ({ token: null as { current: TokenField } | null, round: -1 }));
 const nav = vi.hoisted(() => ({ to: [] as string[] }));
 /** What the login form gave 「ほかのパスワードで開く」 (other-password-form.test.ts tests that form). */
-const other = vi.hoisted(() => ({ props: null as { email: string; openWithAnother: unknown; onOpened: () => void } | null }));
+const other = vi.hoisted(() => ({ props: null as { openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void } | null }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -49,7 +49,7 @@ vi.mock("@/app/login/turnstile-widget", () => ({
 vi.mock("@/app/login/other-password-form", async () => {
   const { createElement: h } = await import("react");
   return {
-    OtherPasswordForm: (props: { email: string; openWithAnother: unknown; onOpened: () => void }) => {
+    OtherPasswordForm: (props: { openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void }) => {
       other.props = props;
       return h("div", { "data-other-password": "" });
     },
@@ -173,8 +173,8 @@ describe("the press", () => {
     expect(nav.to).toEqual([]);
     expect(view.text()).toContain(LOGIN_MESSAGES.key_not_opened);
     expect(view.text()).toContain(RESET_LOSES_MAIL);
-    // 「ほかのパスワードで開く」 with the sign-in's own opener, for the address typed above.
-    expect(other.props).toMatchObject({ email: EMAIL, openWithAnother });
+    // 「ほかのパスワードで開く」 with the sign-in's own opener.
+    expect(other.props).toMatchObject({ openWithAnother });
     expect(links(view)).toEqual([
       { href: "/login/forgot", text: "再設定する" },
       { href: NEXT, text: "このまま進む" },
@@ -183,6 +183,28 @@ describe("the press", () => {
     // The password that signed in is not kept by the form: the opener holds its master.
     expect(input(view, "login-password").props.value).toBe("");
     expect(openWithAnother).not.toHaveBeenCalled();
+  });
+
+  it.each(["stale_session", "signed_out"] as const)("too late for the wrap (%s): the words under the login, which signs in again", async (code) => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "not_opened", openWithAnother: vi.fn() });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    other.props!.onLogInAgain(code);
+    await drawn();
+    expect(view.text()).toContain(LOGIN_MESSAGES[code]);
+    // The not-opened notice is gone; the login above is the way on, ready to press.
+    expect(view.text()).not.toContain(RESET_LOSES_MAIL);
+    expect(view.hosts((h) => h.type === "div" && "data-other-password" in h.props)).toEqual([]);
+    expect(textOfHost(button(view))).toBe("ログイン");
+    expect(input(view, "login-email").props.value).toBe(EMAIL);
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "opened" });
+    type(view, "login-password", PASSWORD);
+    await drawn();
+    await press(view);
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+    expect(nav.to).toEqual([NEXT]);
   });
 
   it("the key opened with another password: moves on to ?next=", async () => {

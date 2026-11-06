@@ -13,8 +13,11 @@ import { finishReset } from "./actions";
 /** The Actions a reset calls, read when a press needs them. */
 const ports = (): ResetPorts => ({ readMailKey, registerMailKey, finishReset });
 
-/** A reset that cannot go on from this page: the mail's link has to be opened again. */
-const NEEDS_NEW_LINK: ReadonlySet<FlowCode> = new Set(["reset_expired", "stale_session", "signed_out"]);
+/**
+ * A reset that cannot go on from this page: the mail's link has to be opened again. A session too
+ * old for the key steps comes as reset_expired (finishPasswordReset never answers stale_session).
+ */
+const NEEDS_NEW_LINK: ReadonlySet<FlowCode> = new Set(["reset_expired", "signed_out"]);
 
 /**
  * /reset-password, on the session a reset link made: the new password twice, then a new key for

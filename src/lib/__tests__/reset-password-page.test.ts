@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LOGIN_MESSAGES } from "@/lib/login-errors";
+import { KEY_SESSION_STALE, LOGIN_MESSAGES } from "@/lib/login-errors";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -17,7 +17,8 @@ const USER = "00000000-0000-4000-8000-00000000000a";
 const EMAIL = "someone@example.test";
 const PASSWORD = "あたらしいパスワードです";
 
-const mocks = vi.hoisted(() => ({ fresh: vi.fn(), finish: vi.fn(), to: [] as string[] }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), finish: vi.fn(), to: [] as string[], real: null as unknown as (...args: unknown[]) => unknown }));
+const keys = vi.hoisted(() => ({ read: vi.fn(), register: vi.fn() }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -37,10 +38,21 @@ vi.mock("@/components/leave-for", () => ({
     return null;
   },
 }));
-vi.mock("@/lib/auth-session", () => ({ freshCookieSession: mocks.fresh }));
-vi.mock("@/lib/crypto/password-flows", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/crypto/password-flows")>()), finishPasswordReset: mocks.finish }));
+// The cookie session as Supabase Auth answers it; how fresh it is, auth-session.ts's own reading.
+vi.mock("@/lib/auth-session", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/auth-session")>()), readCookieSession: mocks.read }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
+vi.mock("@/lib/crypto/password-flows", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crypto/password-flows")>();
+  mocks.real = actual.finishPasswordReset as never;
+  return { ...actual, finishPasswordReset: mocks.finish };
+});
 vi.mock("@/app/reset-password/actions", () => ({ finishReset: vi.fn() }));
-vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: keys.read, registerMailKey: keys.register }));
+// The seam test runs the real reset steps: master is made quickly there.
+vi.mock("@/lib/crypto/password-v1", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crypto/password-v1")>();
+  return { ...actual, deriveMaster: async () => crypto.subtle.importKey("raw", new Uint8Array(32), "HKDF", false, ["deriveBits", "deriveKey"]) };
+});
 
 const ResetPasswordPage = (await import("@/app/reset-password/page")).default;
 const { ResetForm } = await import("@/app/reset-password/reset-form");
@@ -60,17 +72,20 @@ async function filled(password = PASSWORD, again = password) {
   return view;
 }
 
+/** A session Supabase accepted, signed in by `amr` (method, minutes ago). */
+const signedIn = (...amr: Array<[string, number]>) => ({ state: "signed_in", session: { userId: USER, email: EMAIL, amr: amr.map(([method, minutes]) => ({ method, at: Date.now() - minutes * 60_000 })) } });
+
 beforeEach(() => {
-  mocks.fresh.mockReset();
+  mocks.read.mockReset();
   mocks.finish.mockReset();
   mocks.to = [];
 });
 
 describe("the page, by the session", () => {
   it("a reset link's session: the account, what a reset costs, and the form", async () => {
-    mocks.fresh.mockResolvedValue({ ok: true, session: { userId: USER, email: EMAIL, amr: [] } });
+    mocks.read.mockResolvedValue(signedIn(["otp", 2]));
     const root = await page();
-    expect(mocks.fresh).toHaveBeenCalledWith("reset");
+    expect(mocks.read).toHaveBeenCalledTimes(1);
     expect(textOf(root)).toContain(`このアカウント: ${EMAIL}`);
     expect(textOf(root)).toContain(RESET_LOSES_MAIL);
     const [form] = findAll(root, (n) => n.tag === "form");
@@ -78,22 +93,36 @@ describe("the page, by the session", () => {
   });
 
   it("no session: asks to open the mail's link, and offers a new mail", async () => {
-    mocks.fresh.mockResolvedValue({ ok: false, reason: "signed_out" });
+    mocks.read.mockResolvedValue({ state: "signed_out" });
     const root = await page();
     expect(textOf(root)).toContain("メールのリンクから開いてください。");
     expect(findAll(root, (n) => n.tag === "form")).toHaveLength(0);
     expect(findAll(root, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a)])).toContainEqual(["/login/forgot", "再設定のメールを送る"]);
   });
 
-  it("a session too old for it (or one that signed in with the password): the expired words, and a new mail", async () => {
-    mocks.fresh.mockResolvedValue({ ok: false, reason: "stale" });
+  it("a reset link opened more than 15 minutes ago: the expired words, and a new mail", async () => {
+    mocks.read.mockResolvedValue(signedIn(["otp", 20]));
     const root = await page();
     expect(textOf(root)).toContain(LOGIN_MESSAGES.reset_expired);
     expect(findAll(root, (n) => n.tag === "form")).toHaveLength(0);
+    expect(findAll(root, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a)])).toContainEqual(["/login/forgot", "再設定のメールを送る"]);
+  });
+
+  it.each([
+    ["signed in with the password just now", [["password", 1]]],
+    ["signed in with the password an hour ago", [["password", 60]]],
+    ["a mail's link long ago, then the password", [["otp", 120], ["password", 3]]],
+  ] as const)("no reset link opened (%s): asks to open the mail's link, never that a reset expired (R3-PW-17)", async (_, amr) => {
+    mocks.read.mockResolvedValue(signedIn(...(amr as unknown as Array<[string, number]>)));
+    const root = await page();
+    expect(textOf(root)).toContain("メールのリンクから開いてください。");
+    expect(textOf(root)).not.toContain(LOGIN_MESSAGES.reset_expired);
+    expect(findAll(root, (n) => n.tag === "form")).toHaveLength(0);
+    expect(findAll(root, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a)])).toContainEqual(["/login/forgot", "再設定のメールを送る"]);
   });
 
   it("Supabase could not be asked: says so, never as a missing link", async () => {
-    mocks.fresh.mockResolvedValue({ ok: false, reason: "unknown" });
+    mocks.read.mockResolvedValue({ state: "unknown" });
     const text = textOf(await page());
     expect(text).toContain(LOGIN_MESSAGES.network);
     expect(text).not.toContain("メールのリンクから開いてください。");
@@ -130,7 +159,7 @@ describe("the form", () => {
     expect(mocks.to).toEqual(["/app"]);
   });
 
-  it.each(["reset_expired", "stale_session", "signed_out"] as const)("%s: the words and the way to a new mail, no retry", async (code) => {
+  it.each(["reset_expired", "signed_out"] as const)("%s: the words and the way to a new mail, no retry", async (code) => {
     mocks.finish.mockResolvedValue({ ok: false, code });
     const view = await filled();
     await press(view);
@@ -150,6 +179,19 @@ describe("the form", () => {
     await drawn();
     expect(view.text()).toContain("2 回の入力が違います");
     expect(mocks.finish).not.toHaveBeenCalled();
+  });
+
+  it("seam: a reset link older than 15 minutes, as the key Action answers it, shows the expired reset and the way to a new mail", async () => {
+    mocks.finish.mockImplementation(mocks.real);
+    keys.read.mockResolvedValue({ ok: true, key: null });
+    keys.register.mockResolvedValue({ ok: false, error: KEY_SESSION_STALE });
+    const view = await filled();
+    await press(view);
+    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.reset_expired));
+    expect(view.text()).not.toContain(LOGIN_MESSAGES.stale_session);
+    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login/forgot", "再設定のメールを送る"]]);
+    expect(view.hosts((h) => h.type === "button")).toHaveLength(0);
+    expect(mocks.to).toEqual([]);
   });
 
   it("keeps the session's address for a password manager, in a field without a name", async () => {

@@ -17,7 +17,7 @@ import { mount, type Mounted } from "./hook-harness";
 
 const flows = vi.hoisted(() => ({ signIn: vi.fn(), change: vi.fn() }));
 const router = vi.hoisted(() => ({ refresh: vi.fn() }));
-const other = vi.hoisted(() => ({ props: null as { email: string; openWithAnother: unknown; onOpened: () => void } | null }));
+const other = vi.hoisted(() => ({ props: null as { openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void } | null }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -40,7 +40,7 @@ vi.mock("@/app/login/turnstile-widget", () => ({
 vi.mock("@/app/login/other-password-form", async () => {
   const { createElement: h } = await import("react");
   return {
-    OtherPasswordForm: (props: { email: string; openWithAnother: unknown; onOpened: () => void }) => {
+    OtherPasswordForm: (props: { openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void }) => {
       other.props = props;
       return h("form", { "data-other-password": "" });
     },
@@ -130,12 +130,24 @@ describe("設定: 鍵を作る", () => {
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES.key_not_opened);
     expect(view.text()).toContain(RESET_LOSES_MAIL);
-    expect(other.props).toMatchObject({ email: EMAIL, openWithAnother });
+    expect(other.props).toMatchObject({ openWithAnother });
     // A form of its own: never inside the panel's (a form in a form is not HTML).
     expect(contains(ownForm(view), (n) => n.type === "form")).toBe(false);
     expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login/forgot", "再設定する"]]);
     other.props!.onOpened();
     expect(router.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["stale_session", "signed_out"] as const)("too late for the wrap of another password (%s): the words and the login, back to 設定", async (code) => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: USER, key: "not_opened", openWithAnother: vi.fn() });
+    const view = await typed();
+    await press(view);
+    await drawn();
+    other.props!.onLogInAgain(code);
+    await drawn();
+    expect(view.text()).toContain(LOGIN_MESSAGES[code]);
+    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/login?next=%2Fapp%2Fsettings", "ログイン"]]);
+    expect(view.hosts((h) => h.type === "form" && "data-other-password" in h.props)).toEqual([]);
   });
 });
 
@@ -191,12 +203,14 @@ describe("設定: パスワードを変える", () => {
     expect(view.text()).toContain("変えました。");
   });
 
-  it("an unknown outcome empties the fields (the current password may not be the one any more)", async () => {
+  it("an unknown outcome empties the fields (the current password may not be the one any more), and names both ways in", async () => {
     flows.change.mockResolvedValue({ ok: false, code: "secret_change_unknown" });
     const view = await typed();
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES.secret_change_unknown);
+    // The new password first, the old one when it does not sign in (R3-PW-15).
+    expect(LOGIN_MESSAGES.secret_change_unknown).toBe("パスワードを変えられたか確かめられませんでした。新しいパスワードでログインし直してください。入れないときは、前のパスワードでログインしてください。");
     expect(fields(view)).toEqual(["", "", ""]);
   });
 

@@ -21,7 +21,6 @@ vi.mock("react", async (importOriginal) => {
 
 const { OtherPasswordForm } = await import("@/app/login/other-password-form");
 
-const EMAIL = "someone@example.test";
 const OTHER = "となりの犬は柴で3歳";
 
 const textOfHost = (h: Host | string): string => (typeof h === "string" ? h : h.children.map(textOfHost).join(""));
@@ -31,15 +30,18 @@ const button = (view: Mounted) => view.host((h) => h.type === "button");
 
 const opener = vi.fn();
 const onOpened = vi.fn();
+const onLogInAgain = vi.fn();
+const props = { openWithAnother: opener, onOpened, onLogInAgain };
 
 beforeEach(() => {
   opener.mockReset();
   onOpened.mockReset();
+  onLogInAgain.mockReset();
 });
 
 /** The field shown, and the other password typed in. */
 async function typed() {
-  const view = mount(() => OtherPasswordForm({ email: EMAIL, openWithAnother: opener, onOpened }));
+  const view = mount(() => OtherPasswordForm(props));
   (button(view).props.onClick as () => void)();
   await drawn();
   (field(view).props.onChange as (e: unknown) => void)({ target: { value: OTHER } });
@@ -50,7 +52,7 @@ const press = (view: Mounted) => (view.host((h) => h.type === "form").props.onSu
 
 describe("ほかのパスワードで開く", () => {
   it("is a button first, with no field", () => {
-    const view = mount(() => OtherPasswordForm({ email: EMAIL, openWithAnother: opener, onOpened }));
+    const view = mount(() => OtherPasswordForm(props));
     expect(textOfHost(button(view))).toBe(OPEN_WITH_ANOTHER_PASSWORD);
     expect(OPEN_WITH_ANOTHER_PASSWORD).toBe("ほかのパスワードで開く");
     expect(view.hosts((h) => h.type === "input" || h.type === "form")).toEqual([]);
@@ -92,32 +94,46 @@ describe("ほかのパスワードで開く", () => {
     expect(onOpened).not.toHaveBeenCalled();
   });
 
-  it.each(["stale_session", "key_wrap_changed", "network"] as const)("%s is told with its fixed words", async (code) => {
+  it.each(["key_wrap_changed", "network", "key_failed"] as const)("%s is told with its fixed words, and can be tried again", async (code) => {
     opener.mockResolvedValue({ ok: false, code });
     const view = await typed();
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
     expect(onOpened).not.toHaveBeenCalled();
+    expect(onLogInAgain).not.toHaveBeenCalled();
+    expect(textOfHost(button(view))).toBe("開く");
+  });
+
+  it.each(["stale_session", "signed_out"] as const)("%s (too late for the wrap, or signed out meanwhile) goes to the screen's way to log in", async (code) => {
+    opener.mockResolvedValue({ ok: false, code });
+    const view = await typed();
+    await press(view);
+    await drawn();
+    expect(onLogInAgain).toHaveBeenCalledWith(code);
+    expect(onOpened).not.toHaveBeenCalled();
   });
 
   it("an empty field sends nothing", async () => {
-    const view = mount(() => OtherPasswordForm({ email: EMAIL, openWithAnother: opener, onOpened }));
+    const view = mount(() => OtherPasswordForm(props));
     (button(view).props.onClick as () => void)();
     await drawn();
     await press(view);
     expect(opener).not.toHaveBeenCalled();
   });
 
-  it("the field has no name, in a POST form without an action, and names the account for a password manager", async () => {
+  it("the field has no name, in a POST form without an action, and is no login field for a password manager", async () => {
     const view = await typed();
     const form = view.host((h) => h.type === "form");
     expect(form.props.method).toBe("post");
     expect(form.props.action).toBeUndefined();
     expect(view.hosts((h) => "name" in h.props)).toEqual([]);
-    expect(view.host((h) => h.type === "input" && h.props.autoComplete === "username").props).toMatchObject({ value: EMAIL, readOnly: true, hidden: true });
-    expect(field(view).props.autoComplete).toBe("current-password");
+    // R3-PW-14: no account named, nothing asked of a password manager, so it never offers to put
+    // this password in place of the saved login one.
+    expect(view.hosts((h) => h.type === "input")).toHaveLength(1);
+    expect(view.hosts((h) => h.props.autoComplete === "username")).toEqual([]);
+    expect(field(view).props.autoComplete).toBe("off");
     // Drawn by the server, it is the button alone (the field comes with the press, after the script).
-    expect(renderToStaticMarkup(createElement(OtherPasswordForm, { email: EMAIL, openWithAnother: opener, onOpened }))).not.toContain("<input");
+    expect(renderToStaticMarkup(createElement(OtherPasswordForm, props))).not.toContain("<input");
   });
 });
