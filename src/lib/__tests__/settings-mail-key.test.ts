@@ -304,4 +304,12 @@ describe("/app/settings: あなたのメールの扱い", () => {
     plainRead(3);
     expect(textOf(sectionTitled(await render("password"), "メールの鍵を作る")[0])).toContain("それまでは運営者が読める形です");
   });
+
+  it("DemoLoader says the parcels and stored mail were cleared only when cleared is set", async () => {
+    const { createElement } = await import("react");
+    const { DemoLoader } = await import("@/app/app/settings/demo-loader");
+    const render = (cleared: boolean) => textOf(parseHtml(renderToStaticMarkup(createElement(DemoLoader, { loaded: null, error: null, cleared }))));
+    expect(render(true)).toContain("荷物と保存したメールを消しました。");
+    expect(render(false)).not.toContain("荷物と保存したメールを消しました。");
+  });
 });
