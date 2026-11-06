@@ -192,19 +192,31 @@ describe("updateManualParcel", () => {
 describe("deleteManualParcel", () => {
   it("refuses when nobody is signed in", async () => {
     mocks.state.user = null;
-    const { state } = await run(deleteManualParcel, { id: MANUAL_ID });
+    const { state } = await run(deleteManualParcel, { id: MANUAL_ID, confirm: "yes" });
     expect(state?.error).toBeTruthy();
     expect(db.find("parcels", MANUAL_ID)).toBeDefined();
   });
 
   it("refuses an id that is not a uuid without touching the database", async () => {
-    const { state } = await run(deleteManualParcel, { id: "1 or 1=1" });
+    const { state } = await run(deleteManualParcel, { id: "1 or 1=1", confirm: "yes" });
     expect(state?.error).toBeTruthy();
     expect(db.calls).toHaveLength(0);
   });
 
+  it("keeps the parcel and says so when the 「本当に消す」 check is missing", async () => {
+    const unchecked: Record<string, string>[] = [{}, { confirm: "" }, { confirm: "no" }];
+    for (const extra of unchecked) {
+      db.calls.length = 0;
+      const { state, redirectedTo } = await run(deleteManualParcel, { id: MANUAL_ID, ...extra });
+      expect(state?.error).toBe("「本当に消す」にチェックを入れてください");
+      expect(redirectedTo).toBeNull();
+      expect(db.find("parcels", MANUAL_ID)).toBeDefined();
+      expect(parcelQueries().filter((q) => q.op === "delete")).toHaveLength(0);
+    }
+  });
+
   it("deletes a typed-in parcel, then goes to /app", async () => {
-    const { redirectedTo } = await run(deleteManualParcel, { id: MANUAL_ID });
+    const { redirectedTo } = await run(deleteManualParcel, { id: MANUAL_ID, confirm: "yes" });
     expect(db.find("parcels", MANUAL_ID)).toBeUndefined();
     const deletes = parcelQueries().filter((q) => q.op === "delete");
     expect(deletes).toHaveLength(1);
@@ -215,7 +227,7 @@ describe("deleteManualParcel", () => {
   });
 
   it("answers 「見つかりません」 for a mail parcel and keeps it", async () => {
-    const { state, redirectedTo } = await run(deleteManualParcel, { id: MAIL_ID });
+    const { state, redirectedTo } = await run(deleteManualParcel, { id: MAIL_ID, confirm: "yes" });
     expect(state?.error).toContain("見つかりません");
     expect(redirectedTo).toBeNull();
     expect(db.find("parcels", MAIL_ID)).toBeDefined();

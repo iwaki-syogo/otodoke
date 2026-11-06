@@ -71,7 +71,7 @@ import unicodedata
 from email import message_from_bytes, policy
 from email.header import decode_header, make_header
 from email.message import EmailMessage
-from email.utils import formataddr, getaddresses, parseaddr, parsedate_to_datetime
+from email.utils import format_datetime, formataddr, getaddresses, parseaddr, parsedate_to_datetime
 from datetime import timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
@@ -416,15 +416,28 @@ class IdMapper:
         for ch in real[keep:]:
             b = next(s)
             out.append(str(b % 10) if ch.isdigit() else ch)
-        fake = "".join(out)
-        # keep a mod-7 check digit valid if the real number had one (Yamato / Sagawa / JP Post)
-        if re.fullmatch(r"\d{10,14}", real) and int(real[:-1]) % 7 == int(real[-1]):
-            fake = fake[:-1] + str(int(fake[:-1]) % 7)
+        return self.invalidate("".join(out))
+
+    @staticmethod
+    def invalidate(fake: str) -> str:
+        """Force a 10-14 digit fake number to FAIL the mod-7 check digit (Yamato / Sagawa / JP Post).
+
+        A fake that passes the check could belong to a real parcel, and this repo is public. It is applied
+        to every such fake, whether or not the real number passed (a random fake passes 1 time in 10), and
+        also to values read back from the saved map. (v + 1) % 10 is never equal to v, which is in 0..6.
+        """
+        if re.fullmatch(r"\d{10,14}", fake) and int(fake[:-1]) % 7 == int(fake[-1]):
+            return fake[:-1] + str((int(fake[:-1]) % 7 + 1) % 10)
         return fake
 
     def fake_for(self, real: str) -> str:
         if real in self.map:
-            return self.map[real]
+            # the saved map may already hold a valid-check fake: fix it in the map itself before use
+            fixed = self.invalidate(self.map[real])
+            if fixed != self.map[real]:
+                self.map[real] = fixed
+                self.used.add(fixed)
+            return fixed
         counter = 0
         while True:
             fake = self._make(real, counter)
@@ -830,6 +843,21 @@ def iso_date(date_header: str | None) -> str | None:
     return dt.isoformat() if dt.tzinfo else dt.replace(tzinfo=timezone.utc).isoformat()
 
 
+def demo_message_id(salt: str, out_name: str) -> str:
+    """Made-up Message-ID built from the output file name only, never from the real value."""
+    h = hmac.new(salt.encode(), ("msgid|" + out_name).encode(), hashlib.sha256).hexdigest()[:12]
+    return f"<demo-{h}@example.invalid>"
+
+
+def round_date_to_minute(date_header: str) -> str:
+    """Date header with the seconds set to 00 (the exact send time can identify a real order)."""
+    try:
+        dt = parsedate_to_datetime(date_header)
+    except (TypeError, ValueError):
+        return date_header
+    return format_datetime(dt.replace(second=0, microsecond=0))
+
+
 def short_id(salt: str, mid: str) -> str:
     return hmac.new(salt.encode(), ("file|" + mid).encode(), hashlib.sha256).hexdigest()[:8]
 
@@ -888,14 +916,18 @@ def run(args) -> int:
         row = inventory[mid]
         sid = mapping["files"].get(mid) or short_id(mapping["salt"], mid)
         mapping["files"][mid] = sid
+        day = jst_date(m["headers"].get("Date")) or row["date"]
+        rel = Path(row["source"]) / f"{day}_{row['stage']}_{sid}"
         headers = {}
         for k, v in m["headers"].items():
             if k in ("From", "To", "Reply-To"):
                 headers[k] = anon.address_header(v)
             elif k == "Message-ID":
-                headers[k] = anon._emails(v)
+                # whole value becomes <demo-<hash>@example.invalid>; the hash comes from the OUTPUT file
+                # name, so the real Message-ID is not recoverable from it
+                headers[k] = demo_message_id(mapping["salt"], rel.as_posix())
             elif k == "Date":
-                headers[k] = v
+                headers[k] = round_date_to_minute(v)
             else:
                 headers[k] = anon.text(v)
         plain = anon.text(m["plain"])
@@ -906,8 +938,6 @@ def run(args) -> int:
             body_text = html_to_text(html_body)
         else:
             body_text = ""
-        day = jst_date(m["headers"].get("Date")) or row["date"]
-        rel = Path(row["source"]) / f"{day}_{row['stage']}_{sid}"
         out_eml = OUT_DIR / rel.with_suffix(".eml")
         out_txt = OUT_DIR / rel.with_suffix(".txt")
         out_eml.parent.mkdir(parents=True, exist_ok=True)

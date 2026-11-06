@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { BEFORE_YOU_START_ACTION, BEFORE_YOU_START_HEADING, FORWARDING_GUIDES, FORWARDING_PITFALLS, GMAIL_FILTER, PITFALLS_LEAD } from "@/lib/forwarding-guide";
+import { BEFORE_YOU_START_ACTION, BEFORE_YOU_START_HEADING, FORWARDING_GUIDES, FORWARDING_PITFALLS, GMAIL_FILTER, PITFALLS_LEAD, VIDEO_CREDIT } from "@/lib/forwarding-guide";
 import * as guideData from "@/lib/forwarding-guide";
 import { withoutComments } from "./source-scan";
 import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
@@ -154,5 +154,44 @@ describe("/guide/forwarding", () => {
     expect(source).not.toMatch(/\bcookies\b/);
     expect(source).not.toMatch(/\bheaders\b/);
     expect(source).toContain('export const dynamic = "force-static"');
+  });
+
+  it("puts one video in each of the Gmail, iCloud and Outlook sections", async () => {
+    const root = await render();
+    for (const id of ["gmail", "icloud", "outlook"]) {
+      const section = findAll(root, (n) => n.tag === "section" && n.attrs.id === id)[0];
+      const videos = findAll(section, (n) => n.tag === "video");
+      expect(videos, id).toHaveLength(1);
+      const v = videos[0];
+      expect(v.attrs.preload, id).toBe("none");
+      expect("controls" in v.attrs, id).toBe(true);
+      expect("playsinline" in v.attrs || "playsInline" in v.attrs, id).toBe(true);
+      expect("autoplay" in v.attrs || "autoPlay" in v.attrs, id).toBe(false);
+      expect("loop" in v.attrs, id).toBe(false);
+      expect("muted" in v.attrs, id).toBe(false);
+    }
+    const other = findAll(root, (n) => n.tag === "section" && n.attrs.id === "other")[0];
+    expect(findAll(other, (n) => n.tag === "video")).toHaveLength(0);
+  });
+
+  it("points every video and poster at a file under public/, each mp4 at most 4MB", async () => {
+    const root = await render();
+    const videos = findAll(root, (n) => n.tag === "video");
+    expect(videos).toHaveLength(3);
+    for (const v of videos) {
+      const sources = findAll(v, (n) => n.tag === "source");
+      expect(sources).toHaveLength(1);
+      const mp4 = path.join(process.cwd(), "public", sources[0].attrs.src);
+      const poster = path.join(process.cwd(), "public", v.attrs.poster);
+      expect(existsSync(mp4), mp4).toBe(true);
+      expect(existsSync(poster), poster).toBe(true);
+      expect(statSync(mp4).size).toBeLessThanOrEqual(4 * 1024 * 1024);
+    }
+  });
+
+  it("shows the video credit and the minutes label", async () => {
+    const text = textOf(await render()).replace(/\s+/g, " ");
+    expect(text).toContain(VIDEO_CREDIT);
+    expect(text).toContain("動画で見る（約 2 分）");
   });
 });

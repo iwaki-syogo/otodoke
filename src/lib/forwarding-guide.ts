@@ -55,6 +55,8 @@ export interface ForwardingGuide {
   time?: string;
   link?: { label: string; href: string };
   linkNote?: string;
+  /** An explainer video (720x1280, portrait) under public/guide/videos. */
+  video?: { src: string; poster: string; seconds: number };
   /** A sentence shown above the steps (the guide with no steps). */
   intro?: string;
   /** Steps are numbered straight through all groups. */
@@ -67,6 +69,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "gmail",
     chip: "Gmail",
     title: "Gmail",
+    video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 116 },
     time: "5 分・パソコンのブラウザで（スマホの Gmail アプリでは設定できません）",
     link: { label: "転送の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/fwdandpop" },
     linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
@@ -99,6 +102,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "icloud",
     chip: "iCloud メール",
     title: "iCloud メール",
+    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 81 },
     addresses: "@icloud.com・@me.com・@mac.com",
     time: "3 分・ブラウザで",
     link: { label: "iCloud メールを開く", href: "https://www.icloud.com/mail/" },
@@ -119,6 +123,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "outlook",
     chip: "Outlook",
     title: "Outlook",
+    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 87 },
     addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
     time: "3 分・ブラウザで",
     link: { label: "転送の設定を開く", href: "https://outlook.live.com/mail/0/options/mail/forwarding" },
@@ -150,6 +155,9 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     ],
   },
 ];
+
+export const VIDEO_LABEL = "動画で見る";
+export const VIDEO_CREDIT = "動画の画面はイメージです。声は AivisSpeech（まお）、曲は Mixkit を使っています。";
 
 export const PITFALLS_HEADING = "届かない人が多い落とし穴（必ず確かめてください）";
 export const PITFALLS_LEAD = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。";

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
-import { NO_BODY_TEXT } from "@/lib/mail-notices";
+import { NO_BODY_TEXT, NO_SUBJECT_TEXT } from "@/lib/mail-notices";
 import { fakeEvent, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
@@ -113,6 +113,46 @@ describe("a sealed mail", () => {
     const full = sealed();
     await vi.waitFor(() => expect(full.hosts((h) => h.type === "pre")).toHaveLength(1));
     expect(textOfHost(full.host((h) => h.type === "pre"))).toBe("ご注文ありがとう");
+  });
+
+  it("an opened mail with a blank or empty subject says NO_SUBJECT_TEXT in pale type; a real subject is shown as it is", async () => {
+    mocks.key = KEY;
+    mocks.readSealedMail.mockResolvedValue({ ok: true, envelope: envelope(KEY.keyId) });
+    const subjectLine = (view: Mounted) => view.host((h) => h.type === "p" && String(h.props.className).includes("leading-snug"));
+    for (const subject of ["", "  \u3000 "]) {
+      mocks.openMail.mockResolvedValue({ subject, from_name: null, from_address: "shop@example.test", text: "本文", html: null });
+      const view = sealed();
+      await vi.waitFor(() => expect(view.hosts((h) => h.type === "pre")).toHaveLength(1));
+      expect(textOfHost(subjectLine(view))).toBe(NO_SUBJECT_TEXT);
+      expect(String(subjectLine(view).props.className)).toContain("text-neutral-500");
+    }
+    mocks.openMail.mockResolvedValue({ subject: "発送のお知らせ", from_name: null, from_address: "shop@example.test", text: "本文", html: null });
+    const real = sealed();
+    await vi.waitFor(() => expect(real.hosts((h) => h.type === "pre")).toHaveLength(1));
+    expect(textOfHost(subjectLine(real))).toBe("発送のお知らせ");
+    expect(String(subjectLine(real).props.className)).not.toContain("text-neutral");
+  });
+
+  it("an opened mail whose subject is null, or only invisible characters, says NO_SUBJECT_TEXT", async () => {
+    mocks.key = KEY;
+    mocks.readSealedMail.mockResolvedValue({ ok: true, envelope: envelope(KEY.keyId) });
+    const subjectLine = (view: Mounted) => view.host((h) => h.type === "p" && String(h.props.className).includes("leading-snug"));
+    for (const subject of [null, "\u200b", "\u200b \ufeff\u200e"]) {
+      mocks.openMail.mockResolvedValue({ subject, from_name: null, from_address: "shop@example.test", text: "本文", html: null });
+      const view = sealed();
+      await vi.waitFor(() => expect(view.hosts((h) => h.type === "pre")).toHaveLength(1));
+      expect(textOfHost(subjectLine(view))).toBe(NO_SUBJECT_TEXT);
+      expect(String(subjectLine(view).props.className)).toContain("text-neutral-500");
+    }
+  });
+
+  it("before it is opened (no key in this tab, or still opening) it never says it has no subject", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    expect(renderToStaticMarkup(createElement(SealedMail, { userId: USER, email: EMAIL, emailId: "e1", fromDomain: "shop.example.test", notes: null, confidence: null }))).not.toContain(NO_SUBJECT_TEXT);
+    mocks.key = KEY;
+    mocks.readSealedMail.mockReturnValue(new Promise(() => {}));
+    expect(sealed().text()).not.toContain(NO_SUBJECT_TEXT);
   });
 
   it("a read that fails is told as such, never as an earlier key", async () => {

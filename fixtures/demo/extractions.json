@@ -375,7 +375,7 @@
       "confidence": 0.3
     },
     "overall_confidence": 0.9,
-    "notes": "HTML版の「もう一度買う」以下の商品はおすすめ商品のため品目に含めていません。"
+    "notes": null
   },
   "amazon/2026-11-02_ordered_fe85ef8c.eml": {
     "relevance": "order",
@@ -524,8 +524,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "313016540476",
-      "evidence": "伝票番号【1】313016540476",
+      "value": "482915307128",
+      "evidence": "伝票番号【1】482915307128",
       "confidence": 0.95
     },
     "expected_date": {
@@ -580,8 +580,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "313016540476",
-      "evidence": "■お問い合せ送り状No. ：313016540476",
+      "value": "482915307128",
+      "evidence": "■お問い合せ送り状No. ：482915307128",
       "confidence": 0.95
     },
     "expected_date": {
@@ -636,8 +636,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "5111-7266-6093",
-      "evidence": "■送り状番号：5111-7266-6093",
+      "value": "6203-9184-5571",
+      "evidence": "■送り状番号：6203-9184-5571",
       "confidence": 0.95
     },
     "expected_date": {
@@ -692,8 +692,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "5111-7266-6093",
-      "evidence": "■送り状番号：5111-7266-6093",
+      "value": "6203-9184-5571",
+      "evidence": "■送り状番号：6203-9184-5571",
       "confidence": 0.95
     },
     "expected_date": {
@@ -748,8 +748,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "5111-7266-6093",
-      "evidence": "■送り状番号：5111-7266-6093",
+      "value": "6203-9184-5571",
+      "evidence": "■送り状番号：6203-9184-5571",
       "confidence": 0.95
     },
     "expected_date": {
@@ -867,8 +867,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "316575412565",
-      "evidence": "送り状No　　316575412565",
+      "value": "427360915843",
+      "evidence": "送り状No　　427360915843",
       "confidence": 0.95
     },
     "expected_date": {
@@ -986,8 +986,8 @@
       "confidence": 0.95
     },
     "tracking_number": {
-      "value": "253721595853",
-      "evidence": "配送伝票番号：253721595853",
+      "value": "718204653917",
+      "evidence": "配送伝票番号：718204653917",
       "confidence": 0.95
     },
     "expected_date": {
