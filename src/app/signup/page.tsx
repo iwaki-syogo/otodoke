@@ -18,6 +18,9 @@ export default function SignupPage() {
       </Link>
       <h1 className="text-2xl font-bold">アカウントを作る</h1>
       <SignupForm />
+      <Link href="/privacy" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
+        プライバシーポリシー
+      </Link>
       <p className="mt-6 text-sm leading-6 text-neutral-600">
         前にメールのリンクでログインしていた方は、
         <Link href="/login/forgot" className="font-medium text-neutral-900 underline underline-offset-4">
@@ -27,9 +30,6 @@ export default function SignupPage() {
       </p>
       <Link href="/login" className="mt-4 self-start text-sm text-neutral-600 underline underline-offset-4">
         ログイン
-      </Link>
-      <Link href="/privacy" className="mt-8 self-start text-xs text-neutral-500 underline underline-offset-4">
-        プライバシーポリシー
       </Link>
     </main>
   );

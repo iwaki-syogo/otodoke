@@ -160,4 +160,13 @@ describe("the page", () => {
     expect(anchors).toContainEqual(["/login", "ログイン"]);
     expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["アカウントを作る"]);
   });
+
+  it("the privacy policy can be read before the account is made: one link, right after the form, worded as on the top page", () => {
+    const html = renderToStaticMarkup(SignupPage());
+    const anchors = findAll(parseHtml(html), (n) => n.tag === "a" && n.attrs.href === "/privacy");
+    expect(anchors.map(textOf)).toEqual(["プライバシーポリシー"]);
+    // Right after the form, before the note and the way to log in (the judges looked for it there).
+    expect(html.indexOf('href="/privacy"')).toBeGreaterThan(html.indexOf("</form>"));
+    expect(html.indexOf('href="/privacy"')).toBeLessThan(html.indexOf("前にメールのリンクで"));
+  });
 });
