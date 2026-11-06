@@ -6,8 +6,10 @@ import type { AdminClient } from "@/lib/supabase/admin";
  *
  * One call to Supabase Auth's admin API deletes the auth user, and the database takes every row of
  * theirs with it in the same transaction: each table that names a user references auth.users with
- * `on delete cascade` (account-deletion-cascade.test.ts reads the migrations to keep it so). Their
- * sessions and refresh tokens go too. The receiving address stops: mail to it is answered 200 and
+ * `on delete cascade` (account-deletion-cascade.test.ts reads the migrations to keep it so). The one
+ * exception is the daily count of Claude calls: its rows stay with no user (`on delete set null`,
+ * 20261106190000), so deleting an account does not give its calls back to the app-wide daily limit.
+ * Their sessions and refresh tokens go too. The receiving address stops: mail to it is answered 200 and
  * dropped (src/app/api/inbound/route.ts), and its local part is never given out again
  * (supabase/migrations/20261106170000_issued_inbox_local_parts.sql).
  *

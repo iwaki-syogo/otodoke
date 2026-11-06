@@ -187,6 +187,8 @@ describe("/privacy: what it says", () => {
     expect(text).toContain("設定の「すべての荷物を消す」で");
     expect(text).toContain("設定の「アカウントを削除」で");
     expect(text).toContain("同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します");
+    // Review R3-1: a deleted account's calls stay in the day's count, with no user (20261106190000).
+    expect(text).toContain("1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します");
     expect(text).toContain("メールの自動転送の設定も外してください");
     expect(text).toContain("データベースのバックアップに最大 7 日間残ります");
   });

@@ -29,7 +29,8 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  * - 11 月 14 日: decision 7 (supabase/pending/20261114090000), told the same way in
  *   mail-handling.tsx and mail-key-panel.tsx. Reword all three once it has run.
  * - What account deletion leaves: the receiving address's local part and when it was given out
- *   (supabase/migrations/20261106170000_issued_inbox_local_parts.sql).
+ *   (supabase/migrations/20261106170000_issued_inbox_local_parts.sql), and the day's count of
+ *   Claude calls with no user on it (20261106190000_claude_usage_keeps_deleted_calls.sql).
  */
 export default function PrivacyPage() {
   return (
@@ -121,7 +122,7 @@ export default function PrivacyPage() {
             設定の「すべての荷物を消す」で、荷物と、保存したメール・読み取り結果を消せます。アカウント、転送先アドレス、合言葉の設定と、読まなかったメール・Claude を使った回数の記録は残ります。
           </li>
           <li>
-            設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。
+            設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します。
           </li>
           <li>アカウントを削除したら、メールの自動転送の設定も外してください。外さないと、転送されたメールは Otodoke では読みませんが、Resend には届き続けます。</li>
           <li>消したデータも、データベースのバックアップに最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。</li>
