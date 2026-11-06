@@ -206,3 +206,26 @@ final class SettingsModel {
         return url
     }
 }
+
+// TDD-STUB(review-1): [M1]=[SEC-M1] and [S2]. Names and signatures are the contract; the bodies are
+// sentinels (the M1 check is today's openPage check, the two notes are nil).
+extension SettingsModel {
+    /// [M1] The check right before the approval page is opened (and inside approvalURL): Foundation's
+    /// reading of the URL must also be Google's page (https, host mail-settings.google.com, no user or
+    /// password, port nil or 443, path from /mail/), not only the WHATWG reading of Forwarding.
+    static func isApprovalPage(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" // TDD-STUB(review-1)
+    }
+
+    /// [S2] The line under the passphrase card about mail sealed with an earlier key:
+    /// oldKeyText(n) for n > 0, failedText when the count could not be read, nil for 0 or no key row.
+    var oldKeyNote: String? {
+        nil // TDD-STUB(review-1)
+    }
+
+    /// [S2] failedText when the forwarding confirmation could not be read (told apart from "none");
+    /// nil when it was read (whether or not there is one).
+    var approvalNote: String? {
+        nil // TDD-STUB(review-1)
+    }
+}

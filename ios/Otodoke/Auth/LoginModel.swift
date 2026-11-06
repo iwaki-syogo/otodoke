@@ -181,3 +181,12 @@ extension LoginModel {
     }
 }
 #endif
+
+// TDD-STUB(review-1): [S3] The name is the contract; the body is today's behaviour (always shown).
+extension LoginModel {
+    /// The Turnstile widget is shown: always on the address step; on the code step only when a code
+    /// may be sent again (resendWaitSeconds() == 0), just above 「コードをもう一度送る」.
+    var showsWidget: Bool {
+        true // TDD-STUB(review-1)
+    }
+}

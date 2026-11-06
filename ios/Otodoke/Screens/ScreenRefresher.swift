@@ -62,3 +62,30 @@ final class ScreenRefresher {
         await refresh()
     }
 }
+
+// TDD-STUB(review-1): [N3] Screens told apart by a token per appearance; the front comes from the tab
+// selected and what is stacked on it (a pushed detail is over its tab's root), not from the order the
+// appear and disappear calls come in. Names and signatures are the contract; the bodies do nothing.
+
+/// One appearance of a screen (a detail of one parcel may be open in two tabs at once).
+struct ScreenToken: Hashable, Sendable {
+    let raw: Int
+}
+
+extension ScreenRefresher {
+    /// The TabView's selection.
+    func select(_ tab: MainTab) {
+        // TDD-STUB(review-1)
+    }
+
+    /// A screen of `tab` appeared (its root, or a detail pushed on its stack); `refresh` is kept until
+    /// `disappeared` with the token given back.
+    func appeared(_ id: ScreenID, in tab: MainTab, refresh: @escaping Refresh) -> ScreenToken {
+        ScreenToken(raw: 0) // TDD-STUB(review-1)
+    }
+
+    /// That appearance is over: its refresh is let go (nothing piles up).
+    func disappeared(_ token: ScreenToken) {
+        // TDD-STUB(review-1)
+    }
+}
