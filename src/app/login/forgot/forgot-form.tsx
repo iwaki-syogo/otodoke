@@ -33,7 +33,8 @@ export function ForgotForm() {
     setBusy(true);
     setAnswer(null);
     try {
-      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick });
+      // A token too old (a tab frozen in the background) is not sent: the widget makes a new one.
+      const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick, onStale: () => setRound((r) => r + 1) });
       setNeedsTick(false);
       const result = await sendResetMail({ email, captchaToken }).catch(() => ({ ok: false as const, code: "network" as const }));
       setAnswer({ ok: result.ok, text: pressText(result.code, captchaToken, loginMessage(result.code)) });

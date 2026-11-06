@@ -74,7 +74,7 @@ const WORDS = {
   done: "確認しました",
   resend: "メールを送り直す",
   restart: "別のアドレスでやり直す",
-  notYet: "まだ確認できていません。メールのリンクを押しましたか？",
+  notYet: "まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？",
   resent: "送り直しました",
 };
 
@@ -1019,6 +1019,128 @@ describe("[review 2] a press is never sent twice, nor for a screen left behind",
     fresh("0.new-token");
     await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(1));
     expect(action.mock.calls[0][0].captchaToken).toBe("0.new-token");
+  });
+});
+
+describe("left the page (「← Otodoke」, back) in the middle of a try or a request", () => {
+  // The clock and the timers both fake here.
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+  });
+
+  /** Long after, with the tab hidden and shown again and focused: what the left screen still does. */
+  async function longAfter() {
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    tab.hide();
+    tab.show();
+    tab.focus();
+    fresh("0.token-long-after");
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+  }
+
+  it("while a try by itself waits for its token: nothing is sent, even when a token comes; no timer is left; no move", async () => {
+    const view = await waiting();
+    widget.token!.current.value = "";
+    tab.show();
+    await drawn();
+    view.unmount();
+    // The token the widget was making comes after all.
+    fresh("0.late-token");
+    await longAfter();
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(nav.to).toEqual([]);
+  });
+
+  it("while a pressed sign-in is in flight: its answer is not read, nothing more is sent, no timer is left", async () => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    view.unmount();
+    answer({ ok: false, code: "not_confirmed" });
+    await drawn();
+    await longAfter();
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(nav.to).toEqual([]);
+  });
+
+  it("while a sign-in is in flight that then goes through: no move from the page left", async () => {
+    let answer!: (v: unknown) => void;
+    flows.signIn.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    view.unmount();
+    answer({ ok: true, userId: "u", key: "made" });
+    await longAfter();
+    expect(nav.to).toEqual([]);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("while a resend is in flight (a press of 「確認しました」 waiting behind it): nothing is sent after it, no timer is left", async () => {
+    let sent!: (v: unknown) => void;
+    actions.resend.mockReturnValueOnce(new Promise((r) => (sent = r)));
+    const view = await waiting();
+    pressResend(view);
+    await vi.waitFor(() => expect(actions.resend).toHaveBeenCalledTimes(1));
+    pressDone(view);
+    await drawn();
+    view.unmount();
+    sent({ ok: true, code: "confirmation_sent" });
+    await drawn();
+    await longAfter();
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(actions.resend).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("control: left with nothing on its way, the same; and a new waiting screen afterwards works as before", async () => {
+    const left = await waiting();
+    left.unmount();
+    await longAfter();
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
+    await waiting();
+    fresh("0.new-screen");
+    tab.hide();
+    tab.show();
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    expect(vi.getTimerCount()).toBe(1);
+  });
+});
+
+describe("the maximum, checked again after the token wait", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+  });
+
+  it("two tries by themselves waiting for the same token (two returns): the second is not sent past the maximum", async () => {
+    await waiting();
+    for (let i = 0; i < AUTO_SIGN_IN_MAX - 1; i++) {
+      fresh(`0.a${i}`);
+      tab.hide();
+      tab.show();
+      await vi.advanceTimersByTimeAsync(3_000);
+    }
+    expect(flows.signIn).toHaveBeenCalledTimes(AUTO_SIGN_IN_MAX - 1);
+    widget.token!.current.value = "";
+    tab.hide();
+    tab.show(); // A waits for a token
+    await vi.advanceTimersByTimeAsync(3_000);
+    tab.hide();
+    tab.show(); // B, 3 s later, waits too
+    await vi.advanceTimersByTimeAsync(500);
+    fresh("0.one"); // A takes it, the last one allowed
+    await vi.advanceTimersByTimeAsync(500);
+    fresh("0.two"); // the widget's next one: B would take it
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(AUTO_SIGN_IN_MAX);
   });
 });
 

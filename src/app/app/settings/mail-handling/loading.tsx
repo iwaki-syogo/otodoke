@@ -8,11 +8,14 @@ export default function Loading() {
       <BackToSettings />
       <h1 className="text-xl font-bold">あなたのメールの扱い</h1>
       <div className="mt-4 flex flex-col gap-8">
-        <section>
-          <Bone className="h-64 w-full rounded-2xl" />
-          <Bone className="mt-3 h-4 w-48" />
+        <section className="flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
+          <Bone className="h-4 w-full" />
+          <Bone className="h-4 w-5/6" />
+          <Bone className="h-4 w-full" />
+          <Bone className="h-4 w-2/3" />
         </section>
-        <Bone className="h-4 w-32" />
+        {/* The privacy policy link under the list. */}
+        <Bone className="-mt-6 h-4 w-32" />
       </div>
     </SkeletonScreen>
   );
