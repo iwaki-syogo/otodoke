@@ -102,10 +102,10 @@ describe("carriers", () => {
 
 describe("JST dates", () => {
   it("treats a UTC evening as the next JST day", () => {
-    expect(todayJst(new Date("2026-11-01T17:21:30Z"))).toBe("2026-11-02");
+    expect(todayJst(new Date("2026-11-01T17:21:00Z"))).toBe("2026-11-02");
   });
   it("gives the model the JST date, so 本日 resolves to the right day", () => {
-    const { text } = buildUserMessage({ from: "a", subject: "s", sentAt: "2026-11-01T17:21:30+00:00", body: "本日到着予定" });
+    const { text } = buildUserMessage({ from: "a", subject: "s", sentAt: "2026-11-01T17:21:00+00:00", body: "本日到着予定" });
     expect(text).toContain("2026-11-02(月) 02:21");
   });
   it("adds days across a month end", () => {
@@ -172,7 +172,7 @@ describe("parcel merge", () => {
     expect(row.expected_window_start).toBe(want);
   });
   it("uses the JST date of an order mail when the mail states no order date", () => {
-    const row = buildParcelInsert("u", extraction({ relevance: "order" }), "2026-11-01T17:21:30Z");
+    const row = buildParcelInsert("u", extraction({ relevance: "order" }), "2026-11-01T17:21:00Z");
     expect(row.ordered_at).toBe("2026-11-02");
   });
   it("treats a payment notice with a tracking number as shipped", () => {
@@ -406,10 +406,10 @@ describe("dates from the model", () => {
     expect(buildParcelInsert("u", extraction({ expected_date: sure("2026-02-31") }), null).expected_date).toBeNull();
   });
   it("uses the first mail as the order date of a shop that sends no order mail", () => {
-    expect(buildParcelInsert("u", extraction({ relevance: "shipped", order_number: sure("1") }), "2026-11-01T17:21:30Z").ordered_at).toBe("2026-11-02");
+    expect(buildParcelInsert("u", extraction({ relevance: "shipped", order_number: sure("1") }), "2026-11-01T17:21:00Z").ordered_at).toBe("2026-11-02");
   });
   it("does not list a carrier notice as an order", () => {
-    expect(buildParcelInsert("u", extraction({ relevance: "shipped" }), "2026-11-01T17:21:30Z").ordered_at).toBeNull();
+    expect(buildParcelInsert("u", extraction({ relevance: "shipped" }), "2026-11-01T17:21:00Z").ordered_at).toBeNull();
   });
 });
 

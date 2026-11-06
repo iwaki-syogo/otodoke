@@ -44,4 +44,48 @@ describe("demo fixtures are safe to publish", () => {
       expect(mail.html ?? "", f).not.toContain("_SR276,276_");
     }
   });
+
+  describe("whole fixture set", () => {
+    type Mail = { text: string | null; html: string | null; subject: string; message_id: string | null; date: string | null };
+    const files = readdirSync(path.join(DEMO, "mails"));
+    const mails = files.map((f) => ({ f, mail: JSON.parse(readFileSync(path.join(DEMO, "mails", f), "utf8")) as Mail }));
+    const expectedRaw = readFileSync(path.join(DEMO, "expected.json"), "utf8");
+
+    it("has all 17 mails", () => {
+      expect(mails.length).toBe(17);
+    });
+
+    it("carries no 12-digit tracking-shaped number that passes the mod-7 check digit (digits, hyphens and spaces)", () => {
+      const sources = [{ name: "expected.json", body: expectedRaw }, ...mails.flatMap(({ f, mail }) => [
+        { name: `${f} text`, body: mail.text ?? "" },
+        { name: `${f} html`, body: mail.html ?? "" },
+        { name: `${f} subject`, body: mail.subject },
+      ])];
+      const bad: string[] = [];
+      let seen12 = 0;
+      for (const { name, body } of sources) {
+        for (const m of body.matchAll(/\d+(?:[-\s]\d+)*/g)) {
+          const digits = normalizeTracking(m[0]);
+          if (digits.length !== 12) continue;
+          seen12++;
+          if (passesMod7(digits)) bad.push(`${name}: ${m[0]}`);
+        }
+      }
+      expect(seen12).toBeGreaterThan(0);
+      expect(bad).toEqual([]);
+    });
+
+    it("uses made-up Message-IDs only", () => {
+      for (const { f, mail } of mails) expect(mail.message_id, f).toMatch(/^<demo-[0-9a-f]+@example\.invalid>$/);
+    });
+
+    it("has send times rounded to the minute (seconds are 00)", () => {
+      for (const { f, mail } of mails) expect(mail.date, f).toMatch(/T\d{2}:\d{2}:00(\+00:00|Z|[+-]\d{2}:\d{2})$/);
+    });
+
+    it("keeps no removed-block wording in the extraction notes", () => {
+      const text = JSON.stringify(Object.values(extractions).map((x) => (x as { notes?: unknown }).notes ?? null));
+      expect(text).not.toMatch(/もう一度買う|おすすめ|この商品を見た/);
+    });
+  });
 });
