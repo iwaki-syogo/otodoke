@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
   fetchError: null as unknown,
   gets: [] as string[],
   adminMade: 0,
-  processInboundEmail: vi.fn(async (..._args: unknown[]) => ({ kind: "processed" })),
+  processInboundEmail: vi.fn<(...args: unknown[]) => Promise<{ kind: string }>>(async () => ({ kind: "processed" })),
 }));
 
 vi.mock("resend", () => ({
