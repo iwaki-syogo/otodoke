@@ -73,12 +73,12 @@ export function ResetForm({ email, userId }: { email: string; userId: string }) 
       <label className="text-sm font-medium" htmlFor="reset-password">
         新しいパスワード
       </label>
-      <input id="reset-password" type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
+      <input id="reset-password" aria-describedby="reset-password-rule" type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
       <label className="text-sm font-medium" htmlFor="reset-password-again">
         新しいパスワードをもう一度
       </label>
-      <input id="reset-password-again" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
-      <p className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
+      <input id="reset-password-again" aria-describedby="reset-password-rule" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
+      <p id="reset-password-rule" className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
       {error?.newLink ? null : (
         <PendingSubmitButton pending={busy} pendingLabel="再設定しています…" tone="light" className={submitClass}>
           {tried ? "もう一度試す" : "再設定する"}

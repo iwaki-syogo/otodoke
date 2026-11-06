@@ -26,6 +26,10 @@ import {
  * BEFORE_YOU_START_ACTION (「転送先アドレスを開く」) is left out on purpose: the Web's button jumps from the guide page to
  * the settings' address, while iOS draws the guide on the same 「メールの転送」 page that holds the address, so there
  * is nowhere to go. FORWARDING_CHECK_ACTION (「「うまく届かないとき」を開く」) is on iOS: a link to that page.
+ *
+ * Left out on purpose, for now: the explainer videos (ForwardingGuide.video, VIDEO_LABEL, VIDEO_CREDIT). The videos are
+ * not in production yet, so iOS does not show them; they are put into the iOS text (and into the comparison above)
+ * when the videos are live.
  */
 
 const ROOT = path.resolve(__dirname, "../../..");

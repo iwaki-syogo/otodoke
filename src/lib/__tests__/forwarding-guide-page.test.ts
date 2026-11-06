@@ -193,5 +193,7 @@ describe("/guide/forwarding", () => {
     const text = textOf(await render()).replace(/\s+/g, " ");
     expect(text).toContain(VIDEO_CREDIT);
     expect(text).toContain("動画で見る（約 2 分）");
+    expect(text).toContain("動画で見る（約 1 分半）");
+    expect(text).not.toContain("約 0 分半");
   });
 });

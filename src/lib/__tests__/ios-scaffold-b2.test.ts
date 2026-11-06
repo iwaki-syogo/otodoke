@@ -144,8 +144,7 @@ describe("task 6: iOS-10 and CX1", () => {
 });
 
 describe("task 11: the settings words", () => {
-  it("GMAIL_FILTER is the settings page's", () => {
-    // The Web moved the constant from the settings page to src/lib/forwarding-guide.ts (merged from dev).
+  it("GMAIL_FILTER is the forwarding guide's (moved out of the settings page on dev)", () => {
     const page = read("src/lib/forwarding-guide.ts");
     const web = page.match(/export const GMAIL_FILTER = "([^"]+)"/)?.[1];
     expect(web).toBeTruthy();

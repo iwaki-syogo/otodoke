@@ -21,22 +21,22 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   const errorMessage = loginErrorMessage(error);
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
-      <Link href="/" className="mb-8 text-sm text-neutral-500">
-        ← <Wordmark className="text-lg" />
+      <Link href="/" className="-mt-2 mb-6 py-2 text-sm text-neutral-500">
+        <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">ログイン</h1>
       {confirmed === "1" ? <p className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{LOGIN_MESSAGES.confirmed}</p> : null}
       {errorMessage ? <p className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">{errorMessage}</p> : null}
       <LoginForm next={safeNextPath(next ?? null)} />
-      <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <Link href="/signup" className="font-medium text-neutral-900 underline underline-offset-4">
+      <div className="mt-4 flex flex-wrap gap-x-6 text-sm">
+        <Link href="/signup" className="py-2 font-medium text-neutral-900 underline underline-offset-4">
           アカウントを作る
         </Link>
-        <Link href="/login/forgot" className="text-neutral-600 underline underline-offset-4">
+        <Link href="/login/forgot" className="py-2 text-neutral-600 underline underline-offset-4">
           パスワードを忘れた
         </Link>
       </div>
-      <Link href="/privacy" className="mt-8 self-start text-xs text-neutral-500 underline underline-offset-4">
+      <Link href="/privacy" className="mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
       </Link>
     </main>

@@ -51,8 +51,8 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
 export default function PrivacyPage() {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-10">
-      <Link href="/" className="text-sm text-neutral-500">
-        ← <Wordmark className="text-lg" />
+      <Link href="/" className="-my-2 inline-block py-2 text-sm text-neutral-500">
+        <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="mt-8 text-2xl font-bold">プライバシーポリシー</h1>
       <p className="mt-3 text-sm leading-6 text-neutral-700">Otodoke 運営は、Otodoke で預かる情報を次のとおり扱います。</p>

@@ -51,14 +51,15 @@ function ExternalButton({ href, label }: { href: string; label: string }) {
   );
 }
 
-function GuideVideo({ video }: { video: NonNullable<ForwardingGuide["video"]> }) {
-  const minutes = Math.max(1, Math.round(video.seconds / 60));
+function GuideVideo({ video, title }: { video: NonNullable<ForwardingGuide["video"]>; title: string }) {
+  const halves = Math.max(0.5, Math.round(video.seconds / 30) / 2);
+  const minutes = Number.isInteger(halves) ? `${halves} 分` : halves < 1 ? "半分" : `${Math.floor(halves)} 分半`;
   return (
     <div className="mt-4">
       <h3 className="text-sm font-bold">
-        {VIDEO_LABEL}（約 {minutes} 分）
+        {VIDEO_LABEL}（約 {minutes}）
       </h3>
-      <video controls preload="none" playsInline poster={video.poster} className="mx-auto mt-2 block w-56 rounded-2xl border border-neutral-200 bg-white">
+      <video controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
         <source src={video.src} type="video/mp4" />
       </video>
     </div>
@@ -71,7 +72,7 @@ function GuideSection({ guide }: { guide: ForwardingGuide }) {
       <h2 className="text-base font-bold">{guide.title}</h2>
       {guide.addresses && <p className="mt-1 text-xs text-neutral-500">{guide.addresses}</p>}
       {guide.time && <p className="mt-1 text-xs text-neutral-500">目安: {guide.time}</p>}
-      {guide.video && <GuideVideo video={guide.video} />}
+      {guide.video && <GuideVideo video={guide.video} title={guide.title} />}
       {guide.link && (
         <div className="mt-3">
           <ExternalButton href={guide.link.href} label={guide.link.label} />
@@ -104,8 +105,8 @@ export default function ForwardingGuidePage() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-4 py-10">
       <div>
-        <Link href="/" className="text-sm text-neutral-500">
-          ← <Wordmark className="text-lg" />
+        <Link href="/" className="-my-2 inline-block py-2 text-sm text-neutral-500">
+          <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
         </Link>
         <h1 className="mt-8 text-2xl font-bold">{FORWARDING_TITLE}</h1>
         <p className="mt-3 text-sm leading-6 text-neutral-600">{FORWARDING_LEAD}</p>

@@ -10,7 +10,8 @@ export const metadata = { title: CONFIRMED.title };
 /**
  * Where a new account's confirmation link ends (POST /auth/confirm, onboarding screen 2): the
  * address is confirmed. The tab that signed up goes on by itself when it is shown again; here
- * 「この画面でログインする」 opens the login (its `confirmed` words), and after it the first-run guide.
+ * 「この画面でログインする」 opens the login (its `confirmed` words, no next): after it the first-run guide
+ * when that sign-in made the first key, else the parcel list.
  *
  * Anyone can open this URL: it says only that a confirmation went through, and the button is the
  * login, which asks for the password.

@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { clearLoginHandoff, handOffToLogin, peekLoginHandoff } from "@/lib/login-handoff";
+import { CONFIRMED_LOGIN_PATH } from "@/lib/onboarding";
+import { safeNextPath } from "@/lib/safe-next";
 import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField, tokenForPress, waitForToken } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
@@ -351,6 +353,25 @@ describe("a press before the bot check has its token", () => {
     delete field.dataset.turnstile;
     await vi.advanceTimersByTimeAsync(TURNSTILE_ENFORCED_WAIT_MS + 1_000);
     expect(result).toBe(false);
+  });
+});
+
+describe("from screen 2's 「この画面でログインする」 (/login?confirmed=1, no next)", () => {
+  const nextFromScreen2 = () => safeNextPath(new URL(CONFIRMED_LOGIN_PATH, "https://otodoke.example").searchParams.get("next"));
+
+  it.each([
+    ["made", "/app/welcome"],
+    ["opened", "/app"],
+  ] as const)("a sign-in whose key was %s lands on %s", async (key, landing) => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key });
+    const view = mount(() => LoginForm({ next: nextFromScreen2() }));
+    if (widget.token) widget.token.current.value = TOKEN;
+    type(view, "login-email", EMAIL);
+    type(view, "login-password", PASSWORD);
+    await drawn();
+    await press(view);
+    await drawn();
+    expect(nav.to).toEqual([landing]);
   });
 });
 
