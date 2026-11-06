@@ -67,7 +67,7 @@ enum ForwardingGuideText {
             id: "gmail",
             title: "Gmail",
             addresses: nil,
-            meta: "5 分・パソコンのブラウザで（スマホの Gmail アプリでは設定できません）",
+            meta: "5 分・パソコンのブラウザで。スマホの Gmail アプリでは設定できません",
             link: Link(title: "転送の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/fwdandpop"),
             linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
             groups: [
@@ -88,7 +88,7 @@ enum ForwardingGuideText {
             body: nil,
             filterAfterStep: 7,
             notes: [
-                "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。",
+                "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む「到着したよ」のような私信も転送されます。広告など読まないと決めたメールの本文は保存しません。読み取って買い物に関係ないと分かったメールは消します。",
             ]
         ),
         Service(
