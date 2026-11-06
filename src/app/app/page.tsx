@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
-import { isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
+import type { ParcelRow } from "@/lib/match";
+import { parcelSections } from "@/lib/parcel-sections";
 import { UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
 import { PageLink } from "./page-link";
@@ -43,16 +44,7 @@ export default async function ParcelsPage() {
   // A failed read is told apart from having no parcels: by null, never by the empty list.
   const listFailed = list === null;
   const parcels: ParcelRow[] = list ?? [];
-  const today = todayJst();
-
-  const open = parcels.filter((p) => p.status !== "delivered" && p.status !== "cancelled");
-  // Two weeks past the date with no word: ask the user instead of guessing.
-  const toCheck = open.filter((p) => needsCheck(p, today));
-  const active = open.filter((p) => !needsCheck(p, today));
-  const delivering = active.filter((p) => p.status === "out_for_delivery" && !isLate(p, today));
-  const ordered = active.filter((p) => ["ordered", "unknown"].includes(p.status) && !isLate(p, today));
-  // Everything else on its way, including a parcel past its date that may still come.
-  const soon = active.filter((p) => !delivering.includes(p) && !ordered.includes(p)).sort(byNextArrival(today));
+  const { open, toCheck, delivering, soon, ordered } = parcelSections(parcels, todayJst());
 
   const addLink = (
     <div className="flex justify-end">
@@ -150,12 +142,6 @@ function CheckSection({ items }: { items: ParcelRow[] }) {
       ) : null}
     </section>
   );
-}
-
-/** What arrives next comes first, then what is running late, then what has no date yet. */
-function byNextArrival(today: string) {
-  const rank = (p: ParcelRow) => (!p.expected_date ? 2 : (lastExpectedDay(p) as string) >= today ? 0 : 1);
-  return (a: ParcelRow, b: ParcelRow) => rank(a) - rank(b) || (a.expected_date ?? "").localeCompare(b.expected_date ?? "");
 }
 
 function Section({ title, count, items, empty, swipe = false }: { title: string; count: number; items: ParcelRow[]; empty?: string; swipe?: boolean }) {

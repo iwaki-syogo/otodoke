@@ -1,0 +1,7 @@
+// Settings the app reads from Info.plist. Empty unless Secrets.xcconfig (git-ignored) fills them in;
+// the build still succeeds without it, and AppConfig stops before login when a value is empty.
+SUPABASE_URL =
+SUPABASE_ANON_KEY =
+INBOUND_DOMAIN =
+
+#include? "Secrets.xcconfig"

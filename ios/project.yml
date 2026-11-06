@@ -1,0 +1,117 @@
+# Otodoke iOS app. Generate the Xcode project with `xcodegen generate` (XcodeGen 2.45.4).
+# The generated Otodoke.xcodeproj is not committed; only its Package.resolved is.
+name: Otodoke
+
+options:
+  minimumXcodeGenVersion: 2.45.4
+  bundleIdPrefix: com.iwakisyogo
+  developmentLanguage: ja
+  deploymentTarget:
+    iOS: "17.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 9SVPJ6X69X
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    # Shown in the App Store as the version.
+    MARKETING_VERSION: "1.0"
+    # Build number: raise it by one for every upload to App Store Connect.
+    CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    # Pinned to one audited release; change it only after auditing the new one.
+    exactVersion: 2.55.6
+
+targets:
+  Otodoke:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: Config/Base.xcconfig
+      Release: Config/Base.xcconfig
+    sources:
+      - path: Otodoke
+    dependencies:
+      - package: Supabase
+        products:
+          - Auth
+          - PostgREST
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.iwakisyogo.otodoke
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Otodoke/Support/Info.plist
+      properties:
+        CFBundleDisplayName: Otodoke
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # From Config/Base.xcconfig (+ the git-ignored Secrets.xcconfig).
+        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
+        INBOUND_DOMAIN: $(INBOUND_DOMAIN)
+
+  OtodokeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OtodokeTests
+        excludes:
+          - Fixtures
+          - Fixtures/**
+      # Written by scripts/ios-fixtures.ts; kept as a folder so it lands at Fixtures/ in the bundle.
+      - path: OtodokeTests/Fixtures
+        type: folder
+        buildPhase: resources
+        optional: true
+    dependencies:
+      - target: Otodoke
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
+  OtodokeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: OtodokeUITests
+        optional: true
+    dependencies:
+      - target: Otodoke
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Otodoke:
+    build:
+      targets:
+        Otodoke: all
+        OtodokeTests: [test]
+        OtodokeUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - OtodokeTests
+        - OtodokeUITests
+      # The ported date logic must not depend on the device's zone; the suite runs under UTC.
+      environmentVariables:
+        TZ: UTC
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

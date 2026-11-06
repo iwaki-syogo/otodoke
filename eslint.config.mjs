@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The iOS app: Swift sources and Xcode's build output (supabase-swift ships .ts files).
+    "ios/**",
   ]),
 ]);
 
