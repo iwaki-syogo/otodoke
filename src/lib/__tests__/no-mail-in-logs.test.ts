@@ -1,4 +1,5 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { SRC, appSourceFiles, codeOnly, consoleCalls, read } from "./source-scan";
@@ -12,13 +13,14 @@ import { SRC, appSourceFiles, codeOnly, consoleCalls, read } from "./source-scan
  */
 const FORBIDDEN = /\b(subject|text_body|html_body|from_name|from_address|fromName|text|html|body|bodies|mail|mails|recipients|plaintext|passphrase|pkcs8|privateKey|challenge|envelope|body_envelope|extraction|result)\b/;
 
-function violations(files: string[]): string[] {
+/** Each refused call as "<file relative to base>:<line> console.<method>(… <name> …)". */
+function violations(files: string[], base = process.cwd()): string[] {
   const found: string[] = [];
   for (const file of files) {
     for (const call of consoleCalls(read(file))) {
       const code = codeOnly(call.args);
       const hit = code.match(FORBIDDEN);
-      if (hit) found.push(`${path.relative(process.cwd(), file)}:${call.line} console.${call.method}(… ${hit[1]} …)`);
+      if (hit) found.push(`${path.relative(base, file)}:${call.line} console.${call.method}(… ${hit[1]} …)`);
     }
   }
   return found;
@@ -35,15 +37,30 @@ describe("no mail content or passphrase in logs", () => {
     expect(violations(appSourceFiles())).toEqual([]);
   });
 
-  it("negative control: a planted violation in a real file under src/ is caught, then removed", () => {
-    const planted = path.join(SRC, "lib", "zz-planted-log-violation.ts");
+  // The planted files go in a src/ of their own under the OS temp dir, never in the real src/.
+  // The other guard tests list the real src/ and then read every file, in parallel with this one:
+  // a file planted there and removed again could vanish between their list and their read (ENOENT).
+  it("negative control: a violation planted in a tree of its own is caught; the same tree without it passes", () => {
+    // The real scan walks src/lib/ and the folders below it, where the planted file sits in its tree.
+    const lib = path.join(SRC, "lib");
+    const real = appSourceFiles();
+    expect(real.some((f) => path.dirname(f) === lib)).toBe(true);
+    expect(real.some((f) => path.dirname(path.dirname(f)) === lib)).toBe(true);
+
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "otodoke-log-scan-"));
     try {
-      writeFileSync(planted, 'export function f(mail: { subject: string }) {\n  console.error("read failed:", `${mail.subject}`);\n}\n');
-      expect(violations(appSourceFiles())).toEqual(["src/lib/zz-planted-log-violation.ts:2 console.error(… mail …)"]);
+      const root = path.join(tmp, "src");
+      mkdirSync(path.join(root, "lib"), { recursive: true });
+      writeFileSync(path.join(root, "lib", "clean.ts"), 'export function g(id: string) {\n  console.error("read failed:", id);\n}\n');
+      expect(appSourceFiles(root)).toEqual([path.join(root, "lib", "clean.ts")]);
+      expect(violations(appSourceFiles(root), tmp)).toEqual([]);
+
+      writeFileSync(path.join(root, "lib", "zz-planted-log-violation.ts"), 'export function f(mail: { subject: string }) {\n  console.error("read failed:", `${mail.subject}`);\n}\n');
+      expect(violations(appSourceFiles(root), tmp)).toEqual(["src/lib/zz-planted-log-violation.ts:2 console.error(… mail …)"]);
     } finally {
-      rmSync(planted, { force: true });
+      rmSync(tmp, { recursive: true, force: true });
     }
-    expect(violations(appSourceFiles())).toEqual([]);
+    expect(existsSync(tmp)).toBe(false);
   });
 
   it("reads strings as strings and template holes as code", () => {
