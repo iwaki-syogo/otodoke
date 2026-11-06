@@ -59,6 +59,8 @@ final class SettingsModel {
     private(set) var address: LoadResult<String>?
     /// The approval page, only Google's (Forwarding.confirmURL); nil when there is none.
     private(set) var confirmURL: URL?
+    /// The forwarding confirmation could not be read (told apart from "none").
+    private(set) var confirmationFailed = false
     private(set) var unread: LoadResult<Int>?
     private(set) var dropped: LoadResult<[DroppedMailRow]>?
     private(set) var isSigningOut = false
@@ -152,10 +154,17 @@ final class SettingsModel {
         let readWaiting = await waiting
         let readDropped = await droppedRows
 
+        // [S1] Cut off (the .task cancelled when the tab is left): the answers are dropped, not shown
+        // as failures, and the next appearance reads again.
+        guard !Task.isCancelled else {
+            hasRead = false
+            return
+        }
         guard fence.verdict(ticket) == .current else { return }
         keyPanel = panel
         address = readAddress
         confirmURL = readConfirmation.value.flatMap { $0 }.flatMap(Self.approvalURL)
+        if case .failed = readConfirmation { confirmationFailed = true } else { confirmationFailed = false }
         unread = readWaiting
         dropped = readDropped
     }
@@ -198,34 +207,48 @@ final class SettingsModel {
         return !inboundDomain.isEmpty && text.hasSuffix("@\(inboundDomain)")
     }
 
-    /// Forwarding.confirmURL, then once more through URL: only an https URL is ever handed out.
+    /// [M1] The stored value first, then the body, as Forwarding.confirmURL (the Web's WHATWG reading),
+    /// each also read by Foundation (what Safari opens): handed out only when both readers say Google's
+    /// page. A stored value that only WHATWG passes goes on to the body.
     private static func approvalURL(_ row: ForwardingConfirmationRow) -> URL? {
-        guard let text = Forwarding.confirmURL(stored: row.forwardingConfirmUrl, textBody: row.textBody, htmlBody: row.htmlBody),
-              let url = URL(string: text), url.scheme?.lowercased() == "https"
-        else { return nil }
-        return url
+        let texts = [
+            Forwarding.confirmURL(stored: row.forwardingConfirmUrl, textBody: nil, htmlBody: nil),
+            Forwarding.confirmURL(stored: nil, textBody: row.textBody, htmlBody: row.htmlBody),
+        ]
+        for case let text? in texts where !text.contains("\\") {
+            if let url = URL(string: text), isApprovalPage(url) { return url }
+        }
+        return nil
     }
 }
 
-// TDD-STUB(review-1): [M1]=[SEC-M1] and [S2]. Names and signatures are the contract; the bodies are
-// sentinels (the M1 check is today's openPage check, the two notes are nil).
 extension SettingsModel {
     /// [M1] The check right before the approval page is opened (and inside approvalURL): Foundation's
     /// reading of the URL must also be Google's page (https, host mail-settings.google.com, no user or
     /// password, port nil or 443, path from /mail/), not only the WHATWG reading of Forwarding.
     static func isApprovalPage(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "https" // TDD-STUB(review-1)
+        url.absoluteString.contains("\\") == false
+            && url.scheme?.lowercased() == "https"
+            && url.host(percentEncoded: false)?.lowercased() == "mail-settings.google.com"
+            && url.user(percentEncoded: false) == nil
+            && url.password(percentEncoded: false) == nil
+            && (url.port == nil || url.port == 443)
+            && url.path(percentEncoded: false).hasPrefix("/mail/")
     }
 
     /// [S2] The line under the passphrase card about mail sealed with an earlier key:
     /// oldKeyText(n) for n > 0, failedText when the count could not be read, nil for 0 or no key row.
     var oldKeyNote: String? {
-        nil // TDD-STUB(review-1)
+        guard case let .present(_, oldKeyCount)? = keyPanel else { return nil }
+        switch oldKeyCount {
+        case let .loaded(n): return n > 0 ? Self.oldKeyText(n) : nil
+        case .failed: return Self.failedText
+        }
     }
 
     /// [S2] failedText when the forwarding confirmation could not be read (told apart from "none");
     /// nil when it was read (whether or not there is one).
     var approvalNote: String? {
-        nil // TDD-STUB(review-1)
+        confirmationFailed ? Self.failedText : nil
     }
 }
