@@ -14,8 +14,8 @@
  * - Yamato: https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/1361 (notification settings),
  *   .../a_id/235 (why mail does not arrive), .../a_id/7935 (domains),
  *   https://www.kuronekoyamato.co.jp/ytc/customer/redelivery/members/schedule_notice/
- * - Unconfirmed on screen: whether Outlook shows 「転送」 or 「転送と IMAP」 in Japanese; 「迷惑メールの
- *   フォルダは転送されないことがある」 is worded softly because no provider states it.
+ * - Spam folder: Gmail's own page (answer/10957) says it forwards "迷惑メールを除く、すべての新着メール", so
+ *   spam is not forwarded. iCloud and Outlook are unconfirmed, hence 「ことがあります」 in the pitfall.
  */
 
 /** The Gmail filter's search words. The same value as the constant in the settings page. */
@@ -75,7 +75,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
           { text: "パソコンのブラウザで Gmail を開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。" },
           { text: "「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。" },
           { text: "「次へ」 › 「続行」 › 「OK」の順に押します。本人確認を求められたら済ませて、もう一度アドレスを入れます。" },
-          { text: "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」ボタンが出るので、押して承認します。" },
+          { text: "Gmail からの確認メールは Otodoke に届きます。少し待ってから Otodoke の設定の「メールの転送」を開き直すと、「承認ページを開く」ボタンが出るので、押して承認します。承認したら、Gmail の画面を読み込み直します。" },
           { text: "「メール転送と POP/IMAP」の画面の「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。" },
         ],
       },
@@ -125,7 +125,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
       {
         steps: [
           { text: "ブラウザで Outlook.com を開き、サインインします。" },
-          { text: "右上の歯車「設定」 › 「メール」 › 「転送」を開きます。本人確認を求められたら済ませます。" },
+          { text: "右上の歯車「設定」 › 「メール」 › 「転送」を開きます。「転送と IMAP」と出ることもあります。本人確認を求められたら済ませます。" },
           { text: "「転送を有効にする」をオンにし、Otodoke のアドレスを貼り付けます。" },
           { text: "「転送されたメッセージのコピーを保持する」が出ていたら、チェックを入れます。Outlook にもメールが残ります。" },
           { text: "「保存」を押します。" },
