@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
@@ -33,6 +33,8 @@ const VERIFY = [
   "supabase/verify/20261106180000_screen_events_daily_purge.after-first-run.sql",
   "supabase/verify/20261106170000_issued_inbox_local_parts.sql",
   "supabase/verify/20261106190000_claude_usage_keeps_deleted_calls.sql",
+  "supabase/verify/20261107090000_retire_passphrase_keys.before.sql",
+  "supabase/verify/20261107090000_retire_passphrase_keys.after.sql",
 ];
 
 describe("verify files answer with a result row", () => {
@@ -118,5 +120,67 @@ describe("decision 7 keeps the Gmail approval link (R1-2)", () => {
     }
     // What it moves but the page refuses is never shown: the page checks the link again.
     expect(forwardingConfirmUrl("HTTPS://MAIL-SETTINGS.GOOGLE.COM/mail/vf-abc")).toBeNull();
+  });
+});
+
+/** Whitespace folded, so a statement can be compared whole. */
+const folded = (statement: string) => statement.replace(/\s+/g, " ").trim();
+
+describe("decision 8: retire the passphrase keys, once, by hand (20261107090000)", () => {
+  // Run on a local Postgres 17 on 2026-11-06, the migrations applied: before -> OK; after, run
+  // before the retire -> FAILED (negative control); the retire; after -> OK; before again ->
+  // FAILED; a second run changed nothing; with a user's rows held (select ... for update) or an
+  // uncommitted registration, it gave up after 5 s and changed nothing, run by psql -f and as one
+  // query; afterwards activate_user_key_checked put a new key in use for a retired user.
+  const PENDING = "supabase/pending/20261107090000_retire_passphrase_keys.sql";
+  const statements = statementsOf(withoutComments(read(PENDING))).map(folded);
+
+  it("is one transaction that gives up after 5 s, locks the table against writes, retires the keys in use and deletes the ones never put in use", () => {
+    expect(statements).toEqual([
+      "begin",
+      "set local lock_timeout = '5s'",
+      "lock table public.user_keys in share row exclusive mode",
+      "update public.user_keys set retired_at = now() where activated_at is not null and retired_at is null",
+      "delete from public.user_keys where activated_at is null",
+      "commit",
+    ]);
+  });
+
+  it("negative control: an update that also touched retired keys, or a delete of retired ones, is not the file", () => {
+    expect(statements).not.toContain("update public.user_keys set retired_at = now()");
+    expect(statements).not.toContain("delete from public.user_keys where retired_at is not null");
+    expect(statementsOf(withoutComments("begin;\nupdate public.user_keys set retired_at = now();\ncommit;")).map(folded)).not.toEqual(statements);
+  });
+
+  it("is never a migration: not in supabase/migrations/, and the README says how it is run", () => {
+    expect(readdirSync(path.join(root, "supabase/migrations")).filter((f) => f.includes("retire_passphrase_keys"))).toEqual([]);
+    const readme = read("supabase/pending/README.md");
+    expect(readme).toContain("`20261107090000_retire_passphrase_keys.sql`");
+    expect(readme).toContain("supabase db query --linked -f supabase/pending/20261107090000_retire_passphrase_keys.sql");
+    expect(readme).toContain("Not a migration");
+    expect(read(PENDING)).toContain("Never through `supabase db push`");
+  });
+
+  it("its verify files only read, and judge: the before file wants a key in use, the after file none, and none never put in use", () => {
+    const before = withoutComments(read("supabase/verify/20261107090000_retire_passphrase_keys.before.sql"));
+    const after = withoutComments(read("supabase/verify/20261107090000_retire_passphrase_keys.after.sql"));
+    for (const sql of [before, after]) expect(sql).not.toMatch(/\b(update|delete|insert|lock|truncate|alter|drop)\b/i);
+    expect(lastStatement(before)).toMatch(/when in_use = 0 then 'FAILED: /);
+    expect(lastStatement(after)).toMatch(/when in_use <> 0 then format\('FAILED: /);
+    expect(lastStatement(after)).toMatch(/when pending <> 0 then format\('FAILED: /);
+    // The before file shows when the newest key in use was put in use: a key from after the
+    // deploy may be a password key, which the retire would take too.
+    expect(before).toContain("as newest_in_use_at");
+    // Counts and one time only: no column that would print a key, an id or an address.
+    for (const sql of [before, after]) expect(sql).not.toMatch(/\b(key_id|public_key|wrapped_private_key|email)\b|select \*/);
+  });
+});
+
+describe("supabase/pending/README.md names every file waiting there", () => {
+  it("each pending SQL file is in the list", () => {
+    const files = readdirSync(path.join(root, "supabase/pending")).filter((f) => f.endsWith(".sql"));
+    expect(files.length).toBeGreaterThanOrEqual(3);
+    const readme = read("supabase/pending/README.md");
+    for (const file of files) expect(readme, file).toContain(`\`${file}\``);
   });
 });

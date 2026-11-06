@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { FakeDb } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
@@ -131,7 +132,12 @@ const SAID_IN_BOTH = [
   "暗号化を始める前に読み取ったメールは、暗号化していません",
   // Whether a mail keeps its subject, sender and body is decided when it is read (src/lib/mail-seal.ts
   // closedBody), not when it arrives: the same sentence as /privacy.
-  "Otodoke が暗号化を始めた後、合言葉を決める前に読み取ったメールは、件名・差出人・本文を残しません",
+  "Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません",
+  // Decision 7 in the words of src/lib/mail-notices.ts, right after the mail read before
+  // encryption. No final 「。」 (see below).
+  `「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE.replace(/。$/, "")}`,
+  // A reset loses the mail sealed before; a change keeps it (decision 3).
+  `パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます`,
   "Message-ID",
   "承認リンク",
   "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します",
@@ -147,9 +153,9 @@ describe("/app/settings: あなたのメールの扱い", () => {
       "サーバーと Claude API",
       "既定では学習に使いません",
       "件名・差出人・本文",
-      "運営者もデータベースからは読めません",
+      "あなたのパスワードでしか開けない形で保存します",
+      "パスワードそのものはサーバーに送らないので、運営者もデータベースからは読めません",
       "差出人のドメインは暗号化しません",
-      "合言葉を忘れると、前のメールは誰にも戻せません。荷物は残ります",
       "Resend",
       "最大 7 日間",
       "コードはすべて",
@@ -159,9 +165,10 @@ describe("/app/settings: あなたのメールの扱い", () => {
     }
     expect(text).not.toContain("次から読むために消さずに残します");
     expect(text).not.toContain("合言葉を決める前に届いたメール");
+    expect(text).not.toContain("合言葉");
   });
 
-  it("README says the same about mail read before encryption or with no passphrase yet, Message-ID, the approval link, screened ads and 「これは荷物」", () => {
+  it("README says the same about mail read before encryption or with no key, decision 7, a reset, Message-ID, the approval link, screened ads and 「これは荷物」", () => {
     const readme = readFileSync(path.resolve(__dirname, "../../../README.md"), "utf8");
     const section = readme.slice(readme.indexOf("## あなたのメールの扱い"), readme.indexOf("## 技術"));
     for (const fact of SAID_IN_BOTH) {
@@ -169,6 +176,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
     }
     expect(section).not.toContain("合言葉を決める前に届いたメール");
     expect(section).not.toContain("次から読むために消さずに残します");
+    expect(section).not.toContain("合言葉");
   });
 
   it("the list of screened mail says the sender's domain is kept with the subject", async () => {

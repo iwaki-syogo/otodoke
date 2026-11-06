@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 /**
- * The button of the /auth/continue form, with a visible press: a spinner and 「ログインしています…」
- * from the press until the next page arrives.
+ * The button of the /auth/continue form, with a visible press: a spinner and `pendingLabel`
+ * (「確認しています…」) from the press until the next page arrives.
  *
  * The link works once. A second press while the first is on its way would post the same link
  * again and could end on 「すでに使われたリンク」, so it is cancelled. The guard is a ref, which a
@@ -18,7 +18,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
  *
  * Without JavaScript this is a plain submit button.
  */
-export function ContinueButton({ label = "ログインする", secondary = false }: { label?: string; secondary?: boolean }) {
+export function ContinueButton({ label = "確認する", pendingLabel = "確認しています…", secondary = false }: { label?: string; pendingLabel?: string; secondary?: boolean }) {
   const [sending, setSending] = useState(false);
   // A ref, not state: the second click of a double tap comes before React has drawn the first.
   const pressed = useRef(false);
@@ -51,7 +51,7 @@ export function ContinueButton({ label = "ログインする", secondary = false
       {sending ? (
         <>
           <span aria-hidden className={`inline-block h-4 w-4 animate-spin rounded-full border-2 ${spinner}`} />
-          ログインしています…
+          {pendingLabel}
         </>
       ) : (
         label

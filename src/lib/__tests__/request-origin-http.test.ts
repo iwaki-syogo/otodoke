@@ -83,14 +83,14 @@ describe("POST /auth/confirm", () => {
   async function post(headers: Headers) {
     const body = new FormData();
     body.set("token_hash", "token");
-    body.set("type", "email");
+    body.set("type", "recovery");
     body.set("next", "/app");
     const res = await POST(new NextRequest(`https://${headers.get("host")}/auth/confirm`, { method: "POST", body, headers }));
     return res.headers.get("location");
   }
 
-  it.each(PASSES)("signs in from %s", async (_what, headers) => {
-    expect(await post(headers)).toBe("/app");
+  it.each(PASSES)("signs in with a reset link from %s", async (_what, headers) => {
+    expect(await post(headers)).toBe("/reset-password");
     expect(mocks.verifyOtp).toHaveBeenCalledTimes(1);
   });
 

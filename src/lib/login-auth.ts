@@ -117,7 +117,7 @@ function mailRefusal(error: AuthError): MailRequestFailure | "sent" {
   // Supabase's per-IP limit: the same for every address.
   if (error.code === "over_request_rate_limit") return "rate";
   if (error.code === "email_address_invalid" || error.code === "validation_failed") return "invalid_email";
-  if (error.code === "user_already_exists" || error.code === "email_exists" || error.code === "over_email_send_rate_limit" || error.status === 429) return "sent";
+  if (["user_already_exists", "email_exists", "user_not_found", "over_email_send_rate_limit"].includes(error.code ?? "") || error.status === 429) return "sent";
   if (isOutage(error)) return "network";
   return "other";
 }

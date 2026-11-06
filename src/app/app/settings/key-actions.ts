@@ -19,15 +19,21 @@ import {
   type SealedMailRead,
   type StoredKeyColumns,
 } from "@/lib/mail-keys";
+import { freshCookieSession, type FreshCheck } from "@/lib/auth-session";
 import type { EnvelopeV1 } from "@/lib/crypto/envelope";
 import type { Json } from "@/lib/db/database.types";
+import { KEY_SESSION_STALE } from "@/lib/login-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
 
 /*
  * The key steps of 設定, and the reads the browser needs to open its mail. Each takes only wrapped
- * keys and public data: there is no parameter for the passphrase, and the schemas in
+ * keys and public data: there is no parameter for a secret, and the schemas in
  * src/lib/mail-keys.ts refuse unknown fields.
+ *
+ * Making, putting in use and rewrapping a key also need a session that signed in, or came from a
+ * reset link, in the last 15 minutes (src/lib/auth-session.ts): an older one gets
+ * { ok: false, error: KEY_SESSION_STALE }, and the screen asks to log in again. The reads do not.
  *
  * The browser has no Supabase client (src/lib/__tests__/no-browser-supabase.test.ts): it reads its
  * wrapped keys and sealed mail here. The reads use the user's own session, so RLS applies as well
@@ -36,24 +42,32 @@ import { createClient, getUser } from "@/lib/supabase/server";
 
 const signedOut = { ok: false as const, error: "ログインし直してください" };
 
+/** The refusal for a session that is not fresh enough to change a key. */
+function refusal(check: Extract<FreshCheck, { ok: false }>): { ok: false; error: string } {
+  if (check.reason === "stale") return { ok: false, error: KEY_SESSION_STALE };
+  // Supabase could not be asked: not "signed out", which would ask to log in for nothing.
+  if (check.reason === "unknown") return { ok: false, error: "network" };
+  return signedOut;
+}
+
 export async function registerMailKey(input: KeyRegistration): Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>> {
-  const user = await getUser();
-  if (!user) return signedOut;
-  return registerKey(createAdminClient(), user.id, input);
+  const check = await freshCookieSession("key");
+  if (!check.ok) return refusal(check);
+  return registerKey(createAdminClient(), check.session.userId, input);
 }
 
 export async function activateMailKey(input: KeyActivation): Promise<KeyResult<{ keyId: string }>> {
-  const user = await getUser();
-  if (!user) return signedOut;
-  const result = await activateKey(createAdminClient(), user.id, input);
+  const check = await freshCookieSession("key");
+  if (!check.ok) return refusal(check);
+  const result = await activateKey(createAdminClient(), check.session.userId, input);
   revalidatePath("/app", "layout");
   return result;
 }
 
 export async function rewrapMailKey(input: KeyRewrap): Promise<KeyResult<{ keyId: string }>> {
-  const user = await getUser();
-  if (!user) return signedOut;
-  return rewrapKey(createAdminClient(), user.id, input);
+  const check = await freshCookieSession("key");
+  if (!check.ok) return refusal(check);
+  return rewrapKey(createAdminClient(), check.session.userId, input);
 }
 
 /** One of the user's wrapped keys: the one in use (keyId null) or one by id. */
