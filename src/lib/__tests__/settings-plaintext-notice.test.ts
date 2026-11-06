@@ -52,10 +52,17 @@ describe("decision 7 is announced with its date", () => {
     expect(textOf(item[0])).not.toContain("合言葉");
   });
 
-  it("the pending SQL's header no longer claims a notice that is not there", () => {
+  it("the pending SQL's header names where users are told, with the password sign-in's files", () => {
     const sql = readFileSync(path.resolve(__dirname, "../../../supabase/pending/20261114090000_drop_unsealed_plaintext.sql"), "utf8");
     expect(sql).not.toContain("the settings screen / README say so");
-    expect(sql).toContain("mail-key-panel.tsx");
+    // The passphrase panel is replaced by the password panel (password-v1); the sentence is one constant.
+    expect(sql).not.toContain("mail-key-panel.tsx");
+    expect(sql).toContain("src/app/app/settings/password-panel.tsx");
+    expect(sql).toContain("src/lib/mail-notices.ts");
+    expect(sql).toContain("PLAINTEXT_DROP_NOTICE");
+    for (const told of ["mail-handling.tsx", "src/app/privacy/page.tsx", "README.md"]) expect(sql).toContain(told);
+    // Decision 8's retire makes those users keyless until they sign in with a password.
+    expect(sql).toContain("supabase/pending/20261107090000_retire_passphrase_keys.sql");
   });
 });
 
