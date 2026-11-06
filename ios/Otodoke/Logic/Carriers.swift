@@ -20,10 +20,11 @@ enum TrackingLink: Equatable, Sendable {
 }
 
 enum Carriers {
-    /// Keep letters and digits only (ASCII, as `[^0-9A-Za-z]`), upper-cased.
+    /// Full-width read as half-width first (`normalize("NFKC")`), then letters and digits only
+    /// (ASCII, as `[^0-9A-Za-z]`), upper-cased.
     static func normalizeTracking(_ raw: String) -> String {
         var out = ""
-        for s in raw.unicodeScalars {
+        for s in raw.precomposedStringWithCompatibilityMapping.unicodeScalars {
             switch s.value {
             case 0x30...0x39, 0x41...0x5A: out.unicodeScalars.append(s)
             case 0x61...0x7A: out.unicodeScalars.append(Unicode.Scalar(s.value - 0x20)!)
