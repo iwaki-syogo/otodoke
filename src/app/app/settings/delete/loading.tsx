@@ -8,9 +8,12 @@ export default function Loading() {
       <BackToSettings />
       <h1 className="text-xl font-bold">アカウントの削除</h1>
       <div className="mt-4 flex flex-col gap-8">
+        {/* 「ログイン中: …」, then the one button (the confirmation opens only when pressed). */}
+        <div className="flex gap-2">
+          <Bone className="h-3 w-16" />
+          <Bone className="h-3 w-40" />
+        </div>
         <Bone className="h-10 w-40 rounded-lg" />
-        <Bone className="h-4 w-56" />
-        <Bone className="h-4 w-48" />
       </div>
     </SkeletonScreen>
   );
