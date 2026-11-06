@@ -26,6 +26,9 @@ export default function AccountDeletedPage() {
       <Link href="/login" className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-neutral-900 px-5 py-4 text-base font-medium text-white active:opacity-80">
         ログイン画面へ
       </Link>
+      <Link href="/privacy" className="mt-6 self-center text-xs text-neutral-500 underline underline-offset-4">
+        プライバシーポリシー
+      </Link>
     </main>
   );
 }

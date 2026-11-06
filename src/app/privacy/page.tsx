@@ -20,6 +20,16 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  *
  * The owner's wording rules: short and polite, no brackets, 「データベースからは読めません」 only
  * of sealed mail, never 「絶対」 or 「知り得ない」 (src/lib/__tests__/privacy-page.test.ts).
+ *
+ * Statements tied to code elsewhere:
+ * - 「これは荷物」: src/lib/screen-senders.ts (domains never remembered), src/lib/pipeline.ts
+ *   secondLook (a remembered sender still gets the Haiku check), 設定「外す」 (forgetSender).
+ * - The two cookies: Supabase's session (removed by signOut on logout and on account deletion) and
+ *   the login screen's address cookie (src/lib/login-email-cookie.ts, one hour, Path=/login).
+ * - 11 月 14 日: decision 7 (supabase/pending/20261114090000), told the same way in
+ *   mail-handling.tsx and mail-key-panel.tsx. Reword all three once it has run.
+ * - What account deletion leaves: the receiving address's local part and when it was given out
+ *   (supabase/migrations/20261106170000_issued_inbox_local_parts.sql).
  */
 export default function PrivacyPage() {
   return (
@@ -42,21 +52,30 @@ export default function PrivacyPage() {
             店・品名・金額・日付・注文番号・伝票番号などと、読み取った値の根拠になった元メールの行です。一覧・カレンダー・支出を出すのと、読み取った値を確かめるのに使います。
           </Term>
           <Term name="読まなかったメールの件名と差出人のドメイン">
-            広告など読まなかったメールに荷物のメールが混ざっていないか、設定で確かめられるようにします。14 日で消します。「これは荷物」と押したものは、次から読むために消さずに残します。ふるいを直すために、運営者が件数と差出人のドメインを見ることがあります。
+            広告など読まなかったメールに荷物のメールが混ざっていないか、設定で確かめられるようにします。14 日で消します。ふるいを直すために、運営者が件数と差出人のドメインを見ることがあります。
+          </Term>
+          <Term name="「これは荷物」で覚えた差出人">
+            押したメールの差出人のドメインを覚えます。次からその差出人のメールは、ふるいで落ちても Claude Haiku で確かめます。覚えている間は、押したメールの件名と差出人のドメインを残します。設定の「外す」で外すと、ほかと同じく 14 日で消します。Gmail など多くの人が使うドメインは覚えません。
           </Term>
           <Term name="ログインのリンクを送った記録">
             送りすぎを防ぐために使います。メールアドレスと接続元の IP アドレスをハッシュ値に変えて、送った時刻と一緒に記録します。どちらのアドレスも、そのままでは記録しません。1 時間を過ぎた記録は、次に送るときに消します。
           </Term>
           <Term name="Claude を使った回数">1 日の上限を守るために、あなたのメールに Claude を使った回数を日ごとに記録します。</Term>
           <Term name="接続の記録">Supabase と Vercel に、IP アドレスやブラウザの種類などの記録が残ります。障害や不正を調べるときに使うことがあります。</Term>
-          <Term name="cookie">ログインの状態を保つためだけに使います。ログアウトすると消えます。広告やアクセス解析のための cookie は使いません。</Term>
+          <Term name="cookie">
+            ログインのためだけに使います。広告やアクセス解析のための cookie は使いません。
+            <Bullets className="mt-1">
+              <li>ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます。</li>
+              <li>ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます。ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します。</li>
+            </Bullets>
+          </Term>
         </Terms>
       </Section>
 
       <Section title="メールの扱い">
         <Terms>
           <Term name="ふるい">
-            届いたメールは、まずサーバーの中の決まりで、広告などを分けます。迷うメールだけ、件名と本文の初めの部分を Claude Haiku に送って確かめます。読まないと決めたメールの本文は保存しません。
+            届いたメールは、まずサーバーの中の決まりで、広告などを分けます。迷うメールと、「これは荷物」で覚えた差出人のメールだけ、件名と本文の初めの部分を Claude Haiku に送って確かめます。読まないと決めたメールの本文は保存しません。
           </Term>
           <Term name="Claude での読み取り">
             残ったメールは Claude が読み取ります。読み取る数秒のあいだ、サーバーと Claude API がメールの中身を扱います。買い物に関係ないと分かったメールは消します。
@@ -72,7 +91,9 @@ export default function PrivacyPage() {
               <li>荷物の情報と、根拠の行・読み取りメモ。一覧・カレンダー・支出を出すのと、読み取った値を確かめるのに使います。根拠の行は本文の抜粋です。</li>
               <li>差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク。ふるいと、同じメールを二度読まないためと、承認ページを出すために使います。</li>
               <li>読み取る前のメール。1 日の上限を超えた分などは、読み取るまで暗号化せずに置きます。</li>
-              <li>Otodoke が暗号化を始める前に読み取ったメール。設定で「暗号化する」を押すまで、運営者が読める形で残ります。</li>
+              <li>
+                Otodoke が暗号化を始める前に読み取ったメール。設定で「暗号化する」を押すまで、運営者が読める形で残ります。合言葉を決めていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。
+              </li>
             </Bullets>
           </Term>
           <Term name="バックアップ">データベースのバックアップは、最大 7 日間残ります。暗号化していないメールも、その間はバックアップに残ります。</Term>
@@ -91,7 +112,6 @@ export default function PrivacyPage() {
             Turnstile で、ログイン画面の操作がロボットでないかを確かめます。IP アドレスやブラウザの種類などを Cloudflare が受け取ります。Cloudflare は、これをロボットの判定と、その仕組みの改善にだけ使うと定めています。
           </Term>
         </Terms>
-        <p>これらのサービスに処理を任せるときと、法律で求められたときを除いて、あなたのデータをほかの人や会社に渡したり売ったりしません。</p>
       </Section>
 
       <Section title="保存の期間と消し方">
@@ -100,7 +120,9 @@ export default function PrivacyPage() {
           <li>
             設定の「すべての荷物を消す」で、荷物と、保存したメール・読み取り結果を消せます。アカウント、転送先アドレス、合言葉の設定と、読まなかったメール・Claude を使った回数の記録は残ります。
           </li>
-          <li>設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。</li>
+          <li>
+            設定の「アカウントを削除」で、アカウントと、Otodoke に保存したあなたのデータをすべて消せます。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。
+          </li>
           <li>アカウントを削除したら、メールの自動転送の設定も外してください。外さないと、転送されたメールは Otodoke では読みませんが、Resend には届き続けます。</li>
           <li>消したデータも、データベースのバックアップに最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。</li>
         </Bullets>
@@ -162,6 +184,6 @@ function Term({ name, children }: { name: string; children: React.ReactNode }) {
   );
 }
 
-function Bullets({ children }: { children: React.ReactNode }) {
-  return <ul className="flex list-disc flex-col gap-2 pl-5">{children}</ul>;
+function Bullets({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <ul className={`flex list-disc flex-col gap-2 pl-5 ${className}`.trim()}>{children}</ul>;
 }

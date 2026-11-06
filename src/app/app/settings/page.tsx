@@ -258,6 +258,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       </section>
 
       <MailHandling />
+      {/* The whole policy, right under the summary of how mail is handled. */}
+      <p className="-mt-6 text-xs text-neutral-500">
+        <Link href="/privacy" className="underline underline-offset-4">
+          プライバシーポリシー
+        </Link>
+      </p>
 
       <section id="demo" className="scroll-mt-4 rounded-2xl border border-dashed border-neutral-300 p-4">
         <h2 className="text-base font-bold">サンプルで試す</h2>
