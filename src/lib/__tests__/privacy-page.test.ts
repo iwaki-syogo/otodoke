@@ -13,8 +13,10 @@ import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
  *   sealed and backed up, which outside services hold what and where, how to delete, where to write.
  * - The owner's wording rules: 「データベースからは読めません」 only of sealed mail; never 「絶対」,
  *   「知り得ない」 or 「転送するだけ」; no brackets.
- * - The contact address comes from one constant, CONTACT_EMAIL (a placeholder until the dedicated
- *   address exists). The page is rendered with a probe value in its place, so a hard-coded address fails.
+ * - The contact address comes from one constant, CONTACT_EMAIL (Otodoke's support address). The page
+ *   is rendered with a probe value in its place, so a hard-coded address fails.
+ * - Where a sentence states what other code does (「これは荷物」, the cookies, 11 月 14 日, what
+ *   account deletion leaves), a test here reads that code too, so the two cannot drift apart unseen.
  */
 
 const probe = vi.hoisted(() => ({ contact: "privacy-probe@example.test" }));
@@ -28,6 +30,9 @@ vi.mock("next/link", async () => {
 // next/font only works inside the Next.js compiler.
 vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
 vi.mock("@/app/privacy/contact", () => ({ CONTACT_EMAIL: probe.contact }));
+
+/** Decision 7, in the words 設定「あなたのメールの扱い」 uses (mail-handling.tsx). */
+const DECISION_7 = "合言葉を決めていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。";
 
 const PAGE_SOURCE = path.join(process.cwd(), "src/app/privacy/page.tsx");
 const CONTACT_SOURCE = path.join(process.cwd(), "src/app/privacy/contact.ts");
@@ -108,6 +113,7 @@ describe("/privacy: what it says", () => {
       "転送されたメール",
       "荷物の情報と根拠の行",
       "読まなかったメールの件名と差出人のドメイン",
+      "「これは荷物」で覚えた差出人",
       "ログインのリンクを送った記録",
       "Claude を使った回数",
       "接続の記録",
@@ -115,19 +121,41 @@ describe("/privacy: what it says", () => {
     ]);
     const said = Object.fromEntries(list);
     expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("14 日で消します");
-    expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("「これは荷物」と押したものは、次から読むために消さずに残します");
     // What login_mail_sends keeps (migration 20261106100000): hashes and the time, pruned after an hour.
     expect(said["ログインのリンクを送った記録"]).toContain("ハッシュ値に変えて");
     expect(said["ログインのリンクを送った記録"]).toContain("どちらのアドレスも、そのままでは記録しません");
     expect(said["ログインのリンクを送った記録"]).toContain("1 時間を過ぎた記録");
-    expect(said["cookie"]).toContain("ログインの状態を保つためだけに使います");
-    expect(said["cookie"]).toContain("広告やアクセス解析のための cookie は使いません");
+    expect(said["接続の記録"]).toContain("障害や不正を調べるときに使うことがあります");
+  });
+
+  it("tells what 「これは荷物」 remembers, that it still goes through Haiku, and how to remove it", async () => {
+    const said = Object.fromEntries(terms(section(await render(), "集める情報と使い道")));
+    const marked = said["「これは荷物」で覚えた差出人"];
+    expect(marked).toContain("押したメールの差出人のドメインを覚えます");
+    expect(marked).toContain("ふるいで落ちても Claude Haiku で確かめます");
+    expect(marked).toContain("覚えている間は、押したメールの件名と差出人のドメインを残します");
+    expect(marked).toContain("設定の「外す」で外すと、ほかと同じく 14 日で消します");
+    expect(marked).toContain("Gmail など多くの人が使うドメインは覚えません");
+    // Gone: a mark is no longer kept for every sender, nor read without the Haiku check.
+    expect(said["読まなかったメールの件名と差出人のドメイン"]).not.toContain("これは荷物");
+    expect(textOf(await render())).not.toContain("次から読むために消さずに残します");
+  });
+
+  it("names both cookies: Supabase's login state, and the login screen's address for an hour", async () => {
+    const cookie = Object.fromEntries(terms(section(await render(), "集める情報と使い道"))).cookie;
+    expect(cookie).toContain("ログインのためだけに使います");
+    expect(cookie).toContain("広告やアクセス解析のための cookie は使いません");
+    expect(cookie).toContain("ログインの状態を保つ cookie は、Supabase のログインの仕組みが使います。ログアウトしたときと、アカウントを削除したときに消えます");
+    expect(cookie).toContain("ログインのメールを送るとき、入れたアドレスと送った時刻を、ログインの画面でだけ使う cookie に 1 時間入れます");
+    expect(cookie).toContain("ログインしたとき・ログアウトしたとき・アカウントを削除したときに消します");
+    // The old claim, untrue next to the login screen's cookie.
+    expect(cookie).not.toContain("ログインの状態を保つためだけに使います");
   });
 
   it("tells how a mail is screened, read, sealed and backed up, and what is not sealed", async () => {
     const part = section(await render(), "メールの扱い");
     const said = Object.fromEntries(terms(part));
-    expect(said["ふるい"]).toContain("迷うメールだけ、件名と本文の初めの部分を Claude Haiku に送って確かめます");
+    expect(said["ふるい"]).toContain("迷うメールと、「これは荷物」で覚えた差出人のメールだけ、件名と本文の初めの部分を Claude Haiku に送って確かめます");
     expect(said["Claude での読み取り"]).toContain("読み取る数秒のあいだ、サーバーと Claude API がメールの中身を扱います");
     expect(said["保存と暗号化"]).toContain("暗号化したメールは、運営者もデータベースからは読めません");
     expect(said["保存と暗号化"]).toContain("合言葉そのものは、サーバーに送りません");
@@ -136,6 +164,8 @@ describe("/privacy: what it says", () => {
     expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール", "Otodoke が暗号化を始める前に読み取ったメール"]);
     // A mail read once sealing began but before the passphrase: not kept (src/lib/mail-seal.ts, "dropped").
     expect(said["合言葉を決める前と、忘れたとき"]).toContain("Otodoke が暗号化を始めた後、合言葉を決める前に読み取ったメールは、件名・差出人・本文を残しません");
+    // Decision 7, told as the settings tell it.
+    expect(textOf(findAll(part, (n) => n.tag === "li")[3])).toContain(DECISION_7);
   });
 
   it("names each outside service, what it does, and where its data is", async () => {
@@ -148,12 +178,15 @@ describe("/privacy: what it says", () => {
     expect(said.Anthropic).toContain("米国に保存され");
     expect(said.Anthropic).toContain("既定では学習に使わず、30 日以内に消す");
     expect(said.Cloudflare).toContain("ロボットの判定");
+    // The owner's decision (2026-11-06): no promise about handing data to others on this page.
+    expect(textOf(await render())).not.toContain("渡したり売ったり");
   });
 
   it("tells how to delete in the settings' own words, and what can stay afterwards", async () => {
     const text = textOf(section(await render(), "保存の期間と消し方"));
     expect(text).toContain("設定の「すべての荷物を消す」で");
     expect(text).toContain("設定の「アカウントを削除」で");
+    expect(text).toContain("同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します");
     expect(text).toContain("メールの自動転送の設定も外してください");
     expect(text).toContain("データベースのバックアップに最大 7 日間残ります");
   });
@@ -171,10 +204,36 @@ describe("/privacy: what it says", () => {
     const { MailHandling } = await import("@/app/app/settings/mail-handling");
     const settings = textOf(parseHtml(renderToStaticMarkup(createElement(MailHandling))));
     const policy = textOf(await render());
-    for (const period of ["14 日", "最大 7 日間"]) {
+    for (const period of ["14 日", "最大 7 日間", DECISION_7]) {
       expect(settings, period).toContain(period);
       expect(policy, period).toContain(period);
     }
+  });
+});
+
+describe("/privacy: what it says matches the code it describes", () => {
+  it("「Gmail など多くの人が使うドメインは覚えません」: such a domain is not remembered, a shop's is", async () => {
+    const { isRememberableDomain, SHARED_MAIL_DOMAINS } = await import("@/lib/screen-senders");
+    expect(SHARED_MAIL_DOMAINS).toContain("gmail.com");
+    expect(isRememberableDomain("gmail.com")).toBe(false);
+    expect(isRememberableDomain("shop.example.test")).toBe(true);
+  });
+
+  it("the login screen's cookie: one hour, sent to the login page only", async () => {
+    const { LOGIN_EMAIL_COOKIE_PATH, LOGIN_EMAIL_MAX_AGE } = await import("@/lib/login-email-cookie");
+    expect(LOGIN_EMAIL_MAX_AGE).toBe(60 * 60);
+    expect(LOGIN_EMAIL_COOKIE_PATH).toBe("/login");
+  });
+
+  it("「アドレスの文字と作った日時だけは残します」: the registry of given-out addresses has those two columns", () => {
+    const migration = readFileSync(path.join(process.cwd(), "supabase/migrations/20261106170000_issued_inbox_local_parts.sql"), "utf8");
+    const table = migration.match(/create table public\.issued_inbox_local_parts \(([\s\S]*?)\n\);/);
+    expect(table).not.toBeNull();
+    const columns = table![1]
+      .split(",")
+      .map((line) => line.trim().split(/\s+/)[0])
+      .filter(Boolean);
+    expect(columns).toEqual(["local_part", "issued_at"]);
   });
 });
 
