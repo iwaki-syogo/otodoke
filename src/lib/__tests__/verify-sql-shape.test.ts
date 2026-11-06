@@ -59,6 +59,24 @@ describe("verify files answer with a result row", () => {
   });
 });
 
+describe("the 20261106190000 rollback cannot stop halfway (R3-30)", () => {
+  const sql = withoutComments(read("supabase/rollback/20261106190000_claude_usage_keeps_deleted_calls.down.sql"));
+
+  it("is one transaction, and every drop and add checks first", () => {
+    const statements = sql.replace(/\$\$[\s\S]*?\$\$/g, "$$…$$").split(";").map((s) => s.trim()).filter(Boolean);
+    expect(statements[0]).toBe("begin");
+    expect(statements[statements.length - 1]).toBe("commit");
+    // Run on local Postgres 17 on 2026-11-06: twice, by hand without begin/commit, and on a
+    // database 190000 never reached; the second run left every constraint's oid as it was.
+    expect(sql).toMatch(/drop constraint if exists /);
+    expect(sql.match(/drop constraint (?!if exists )/g)).toBeNull();
+    for (const add of sql.match(/add constraint[^;]*/g) ?? []) {
+      const before = sql.slice(0, sql.indexOf(add));
+      expect(before.slice(before.lastIndexOf("do $$")), add).toMatch(/if not exists \(/);
+    }
+  });
+});
+
 describe("decision 7 keeps the Gmail approval link (R1-2)", () => {
   const sql = withoutComments(read("supabase/pending/20261114090000_drop_unsealed_plaintext.sql"));
   // The SQL string literal after `from`, with its doubled quotes undone.
