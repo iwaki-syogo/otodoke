@@ -14,10 +14,10 @@ import { LOGIN_ERROR_MESSAGES, verifyFailure } from "@/lib/login-errors";
  *   the limit's message says how long to wait.
  */
 
-const mocks = vi.hoisted(() => ({ verifyOtp: vi.fn() }));
+const mocks = vi.hoisted(() => ({ verifyOtp: vi.fn(), getUser: vi.fn() }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({ auth: { verifyOtp: mocks.verifyOtp } }),
+  createClient: async () => ({ auth: { verifyOtp: mocks.verifyOtp, getUser: mocks.getUser } }),
 }));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
@@ -32,11 +32,11 @@ const { POST } = await import("@/app/auth/confirm/route");
 
 const SAME_SITE = { host: "otodoke.app", origin: "https://otodoke.app", "sec-fetch-site": "same-origin" };
 
-async function confirm(headers: Record<string, string> = SAME_SITE): Promise<string | null> {
+async function confirm(headers: Record<string, string> = SAME_SITE, next = "/app"): Promise<string | null> {
   const body = new FormData();
   body.set("token_hash", "a-token-hash");
   body.set("type", "email");
-  body.set("next", "/app");
+  body.set("next", next);
   const res = await POST(new NextRequest("https://otodoke.app/auth/confirm", { method: "POST", body, headers }));
   expect(res.status).toBe(303);
   return res.headers.get("location");
@@ -54,6 +54,8 @@ const unknown = (message: string) => ({ data: { user: null, session: null }, err
 
 beforeEach(() => {
   mocks.verifyOtp.mockReset();
+  mocks.getUser.mockReset();
+  mocks.getUser.mockResolvedValue({ data: { user: null }, error: { message: "Auth session missing!" } });
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => {
@@ -117,6 +119,41 @@ describe("a limit or an outage is not link_invalid", () => {
   it("still signs in when Supabase accepts the token", async () => {
     mocks.verifyOtp.mockResolvedValue({ data: { user: {}, session: {} }, error: null });
     expect(await confirm()).toBe("/app");
+  });
+});
+
+describe("a refused link in a browser that is signed in already (D2's note)", () => {
+  const signedIn = () => mocks.getUser.mockResolvedValue({ data: { user: { id: "u1", email: "someone@example.com" } }, error: null });
+  const refused = apiError(403, "otp_expired", "Email link is invalid or has expired");
+
+  it("goes to the continue page (who is signed in, 荷物を見る) instead of the red link_invalid", async () => {
+    signedIn();
+    mocks.verifyOtp.mockResolvedValue(refused);
+    expect(await confirm()).toBe("/auth/continue");
+    expect(await confirm(SAME_SITE, "/app/settings")).toBe("/auth/continue?next=%2Fapp%2Fsettings");
+    // Somewhere that is not a path on this site is not carried.
+    expect(await confirm(SAME_SITE, "https://evil.example/")).toBe("/auth/continue");
+  });
+
+  it("still says link_invalid when nobody is signed in, or the session cannot be read", async () => {
+    mocks.verifyOtp.mockResolvedValue(refused);
+    expect(await confirm()).toBe("/login?error=link_invalid");
+    mocks.getUser.mockRejectedValue(new Error("fetch failed"));
+    expect(await confirm()).toBe("/login?error=link_invalid");
+  });
+
+  it("keeps a limit or an outage as they are: the link may still work (switching accounts, say)", async () => {
+    signedIn();
+    mocks.verifyOtp.mockResolvedValue(apiError(429, "over_request_rate_limit", "Request rate limit reached"));
+    expect(await confirm()).toBe("/login?error=link_limited");
+    mocks.verifyOtp.mockResolvedValue(retryable(503, "Service Unavailable"));
+    expect(await confirm()).toBe("/login?error=link_failed");
+  });
+
+  it("does not look at the session for another site's form (it never reaches verifyOtp)", async () => {
+    signedIn();
+    expect(await confirm({ host: "otodoke.app", origin: "https://evil.example", "sec-fetch-site": "cross-site" })).toBe("/login?error=link_invalid");
+    expect(mocks.getUser).not.toHaveBeenCalled();
   });
 });
 
