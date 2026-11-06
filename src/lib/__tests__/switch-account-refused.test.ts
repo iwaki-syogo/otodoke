@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +41,7 @@ vi.mock("next/link", async () => {
 });
 
 const { GET, POST } = await import("@/app/auth/confirm/route");
+const { SubmitButton } = await import("@/components/pending-button");
 const ContinuePage = (await import("@/app/auth/continue/page")).default as unknown as (p: {
   searchParams: Promise<Record<string, string | string[]>>;
 }) => Promise<Parameters<typeof renderToStaticMarkup>[0]>;
@@ -114,8 +118,8 @@ describe("「別のアカウントでログインする」 with a link that cann
     expect(textOf(back)).toContain("a@example.com");
     expect(notices(back)).toHaveLength(1);
     expect(links(back)).toEqual([["/app", "荷物を見る"]]);
-    // The link is not offered again: the page has no token now.
-    expect(findAll(back, (n) => n.tag === "form")).toHaveLength(0);
+    // The link is not offered again: the page has no token now (its one form signs out, R3-35).
+    expect(findAll(back, (n) => n.tag === "form" && n.attrs.action === "/auth/confirm")).toHaveLength(0);
   });
 
   it("still leads where the link was going, and only to a path on this site", async () => {
@@ -255,5 +259,77 @@ describe("[R3-28] a URL made with someone's token and link=refused", () => {
     const location = await post({ token_hash: TOKEN, type: "email", next: "/app/settings", intent: "switch_account" });
     expect(new URL(location, "https://otodoke.app").searchParams.has("token_hash")).toBe(false);
     expect(notices(await continuePage(location))).toHaveLength(1);
+  });
+});
+
+/**
+ * [Review R3-35] After a refused switch the page said what failed but not what to do: someone who
+ * wants the other account signs out first, then asks for a new link. 「ログアウト」 sits under the
+ * notice, only with it. It posts to /auth/signout as the button in 設定 does, with the same word,
+ * and shows the press as the other buttons do (SubmitButton).
+ */
+describe("[R3-35] 「ログアウト」 under the notice of a refused switch", () => {
+  beforeEach(() => signedInAs("a@example.com"));
+
+  /** The forms that sign out. */
+  const signOuts = (root: HtmlNode) => findAll(root, (n) => n.tag === "form" && n.attrs.action === "/auth/signout");
+
+  /** Elements of a type in the page's tree as returned (components are not called). */
+  function elementsOf(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>>[] {
+    const out: ReactElement<Record<string, unknown>>[] = [];
+    const walk = (n: ReactNode) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!isValidElement<{ children?: ReactNode }>(n)) return;
+      if (n.type === type) out.push(n as ReactElement<Record<string, unknown>>);
+      walk(n.props.children);
+    };
+    walk(node);
+    return out;
+  }
+
+  /** The word on 設定's sign-out button, from its source. */
+  const settingsSignOut = () => {
+    const source = readFileSync(path.resolve(__dirname, "../../app/app/settings/page.tsx"), "utf8");
+    const form = /<form action="\/auth\/signout" method="post">([\s\S]*?)<\/form>/.exec(source);
+    expect(form, "設定 signs out with a form").not.toBeNull();
+    const word = />\s*([^<>{}]+?)\s*<\/(?:button|SubmitButton)>/.exec(form![1]);
+    expect(word, "設定's sign-out button has a word").not.toBeNull();
+    return word![1];
+  };
+
+  it("comes with the notice, under it, as the one way to sign out", async () => {
+    const back = await continuePage(await post(fieldsOf(formOf(await continuePage(linkAt()), "別のアカウントでログインする"))));
+    const forms = signOuts(back);
+    expect(forms).toHaveLength(1);
+    expect(forms[0].attrs.method).toBe("post");
+    expect(findAll(forms[0], (n) => n.tag === "button").map((b) => [b.attrs.type, textOf(b).trim()])).toEqual([["submit", "ログアウト"]]);
+    // In the page's order: the notice, 「ログアウト」, then 「荷物を見る」.
+    const [notice] = notices(back);
+    const [toList] = findAll(back, (n) => n.tag === "a" && textOf(n).trim() === "荷物を見る");
+    expect(findAll(back, (n) => n === notice || n === forms[0] || n === toList)).toEqual([notice, forms[0], toList]);
+  });
+
+  it("is 設定's sign-out: the same word, the same route and method", async () => {
+    expect(settingsSignOut()).toBe("ログアウト");
+    const button = findAll(signOuts(await continuePage("/auth/continue?link=refused"))[0], (n) => n.tag === "button");
+    expect(textOf(button[0]).trim()).toBe(settingsSignOut());
+  });
+
+  it("shows the press with the shared SubmitButton, for a form that leaves the page", async () => {
+    const tree = await ContinuePage({ searchParams: Promise.resolve({ link: "refused" }) });
+    const buttons = elementsOf(tree as ReactNode, SubmitButton);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].props).toMatchObject({ leavesPage: true, pendingLabel: "ログアウトしています…", children: "ログアウト" });
+  });
+
+  it("is not there without the notice", async () => {
+    // The switch offered, nothing refused; no mark; a made URL with a token and the mark.
+    for (const url of [linkAt(), "/auth/continue", "/auth/continue?link=other", `/auth/continue?token_hash=${TOKEN}&type=email&link=refused`]) {
+      const page = await continuePage(url);
+      expect(signOuts(page), url).toHaveLength(0);
+      expect(textOf(page), url).not.toContain("ログアウト");
+    }
+    mocks.user = null;
+    expect(signOuts(await continuePage("/auth/continue?link=refused"))).toHaveLength(0);
   });
 });
