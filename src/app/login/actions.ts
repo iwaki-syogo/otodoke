@@ -36,14 +36,15 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     redirect(loginErrorPath(claim.verdict));
   }
 
+  // Supabase checks it with Cloudflare when CAPTCHA protection is on, and ignores it while it is
+  // off. Absent (the check did not finish, script blocked) is sent as absent. Never logged.
+  const captchaToken = turnstileToken(formData);
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
       emailRedirectTo: `${origin}/auth/confirm?next=${encodeURIComponent(next)}`,
-      // Supabase checks it with Cloudflare when CAPTCHA protection is on, and ignores it while
-      // it is off. Absent (not solved yet, script blocked) is sent as absent. Never logged.
-      captchaToken: turnstileToken(formData),
+      captchaToken,
     },
   });
   if (error) {
@@ -51,7 +52,8 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     console.warn("[login] signInWithOtp failed:", error.status, error.code, error.message);
     // No mail went out, so this press does not count against the limit (never throws).
     await releaseLoginMail(email, claim.claimId);
-    redirect(loginErrorPath(loginSendErrorCode(error)));
+    // A refused token and a missing one need different advice: this press sent one or it did not.
+    redirect(loginErrorPath(loginSendErrorCode(error, captchaToken !== undefined)));
   }
   redirect(`/login?sent=${encodeURIComponent(email)}`);
 }

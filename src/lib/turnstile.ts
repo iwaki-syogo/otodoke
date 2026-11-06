@@ -20,6 +20,45 @@ export const TURNSTILE_RESPONSE_FIELD = "cf-turnstile-response";
 /** Cloudflare's documented maximum token length. Anything longer is not a token. */
 export const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 
+/** How long a press of the login button waits for the token before sending without one. */
+export const TURNSTILE_WAIT_MS = 10_000;
+
+/**
+ * The token field's `data-turnstile` when the check's script could not load: no token will come,
+ * so the login button sends at once instead of waiting.
+ */
+export const TURNSTILE_UNAVAILABLE = "unavailable";
+
+/** The token field as the login button reads it. */
+type TokenField = { value: string; dataset: Record<string, string | undefined> };
+
+/** Nothing more to wait for: the token is there, or none will come (the script could not load). */
+export function tokenSettled(field: TokenField): boolean {
+  return field.value !== "" || field.dataset.turnstile === TURNSTILE_UNAVAILABLE;
+}
+
+/**
+ * Resolves true as soon as `done()` holds, or false once `timeoutMs` has passed without it.
+ * The login button holds a press on this until the token field is settled.
+ */
+export function waitUntil(done: () => boolean, timeoutMs = TURNSTILE_WAIT_MS, intervalMs = 100): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (done()) {
+      resolve(true);
+      return;
+    }
+    const finish = (ok: boolean) => {
+      clearInterval(poll);
+      clearTimeout(limit);
+      resolve(ok);
+    };
+    const poll = setInterval(() => {
+      if (done()) finish(true);
+    }, intervalMs);
+    const limit = setTimeout(() => finish(done()), timeoutMs);
+  });
+}
+
 /**
  * The token from a submitted form, or undefined when there is none (script blocked, not solved
  * yet, no JavaScript). Undefined is passed on as "no token": Supabase ignores it while CAPTCHA
