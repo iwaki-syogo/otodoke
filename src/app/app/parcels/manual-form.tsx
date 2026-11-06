@@ -164,9 +164,10 @@ function DeleteForm({ id }: { id: string }) {
       <summary className="cursor-pointer text-neutral-500">この荷物を消す</summary>
       <form action={action} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
         <input type="hidden" name="id" value={id} />
+        <p className="text-sm leading-6">消すと元に戻せません。</p>
         <label className="flex items-center gap-2">
           <input type="checkbox" name="confirm" value="yes" required className="h-4 w-4" />
-          本当に消します。元に戻せません。
+          本当に消す
         </label>
         {state.error ? (
           <p role="alert" className="text-sm text-red-800">
