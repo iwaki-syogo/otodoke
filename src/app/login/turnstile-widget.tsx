@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
-import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY, TURNSTILE_UNAVAILABLE } from "@/lib/turnstile";
+import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY, TURNSTILE_UNAVAILABLE, turnstileErrorIsFatal } from "@/lib/turnstile";
 
 /** The part of Cloudflare's `window.turnstile` this form uses. */
 type TurnstileApi = {
@@ -95,8 +95,15 @@ export function TurnstileWidget({
             "timeout-callback": () => setToken(""),
             // Without this handler Turnstile throws. Returning nothing keeps Turnstile's console
             // warning with the error code (for debugging); the widget shows its own error state.
-            "error-callback": () => {
+            // An error Turnstile does not retry (a host the sitekey does not allow, ...) means no
+            // token will come: treated like a script that cannot load, so the button sends at once.
+            "error-callback": (code?: unknown) => {
               setToken("");
+              if (!cancelled && turnstileErrorIsFatal(code)) setUnavailable(true);
+            },
+            // A browser Turnstile cannot run in: no token will come either.
+            "unsupported-callback": () => {
+              if (!cancelled) setUnavailable(true);
             },
           }) ?? null;
       })

@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TURNSTILE_UNAVAILABLE_MESSAGE } from "@/lib/login-errors";
-import { CAPTCHA_ENFORCED, TURNSTILE_RESPONSE_FIELD, TURNSTILE_SCRIPT_URL, TURNSTILE_SITEKEY } from "@/lib/turnstile";
+import {
+  CAPTCHA_ENFORCED,
+  TURNSTILE_FATAL_ERRORS,
+  TURNSTILE_RESPONSE_FIELD,
+  TURNSTILE_SCRIPT_URL,
+  TURNSTILE_SITEKEY,
+  tokenSettled,
+  turnstileErrorIsFatal,
+} from "@/lib/turnstile";
 import { mount, type Mounted, type NodeFactory } from "./hook-harness";
 
 /**
@@ -243,6 +251,71 @@ describe("when Cloudflare's script cannot load", () => {
     expect(second.text()).not.toContain(TURNSTILE_UNAVAILABLE_MESSAGE);
     expect(slotOf(second).props.hidden).toBe(false);
     expect(fieldOf(second).dataset.turnstile).toBeUndefined();
+  });
+});
+
+describe("when Turnstile itself answers with an error (review R2b-2)", () => {
+  it.each(["110100", "110110", "110200", "200100", "400020", "400021", "400070"])(
+    "treats %s (Cloudflare's table: Retry No) like a script that cannot load: the button sends at once",
+    async (code) => {
+      const t = fakeTurnstile();
+      vi.stubGlobal("window", { turnstile: t.api });
+      const view = widget();
+      await settle();
+      t.last().options.callback(TOKEN);
+      t.last().options["error-callback"](code);
+      await settle();
+      expect(fieldOf(view).value).toBe("");
+      expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+      expect(tokenSettled(fieldOf(view))).toBe(true);
+      expect(slotOf(view).props.hidden).toBe(true);
+      expect(view.text()).toBe(TURNSTILE_UNAVAILABLE_MESSAGE);
+    },
+  );
+
+  it("reads the code whether Turnstile passes it as a string or a number", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    (t.last().options["error-callback"] as (code: unknown) => unknown)(110200);
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
+  it.each(["300030", "600010", "110600", "110620", "200500", "999999", undefined])(
+    "keeps waiting after %s: Turnstile retries it itself, so a token can still come",
+    async (code) => {
+      const t = fakeTurnstile();
+      vi.stubGlobal("window", { turnstile: t.api });
+      const view = widget();
+      await settle();
+      t.last().options["error-callback"](code);
+      await settle();
+      expect(fieldOf(view).dataset.turnstile).toBeUndefined();
+      expect(tokenSettled(fieldOf(view))).toBe(false);
+      expect(view.text()).toBe("");
+      // The retry's token is the one the press sends.
+      t.last().options.callback(TOKEN_2);
+      expect(fieldOf(view).value).toBe(TOKEN_2);
+    },
+  );
+
+  it("treats a browser Turnstile does not support the same way (unsupported-callback)", async () => {
+    const t = fakeTurnstile();
+    vi.stubGlobal("window", { turnstile: t.api });
+    const view = widget();
+    await settle();
+    (t.last().options["unsupported-callback"] as () => void)();
+    await settle();
+    expect(fieldOf(view).dataset.turnstile).toBe("unavailable");
+  });
+
+  it("follows Cloudflare's table and nothing else", () => {
+    expect([...TURNSTILE_FATAL_ERRORS]).toEqual(["110100", "110110", "110200", "200100", "400020", "400021", "400070"]);
+    expect(turnstileErrorIsFatal("300030")).toBe(false);
+    expect(turnstileErrorIsFatal(null)).toBe(false);
+    expect(turnstileErrorIsFatal({ code: "110200" })).toBe(false);
   });
 });
 

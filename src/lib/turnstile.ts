@@ -35,10 +35,28 @@ export const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 export const TURNSTILE_WAIT_MS = 10_000;
 
 /**
- * The token field's `data-turnstile` when the check's script could not load: no token will come,
- * so the login button sends at once instead of waiting.
+ * The token field's `data-turnstile` when no token will come: the check's script could not load,
+ * Turnstile does not support the browser, or it stopped with an error it does not retry. The
+ * login button then sends at once instead of waiting.
  */
 export const TURNSTILE_UNAVAILABLE = "unavailable";
+
+/**
+ * Turnstile's client-side error codes after which it does not retry, so no token will come
+ * (Cloudflare's error code table, the rows marked "Retry: No"): 110100 invalid sitekey, 110110
+ * sitekey not found, 110200 domain not authorized, 200100 clock or cache problem, 400020 invalid
+ * sitekey, 400021 sitekey domain mismatch, 400070 sitekey disabled.
+ *
+ * Every other code (300xxx/600xxx challenge failures, 110600/110620 timeouts, 200500 iframe load
+ * error, and any code not in the table) is retried by Turnstile itself (retry: auto, every 8 s),
+ * so a token can still come and the button keeps waiting for it.
+ */
+export const TURNSTILE_FATAL_ERRORS: readonly string[] = ["110100", "110110", "110200", "200100", "400020", "400021", "400070"];
+
+/** Whether the error-callback's code (its first argument) is one Turnstile does not retry. */
+export function turnstileErrorIsFatal(code: unknown): boolean {
+  return (typeof code === "string" || typeof code === "number") && TURNSTILE_FATAL_ERRORS.includes(String(code));
+}
 
 /** The token field as the login button reads it. */
 type TokenField = { value: string; dataset: Record<string, string | undefined> };
