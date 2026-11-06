@@ -421,6 +421,8 @@ const axisTicksCases = [0, -5, 1, 3, 4, 5, 7.5, 10, 99, 1000, 1234.5, 4000, 4001
 const tickLabelCases = [
   0, 1, 500, 1000, 1234, 8000, 9999, 10_000, 12_345, 15_000, 15_500, 20_000, 25_000, 50_000, 99_999, 125_000, 999_999, 1_000_000, 12_345_678,
   100_000_000, 1_234_560_000,
+  // toLocaleString rounds the shortest decimal form, half away from zero: 1.15 is 1.2, though the double is below it.
+  10_050, 10_500, 11_500, 12_500, 99_999.95, 1234.5678, 0.0005,
 ].map((input) => ({ in: input, out: tickLabel(input) }));
 
 // The category filter as the page gets it: cSet false is no filter (undefined), c null is 未分類.
@@ -579,6 +581,19 @@ const forwardingConfirmUrlCases = [
   "https://mail-settings.google.com:99999/mail/vf-abc",
   "https://",
   "",
+  // What the WHATWG parser does to the host and the path (the Web compares its hostname and pathname).
+  "https://ｍａｉｌ-settings.google.com/mail/vf-full-width",
+  "https://mail-settings%2Egoogle.com/mail/vf-percent",
+  "https://mail-settings。google。com/mail/vf-ideographic-stop",
+  "https://mail-settings.goo\u200bgle.com/mail/vf-zero-width",
+  "https://mail-settings.google.com./mail/vf-trailing-dot",
+  "https://mail-settings.google.com\\mail\\vf-backslash",
+  "https:///mail-settings.google.com/mail/vf-three-slashes",
+  "https://mail-settings.google.com/x/../mail/vf-dot-dot",
+  "https://mail-settings.google.com/%2e/mail/vf-dot",
+  "https://mail-settings.google.com:/mail/vf-empty-port",
+  "https://mail-settings.google.com?/mail/vf-query",
+  "https://mail-settings.google.com#/mail/vf-hash",
 ].map((input) => ({ in: input, out: forwardingConfirmUrl(input) }));
 
 const GOOD = "https://mail-settings.google.com/mail/vf-%5BABC%5D-good";
