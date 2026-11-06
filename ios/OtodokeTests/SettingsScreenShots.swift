@@ -39,7 +39,7 @@ struct SettingsScreenShots {
     @Test(.enabled(if: dir != nil), arguments: SettingsPage.allCases)
     func shootPage(_ page: SettingsPage) async throws {
         let model = try await Self.model(.keyPresent)
-        try await shootBoth(SettingsView(model: model, expanded: true, page: page), "page-\(page)", height: page == .handling ? 2400 : 1500)
+        try await shootBoth(SettingsView(model: model, expanded: true, page: page), "page-\(page)", height: page == .handling ? 2400 : page == .forward ? 3600 : 1500)
     }
 
     @Test(.enabled(if: dir != nil), arguments: [Scenario.keyFailed, .keyNone])

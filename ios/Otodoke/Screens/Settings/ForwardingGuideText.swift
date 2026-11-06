@@ -1,0 +1,149 @@
+// The words of 「メールの自動転送の設定」, copied sentence for sentence from the source of the sentences
+// (docs/ux-redo/forwarding-guide.md of built-with-claude-japan-2026, checked against each service's own help
+// on 2026-11-07). No new sentence is written here: src/lib/__tests__/ios-forwarding-guide.test.ts reads this
+// file and the source and fails when a sentence differs. The screens only draw what is listed here.
+
+import Foundation
+
+enum ForwardingGuideText {
+    struct Link: Sendable {
+        let title: String
+        let url: String
+    }
+
+    struct Group: Sendable {
+        let heading: String?
+        let steps: [String]
+    }
+
+    struct Service: Identifiable, Sendable {
+        let id: String
+        let title: String
+        /// How long it takes and where (shown with a clock).
+        let meta: String?
+        let link: Link?
+        let linkNote: String?
+        let groups: [Group]
+        /// A paragraph in place of steps (そのほかのメール).
+        let body: String?
+        /// After this step (counted through all groups) the Gmail filter text and its copy button are drawn.
+        let filterAfterStep: Int?
+        let notes: [String]
+    }
+
+    enum Block: Sendable {
+        case text(String)
+        case steps([String])
+        case domains([String])
+        case links([Link])
+    }
+
+    struct Pitfall: Identifiable, Sendable {
+        let title: String
+        let blocks: [Block]
+        var id: String { title }
+    }
+
+    // MARK: ページの題と最初の一文
+
+    static let title = "メールの自動転送の設定"
+    static let lead = "設定は最初の 1 回だけです。あとは何もしなくても、荷物のメールが Otodoke に届きます。"
+    static let supplement = "お使いのメールを選んでください。どれも 5 分ほどで終わります。"
+
+    // MARK: 始める前に
+
+    static let beforeHeading = "始める前に"
+    static let before: [String] = [
+        "Otodoke の設定の「メールの転送」で、あなた専用の転送先アドレスをコピーしておきます。",
+        "アドレスは …@in.otodoke.app の形です。知らない人には教えないでください。",
+    ]
+
+    // MARK: Gmail / iCloud / Outlook / そのほか
+
+    static let services: [Service] = [
+        Service(
+            id: "gmail",
+            title: "Gmail",
+            meta: "5 分・パソコンのブラウザで（スマホの Gmail アプリでは設定できません）",
+            link: Link(title: "転送の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/fwdandpop"),
+            linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えます。",
+            groups: [
+                Group(heading: "転送先を登録する", steps: [
+                    "パソコンのブラウザで Gmail を開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。",
+                    "「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",
+                    "「次へ」 › 「続行」 › 「OK」の順に押します。本人確認を求められたら済ませて、もう一度アドレスを入れます。",
+                    "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」ボタンが出るので、押して承認します。",
+                    "「メール転送と POP/IMAP」の画面の「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。",
+                ]),
+                Group(heading: "荷物のメールだけを送るフィルタを作る", steps: [
+                    "Gmail の上の検索ボックスの右端にある「検索オプションを表示」を押します。",
+                    "「含む」に次の文字列を貼り付けます。",
+                    "下の「フィルタを作成」を押します。",
+                    "「転送する」にチェックを入れ、横の欄で Otodoke のアドレスを選び、「フィルタを作成」を押します。",
+                ]),
+            ],
+            body: nil,
+            filterAfterStep: 7,
+            notes: [
+                "転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。買い物に関係しないメールは、本文を保存せずに捨てます。",
+            ]
+        ),
+        Service(
+            id: "icloud",
+            title: "iCloud メール（@icloud.com・@me.com・@mac.com）",
+            meta: "3 分・ブラウザで",
+            link: Link(title: "iCloud メールを開く", url: "https://www.icloud.com/mail/"),
+            linkNote: nil,
+            groups: [
+                Group(heading: nil, steps: [
+                    "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。",
+                    "メールボックスの一覧の上にある「設定」ボタンを押し、「設定」を選びます。",
+                    "左の一覧で「メールの転送」を選びます。",
+                    "「メールの転送先」にチェックを入れ、欄に Otodoke のアドレスを貼り付けます。",
+                    "「転送後にメッセージを削除」にはチェックを入れません。入れると、iCloud にメールが残りません。",
+                ]),
+            ],
+            body: nil,
+            filterAfterStep: nil,
+            notes: ["iCloud はすべてのメールを転送します。買い物に関係しないメールは、本文を保存せずに捨てます。"]
+        ),
+        Service(
+            id: "outlook",
+            title: "Outlook（@outlook.jp・@outlook.com・@hotmail.co.jp など）",
+            meta: "3 分・ブラウザで",
+            link: Link(title: "転送の設定を開く", url: "https://outlook.live.com/mail/0/options/mail/forwarding"),
+            linkNote: "サインインしていないと Outlook の紹介ページが開きます。サインインしてから、もう一度このボタンを押してください。",
+            groups: [
+                Group(heading: nil, steps: [
+                    "ブラウザで Outlook.com を開き、サインインします。",
+                    "右上の歯車「設定」 › 「メール」 › 「転送」を開きます。本人確認を求められたら済ませます。",
+                    "「転送を有効にする」をオンにし、Otodoke のアドレスを貼り付けます。",
+                    "「転送されたメッセージのコピーを保持する」が出ていたら、チェックを入れます。Outlook にもメールが残ります。",
+                    "「保存」を押します。",
+                ]),
+            ],
+            body: nil,
+            filterAfterStep: nil,
+            notes: ["Outlook はすべてのメールを転送します。買い物に関係しないメールは、本文を保存せずに捨てます。会社や学校のアカウントは、決まりで転送できないことがあります。"]
+        ),
+        Service(
+            id: "others",
+            title: "そのほかのメール",
+            meta: nil,
+            link: nil,
+            linkNote: nil,
+            groups: [],
+            body: "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。",
+            filterAfterStep: nil,
+            notes: []
+        ),
+    ]
+
+    // MARK: 設定できたか確かめる
+
+    static let verifyHeading = "設定できたか確かめる"
+    static let verify: [String] = [
+        "次に買い物をしたら、Otodoke の一覧に荷物が出るか見てください。",
+        "出ないときは、設定の「うまく届かないとき」を開いてください。",
+    ]
+}

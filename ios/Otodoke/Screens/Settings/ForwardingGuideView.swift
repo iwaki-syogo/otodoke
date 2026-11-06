@@ -1,78 +1,208 @@
-// 「自動転送の設定（最初の 1 回だけ）」 of src/app/app/settings/page.tsx (2541793): the Gmail steps with the
-// filter text to copy, and iCloud / Outlook / その他, in the Web's words.
+// 「メールの自動転送の設定」 on the 「メールの転送」 page: one folding card per mail service (Gmail, iCloud,
+// Outlook, そのほか), each with numbered steps, a button that opens the service's own forwarding page in Safari,
+// and the Gmail filter text with its copy button. The words are ForwardingGuideText's.
 
 import SwiftUI
 
-struct ForwardingGuideView: View {
-    @State private var showsGmail: Bool
-    @State private var showsOthers: Bool
-
-    init(expanded: Bool = false) {
-        _showsGmail = State(initialValue: expanded)
-        _showsOthers = State(initialValue: expanded)
-    }
-
-    static let gmailSteps: [String] = [
-        "パソコンのブラウザで Gmail を開き、設定 › すべての設定を表示 › 「メール転送と POP/IMAP」を開く",
-        "「転送先アドレスを追加」で上のアドレスを入れる。本人確認を求められたら済ませて、もう一度入れる。「次へ」の後に開く小窓で「続行」を押す",
-        "少し待つと、このページの上に承認ページへのボタンが出るので開いて承認する",
-        "検索ボックスの検索オプションを開き、「含む」に次の文字列を貼って「フィルタを作成」を押す",
-        "「転送する」に上のアドレスを選んで作成する",
-    ]
+/// The numbered round badge the steps share (here and on 「うまく届かないとき」).
+struct StepBadge: View {
+    let number: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("自動転送の設定（最初の 1 回だけ）")
-                .font(.headline)
-            Text("店ごとの設定はいりません。新しい店で買っても、そのまま読み取ります。")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 8) {
-                SettingsDisclosure(title: "Gmail", isExpanded: $showsGmail) { gmail }
-                SettingsDisclosure(title: "iCloud / Outlook / その他", isExpanded: $showsOthers) { others }
-            }
-            .padding(.top, 4)
-        }
+        Text(verbatim: "\(number)")
+            .font(.caption.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .frame(width: 24, height: 24)
+            .background(Color(.systemGray5), in: Circle())
+            .accessibilityHidden(true)
     }
+}
 
-    private var gmail: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(Self.gmailSteps.enumerated()), id: \.offset) { index, step in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(index + 1).")
-                        .monospacedDigit()
-                    VStack(alignment: .leading, spacing: 8) {
+/// A numbered list of steps; `start` is the number of the first.
+struct StepList: View {
+    let steps: [String]
+    var start = 1
+    /// Drawn under the step with this number.
+    var after: (number: Int, content: AnyView)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                let number = start + index
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        StepBadge(number: number)
                         Text(step)
-                        if index == 3 {
-                            HStack(spacing: 8) {
-                                Text(SettingsModel.gmailFilter)
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                CopyButton(text: SettingsModel.gmailFilter)
-                            }
-                            .padding(8)
-                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                        }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityLabel(Text(verbatim: "\(number). \(step)"))
+                    }
+                    if let after, after.number == number {
+                        after.content.padding(.leading, 36)
                     }
                 }
             }
-            Text("転送するのは上の言葉を含むメールだけです。ただし、これらの言葉を含む私信（「到着したよ」など）も転送されます。届いたメールのうち、買い物に関係しないものは本文を保存せずに捨てます。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
         }
-        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct ForwardingGuideView: View {
+    typealias T = ForwardingGuideText
+    @Environment(\.openURL) private var openURL
+    @State private var opened: Set<String>
+
+    /// `expanded`: every service starts open (the screen check).
+    init(expanded: Bool = false) {
+        _opened = State(initialValue: expanded ? Set(T.services.map(\.id)) : [])
     }
 
-    private var others: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("メールの設定にある自動転送で、すべてのメールを上のアドレスへ転送してください。")
-            Text("Outlook は 設定 › メール › 転送 にあります。広告など買い物に関係しないメールは、本文を保存せずに捨てます。判断に迷うメールだけ Claude が確認します。")
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            header
+            before
+            VStack(spacing: 12) {
+                ForEach(T.services) { service in
+                    SettingsDisclosure(title: service.title, isExpanded: binding(service.id)) {
+                        serviceBody(service)
+                    }
+                }
+            }
+            verify
         }
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func binding(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { opened.contains(id) },
+            set: { if $0 { opened.insert(id) } else { opened.remove(id) } }
+        )
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsParts.heading(T.title)
+            Text(T.lead)
+                .font(.subheadline)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(T.supplement)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var before: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(T.beforeHeading)
+                .font(.subheadline.weight(.semibold))
+            ForEach(T.before, id: \.self) { line in
+                bullet(line)
+            }
+        }
+    }
+
+    private var verify: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(T.verifyHeading)
+                .font(.subheadline.weight(.semibold))
+            ForEach(T.verify, id: \.self) { line in
+                bullet(line)
+            }
+        }
+    }
+
+    private func bullet(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(verbatim: "•").foregroundStyle(.secondary).accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: A service
+
+    private func serviceBody(_ service: T.Service) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let meta = service.meta {
+                Label {
+                    Text(meta)
+                } icon: {
+                    Image(systemName: "clock")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            if let link = service.link {
+                VStack(alignment: .leading, spacing: 6) {
+                    SettingsParts.linkCard(link.title) { open(link.url) }
+                    if let note = service.linkNote {
+                        SettingsParts.secondaryText(note).font(.caption)
+                    }
+                }
+            }
+            if let body = service.body {
+                Text(body)
+            }
+            groups(service)
+            ForEach(service.notes, id: \.self) { note in
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func groups(_ service: T.Service) -> some View {
+        // The steps are numbered through all the groups of a service.
+        var starts: [Int] = []
+        var next = 1
+        for group in service.groups {
+            starts.append(next)
+            next += group.steps.count
+        }
+        return VStack(alignment: .leading, spacing: 20) {
+            ForEach(Array(service.groups.enumerated()), id: \.offset) { index, group in
+                let first = starts[index]
+                VStack(alignment: .leading, spacing: 12) {
+                    if let heading = group.heading {
+                        Text(heading).font(.subheadline.weight(.semibold))
+                    }
+                    StepList(steps: group.steps, start: first, after: filter(service, in: first..<(first + group.steps.count)))
+                }
+            }
+        }
+        .lineSpacing(3)
+    }
+
+    private func filter(_ service: T.Service, in range: Range<Int>) -> (number: Int, content: AnyView)? {
+        guard let number = service.filterAfterStep, range.contains(number) else { return nil }
+        return (number, AnyView(filterBox))
+    }
+
+    private var filterBox: some View {
+        HStack(spacing: 8) {
+            Text(SettingsModel.gmailFilter)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            CopyButton(text: SettingsModel.gmailFilter)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func open(_ url: String) {
+        guard let url = URL(string: url) else { return }
+        SettingsWeb.openPage(url, openURL)
     }
 }
 

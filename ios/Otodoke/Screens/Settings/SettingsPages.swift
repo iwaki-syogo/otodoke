@@ -146,29 +146,72 @@ struct SettingsHandlingPage: View {
 // MARK: 「うまく届かないとき」
 
 struct SettingsDeliveryHelpPage: View {
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
-        SettingsParts.page(spacing: 12) {
-            ForEach(Array(DeliveryHelpText.items.enumerated()), id: \.offset) { index, item in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(verbatim: "\(index + 1)")
-                        .font(.caption.weight(.bold))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .background(Color(.systemGray5), in: Circle())
-                    Text(item)
-                        .font(.subheadline)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(16)
-                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator)))
+        SettingsParts.page(spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsParts.heading(DeliveryHelpText.heading)
+                SettingsParts.secondaryText(DeliveryHelpText.lead)
+            }
+            ForEach(Array(DeliveryHelpText.pitfalls.enumerated()), id: \.element.id) { index, pitfall in
+                card(number: index + 1, pitfall)
             }
         }
         .navigationTitle(SettingsMenuText.deliveryTitle)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func card(number: Int, _ pitfall: ForwardingGuideText.Pitfall) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                StepBadge(number: number)
+                Text(pitfall.title)
+                    .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(Array(pitfall.blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .font(.subheadline)
+        .lineSpacing(3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator)))
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: ForwardingGuideText.Block) -> some View {
+        switch block {
+        case let .text(text):
+            Text(text)
+                .fontWeight(text == "確かめ方:" ? .semibold : .regular)
+                .fixedSize(horizontal: false, vertical: true)
+        case let .steps(steps):
+            StepList(steps: steps)
+        case let .domains(domains):
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(domains, id: \.self) { domain in
+                    Text(verbatim: domain)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        case let .links(links):
+            VStack(spacing: 8) {
+                ForEach(links, id: \.url) { link in
+                    SettingsParts.linkCard(link.title) {
+                        if let url = URL(string: link.url) { SettingsWeb.openPage(url, openURL) }
+                    }
+                }
+            }
+        }
     }
 }
 
