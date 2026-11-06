@@ -42,6 +42,9 @@ export default async function Home() {
         <a href="https://github.com/iwaki-syogo/otodoke" className="underline underline-offset-4" target="_blank" rel="noopener noreferrer">
           GitHub
         </a>
+        <Link href="/privacy" className="ml-4 underline underline-offset-4">
+          プライバシーポリシー
+        </Link>
       </footer>
     </main>
   );
