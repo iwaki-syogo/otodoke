@@ -126,6 +126,8 @@ export function SignupForm() {
   const tokenSent = useRef(false);
   /** The one timer that tries at the next point of the backoff, while the tab is shown. */
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The screen has left the page (unmounted): nothing is tried, sent or set again from here on. */
+  const unmounted = useRef(false);
   /** What the timer does (set below, once trySignIn is made): one try by itself. */
   const timedTry = useRef<(() => void) | null>(null);
   const clearAutoTimer = useCallback(() => {
@@ -138,6 +140,7 @@ export function SignupForm() {
    */
   const scheduleAuto = useCallback(() => {
     clearAutoTimer();
+    if (unmounted.current) return;
     const a = auto.current;
     if (!account.current || a.sends >= AUTO_SIGN_IN_MAX) return;
     if (typeof document === "undefined" || document.visibilityState !== "visible") return;
@@ -162,6 +165,8 @@ export function SignupForm() {
 
   /** The request on its way is over: the next press that waited for it goes. */
   const release = useCallback(() => {
+    // Left the page: no press that waited goes, and no timer is set again.
+    if (unmounted.current) return;
     running.current = null;
     setActive(null);
     waiters.current.shift()?.run();
@@ -312,6 +317,7 @@ export function SignupForm() {
    */
   const trySignIn = useCallback(
     async (trigger: Trigger, fromQueue = false) => {
+      if (unmounted.current) return;
       if (!account.current) {
         if (trigger === "press") setSigningIn(false);
         // A press that waited for its turn: the next one waiting goes all the same.
@@ -343,10 +349,12 @@ export function SignupForm() {
         a.lastAt = now;
         // No token without a tick: nothing is sent, and the next point (or return) tries again.
         const got = await tokenForAutoAttempt(token.current, { onStale: spendToken });
-        if (!got.send || running.current || epoch.current !== mine || !account.current) {
+        if (!got.send || running.current || epoch.current !== mine || !account.current || unmounted.current) {
           if (epoch.current === mine && !running.current) scheduleAuto();
           return;
         }
+        // Another try may have reached the maximum while this one waited for its token.
+        if (a.sends >= AUTO_SIGN_IN_MAX) return;
         captchaToken = got.token;
       }
       const creds = account.current;
@@ -383,7 +391,7 @@ export function SignupForm() {
         // A try by itself whose token was refused (it ran out while the tab was away): once more with a new one.
         if (trigger === "auto" && !result.ok && result.code === "captcha" && !pressedMeanwhile.current && !restartAfter.current && auto.current.sends < AUTO_SIGN_IN_MAX) {
           const got = await tokenForAutoAttempt(token.current, { onStale: spendToken });
-          if (got.send && epoch.current === mine) {
+          if (got.send && epoch.current === mine && auto.current.sends < AUTO_SIGN_IN_MAX) {
             captchaToken = got.token;
             result = await signIn(captchaToken);
           }
@@ -449,12 +457,24 @@ export function SignupForm() {
   useEffect(() => {
     queuedPress.current = () => void trySignIn("press", true);
     timedTry.current = () => {
+      if (unmounted.current) return;
       if (typeof document !== "undefined" && document.visibilityState === "visible") void trySignIn("auto");
     };
   }, [trySignIn]);
 
-  // No try waits past the screen: leaving it cancels the timer.
-  useEffect(() => clearAutoTimer, [clearAutoTimer]);
+  // Leaving the page (「← Otodoke」, back) ends the waiting there and then, also with a token wait,
+  // a sign-in or a resend on its way: the password is let go, an answer that comes later is not
+  // read (the epoch moves on), no press that waited goes, and no timer runs or is set again.
+  useEffect(() => {
+    unmounted.current = false;
+    return () => {
+      unmounted.current = true;
+      account.current = null;
+      epoch.current += 1;
+      waiters.current = [];
+      clearAutoTimer();
+    };
+  }, [clearAutoTimer]);
 
   /**
    * 「別のアドレスでやり直す」: the address and the password let go, the form back, empty. While a

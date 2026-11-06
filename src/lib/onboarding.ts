@@ -20,7 +20,7 @@ export const CONFIRM_WAIT = {
   /** Under 「メールを送り直す」, smaller: the address and the password are let go, and the form is back. */
   restart: "別のアドレスでやり直す",
   /** After 「確認しました」 only: a sign-in tried by itself says nothing when the address is not confirmed yet. */
-  notYet: "まだ確認できていません。メールのリンクを押しましたか？",
+  notYet: "まだ確認できていません。メールのリンクを開いて「確認する」を押しましたか？",
   /** The toast after 「メールを送り直す」 went through. */
   resent: "送り直しました",
 } as const;
