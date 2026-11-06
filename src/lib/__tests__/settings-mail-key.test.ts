@@ -112,6 +112,17 @@ describe("/app/settings: passphrase first", () => {
     const root = await render();
     expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === "https://mail-settings.google.com/mail/vf-xyz")).toHaveLength(1);
   });
+
+  it("the approval section is the page's one #gmail-approval, kept off the top edge like #demo", async () => {
+    db.rows("emails").push({ id: "g", user_id: USER, classification: "forwarding_confirmation", processing_status: "processed", body_state: "plain", forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-xyz", sent_at: "2026-11-06T00:00:00Z" });
+    const root = await render();
+    const anchored = findAll(root, (n) => n.attrs.id === "gmail-approval");
+    expect(anchored).toHaveLength(1);
+    expect(anchored[0].tag).toBe("section");
+    expect((anchored[0].attrs.class ?? "").split(/\s+/)).toContain("scroll-mt-4");
+    expect(findAll(anchored[0], (h) => h.tag === "h2" && textOf(h) === "Gmail の転送を承認してください")).toHaveLength(1);
+    expect(findAll(anchored[0], (n) => n.tag === "a" && n.attrs.href === "https://mail-settings.google.com/mail/vf-xyz")).toHaveLength(1);
+  });
 });
 
 describe("/app/settings: あなたのメールの扱い", () => {
