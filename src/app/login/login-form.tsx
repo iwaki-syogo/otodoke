@@ -117,7 +117,7 @@ export function LoginForm({ next }: { next: string }) {
               <p className="mt-1">{RESET_LOSES_MAIL}</p>
               <div className="mt-3">
                 {/* Too late for the wrap (or signed out meanwhile): the words go under the login above, which signs in again. */}
-                <OtherPasswordForm email={email} openWithAnother={notice.openWithAnother} onOpened={() => setLeaveFor(next)} onLogInAgain={(code) => setNotice({ kind: "error", text: flowMessage(code) })} />
+                <OtherPasswordForm openWithAnother={notice.openWithAnother} onOpened={() => setLeaveFor(next)} onLogInAgain={(code) => setNotice({ kind: "error", text: flowMessage(code) })} />
               </div>
             </>
           ) : (

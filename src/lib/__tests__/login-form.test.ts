@@ -24,7 +24,7 @@ const flows = vi.hoisted(() => ({ signIn: vi.fn() }));
 const widget = vi.hoisted(() => ({ token: null as { current: TokenField } | null, round: -1 }));
 const nav = vi.hoisted(() => ({ to: [] as string[] }));
 /** What the login form gave 「ほかのパスワードで開く」 (other-password-form.test.ts tests that form). */
-const other = vi.hoisted(() => ({ props: null as { email: string; openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void } | null }));
+const other = vi.hoisted(() => ({ props: null as { openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void } | null }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -49,7 +49,7 @@ vi.mock("@/app/login/turnstile-widget", () => ({
 vi.mock("@/app/login/other-password-form", async () => {
   const { createElement: h } = await import("react");
   return {
-    OtherPasswordForm: (props: { email: string; openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void }) => {
+    OtherPasswordForm: (props: { openWithAnother: unknown; onOpened: () => void; onLogInAgain: (code: "stale_session" | "signed_out") => void }) => {
       other.props = props;
       return h("div", { "data-other-password": "" });
     },
@@ -173,8 +173,8 @@ describe("the press", () => {
     expect(nav.to).toEqual([]);
     expect(view.text()).toContain(LOGIN_MESSAGES.key_not_opened);
     expect(view.text()).toContain(RESET_LOSES_MAIL);
-    // 「ほかのパスワードで開く」 with the sign-in's own opener, for the address typed above.
-    expect(other.props).toMatchObject({ email: EMAIL, openWithAnother });
+    // 「ほかのパスワードで開く」 with the sign-in's own opener.
+    expect(other.props).toMatchObject({ openWithAnother });
     expect(links(view)).toEqual([
       { href: "/login/forgot", text: "再設定する" },
       { href: NEXT, text: "このまま進む" },

@@ -13,18 +13,21 @@ import { OPEN_WITH_ANOTHER_PASSWORD } from "@/lib/login-errors";
  *
  * 「ほかのパスワードで開く」 shows the field. Like every form that takes a password, no field has a
  * `name` and the form is POST without an action (password-forms.test.ts); the field is emptied
- * after each press. `email` names the account for a password manager.
+ * after each press.
+ *
+ * Unlike the others, it names no account and asks a password manager for nothing (no hidden
+ * username, autocomplete="off"): taken for a login form, it would offer to replace the saved login
+ * password with this one, and the next sign-in would fail (R3-PW-14). The login's password comes
+ * first.
  *
  * The wrap is stored only within 15 minutes of the password sign-in, by the session that made it:
  * stale_session and signed_out go to `onLogInAgain`, where the screen offers the login.
  */
 export function OtherPasswordForm({
-  email,
   openWithAnother,
   onOpened,
   onLogInAgain,
 }: {
-  email: string;
   openWithAnother: OpenWithAnother;
   onOpened: () => void;
   onLogInAgain: (code: "stale_session" | "signed_out") => void;
@@ -70,11 +73,10 @@ export function OtherPasswordForm({
 
   return (
     <form method="post" onSubmit={submit} className="flex w-full flex-col gap-2">
-      <input type="text" autoComplete="username" value={email} readOnly hidden />
       <div className="flex gap-2">
         <input
           type="password"
-          autoComplete="current-password"
+          autoComplete="off"
           aria-label="ほかのパスワード"
           placeholder="ほかのパスワード"
           value={password}

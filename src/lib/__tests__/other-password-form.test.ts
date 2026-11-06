@@ -21,7 +21,6 @@ vi.mock("react", async (importOriginal) => {
 
 const { OtherPasswordForm } = await import("@/app/login/other-password-form");
 
-const EMAIL = "someone@example.test";
 const OTHER = "となりの犬は柴で3歳";
 
 const textOfHost = (h: Host | string): string => (typeof h === "string" ? h : h.children.map(textOfHost).join(""));
@@ -32,7 +31,7 @@ const button = (view: Mounted) => view.host((h) => h.type === "button");
 const opener = vi.fn();
 const onOpened = vi.fn();
 const onLogInAgain = vi.fn();
-const props = { email: EMAIL, openWithAnother: opener, onOpened, onLogInAgain };
+const props = { openWithAnother: opener, onOpened, onLogInAgain };
 
 beforeEach(() => {
   opener.mockReset();
@@ -123,14 +122,17 @@ describe("ほかのパスワードで開く", () => {
     expect(opener).not.toHaveBeenCalled();
   });
 
-  it("the field has no name, in a POST form without an action, and names the account for a password manager", async () => {
+  it("the field has no name, in a POST form without an action, and is no login field for a password manager", async () => {
     const view = await typed();
     const form = view.host((h) => h.type === "form");
     expect(form.props.method).toBe("post");
     expect(form.props.action).toBeUndefined();
     expect(view.hosts((h) => "name" in h.props)).toEqual([]);
-    expect(view.host((h) => h.type === "input" && h.props.autoComplete === "username").props).toMatchObject({ value: EMAIL, readOnly: true, hidden: true });
-    expect(field(view).props.autoComplete).toBe("current-password");
+    // R3-PW-14: no account named, nothing asked of a password manager, so it never offers to put
+    // this password in place of the saved login one.
+    expect(view.hosts((h) => h.type === "input")).toHaveLength(1);
+    expect(view.hosts((h) => h.props.autoComplete === "username")).toEqual([]);
+    expect(field(view).props.autoComplete).toBe("off");
     // Drawn by the server, it is the button alone (the field comes with the press, after the script).
     expect(renderToStaticMarkup(createElement(OtherPasswordForm, props))).not.toContain("<input");
   });
