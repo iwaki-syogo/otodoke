@@ -45,7 +45,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
           placeholder="you@example.com"
           className="rounded-lg border border-neutral-300 px-3 py-3 text-base outline-none focus:border-neutral-900"
         />
-        <TurnstileWidget />
+        {/* captcha_missing already says what the widget's notice would: show one of them. */}
+        <TurnstileWidget hideUnavailableNotice={error === "captcha_missing"} />
         <LoginSubmitButton />
       </form>
     </main>

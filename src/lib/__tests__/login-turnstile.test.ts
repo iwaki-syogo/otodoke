@@ -207,7 +207,7 @@ describe("the login form carries the widget", () => {
     expect(source).toContain("turnstile.remove(");
     const page = readFileSync(path.resolve(__dirname, "../../app/login/page.tsx"), "utf8");
     const form = page.slice(page.indexOf("<form action={sendMagicLink}"), page.indexOf("</form>"));
-    expect(form).toContain("<TurnstileWidget />");
+    expect(form).toContain("<TurnstileWidget ");
   });
 
   it("uses the public sitekey and Cloudflare's exact script URL", async () => {
