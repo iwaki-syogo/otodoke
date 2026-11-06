@@ -2,7 +2,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
 import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
-import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_GAP_MS, AUTO_SIGN_IN_MAX } from "@/lib/onboarding";
+import { LOGIN_TRY_LIMITS } from "@/lib/login-mail-limit";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, autoSignInGapMs } from "@/lib/onboarding";
 import { TURNSTILE_AUTO_WAIT_MS, TURNSTILE_TOKEN_STALE_MS, TURNSTILE_WAIT_MS, tokenForAutoAttempt, tokenIsStale, type TokenField } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -11,9 +12,9 @@ import { read, withoutComments } from "./source-scan";
 /**
  * Onboarding screen 1 (/signup once the mail went, src/app/signup/signup-form.tsx): the tab keeps
  * the address and the password in its memory only, and signs in by itself as /login does when the
- * tab is shown again (visibilitychange to visible, focus), or when 「確認しました」 is pressed.
- * No timer tries, and the tries by themselves are few (they count against the sign-in limits per
- * IP). By itself it says nothing while the address is not confirmed; a press says so. `credentials`
+ * tab is shown again (visibilitychange to visible, focus), at the points of the backoff while the
+ * tab is shown (one timer), or when 「確認しました」 is pressed. The tries by themselves are few (they
+ * count against the sign-in limits per IP). By itself it says nothing while the address is not confirmed; a press says so. `credentials`
  * goes to /login with the address; any other refusal gets LOGIN_MESSAGES' words. The sign-in that
  * made the first key goes straight to the first-run guide. 「別のアドレスでやり直す」 lets go of both.
  *
@@ -69,7 +70,7 @@ const TOKEN = "0.token-for-the-sign-in";
 
 const WORDS = {
   title: "確認のメールを送りました",
-  body: "メールのリンクを押してこの画面に戻ると、自動で次へ進みます。",
+  body: "メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。",
   done: "確認しました",
   resend: "メールを送り直す",
   restart: "別のアドレスでやり直す",
@@ -188,7 +189,7 @@ describe("the waiting screen's words", () => {
 });
 
 describe("when it signs in", () => {
-  it("never by itself on a timer: only when the tab is shown again, once for the two events, and with the password from memory", async () => {
+  it("the tab shown again tries at once, once for the two events of one return, and with the password from memory (hidden is no trigger)", async () => {
     await waiting();
     // Long after the sign-up, with nothing shown again: nothing tried.
     later();
@@ -287,12 +288,24 @@ describe("when it signs in", () => {
     await vi.waitFor(() => expect(nav.to).toEqual(["/app"]));
   });
 
-  it("signed in but the key did not open: says so with LOGIN_MESSAGES' words and a way on, and tries no more", async () => {
-    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "not_opened", openWithAnother: vi.fn() });
+  it.each([
+    ["not_opened", { key: "not_opened", openWithAnother: vi.fn() }, LOGIN_MESSAGES.key_not_opened],
+    ["failed (key_failed)", { key: "failed", code: "key_failed" }, LOGIN_MESSAGES.key_failed],
+    ["failed (stale_session)", { key: "failed", code: "stale_session" }, LOGIN_MESSAGES.stale_session],
+  ] as const)("signed in but the key %s: the waiting screen goes; the key's words, 「このまま進む」 and 設定's 「パスワードとメールの鍵」, and no more tries", async (_what, answer, words) => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", ...answer });
     const view = await waiting();
     await shownAndTried(1);
-    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.key_not_opened));
-    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([["/app", "このまま進む"]]);
+    await vi.waitFor(() => expect(view.text()).toContain(words));
+    // The waiting screen is gone: no title, no 「確認しました」, no resend.
+    expect(view.hosts((h) => h.type === "h1")).toEqual([]);
+    expect(buttons(view)).toEqual([]);
+    expect(view.text()).not.toContain(WORDS.title);
+    expect(view.hosts((h) => h.type === "a").map((a) => [a.props.href, textOfHost(a)])).toEqual([
+      ["/app", "このまま進む"],
+      ["/app/settings/password", "パスワードとメールの鍵"],
+    ]);
+    expect(nav.to).toEqual([]);
     later();
     fresh("0.next");
     tab.show();
@@ -317,24 +330,28 @@ describe("when it signs in", () => {
 });
 
 describe("how often it tries by itself (the sign-in limits per IP)", () => {
-  it(`at most once every ${AUTO_SIGN_IN_GAP_MS / 1000} s`, async () => {
+  it("a return tries at once, whatever the backoff; only the second event of one return is the same return", async () => {
     await waiting();
     await shownAndTried(1);
-    after(AUTO_SIGN_IN_GAP_MS - 1_000);
-    fresh("0.second");
-    tab.show();
+    // The focus right after the visibilitychange (within AUTO_SIGN_IN_SAME_RETURN_MS): no second try.
+    after(AUTO_SIGN_IN_SAME_RETURN_MS - 500);
+    fresh("0.same-return");
+    tab.focus();
+    await drawn();
     await drawn();
     expect(flows.signIn).toHaveBeenCalledTimes(1);
-    after(1_001);
-    tab.show();
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    // 12 s later (the link opened in between): a return of its own, tried at once (the reviewer's probe 3).
+    flows.signIn.mockResolvedValueOnce({ ok: true, userId: "u", key: "made" });
+    after(12_000);
+    await shownAndTried(2);
+    await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
   });
 
   it(`after a refusal other than "not confirmed", the next try by itself waits ${AUTO_SIGN_IN_AFTER_FAILURE_MS / 1000} s`, async () => {
     flows.signIn.mockResolvedValue({ ok: false, code: "network" });
     await waiting();
     await shownAndTried(1);
-    after(AUTO_SIGN_IN_GAP_MS + 1_000);
+    after(AUTO_SIGN_IN_BACKOFF_MS[0] + 1_000);
     fresh("0.second");
     tab.show();
     await drawn();
@@ -344,66 +361,29 @@ describe("how often it tries by itself (the sign-in limits per IP)", () => {
     await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
   });
 
-  it("the limit is 5 tries by itself (the app's per-IP login limit is 15 in 10 minutes)", () => {
-    expect(AUTO_SIGN_IN_MAX).toBe(5);
+  it("the backoff grows after each refusal as not confirmed yet, then stays at its last gap", () => {
+    expect(AUTO_SIGN_IN_BACKOFF_MS).toEqual([20_000, 60_000, 180_000]);
+    expect([0, 1, 2, 3, 4, 9].map(autoSignInGapMs)).toEqual([20_000, 20_000, 60_000, 180_000, 180_000, 180_000]);
+    // Growing, never shrinking.
+    for (let n = 1; n < 10; n++) expect(autoSignInGapMs(n + 1)).toBeGreaterThanOrEqual(autoSignInGapMs(n));
   });
 
-  it("the visibilitychange and the focus of one return are one return: no try follows on its own", async () => {
-    vi.useRealTimers();
-    vi.useFakeTimers();
-    await waiting();
-    await shownAndTried(1);
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
-    expect(flows.signIn).toHaveBeenCalledTimes(1);
-  });
-
-  it("a return inside the gap gets one try when the gap ends (a single timeout), which counts like any try", async () => {
-    // These need the timers too (the others fake only the clock).
-    vi.useRealTimers();
-    vi.useFakeTimers();
-    await waiting();
-    await shownAndTried(1);
-    after(5_000);
-    fresh("0.second");
-    tab.show();
-    await drawn();
-    expect(flows.signIn).toHaveBeenCalledTimes(1);
-    // Another return inside the same gap does not add a second timer.
-    tab.show();
-    await drawn();
-    await vi.advanceTimersByTimeAsync(AUTO_SIGN_IN_GAP_MS - 5_000 + 10);
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
-    // No repeating timer: nothing more is tried without another return.
-    after(AUTO_SIGN_IN_GAP_MS + 1_000);
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(flows.signIn).toHaveBeenCalledTimes(2);
-  });
-
-  it("the gap's one try is not made when the tab is hidden again, or after a restart", async () => {
-    // These need the timers too (the others fake only the clock).
-    vi.useRealTimers();
-    vi.useFakeTimers();
-    const view = await waiting();
-    await shownAndTried(1);
-    after(5_000);
-    fresh("0.second");
-    tab.show();
-    await drawn();
-    tab.hide();
-    await vi.advanceTimersByTimeAsync(AUTO_SIGN_IN_GAP_MS);
-    expect(flows.signIn).toHaveBeenCalledTimes(1);
-    // Restart: the timer is cleared, and nothing is tried for the account let go.
-    after(AUTO_SIGN_IN_GAP_MS + 1_000);
-    tab.show();
-    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
-    after(5_000);
-    fresh("0.third");
-    tab.show();
-    await drawn();
-    pressRestart(view);
-    await drawn();
-    await vi.advanceTimersByTimeAsync(AUTO_SIGN_IN_GAP_MS * 2);
-    expect(flows.signIn).toHaveBeenCalledTimes(2);
+  it("two waiting screens behind one IP, at their worst in any 10 minutes, stay under LOGIN_TRY_LIMITS with room for presses", () => {
+    const TEN_MINUTES = 10 * 60_000;
+    // The timer alone (shown all the time): the points of the backoff within 10 minutes, at most the maximum.
+    const timed: number[] = [];
+    for (let at = 0, n = 0; n < AUTO_SIGN_IN_MAX; n++) {
+      at += autoSignInGapMs(n);
+      if (at > TEN_MINUTES) break;
+      timed.push(at);
+    }
+    expect(timed.length).toBeLessThanOrEqual(AUTO_SIGN_IN_MAX);
+    // Returns may come at any time, so the worst for one screen is its maximum (the captcha retry
+    // counts among the sends). Two screens: twice that, and at least one press each still fits.
+    const worstPerScreen = AUTO_SIGN_IN_MAX;
+    const screens = 2;
+    const pressesLeft = LOGIN_TRY_LIMITS.ipPer10Minutes - screens * worstPerScreen;
+    expect(pressesLeft).toBeGreaterThanOrEqual(screens);
   });
 
   it(`at most ${AUTO_SIGN_IN_MAX} tries by itself per waiting screen; then only the button tries, and it always does`, async () => {
@@ -411,7 +391,7 @@ describe("how often it tries by itself (the sign-in limits per IP)", () => {
     for (let n = 1; n <= AUTO_SIGN_IN_MAX; n++) {
       fresh(`0.auto-${n}`);
       await shownAndTried(n);
-      after(AUTO_SIGN_IN_GAP_MS + 1);
+      after(AUTO_SIGN_IN_SAME_RETURN_MS + 1);
     }
     fresh("0.one-too-many");
     tab.show();
@@ -430,6 +410,196 @@ describe("how often it tries by itself (the sign-in limits per IP)", () => {
     fresh("0.press");
     pressDone(view);
     await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("the tab shown all the time (the link opened on another device): the timer", () => {
+  // These fake the timers too (the others fake only the clock).
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+  });
+
+  /** Moves the clock and the timers on by `ms`, with a new token ready for a try. */
+  async function wait(ms: number) {
+    fresh(`0.at-${Date.now() + ms}`);
+    await vi.advanceTimersByTimeAsync(ms);
+  }
+
+  it("tries at the points of the backoff (20 s, then 20 s, 60 s, 3 min, 3 min) and stops at the maximum", async () => {
+    await waiting();
+    const points = [20_000, 20_000, 60_000, 180_000, 180_000];
+    expect(points.length).toBe(AUTO_SIGN_IN_MAX);
+    for (const [i, gap] of points.entries()) {
+      await wait(gap - 1_000);
+      expect(flows.signIn).toHaveBeenCalledTimes(i);
+      await wait(1_000);
+      await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(i + 1));
+    }
+    // The maximum reached: nothing more, and no timer left.
+    await wait(60 * 60_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(AUTO_SIGN_IN_MAX);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("negative control: a flat 20 s would have tried at 40 s and 60 s; the third waits until 100 s", async () => {
+    await waiting();
+    await wait(20_000);
+    await wait(20_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    await wait(20_000);
+    await wait(39_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+    await wait(1_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(3));
+  });
+
+  it("hidden, it pauses; shown again, the return tries at once and the timer starts anew", async () => {
+    await waiting();
+    await wait(10_000);
+    tab.hide();
+    expect(vi.getTimerCount()).toBe(0);
+    await wait(30 * 60_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
+    // Back after half an hour: the widget's token by then is a new one.
+    fresh("0.back");
+    await shownAndTried(1);
+    await wait(AUTO_SIGN_IN_BACKOFF_MS[0] - 1_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    await wait(1_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+  });
+
+  it("one timer at a time, through returns, presses and resends", async () => {
+    actions.resend.mockResolvedValue({ ok: true, code: "confirmation_sent" });
+    const view = await waiting();
+    expect(vi.getTimerCount()).toBe(1);
+    await shownAndTried(1);
+    fresh("0.press");
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    fresh("0.resend");
+    pressResend(view);
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.resent));
+    await vi.advanceTimersByTimeAsync(5_000);
+    // The toast's timer is gone by now; the one left is the try's.
+    expect(vi.getTimerCount()).toBe(1);
+    fresh("0.return");
+    tab.focus();
+    tab.show();
+    await drawn();
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(2);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(3));
+    await drawn();
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("a press cancels the timed try waiting and counts for the timing only: the next one is a full gap after it, the backoff not moved on; a press that signs in stops it", async () => {
+    const view = await waiting();
+    await wait(20_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    // 2 s before the timed try (due at 40 s): a press.
+    await wait(18_000);
+    pressDone(view);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    // No try by itself just after the press's answer (the IP's allowance): not at 40 s, nor before 58 s.
+    await wait(19_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+    // At 58 s: 20 s after the press (the backoff still at its first gap; a press does not move it on).
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "made" });
+    await wait(1_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
+    await wait(60 * 60_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(3);
+  });
+
+  it(`after a refusal other than "not confirmed", nothing is tried until the ${AUTO_SIGN_IN_AFTER_FAILURE_MS / 1000} s are over: no timer goes off inside it, and the one try after it comes while shown`, async () => {
+    flows.signIn.mockResolvedValue({ ok: false, code: "network" });
+    const view = await waiting();
+    await wait(20_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    await drawn();
+    // One timer, for the end of the wait; a return inside it tries nothing and adds none.
+    expect(vi.getTimerCount()).toBe(1);
+    // Every timer set from here to the end of the wait (one that went off early would set another).
+    const arms = vi.spyOn(globalThis, "setTimeout");
+    await wait(30_000);
+    tab.show();
+    await drawn();
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+    await wait(AUTO_SIGN_IN_AFTER_FAILURE_MS - 30_000 - 1_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    // Only the return set it again (for the same end); none went off inside the wait.
+    expect(arms.mock.calls.length).toBeLessThanOrEqual(1);
+    arms.mockRestore();
+    await wait(1_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(2));
+    // Hidden at the end of a wait: nothing is set to go off.
+    await drawn();
+    tab.hide();
+    expect(vi.getTimerCount()).toBe(0);
+    await wait(10 * 60_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(2);
+    void view;
+  });
+
+  it("stopped by a sign-in, by 「別のアドレスでやり直す」 and by leaving the page", async () => {
+    flows.signIn.mockResolvedValue({ ok: true, userId: "u", key: "made" });
+    let view = await waiting();
+    await wait(20_000);
+    await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
+    await wait(60 * 60_000);
+    expect(flows.signIn).toHaveBeenCalledTimes(1);
+
+    flows.signIn.mockClear();
+    view = await waiting();
+    pressRestart(view);
+    await drawn();
+    await wait(60 * 60_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
+
+    view = await waiting();
+    view.unmount();
+    await wait(60 * 60_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
+  });
+
+  it("「別のアドレスでやり直す」 and a new account inside the old gap: the old screen's timer does not go off on the new one; the new one counts from its own start", async () => {
+    const view = await waiting();
+    await wait(10_000);
+    pressRestart(view);
+    await drawn();
+    // A new account 5 s later: its screen appears at 15 s; the old timer was due at 20 s.
+    await wait(5_000);
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
+    fresh("0.signup-2");
+    type(view, "signup-email", "other@example.test");
+    type(view, "signup-password", PASSWORD);
+    type(view, "signup-password-again", PASSWORD);
+    await drawn();
+    await (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
+    await drawn();
+    expect(view.text()).toContain("other@example.test");
+    // No return: nothing at the old point (20 s), nor before the new one's (35 s).
+    await wait(19_000);
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+    await wait(1_000);
+    await vi.waitFor(() => expect(flows.signIn).toHaveBeenCalledTimes(1));
+    expect(flows.signIn.mock.calls[0][0].email).toBe("other@example.test");
+  });
+
+  it("left (unmounted) while waiting: however long after, nothing signs in with the password it held", async () => {
+    const view = await waiting();
+    await wait(10_000);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await wait(60 * 60_000);
+    tab.show();
+    await drawn();
+    expect(flows.signIn).not.toHaveBeenCalled();
   });
 });
 
@@ -512,7 +682,7 @@ describe("the bot check of a sign-in tried by itself", () => {
     expect(view.hosts((h) => h.props.role === "alert")).toEqual([]);
     // Not a third time on its own, and not at the next return within the wait after a refusal.
     fresh("0.third");
-    after(AUTO_SIGN_IN_GAP_MS + 1_000);
+    after(AUTO_SIGN_IN_BACKOFF_MS[0] + 1_000);
     tab.show();
     await drawn();
     expect(flows.signIn).toHaveBeenCalledTimes(2);

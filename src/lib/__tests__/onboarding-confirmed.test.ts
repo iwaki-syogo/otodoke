@@ -33,7 +33,7 @@ describe("/auth/confirmed (screen 2)", () => {
   it("has the wording file's words and one white button to the login", () => {
     const root = parseHtml(renderToStaticMarkup(ConfirmedPage()));
     expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["確認できました"]);
-    expect(findAll(root, (n) => n.tag === "p").map(textOf)).toEqual(["登録した画面に戻ると、自動で次へ進みます。"]);
+    expect(findAll(root, (n) => n.tag === "p").map(textOf)).toEqual(["登録した画面に戻ってください。"]);
     const links = findAll(root, (n) => n.tag === "a");
     expect(links.map((a) => [a.attrs.href, textOf(a)])).toEqual([[CONFIRMED_LOGIN_PATH, "この画面でログインする"]]);
     const look = (links[0].attrs.class ?? "").split(/\s+/);
