@@ -1,5 +1,5 @@
 // The words of 「メールの自動転送の設定」, copied sentence for sentence from the source of the sentences
-// (docs/ux-redo/forwarding-guide.md of built-with-claude-japan-2026, checked against each service's own help
+// (src/lib/forwarding-guide.ts, the Web source of truth, checked against each service's own help
 // on 2026-11-07). No new sentence is written here: src/lib/__tests__/ios-forwarding-guide.test.ts reads this
 // file and the source and fails when a sentence differs. The screens only draw what is listed here.
 
