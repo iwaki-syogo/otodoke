@@ -116,7 +116,7 @@ describe("[R2-5] the empty list once mail of one's own has come in", () => {
     expect(guide(block)).toEqual([RECEIVED]);
     expect(textOf(block)).not.toContain("設定しますか");
     expect(findAll(block, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a).trim()])).toEqual([
-      ["/app/settings", "設定を見る"],
+      ["/app/settings/trouble", "設定を見る"],
       ["/app/settings/demo", "サンプルで試す"],
     ]);
   });

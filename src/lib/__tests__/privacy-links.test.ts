@@ -78,11 +78,13 @@ describe("links to /privacy", () => {
     const root = parseHtml(renderToStaticMarkup(Page()));
     const link = policyLink(root);
     expect(ancestorsOf(link).some((n) => n.tag === "section")).toBe(false);
+    // The page's h1 says the title; the section does not repeat it as an h2.
+    expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["あなたのメールの扱い"]);
     const holder = link.parent!;
     const siblings = elementSiblings(holder);
     const before = siblings[siblings.indexOf(holder) - 1];
     expect(before.tag).toBe("section");
-    expect(findAll(before, (n) => n.tag === "h2").map(textOf)).toEqual(["あなたのメールの扱い"]);
+    expect(findAll(before, (n) => n.tag === "h2")).toEqual([]);
   });
 
   it("the page after deleting the account: below the way to the login page", async () => {

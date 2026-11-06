@@ -49,7 +49,7 @@ beforeEach(() => {
 describe("設定 › アカウントの削除", () => {
   it("the page holds the section, with no form until pressed", async () => {
     const Page = (await import("@/app/app/settings/delete/page")).default;
-    const root = parseHtml(renderToStaticMarkup(Page()));
+    const root = parseHtml(renderToStaticMarkup(await Page()));
     const sections = findAll(root, (n) => n.tag === "section");
     expect(sections).toHaveLength(1);
     expect(findAll(sections[0], (n) => n.tag === "button").map(textOf)).toEqual(["アカウントを削除"]);

@@ -173,7 +173,7 @@ const SAID_IN_BOTH = [
 
 describe("/app/settings: あなたのメールの扱い", () => {
   it("states what is and is not encrypted", async () => {
-    const text = textOf(sectionTitled(await render("mail-handling"), "あなたのメールの扱い")[0]);
+    const text = textOf(findAll(await render("mail-handling"), (n) => n.tag === "section")[0]);
     for (const fact of [
       "サーバーと Claude API",
       "既定では学習に使いません",
@@ -196,7 +196,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
   });
 
   it("says what is not encrypted, what waits unread, and what the backups keep, in short sentences", async () => {
-    const text = textOf(sectionTitled(await render("mail-handling"), "あなたのメールの扱い")[0]);
+    const text = textOf(findAll(await render("mail-handling"), (n) => n.tag === "section")[0]);
     for (const sentence of [
       "荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は本文の抜粋です。",
       "1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。",
@@ -284,7 +284,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
   });
 
   it("the Web list has the iOS Keychain sentence word for word (iOS compares it; README gets it from another change)", async () => {
-    const text = textOf(sectionTitled(await render("mail-handling"), "あなたのメールの扱い")[0]);
+    const text = textOf(findAll(await render("mail-handling"), (n) => n.tag === "section")[0]);
     expect(text).toContain(
       "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、設定で切ることもできます。",
     );

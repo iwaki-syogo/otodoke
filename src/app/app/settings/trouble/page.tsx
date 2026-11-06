@@ -25,7 +25,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
   return (
     <SubPage title="うまく届かないとき">
       {waiting === null ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">未読のメールの数を読み込めませんでした</p>
       ) : waiting > 0 ? (
         <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">未読のメールが {waiting} 通あります</h2>

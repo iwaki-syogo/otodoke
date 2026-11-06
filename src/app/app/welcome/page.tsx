@@ -5,7 +5,7 @@ import { FORWARDING_GUIDES, FORWARDING_TITLE, type ForwardingGuide } from "@/lib
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { AFTER_WELCOME_PATH, WELCOME } from "@/lib/onboarding";
 import { createClient, getUser } from "@/lib/supabase/server";
-import { readActiveKey, readConfirmUrl } from "../settings/settings-reads";
+import { readActiveKey, readPendingApproval } from "../settings/settings-reads";
 
 export const metadata = { title: FORWARDING_TITLE };
 
@@ -47,7 +47,7 @@ export default async function WelcomePage() {
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.
-  const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "welcome"), readConfirmUrl(supabase, "welcome")]);
+  const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "welcome"), readPendingApproval(supabase, user.id, "welcome")]);
   const confirmUrl = confirmation.url;
 
   return (
@@ -56,7 +56,7 @@ export default async function WelcomePage() {
       <p className="mt-2 text-sm leading-6 text-neutral-600">{WELCOME.body}</p>
 
       {confirmation.failed ? (
-        <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+        <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
       ) : confirmUrl ? (
         <section id="gmail-approval" className="mt-6 scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">Gmail の転送を承認してください</h2>

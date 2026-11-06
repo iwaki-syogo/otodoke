@@ -1,11 +1,12 @@
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 
 /** 「あなたのメールの扱い」: what happens to a forwarded mail, without promising more than the code does. Same facts as README. */
-export function MailHandling() {
+export function MailHandling({ hideHeading = false }: { hideHeading?: boolean } = {}) {
   return (
     <section>
-      <h2 className="text-base font-bold">あなたのメールの扱い</h2>
-      <ul className="mt-2 flex list-disc flex-col gap-2 rounded-2xl border border-neutral-200 bg-white py-3 pl-8 pr-4 text-sm leading-6 text-neutral-700">
+      {/* On its own page the page's h1 says it; the default keeps the h2 for any other place. */}
+      {hideHeading ? null : <h2 className="text-base font-bold">あなたのメールの扱い</h2>}
+      <ul className={`${hideHeading ? "" : "mt-2 "}flex list-disc flex-col gap-2 rounded-2xl border border-neutral-200 bg-white py-3 pl-8 pr-4 text-sm leading-6 text-neutral-700`}>
         <li>届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。</li>
         <li>読み取って買い物に関係ないと分かったメールは消します。</li>
         <li>読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。パスワードそのものはサーバーに送らないので、運営者もデータベースからは読めません。</li>
