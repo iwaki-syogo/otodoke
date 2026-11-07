@@ -472,6 +472,19 @@ describe("from /signup's waiting screen after `credentials` (login-handoff.ts)",
     expect(peekLoginHandoff()).toBeNull();
   });
 
+  it("existing_account: the box comes before the form in the page order", async () => {
+    vi.stubGlobal("window", {});
+    handOffToLogin({ email: EMAIL, code: EXISTING_ACCOUNT });
+    const view = mount(() => LoginForm({ next: "/app" }));
+    await drawn();
+    const all = view.hosts(() => true);
+    const box = all.findIndex((h) => h.props.role === "status" && textOfHost(h).includes(EXISTING_ACCOUNT_NOTICE));
+    const form = all.findIndex((h) => h.type === "form");
+    expect(box).toBeGreaterThanOrEqual(0);
+    expect(form).toBeGreaterThanOrEqual(0);
+    expect(box).toBeLessThan(form);
+  });
+
   it("existing_account: a successful login still lands where next says (and a first key at the guide)", async () => {
     vi.stubGlobal("window", {});
     handOffToLogin({ email: EMAIL, code: EXISTING_ACCOUNT });

@@ -103,6 +103,18 @@ export function LoginForm({ next }: { next: string }) {
 
   return (
     <>
+      {/* Above the form: on a phone a box below it can be off-screen. */}
+      {notice?.kind === "existing_account" ? (
+        <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+          <p className="font-medium">{EXISTING_ACCOUNT_NOTICE}</p>
+          <div className="mt-3">
+            <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+              パスワードを忘れた
+            </Link>
+          </div>
+          <p className="mt-3">{RESET_LOSES_MAIL}</p>
+        </div>
+      ) : null}
       <form method="post" onSubmit={submit} className="mt-6 flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="login-email">
           メールアドレス
@@ -122,17 +134,6 @@ export function LoginForm({ next }: { next: string }) {
           </p>
         ) : null}
       </form>
-      {notice?.kind === "existing_account" ? (
-        <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-          <p className="font-medium">{EXISTING_ACCOUNT_NOTICE}</p>
-          <div className="mt-3">
-            <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
-              パスワードを忘れた
-            </Link>
-          </div>
-          <p className="mt-3">{RESET_LOSES_MAIL}</p>
-        </div>
-      ) : null}
       {notice?.kind === "not_opened" || notice?.kind === "key_failed" ? (
         <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
           {notice.kind === "not_opened" ? (
