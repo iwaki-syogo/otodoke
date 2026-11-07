@@ -195,6 +195,8 @@ export function SignupForm() {
 
   function submit(e: React.FormEvent): Promise<void> | undefined {
     e.preventDefault();
+    // Leaving for /login (the fields were emptied): a press now is the press that is leaving.
+    if (leaveFor) return;
     const problem = addressProblem() ?? passwordProblem(password, again);
     if (problem) {
       setError(problem);
@@ -252,9 +254,11 @@ export function SignupForm() {
       setAgain("");
       setSentTo(typed.email);
     } finally {
-      // Leaving for /login: the press stays shown until that page is drawn.
-      if (!leaving) setCreating(false);
-      release();
+      // Leaving for /login: the press stays shown (and held) until that page is drawn.
+      if (!leaving) {
+        setCreating(false);
+        release();
+      }
     }
   }
 

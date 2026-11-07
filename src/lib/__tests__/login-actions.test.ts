@@ -234,8 +234,22 @@ describe("signUpWithAuthSecret", () => {
     expect(await signUpWithAuthSecret({ email: "o'brien+otodoke@example.co.uk", authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
   });
 
+  it("an error user_already_exists (422, confirmations off) says signup_existing, is not logged as a failure, and the allowance is kept", async () => {
+    mocks.signUp.mockResolvedValue({ data: { user: null, session: null }, error: { status: 422, code: "user_already_exists" } });
+    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_existing" });
+    expect(calls("claim_login_mail")).toHaveLength(1);
+    expect(calls("release_login_mail")).toHaveLength(0);
+    expect(consoleText()).not.toContain("user_already_exists");
+  });
+
+  it("identities [] keeps the allowance too (no release)", async () => {
+    mocks.signUp.mockResolvedValue({ data: { user: { id: "u", identities: [] }, session: null }, error: null });
+    await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET });
+    expect(calls("claim_login_mail")).toHaveLength(1);
+    expect(calls("release_login_mail")).toHaveLength(0);
+  });
+
   it.each([
-    ["the address has an account", { status: 422, code: "user_already_exists" }],
     ["the address has an account (email_exists)", { status: 422, code: "email_exists" }],
     ["a mail went to it within the minute", { status: 429, code: "over_email_send_rate_limit" }],
   ])("answers the same as a sent mail when %s", async (_what, error) => {
@@ -251,6 +265,7 @@ describe("signUpWithAuthSecret", () => {
     [{ status: 400, code: "email_address_invalid" }, "invalid_email"],
     [{ status: 500, code: "unexpected_failure" }, "network"],
     [{ status: 422, code: "signup_disabled" }, "other"],
+    [{ status: 400, code: "bad_json" }, "other"],
   ] as const)("answers %j as %s", async (error, code) => {
     mocks.signUp.mockResolvedValue({ data: { user: null, session: null }, error });
     expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code });

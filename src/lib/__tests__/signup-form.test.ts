@@ -128,6 +128,24 @@ describe("making the account", () => {
     clearLoginHandoff();
   });
 
+  it("signup_existing: the press stays shown while leaving, so a second press before the page changes does nothing", async () => {
+    vi.stubGlobal("window", {});
+    clearLoginHandoff();
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_existing" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(nav.to).toEqual(["/login"]);
+    expect(textOfHost(button(view))).toBe("作っています…");
+    expect(button(view).props["aria-busy"]).toBe(true);
+    await press(view);
+    await drawn();
+    expect(actions.signUp).toHaveBeenCalledTimes(1);
+    // No password error flashes (the fields were emptied on the way out).
+    expect(view.text()).not.toContain("10 文字以上にしてください");
+    clearLoginHandoff();
+  });
+
   it("negative control: signup_exists_or_sent still shows the waiting screen and hands nothing to /login", async () => {
     vi.stubGlobal("window", {});
     clearLoginHandoff();

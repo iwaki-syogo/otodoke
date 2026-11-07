@@ -1,8 +1,9 @@
 import type { LoginCode } from "@/lib/login-errors";
 
 /**
- * What /signup's waiting screen hands to /login when it stops waiting (the sign-in was refused
- * with `credentials` right after a sign-up: the address is already registered): the address to fill
+ * What /signup hands to /login: from the waiting screen when it stops waiting (the sign-in was refused
+ * with `credentials` right after a sign-up), or from the signup form itself when Supabase says the
+ * address is registered already (signup_existing). Either way the address is registered already. It carries the address to fill
  * in and the reason (EXISTING_ACCOUNT, or a login code) whose notice to show. No password is handed off.
  *
  * Kept in this module's memory, which a move inside the tab (the router) keeps and a reload or a new

@@ -172,6 +172,11 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
     const { error } = await client.auth.admin.signOut(result.accessToken, "local");
     if (error) logRefusal(`${step} (ending the session it made)`, error);
   }
+  if (result.error && result.error.code === "user_already_exists" && step === "sign-up") {
+    // Registered already (Supabase 422): an answer, not a failure. Nothing is logged as a refusal and
+    // the claim is kept: the press counts against the mail limit exactly as before.
+    return { ok: true, existing: true };
+  }
   if (result.error) {
     logRefusal(step, result.error);
     await releaseLoginMail(email, claim.claimId);
@@ -182,8 +187,11 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
 }
 
 /**
- * Make an account: the address and the login secret. Supabase mails the confirmation link; the
- * answer is the same whether the address had an account already or not.
+ * Make an account: the address and the login secret. Supabase mails the confirmation link for a new
+ * or still-unconfirmed address (signup_exists_or_sent). An address that is registered and confirmed
+ * already gets no mail and is told apart (signup_existing), so the signup form can send the person
+ * straight to /login. Supabase's own answer says which: a success with an empty `identities`, or
+ * a `user_already_exists` refusal (confirmations turned off).
  */
 export async function signUp(input: unknown): Promise<SignUpResult> {
   const parsed = SignUpInputSchema.safeParse(input);

@@ -35,12 +35,13 @@ type Notice = { kind: "error"; text: string } | { kind: "existing_account" } | {
  * After the sign-in the tab goes on to `next`, or to the first-run guide when this sign-in made the
  * user's first key (landingAfterSignIn), straight there.
  *
- * Coming from /signup's waiting screen after a `credentials` refusal right after a sign-up (the
- * address is already registered), the address is filled in and the existing_account notice with the
- * forgot-password link is shown (src/lib/login-handoff.ts, this tab's memory; no password is handed off).
+ * Coming from /signup (the waiting screen after a `credentials` refusal right after a sign-up, or
+ * the signup form itself when the address was registered already: signup_existing), the address is
+ * filled in and the existing_account notice with the forgot-password link is shown
+ * (src/lib/login-handoff.ts, this tab's memory; no password is handed off).
  */
 export function LoginForm({ next }: { next: string }) {
-  // /signup's waiting screen may have handed over the address and why it stopped (login-handoff.ts).
+  // /signup (the waiting screen or the signup form) may have handed over the address and why it stopped (login-handoff.ts).
   const [email, setEmail] = useState(() => peekLoginHandoff()?.email ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
