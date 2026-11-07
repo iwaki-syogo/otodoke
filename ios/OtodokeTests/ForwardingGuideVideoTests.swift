@@ -37,9 +37,10 @@ final class ForwardingGuideVideoTests: XCTestCase {
         }
     }
 
+    // Update with the seconds in ForwardingGuideText when a video is replaced
     func testEachServiceHeadingAndAddress() {
         let headings = ForwardingGuideText.services.compactMap { $0.video.map { ForwardingGuideVideo.heading(seconds: $0.seconds) } }
-        XCTAssertEqual(headings, ["動画で見る・約 1 分半", "動画で見る・約 1 分半", "動画で見る・約 1 分半"])
+        XCTAssertEqual(headings, ["動画で見る・約 1 分半", "動画で見る・約 1 分半", "動画で見る・約 1 分"])
         let urls = ForwardingGuideText.services.compactMap { $0.video.flatMap { ForwardingGuideVideo.url(path: $0.path) } }
         XCTAssertEqual(urls.map(\.absoluteString), [
             "https://otodoke.app/guide/videos/otodoke-fwd-gmail-720.mp4",
