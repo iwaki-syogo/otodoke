@@ -58,7 +58,7 @@ describe("/guide/forwarding", () => {
       "設定は最初の 1 回だけです。あとは何もしなくても、荷物のメールが Otodoke に届きます。",
       "お使いのメールを選んでください。どれも 5 分ほどで終わります。",
       "Otodoke の設定の「メールの転送」で、あなた専用の転送先アドレスをコピーしておきます。",
-      "上の「転送の設定を開く」で「メール転送と POP/IMAP」の画面を開き(開かないときは、パソコンのブラウザで Gmail を開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」)、「転送先アドレスを追加」を押して Otodoke のアドレスを貼り付けます。",
+      "上の「転送の設定を開く」を押すと、「メール転送と POP/IMAP」の画面が開きます。開かないときは、パソコンのブラウザで Gmail を開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",
       "転送先を登録する",
       "荷物のメールだけを送るフィルタを作る",
       "「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。",
@@ -198,8 +198,8 @@ describe("/guide/forwarding", () => {
   });
 });
 
-describe("forwarding-guide data has no full-width parentheses", () => {
-  it("shows no （ or ） in any string that reaches the screen", () => {
+describe("forwarding-guide data has no parentheses", () => {
+  it("shows no (, ), （ or ） in any string that reaches the screen", () => {
     const strings: string[] = [];
     const walk = (v: unknown, key = ""): void => {
       if (typeof v === "string") {
@@ -210,6 +210,6 @@ describe("forwarding-guide data has no full-width parentheses", () => {
     };
     walk(guideData);
     expect(strings.length).toBeGreaterThan(20);
-    for (const s of strings) expect(s, s).not.toMatch(/[（）]/);
+    for (const s of strings) expect(s, s).not.toMatch(/[()（）]/);
   });
 });
