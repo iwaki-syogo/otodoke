@@ -56,6 +56,7 @@
 
 1. アカウントを作ってパスワードでログインすると、あなた専用の受信アドレスが出ます（パスワードは、保存するメールの暗号化にも使います。下の「あなたのメールの扱い」）
 2. 自分のメール（Gmail / iCloud / Outlook など）で、そのアドレスへの自動転送を最初に 1 回だけ設定します。店ごとの設定はありません。やり方は[転送設定ガイド](https://otodoke.app/guide/forwarding)にあります
+   - Gmail は今後、「Google でつなぐ」（gmail.readonly での読み取り）に切り替える予定です。転送とフィルタの設定が要らなくなります。Google の審査（restricted スコープの確認と CASA の評価）は、提出後に申請します
 3. 届いたメールは Resend の webhook（署名を検証）で受け取り、広告を落としてから Claude が読みます。荷物へのまとめと運送会社の判定はコードです
 4. 一覧・カレンダー・支出として表示します。画面からはいつでも元メールに戻れます（パスワードで開きます）
 
@@ -214,6 +215,7 @@ MIT
 Demo video: https://youtu.be/BLPMP_bYJ8c (3 min)
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home (no 置き配), and how much you spent this month.
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
+Gmail will move to 「Google でつなぐ」 (reading with the gmail.readonly scope), so no forwarding or filter setup will be needed; Google's restricted-scope verification and CASA assessment will be applied for after the submission.
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
 Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database. Parcel data, the evidence lines (short excerpts of the body) and reading notes, sender domains, Message-IDs and Gmail's forwarding-approval links stay plaintext, and this is disclosed in the app. Mail waiting to be read stays unsealed until it is read; mail read before encryption started stays unsealed until you press 「暗号化する」 in settings. Unsealed mail stays in database backups for up to 7 days. Resend, which receives the mail, also keeps a copy for a while. The iOS app can keep the unlocked key in the device keychain behind Face ID / Touch ID; it never leaves the device, is not synced, and is removed on logout.
 A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement: it first matched 71/73 hand-labelled fields on the 17 demo mails (Opus 73/73), the misses were time-slot formats that the code now handles, and the latest run (2026-11-06) is 73/73 at about 1/20 of the cost. Mail types were also checked on all 341 of the author's anonymized mails (314/320). Reading those 341 mails (one year) with the production pipeline cost about $0.4.
