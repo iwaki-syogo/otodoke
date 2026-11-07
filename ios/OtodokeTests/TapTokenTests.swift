@@ -1,0 +1,153 @@
+import Foundation
+import Testing
+@testable import Otodoke
+
+/// [b7-tap] A Turnstile token that a person made by tapping the check (the widget had asked for a tap) tries the
+/// waiting screen's sign-in at once, once, as a press of 「確認しました」 (not counted, no wider gap). A token that came
+/// by itself still waits for the timer's point.
+@Suite("Waiting screen: a tap on the check tries at once (b7-tap)")
+@MainActor
+struct TapTokenTests {
+    private let clock = TestClock(Date(timeIntervalSince1970: 1_793_000_000))
+
+    private func waiting(_ fake: FakeSupabase, confirmed: Bool = false) async -> (LoginModel, TurnstileToken, ControlledSleeper) {
+        let sleeper = ControlledSleeper()
+        let token = TurnstileToken(now: clock.function)
+        let auth = PW.auth(fake, storage: InMemorySessionStorage())
+        let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: []), now: clock.function, turnstile: token, tokenWait: .milliseconds(100), sleep: { try await Task.sleep(for: $0) }, timerSleep: sleeper.sleep)
+        model.email = FakeSupabase.email
+        model.setMode(.signUp)
+        model.password = PW.good
+        model.passwordAgain = PW.good
+        await model.submit()
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good), confirmed: confirmed)
+        _ = await waitFor(.seconds(3)) { sleeper.pendingCount == 1 }
+        return (model, token, sleeper)
+    }
+
+    private func tap(_ token: TurnstileToken, _ value: String) {
+        token.receive(.interactive, generation: token.generation)
+        token.receive(.token(value), generation: token.generation)
+    }
+
+    @Test func aTapInsideTheGapTriesOnceAtOnceAndWidensNothing() async {
+        let fake = FakeSupabase.make()
+        let (model, token, sleeper) = await waiting(fake)
+        clock.advance(seconds: 5)
+        tap(token, "tok-tap")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 1)
+        #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-tap")
+        // Unconfirmed: the press's words, and the gap stays the first one (20 s on from the press).
+        #expect(model.shownNotice == OnboardingText.notConfirmedYet)
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 && sleeper.requested.count == 2 })
+        #expect(sleeper.requested.last == .milliseconds(20_000))
+    }
+
+    @Test func tapsAreNotCountedAgainstTheLimitOfFive() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        for i in 1...7 {
+            tap(token, "tok-\(i)")
+            await model.tokenArrived()
+            #expect(await fake.count("POST", "token") == i)
+        }
+    }
+
+    @Test func aTokenThatCameByItselfWaitsForTheTimersPoint() async {
+        let fake = FakeSupabase.make()
+        let (model, token, sleeper) = await waiting(fake)
+        token.receive(.token("tok-auto"), generation: token.generation)
+        clock.advance(seconds: 5)
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 0)
+        clock.advance(seconds: 15)
+        #expect(sleeper.fireOldest())
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        #expect(PW.captcha(await fake.requests("POST", "token").first) == "tok-auto")
+    }
+
+    @Test func theMarkIsUsedUpSoTokensWithoutOneDoNotLoop() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        tap(token, "tok-tap")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 1)
+        // The widget was made anew; tokens that come by themselves, one after another, send nothing.
+        for i in 1...4 {
+            clock.advance(seconds: 1)
+            token.receive(.token("tok-auto-\(i)"), generation: token.generation)
+            await model.tokenArrived()
+        }
+        #expect(await fake.count("POST", "token") == 1)
+    }
+
+    @Test func theSameMarkAnswersOnlyOnce() {
+        let token = TurnstileToken(now: clock.function)
+        tap(token, "tok")
+        #expect(token.takeTap())
+        #expect(!token.takeTap())
+        // A second token of the same generation, with no new ask for a tap, is not a tap.
+        token.receive(.token("tok-2"), generation: token.generation)
+        #expect(!token.takeTap())
+    }
+
+    @Test func aTapThenLeavingTheScreenSendsNothing() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        tap(token, "tok-tap")
+        model.leaveWait()
+        #expect(!token.takeTap())
+        await model.tokenArrived()
+        // A marked token of the new generation, after the screen was left, is not sent either.
+        tap(token, "tok-late")
+        await model.tokenArrived()
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await fake.count("POST", "token") == 0)
+    }
+
+    // MARK: the mark itself
+
+    @Test func theMarkIsClearedByExpiredErrorTimeoutResetAndAnotherGeneration() {
+        for event in [TurnstileEvent.expired, .error, .timeout, .unavailable] {
+            let token = TurnstileToken(now: clock.function)
+            token.receive(.interactive, generation: token.generation)
+            token.receive(event, generation: token.generation)
+            token.receive(.token("tok"), generation: token.generation)
+            #expect(!token.takeTap(), "\(event)")
+        }
+        let reset = TurnstileToken(now: clock.function)
+        tap(reset, "tok")
+        reset.reset()
+        reset.receive(.token("tok-2"), generation: reset.generation)
+        #expect(!reset.takeTap())
+        let old = TurnstileToken(now: clock.function)
+        let first = old.generation
+        old.reset()
+        old.receive(.interactive, generation: first)
+        old.receive(.token("tok"), generation: old.generation)
+        #expect(!old.takeTap())
+        // Positive control: the same sequence in the current generation is a tap.
+        let control = TurnstileToken(now: clock.function)
+        tap(control, "tok")
+        #expect(control.takeTap())
+        // An ask for a tap with no token is no tap.
+        let asked = TurnstileToken(now: clock.function)
+        asked.receive(.interactive, generation: asked.generation)
+        #expect(!asked.takeTap())
+    }
+
+    @Test func theWidgetReportsTheAskForATap() {
+        func notice(_ kind: String) -> (generation: Int, event: TurnstileEvent)? {
+            Turnstile.notice(body: ["generation": 2, "kind": kind] as [String: Any], isMainFrame: true, originProtocol: "https", originHost: "otodoke.app", originPort: 0)
+        }
+        #expect(notice("interactive")?.event == .interactive)
+        #expect(notice("interactive")?.generation == 2)
+        // after-interactive-callback clears nothing (its order against `callback` is not documented).
+        #expect(notice("interactive-end") == nil)
+        #expect(Turnstile.notice(body: ["generation": 2, "kind": "interactive"] as [String: Any], isMainFrame: false, originProtocol: "https", originHost: "otodoke.app", originPort: 0) == nil)
+        let html = Turnstile.html(generation: 1)
+        #expect(html.contains("before-interactive-callback"))
+        #expect(html.contains("after-interactive-callback"))
+    }
+}

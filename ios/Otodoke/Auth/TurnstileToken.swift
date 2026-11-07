@@ -13,6 +13,8 @@ enum TurnstileEvent: Equatable, Sendable {
     case expired
     case error
     case timeout
+    /// The widget is about to ask for a tap (before-interactive-callback): the next token is a person's.
+    case interactive
     /// The script could not load (offline, blocked, Cloudflare down): no token will come.
     case unavailable
 }
@@ -28,6 +30,11 @@ final class TurnstileToken {
     private(set) var isUnavailable = false
     /// The token of the current generation, not sent yet.
     private var token: String?
+    /// The widget asked for a tap (before-interactive-callback) and no token has come since: the next token is
+    /// a person's. Cleared by that token, expired / error / timeout, and reset.
+    private var interactiveSeen = false
+    /// The held token came after the widget asked for a tap, and nobody has used that mark yet.
+    private var tokenIsTap = false
     /// When the held token came (the clock below).
     private var tokenAt: Date?
     @ObservationIgnored private let now: @Sendable () -> Date
@@ -49,13 +56,19 @@ final class TurnstileToken {
         case let .token(value):
             token = value.isEmpty ? nil : value
             tokenAt = token == nil ? nil : now()
+            tokenIsTap = token != nil && interactiveSeen
+            interactiveSeen = false
             isUnavailable = false
+        case .interactive:
+            interactiveSeen = true
         case .expired, .error, .timeout:
             token = nil
             tokenAt = nil
+            clearTapMarks()
         case .unavailable:
             token = nil
             tokenAt = nil
+            clearTapMarks()
             isUnavailable = true
         }
     }
@@ -65,8 +78,21 @@ final class TurnstileToken {
         defer {
             token = nil
             tokenAt = nil
+            clearTapMarks()
         }
         return token
+    }
+
+    /// true once if the held token came after the widget asked for a tap (a person tapped the check); the mark is
+    /// used up by this call, so the same tap is never answered twice. false for a token that came by itself.
+    func takeTap() -> Bool {
+        defer { tokenIsTap = false }
+        return token != nil && tokenIsTap
+    }
+
+    private func clearTapMarks() {
+        interactiveSeen = false
+        tokenIsTap = false
     }
 
     /// The held token is older than `staleMs` (Turnstile.tokenStaleMs): a page the system froze in the
@@ -76,6 +102,7 @@ final class TurnstileToken {
         guard token != nil, let tokenAt, now().timeIntervalSince(tokenAt) * 1000 > Double(staleMs) else { return false }
         token = nil
         self.tokenAt = nil
+        clearTapMarks()
         return true
     }
 
@@ -84,6 +111,7 @@ final class TurnstileToken {
     func reset() {
         token = nil
         tokenAt = nil
+        clearTapMarks()
         isUnavailable = false
         generation += 1
         resetCount += 1

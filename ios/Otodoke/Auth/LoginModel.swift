@@ -301,9 +301,12 @@ final class LoginModel {
         await check(pressed ? .press : .returned)
     }
 
-    /// A Turnstile token came while waiting (the tap on the widget).
+    /// A Turnstile token came while waiting. When a person tapped the check (the widget had asked for a tap), it
+    /// is handled as a press of 「確認しました」 at once, once: not counted, no wider gap, whatever the timer's point
+    /// (the tap said "now"). A token that came by itself waits for the timer's point as before.
     func tokenArrived() async {
-        await check(.token)
+        let tapped = turnstile?.takeTap() ?? false
+        await check(tapped ? .press : .token)
     }
 
     /// While waiting for the confirmation (after making an account): tries the existing password sign-in. The
