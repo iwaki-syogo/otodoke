@@ -86,6 +86,18 @@ async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | nu
 }
 
 /**
+ * Thrown only when another run of the same mail is storing or reading it right now (its row is
+ * pending and young, or the insert lost the unique-key race). Callers that can simply skip the
+ * mail (the sample load) match on this class; every other failure stays a plain Error.
+ */
+export class MailBeingReadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MailBeingReadError";
+  }
+}
+
+/**
  * Store one forwarded email, let Claude read it, and fold it into the user's parcels.
  *
  * Safe to call again for the same mail: a mail that finished is a no-op, and a mail
@@ -102,7 +114,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // Another delivery of this mail is being read right now. Taking its row over would break that
   // run and pay for a second read, so fail and let the webhook retry later.
   if (stored?.processing_status === "pending" && Date.now() - new Date(stored.created_at).getTime() < PENDING_GRACE_MS) {
-    throw new Error("this mail is still being read");
+    throw new MailBeingReadError("this mail is still being read");
   }
 
   // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
@@ -194,6 +206,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       .insert({ id: emailId, user_id: mail.userId, ...columns })
       .select("id")
       .single();
+    // 23505: another run stored the same mail between the lookup above and this insert.
+    if (error?.code === "23505") throw new MailBeingReadError(`emails insert failed: ${error.message}`);
     if (error || !data) throw new Error(`emails insert failed: ${error?.message}`);
     emailRow = data;
   }

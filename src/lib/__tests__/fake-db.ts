@@ -38,7 +38,7 @@ export interface Query {
 
 export interface Result {
   data: unknown;
-  error: { message: string } | null;
+  error: { message: string; code?: string } | null;
   count?: number | null;
 }
 

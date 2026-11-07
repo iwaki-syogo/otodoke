@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { loadDemoEntries } from "@/lib/demo";
-import { processInboundEmail } from "@/lib/pipeline";
+import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
@@ -23,29 +23,37 @@ export async function loadDemo(): Promise<void> {
   try {
     const db = createAdminClient();
     for (const { mail, extraction } of await loadDemoEntries()) {
-      const outcome = await processInboundEmail(
-        db,
-        {
-          userId: user.id,
-          providerEmailId: `demo:${mail.file}`,
-          messageId: `demo:${mail.file}`,
-          from: mail.from,
-          fromName: mail.from_name,
-          subject: mail.subject,
-          sentAt: mail.date,
-          text: mail.text,
-          html: mail.html,
-        },
-        {
-          publicSample: true,
-          precomputed: {
-            data: extraction,
-            model: "precomputed",
-            truncated: false,
-            usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      let outcome;
+      try {
+        outcome = await processInboundEmail(
+          db,
+          {
+            userId: user.id,
+            providerEmailId: `demo:${mail.file}`,
+            messageId: `demo:${mail.file}`,
+            from: mail.from,
+            fromName: mail.from_name,
+            subject: mail.subject,
+            sentAt: mail.date,
+            text: mail.text,
+            html: mail.html,
           },
-        },
-      );
+          {
+            publicSample: true,
+            precomputed: {
+              data: extraction,
+              model: "precomputed",
+              truncated: false,
+              usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+            },
+          },
+        );
+      } catch (err) {
+        // A second judge on the shared account is loading this same mail right now and will store
+        // it: skip this one, the sample ends up complete either way. Any other error still stops the load.
+        if (err instanceof MailBeingReadError) continue;
+        throw err;
+      }
       if (outcome.kind === "processed" || outcome.kind === "noted" || outcome.kind === "duplicate") processed++;
     }
   } catch (err) {
