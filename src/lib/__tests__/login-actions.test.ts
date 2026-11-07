@@ -214,6 +214,22 @@ describe("signUpWithAuthSecret", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
+  it("a success whose user has no identities says signup_existing (a confirmed address, no mail sent)", async () => {
+    mocks.signUp.mockResolvedValue({ data: { user: { id: "u", identities: [] }, session: null }, error: null });
+    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_existing" });
+  });
+
+  it.each([
+    ["identities missing", { user: { id: "u" }, session: null }],
+    ["identities undefined", { user: { id: "u", identities: undefined }, session: null }],
+    ["identities not an array", { user: { id: "u", identities: null }, session: null }],
+    ["identities filled (an unconfirmed address)", { user: { id: "u", identities: [{ id: "i" }] }, session: null }],
+    ["no user", { user: null, session: null }],
+  ])("negative control: %s keeps signup_exists_or_sent", async (_what, data) => {
+    mocks.signUp.mockResolvedValue({ data, error: null });
+    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
+  });
+
   it("accepts ASCII symbols an address may have", async () => {
     expect(await signUpWithAuthSecret({ email: "o'brien+otodoke@example.co.uk", authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
   });

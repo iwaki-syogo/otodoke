@@ -139,14 +139,14 @@ function mailRefusal(error: AuthError): MailRequestFailure | "sent" {
   return "other";
 }
 
-type MailSend = (client: ReturnType<typeof throwawayAuthClient>, email: string, redirectTo: string, captchaToken: string | undefined) => Promise<{ error: AuthError | null; accessToken?: string }>;
+type MailSend = (client: ReturnType<typeof throwawayAuthClient>, email: string, redirectTo: string, captchaToken: string | undefined) => Promise<{ error: AuthError | null; accessToken?: string; existing?: boolean }>;
 
 /**
  * A mail Supabase sends to an address (confirmation, again, reset), through a client that keeps no
  * session: this browser's cookies are not touched. Counted against the app's mail limit; given
  * back when Supabase sent nothing.
  */
-async function requestMail(step: string, input: unknown, send: MailSend, asciiOnly: boolean): Promise<{ ok: true } | { ok: false; code: MailRequestFailure | "email_not_ascii" }> {
+async function requestMail(step: string, input: unknown, send: MailSend, asciiOnly: boolean): Promise<{ ok: true; existing?: boolean } | { ok: false; code: MailRequestFailure | "email_not_ascii" }> {
   const email = normalizeLoginAddress((input as { email?: unknown } | null)?.email);
   if (!isLoginAddress(email)) return { ok: false, code: "invalid_email" };
   if (asciiOnly && !isAsciiAddress(email)) return { ok: false, code: "email_not_ascii" };
@@ -178,7 +178,7 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
     const code = mailRefusal(result.error);
     return code === "sent" ? { ok: true } : { ok: false, code };
   }
-  return { ok: true };
+  return result.existing ? { ok: true, existing: true } : { ok: true };
 }
 
 /**
@@ -193,11 +193,15 @@ export async function signUp(input: unknown): Promise<SignUpResult> {
     parsed.data,
     async (client, email, redirectTo, captchaToken) => {
       const { data, error } = await client.auth.signUp({ email, password: parsed.data.authSecret, options: { emailRedirectTo: redirectTo, captchaToken } });
-      return { error, accessToken: data.session?.access_token };
+      // Supabase answers a repeat sign-up of a confirmed address as a success with no mail and a
+      // user whose `identities` is an empty array: the address is registered already.
+      const existing = !error && Array.isArray(data.user?.identities) && data.user.identities.length === 0;
+      return { error, accessToken: data.session?.access_token, existing };
     },
     true,
   );
-  return result.ok ? { ok: true, code: "signup_exists_or_sent" } : result;
+  if (!result.ok) return result;
+  return { ok: true, code: result.existing ? "signup_existing" : "signup_exists_or_sent" };
 }
 
 /** The confirmation mail again. The same answer for every address. */
