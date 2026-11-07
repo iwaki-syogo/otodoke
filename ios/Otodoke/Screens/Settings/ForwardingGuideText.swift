@@ -114,7 +114,7 @@ enum ForwardingGuideText {
             title: "Outlook",
             addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
             meta: "3 分・ブラウザで",
-            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 100),
+            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 69),
             link: Link(title: "転送の設定を開く", url: "https://outlook.live.com/mail/0/options/mail/forwarding"),
             linkNote: "iPhone では Safari で進めます。スマホ用の画面が出たら、アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。スマホ用の画面が出たら、右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。",
             groups: [

@@ -119,7 +119,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "outlook",
     chip: "Outlook",
     title: "Outlook",
-    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 100 },
+    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 69 },
     addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
     time: "3 分・ブラウザで",
     link: { label: "転送の設定を開く", href: "https://outlook.live.com/mail/0/options/mail/forwarding" },
