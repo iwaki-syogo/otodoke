@@ -78,7 +78,7 @@ export function ResetForm({ email, userId }: { email: string; userId: string }) 
         新しいパスワードをもう一度
       </label>
       <input id="reset-password-again" aria-describedby="reset-password-rule" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
-      <p id="reset-password-rule" className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
+      <p id="reset-password-rule" className="text-sm leading-5 text-neutral-600">{PASSWORD_RULE}</p>
       {error?.newLink ? null : (
         <PendingSubmitButton pending={busy} pendingLabel="再設定しています…" tone="light" className={submitClass}>
           {tried ? "もう一度試す" : "再設定する"}

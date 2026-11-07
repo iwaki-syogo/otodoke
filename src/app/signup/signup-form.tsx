@@ -616,7 +616,7 @@ export function SignupForm() {
           パスワードをもう一度
         </label>
         <input id="signup-password-again" aria-describedby="signup-password-rule" type="password" required autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className={inputClass} />
-        <p id="signup-password-rule" className="text-xs leading-5 text-neutral-500">{PASSWORD_RULE}</p>
+        <p id="signup-password-rule" className="text-sm leading-5 text-neutral-600">{PASSWORD_RULE}</p>
         <TurnstileWidget tokenRef={token} round={round} />
         <PendingSubmitButton pending={creating && !ticking("signup")} pendingLabel="作っています…" tone="light" className={submitClass}>
           {creating && ticking("signup") ? TURNSTILE_TICK_PROMPT : "アカウントを作る"}

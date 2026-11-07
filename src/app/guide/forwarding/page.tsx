@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { preload } from "react-dom";
 import { Wordmark } from "@/components/wordmark";
 import { GuideGroups, GuideVideo } from "@/components/forwarding-steps";
 import {
@@ -69,6 +70,8 @@ function GuideSection({ guide }: { guide: ForwardingGuide }) {
 }
 
 export default function ForwardingGuidePage() {
+  // Gmail's video card is the first one on the page: start loading its poster early (the video stays preload="none").
+  preload("/guide/videos/otodoke-fwd-gmail-poster.jpg", { as: "image" });
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-4 py-10">
       <div>
