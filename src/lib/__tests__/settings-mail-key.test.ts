@@ -311,7 +311,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
     const { createElement } = await import("react");
     const { DemoLoader } = await import("@/app/app/settings/demo-loader");
     const render = (cleared: boolean) => textOf(parseHtml(renderToStaticMarkup(createElement(DemoLoader, { loaded: null, error: null, cleared }))));
-    expect(render(true)).toContain("Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
-    expect(render(false)).not.toContain("Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
+    expect(render(true)).toContain("Otodoke の荷物と、Otodoke に保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
+    expect(render(false)).not.toContain("Otodoke の荷物と、Otodoke に保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
   });
 });

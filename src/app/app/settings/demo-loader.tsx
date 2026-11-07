@@ -17,7 +17,7 @@ export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; 
         <LoadButton />
       </form>
       {loaded !== null && error ? <p className="text-sm text-neutral-700">{loaded} 通は読み込めました。</p> : null}
-      {cleared ? <p className="text-sm text-neutral-700">Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。</p> : null}
+      {cleared ? <p className="text-sm text-neutral-700">Otodoke の荷物と、Otodoke に保存したメールを消しました。お使いのメールの受信箱は、そのままです。</p> : null}
       {error ? <p className="break-words text-sm text-red-800">{error}</p> : null}
 
       <details className="text-sm">

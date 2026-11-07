@@ -69,7 +69,7 @@ describe("the first press deletes nothing", () => {
     const text = view.text();
     expect(text).toContain("アカウントを削除しますか？");
     // The password goes with the account; there is no passphrase any more (password-v1).
-    expect(text).toContain("Otodoke の荷物と、Otodoke に保存したメール、転送先アドレスを、アカウントごと消します。お使いのメールの受信箱は、そのままです。元に戻せません。");
+    expect(text).toContain("Otodoke の荷物、Otodoke に保存したメール、転送先アドレスを、アカウントごと消します。お使いのメールの受信箱は、そのままです。元に戻せません。");
     expect(text).not.toContain("合言葉");
     expect(text).toContain("元に戻せません。");
     expect(text).toContain("Gmail などで設定した自動転送も外してください。");
