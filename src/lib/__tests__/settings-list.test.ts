@@ -229,7 +229,8 @@ describe("the forwarding page's guides", () => {
     expect(text).toContain(GMAIL_FILTER);
     expect(text).toContain("自動転送の設定は最初の 1 回だけ");
     expect(text).toContain("店ごとの設定はいりません。新しい店で買っても、そのまま読み取ります。");
-    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "くわしい手順を見る").map((a) => a.attrs.href)).toEqual(["/guide/forwarding"]);
+    expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === "/guide/forwarding")).toEqual([]);
+    expect(text).not.toContain("くわしい手順を見る");
   });
 });
 

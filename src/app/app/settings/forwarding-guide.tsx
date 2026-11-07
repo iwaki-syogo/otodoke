@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { FoldCard, GuideCardBody, VideoCredit } from "@/components/forwarding-steps";
 import { FORWARDING_GUIDES } from "@/lib/forwarding-guide";
 
@@ -16,9 +15,6 @@ export function ForwardingGuides() {
         ))}
       </div>
       <VideoCredit />
-      <Link href="/guide/forwarding" className="mt-3 flex items-center justify-center rounded-xl border border-neutral-300 bg-white py-3 text-sm font-medium active:bg-neutral-100">
-        くわしい手順を見る
-      </Link>
     </section>
   );
 }
