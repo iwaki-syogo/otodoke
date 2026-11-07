@@ -9,7 +9,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
-const NOTICE = "ほかの人がサンプルを読み込んでいます。少し待ってから、下の「読み込み直す」を押してください。";
+const NOTICE = "ほかの人がサンプルを読み込んでいるかもしれません。少し待ってから、もう一度サンプルを読み込んでください。";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
@@ -32,26 +32,41 @@ beforeEach(() => {
   mocks.state.db = new FakeDb({ parcels: [], emails: [] });
 });
 
-async function render(searchParams?: { demo?: string }) {
+async function render(searchParams?: { demo?: string | string[] }) {
   const Page = (await import("@/app/app/page")).default;
   return parseHtml(renderToStaticMarkup(await Page(searchParams ? { searchParams: Promise.resolve(searchParams) } : undefined)));
 }
 
 describe("the note that another load is running", () => {
-  it("shows once for ?demo=busy", async () => {
+  it("shows once for ?demo=busy, linking to the sample load", async () => {
     const tree = await render({ demo: "busy" });
     const notes = findAll(tree, (n) => n.tag === "p" && textOf(n).includes(NOTICE));
     expect(notes).toHaveLength(1);
-    // The link inside it goes to /app without the marker, so the note is gone after pressing it.
-    const links = findAll(notes[0], (n) => n.tag === "a" && textOf(n).trim() === "読み込み直す");
+    const links = findAll(notes[0], (n) => n.tag === "a" && textOf(n).trim() === "サンプルを読み込む");
     expect(links).toHaveLength(1);
-    expect(links[0].attrs.href).toBe("/app");
+    expect(links[0].attrs.href).toBe("/app/settings/demo");
+  });
+
+  it("shows exactly once in every branch of the list", async () => {
+    const parcel = { id: "p1", user_id: USER, shop: "テスト店", title: "品名", status: "shipped" };
+    const cases: Array<[string, FakeDb]> = [
+      ["no parcels", new FakeDb({ parcels: [], emails: [] })],
+      ["some parcels", new FakeDb({ parcels: [parcel], emails: [] })],
+      ["parcels read fails", new FakeDb({ parcels: [parcel], emails: [] })],
+    ];
+    cases[2][1].hooks.push((q) =>
+      q.table === "parcels" && q.op === "select" && !q.head ? { data: null, error: { message: "connection reset" } } : undefined,
+    );
+    for (const [name, db] of cases) {
+      mocks.state.db = db;
+      const tree = await render({ demo: "busy" });
+      expect(findAll(tree, (n) => n.tag === "p" && textOf(n).includes(NOTICE)), name).toHaveLength(1);
+    }
   });
 
   it("is not shown without the marker, nor for another value", async () => {
     for (const params of [undefined, {}, { demo: "3" }, { demo: "Busy" }]) {
-      expect(findAll(await render(params), (n) => textOf(n).includes("サンプルを読み込んでいます"))).toHaveLength(0);
-      expect(findAll(await render(params), (n) => n.tag === "a" && textOf(n).trim() === "読み込み直す")).toHaveLength(0);
+      expect(findAll(await render(params), (n) => textOf(n).includes("サンプルを読み込んでいるかもしれません"))).toHaveLength(0);
     }
   });
 });

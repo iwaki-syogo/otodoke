@@ -13,7 +13,7 @@ import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
 
-type SearchParams = Promise<{ demo?: string }>;
+type SearchParams = Promise<{ demo?: string | string[] }>;
 
 export default async function ParcelsPage({ searchParams }: { searchParams?: SearchParams } = {}) {
   // Only a fixed marker is read: the sample load leaves ?demo=busy when another load is running.
@@ -67,9 +67,9 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
 
   const sampleBusyNotice = sampleBusy ? (
     <p className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
-      ほかの人がサンプルを読み込んでいます。少し待ってから、下の「読み込み直す」を押してください。
-      <Link href="/app" className="mt-3 block w-full rounded-xl border border-neutral-300 bg-white px-5 py-3 text-center text-sm font-medium">
-        読み込み直す
+      ほかの人がサンプルを読み込んでいるかもしれません。少し待ってから、もう一度サンプルを読み込んでください。
+      <Link href="/app/settings/demo" className="mt-3 block w-full rounded-xl border border-neutral-300 bg-white px-5 py-3 text-center text-sm font-medium">
+        サンプルを読み込む
       </Link>
     </p>
   ) : null;
@@ -87,7 +87,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
       <div className="flex flex-col gap-4">
         {addLink}
         {sampleBusyNotice}
-      {waitingNotice}
+        {waitingNotice}
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         {pageLinks}
       </div>
@@ -99,7 +99,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
       <div className="flex flex-col gap-4">
         {addLink}
         {sampleBusyNotice}
-      {waitingNotice}
+        {waitingNotice}
         <EmptyState mail={await mailSoFar(supabase, user.id)} />
         {pageLinks}
       </div>
