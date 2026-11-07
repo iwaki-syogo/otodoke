@@ -15,6 +15,11 @@ struct ApprovalRefresherTests {
         var waiting = true
         /// The read at which the link comes (the card stops waiting), if any.
         var linkAtRead: Int?
+        var readsFail = false
+        var failures = 0
+        /// A read waits on this gate when it is set (and `reading` shows it started).
+        var readGate: Gate?
+        var reading = false
     }
 
     private func refresher(_ w: World, autoAdvance: Bool = true) -> ApprovalRefresher {
@@ -25,6 +30,11 @@ struct ApprovalRefresherTests {
             read: {
                 w.reads += 1
                 w.lastRead = w.now
+                if w.readsFail { w.failures += 1 }
+                if let gate = w.readGate {
+                    w.reading = true
+                    await gate.wait()
+                }
                 if w.reads == w.linkAtRead { w.waiting = false }
             },
             sleep: { seconds in
@@ -51,9 +61,65 @@ struct ApprovalRefresherTests {
         #expect(w.reads == 14)
         // Long after the last read: one read at once, then the beats run for another five minutes.
         await r.cameBack()
-        #expect(w.reads >= 15)
+        #expect(w.reads == 15)
         await r.loop?.value
         #expect(w.reads == 15 + 14)
+    }
+
+    @Test func keepsGoingWhileReadsFailAndStopsAtFiveMinutes() async {
+        let w = World()
+        w.readsFail = true
+        let r = refresher(w)
+        r.pageShown()
+        await r.loop?.value
+        #expect(w.reads == 14)
+        #expect(w.failures == 14)
+    }
+
+    @Test func aPageThatIsLeftReadsNothingWhateverTheAppDoes() async {
+        let w = World()
+        let r = refresher(w)
+        r.pageShown()
+        r.pageHidden()
+        w.lastRead = nil
+        await r.cameBack()
+        r.waitingAgain()
+        await r.loop?.value
+        #expect(w.reads == 0)
+        // Negative control: shown again, a return reads.
+        r.pageShown()
+        await r.cameBack()
+        #expect(w.reads >= 1)
+        r.stop()
+    }
+
+    @Test func runsAgainWhenTheCardWaitsAgain() async {
+        let w = World()
+        w.waiting = false
+        let r = refresher(w)
+        r.pageShown()
+        await r.loop?.value
+        #expect(w.reads == 0)
+        // The link went away on a full read: the card waits again, and the beats run for five minutes.
+        w.waiting = true
+        r.waitingAgain()
+        await r.loop?.value
+        #expect(w.reads == 14)
+    }
+
+    @Test func aReturnReadThatIsCutOffStartsNoBeats() async {
+        let w = World()
+        let gate = Gate()
+        w.readGate = gate
+        let r = refresher(w, autoAdvance: false)
+        r.pageShown()
+        let back = Task { await r.cameBack() }
+        for _ in 0..<1000 where !w.reading { await Task.yield() }
+        #expect(w.reading)
+        r.stop()
+        gate.open()
+        await back.value
+        #expect(r.loop == nil)
     }
 
     @Test func aReturnWithinTenSecondsDoesNotRead() async {
@@ -163,6 +229,53 @@ struct ApprovalRefreshModelTests {
         await model.refreshApproval()
         #expect(model.address == before.0)
         #expect((model.unread == nil, model.dropped == nil) == (before.1, before.2))
+    }
+
+    private func emailReads(_ fake: FakeSupabase) async -> Int { await fake.count("GET", "emails") }
+
+    @Test func aReadCutOffMidwayIsNotAFailedRead() async throws {
+        let (model, fake) = try await make(key: true)
+        let gate = Gate()
+        let n = await emailReads(fake)
+        await fake.fail("GET", "emails", nth: n + 1, with: .hold(gate))
+        let before = model.lastApprovalRead
+        let task = Task { await model.refreshApproval() }
+        #expect(await waitFor { await fake.count("GET", "emails") == n + 1 })
+        task.cancel()
+        gate.open()
+        await task.value
+        #expect(model.approvalNote == nil)
+        #expect(model.lastApprovalRead == before)
+    }
+
+    @Test func aFullReadThatCameAndWentMeanwhileKeepsTheOlderAnswerOut() async throws {
+        let (model, fake) = try await make(key: true, mails: [confirmation(3)])
+        // make() read the link already; take it away again so the refresh runs.
+        await fake.mutate { $0["emails"] = [] }
+        await model.load()
+        #expect(model.confirmURL == nil)
+        await fake.insert("emails", [confirmation(4)])
+        let gate = Gate()
+        let n = await emailReads(fake)
+        // Handled now (the link is there), delivered late.
+        await fake.fail("GET", "emails", nth: n + 1, with: .delay(gate))
+        let task = Task { await model.refreshApproval() }
+        #expect(await waitFor { await fake.count("GET", "emails") == n + 1 })
+        await fake.mutate { $0["emails"] = [] }
+        await model.load()
+        gate.open()
+        await task.value
+        #expect(model.confirmURL == nil)
+    }
+
+    @Test func theBadgeFollowsTheRefresh() async throws {
+        let (model, fake) = try await make(key: true)
+        #expect(model.approvalWaiting == false)
+        await fake.insert("emails", [confirmation(5)])
+        await model.refreshApproval()
+        #expect(model.confirmURL?.absoluteString == Self.link)
+        #expect(model.approvalWaiting)
+        #expect(model.approvalBadgeFailed == false)
     }
 
     @Test func aFailedReadShowsTheNoteAndKeepsPolling() async throws {

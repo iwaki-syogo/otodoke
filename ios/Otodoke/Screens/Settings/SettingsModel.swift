@@ -90,6 +90,8 @@ final class SettingsModel {
     @ObservationIgnored private var hasRead = false
     /// Reads running now (load() adds one while it runs).
     @ObservationIgnored private var loadsRunning = 0
+/// How many full reads have begun (the auto refresh drops its answers when this moved).
+@ObservationIgnored private var loadsStarted = 0
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
 
@@ -168,6 +170,7 @@ final class SettingsModel {
     /// Reads everything again. Each read fails on its own; a newer read drops this one's answers.
     func load() async {
         hasRead = true
+        loadsStarted += 1
         loadsRunning += 1
         defer { loadsRunning -= 1 }
         mark.markRead()
@@ -193,16 +196,7 @@ final class SettingsModel {
         }
         keyPanel = panel
         address = readAddress
-        let pick = readConfirmation.value.flatMap(Self.pickApproval)
-        confirmURL = pick?.url
-        if case .failed = readConfirmation { confirmationFailed = true } else { confirmationFailed = false }
-        if let later = readLater {
-            approvalWaiting = (later.value ?? 1) <= 0
-            approvalBadgeFailed = later == .failed
-        } else {
-            approvalWaiting = false
-            approvalBadgeFailed = confirmationFailed
-        }
+        applyApproval(readConfirmation, later: readLater)
         unread = readWaiting
         dropped = readDropped
         lastApprovalRead = at
@@ -273,15 +267,35 @@ final class SettingsModel {
     /// When the confirmation mail was last read (by load() or refreshApproval()).
     private(set) var lastApprovalRead: Date?
 
-    /// Reads only the forwarding confirmation again (the auto refresh): no other state is touched. Skipped while a
-    /// full read runs, and dropped if one began meanwhile (it owns the state).
+    /// The confirmation, the card it shows and the list's 「承認待ち」 badge, decided in one place for load() and the auto refresh.
+    private func applyApproval(_ confirmation: LoadResult<[ForwardingConfirmationRow]>, later: LoadResult<Int>?) {
+        let pick = confirmation.value.flatMap(Self.pickApproval)
+        confirmURL = pick?.url
+        if case .failed = confirmation { confirmationFailed = true } else { confirmationFailed = false }
+        if let later {
+            approvalWaiting = (later.value ?? 1) <= 0
+            approvalBadgeFailed = later == .failed
+        } else {
+            approvalWaiting = false
+            approvalBadgeFailed = confirmationFailed
+        }
+    }
+
+    /// Reads only the approval again (the auto refresh): the confirmation mail and, as load() does, what arrived after
+    /// it for the badge. No other state is touched. Skipped while a full read runs; the answers are dropped when a
+    /// full read began meanwhile (it owns the state), and when the refresh was cancelled (the page was left: a
+    /// cut-off read is not a failed read, and it does not count as a read).
     func refreshApproval() async {
         guard pollsForApproval, loadsRunning == 0 else { return }
+        let started = loadsStarted
+        let confirmation = await reader.forwardingConfirmations()
+        var later: LoadResult<Int>?
+        if !Task.isCancelled, let at = confirmation.value.flatMap(Self.pickApproval)?.at {
+            later = await reader.arrivedAfter(at)
+        }
+        guard !Task.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else { return }
         lastApprovalRead = now()
-        let result = await reader.forwardingConfirmations()
-        guard pollsForApproval, loadsRunning == 0 else { return }
-        confirmURL = result.value.flatMap(Self.pickApproval)?.url
-        if case .failed = result { confirmationFailed = true } else { confirmationFailed = false }
+        applyApproval(confirmation, later: later)
     }
 
     /// iOS-12: the app came back to the front while this screen is shown.

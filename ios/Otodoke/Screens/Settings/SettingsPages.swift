@@ -15,8 +15,9 @@ struct SettingsForwardPage: View {
 
     var body: some View {
         SettingsParts.page(spacing: 32) {
-            SettingsStatusRows(model: model).approvalSection
             addressSection
+            // The Web's order: the address, the approval card (and its failure), then the guides.
+            SettingsStatusRows(model: model).approvalSection
             ForwardingGuideView(expanded: expandsGuide)
         }
         .refreshableToTheEnd { await model.load() }
@@ -32,13 +33,17 @@ struct SettingsForwardPage: View {
             self.refresher = refresher
             refresher.pageShown()
         }
-        .onDisappear { refresher?.stop() }
+        .onDisappear { refresher?.pageHidden() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await refresher?.cameBack() }
             } else {
-                refresher?.stop()
+                refresher?.wentAway()
             }
+        }
+        // The link went away on a full read (an old mail fell out of the window): wait for it again.
+        .onChange(of: model.pollsForApproval) { _, waiting in
+            if waiting { refresher?.waitingAgain() }
         }
         .navigationTitle(SettingsMenuText.forwardTitle)
         .navigationBarTitleDisplayMode(.inline)

@@ -47,11 +47,17 @@ describe("iOS approval auto refresh keeps the Web's numbers", () => {
     const pages = stripComments(read(`${DIR}/SettingsPages.swift`));
     const forward = pages.slice(pages.indexOf("struct SettingsForwardPage"), pages.indexOf("struct", pages.indexOf("struct SettingsForwardPage") + 10));
     expect(forward).toMatch(/await model\.pageShown\(\)[\s\S]*ApprovalRefresher\([\s\S]*refresher\.pageShown\(\)/);
-    expect(forward).toMatch(/\.onDisappear \{ refresher\?\.stop\(\) \}/);
-    expect(forward).toMatch(/onChange\(of: scenePhase\)[\s\S]*cameBack\(\)[\s\S]*stop\(\)/);
-    // Only the confirmation mail is read again.
+    expect(forward).toMatch(/\.onDisappear \{ refresher\?\.pageHidden\(\) \}/);
+    expect(forward).toMatch(/onChange\(of: scenePhase\)[\s\S]*cameBack\(\)[\s\S]*wentAway\(\)/);
+    // The beats run again when the link goes away on a full read.
+    expect(forward).toMatch(/onChange\(of: model\.pollsForApproval\)[\s\S]*waitingAgain\(\)/);
+    // Only the approval is read again.
     expect(forward).toMatch(/read: \{ await model\.refreshApproval\(\) \}/);
     expect(forward).not.toMatch(/model\.load\(\)\s*\}\s*\n\s*\)/);
+    // A page that is left reads nothing (M2), and a return read is cut off by stop() (N5).
+    expect(SWIFT).toMatch(/func cameBack\(\) async \{[\s\S]*guard visible else \{ return \}/);
+    expect(SWIFT).toMatch(/guard visible, inFront, isWaiting\(\)/);
+    expect(SWIFT).toMatch(/returnRead\?\.cancel\(\)/);
   });
 
   it("the model runs it only for an address on show with no link yet, and reads only the confirmations", () => {
@@ -60,7 +66,14 @@ describe("iOS approval auto refresh keeps the Web's numbers", () => {
     expect(polls).toMatch(/case \.present\? = keyPanel, addressCanBeCopied, confirmURL == nil/);
     const refresh = model.match(/func refreshApproval\(\) async \{([\s\S]*?)\n {4}\}/)?.[1] ?? "";
     expect(refresh).toContain("reader.forwardingConfirmations()");
-    expect(refresh).not.toMatch(/reader\.(currentKey|plainCount|unreadCount|dropped|arrivedAfter|oldKeyCount)|load\(\)/);
+    expect(refresh).not.toMatch(/reader\.(currentKey|plainCount|unreadCount|dropped|oldKeyCount)|load\(\)/);
+    // M1: a cancelled read writes nothing and does not count as a read; S1: a full read that began meanwhile wins.
+    expect(refresh).toMatch(/guard !Task\.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else \{ return \}\s*lastApprovalRead = now\(\)/);
+    // S2: the card and the badge are decided in one place, used by load() and the refresh.
+    expect(refresh).toContain("applyApproval(confirmation, later: later)");
+    expect(model.match(/applyApproval\(/g)).toHaveLength(3);
+    // Negative control: without the cancellation guard the check is caught.
+    expect(refresh.replace("guard !Task.isCancelled, started", "guard started")).not.toMatch(/guard !Task\.isCancelled, started/);
     // Negative control: a polls rule without the address would be caught.
     expect(polls.replace("addressCanBeCopied, ", "")).not.toMatch(/addressCanBeCopied/);
   });

@@ -4,9 +4,8 @@ import { describe, expect, it } from "vitest";
 import { GMAIL_FILTER } from "@/lib/forwarding-guide";
 
 /**
- * The Gmail approval card of 「メールの転送」 carries the filter text and its copy button (the owner's decision; the
- * Web's card is still to come). The sentence above the box is one constant (GmailApprovalText.filterNote); the box is
- * the same part as under step 7 of the Gmail card (GmailFilterBox: the text from SettingsModel.gmailFilter + CopyButton).
+ * The Gmail approval card of 「メールの転送」 carries the filter text and its copy button (the same as the Web's ApprovalFilterCopy). The sentence above the box is one constant (GmailApprovalText.filterNote); the box is
+ * the same part as under the Gmail card's filter step (step 5) (GmailFilterBox: the text from SettingsModel.gmailFilter + CopyButton).
  */
 const ROOT = path.resolve(__dirname, "../../..");
 const read = (p: string) => (existsSync(path.join(ROOT, p)) ? readFileSync(path.join(ROOT, p), "utf8") : "");
