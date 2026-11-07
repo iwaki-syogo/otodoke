@@ -263,6 +263,8 @@ final class LoginModel {
                 if outcome == .existing {
                     // The address has an account: no mail was sent and the password typed was not set. No wait and no
                     // held password: the sign-in form with the guidance of a registered address, the address kept.
+                    // Anything still waiting from an earlier sign-up is let go too (as the credentials answer does).
+                    dropWait()
                     self.mode = .signIn
                     existingAddress = address
                     canResendConfirmation = false

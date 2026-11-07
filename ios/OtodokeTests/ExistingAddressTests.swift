@@ -2,10 +2,11 @@ import Foundation
 import Testing
 @testable import Otodoke
 
-/// [existing address] Supabase answers a sign-up for a registered address with "sent" and sets no new password. The
-/// waiting screen's sign-in (by itself or by the button) is then refused for credentials: the sign-in form comes
-/// back with the address kept and a sentence that says the address is registered, the link to the reset and
-/// RESET_LOSES_MAIL. Every other credentials answer keeps the Web's 「メールアドレスかパスワードが違います。」.
+/// [existing address] A registered address is told at the sign-up itself (the answer's user has identities: [], or
+/// 422 user_already_exists): no wait, no held password, the sign-in form with the address kept and a sentence that
+/// says the address is registered, the link to the reset and RESET_LOSES_MAIL. An address whose account is not
+/// confirmed yet still gets the waiting screen, and its sign-in (by itself or by the button) refused for credentials
+/// leads to the same sentence. Every other credentials answer keeps the Web's 「メールアドレスかパスワードが違います。」.
 @Suite("Onboarding: the address was already registered")
 @MainActor
 struct ExistingAddressTests {
@@ -284,6 +285,46 @@ struct ExistingAddressTests {
         expectExistingAtOnce(model)
         // Nothing is waited for: no try is made after it.
         await model.checkConfirmation()
+        #expect(await fake.count("POST", "token") == 0)
+    }
+
+    @Test func aSignUpAnsweredWith400UserAlreadyExistsIsAnExistingAddressToo() async {
+        // Only the code is read, not the status.
+        await fake.forceAuth("signup", status: 400, code: "user_already_exists")
+        let model = make(fake)
+        await signUp(model)
+        expectExistingAtOnce(model)
+    }
+
+    @Test func aSignUpAnswerWithASessionIsNotAnExistingAddress() async throws {
+        // Confirmations off: the answer is a session (its user has no identities in this fake); never "existing".
+        await fake.setSignUpAnswersWithSession(true)
+        let auth = PW.auth(fake, storage: InMemorySessionStorage())
+        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .sent)
+    }
+
+    @Test func anExistingAnswerLetsGoOfAWaitFromAnEarlierSignUp() async {
+        let token = TurnstileToken(now: clock.function)
+        let sleeper = ControlledSleeper()
+        let model = make(fake, token: token, timerSleep: sleeper.sleep)
+        await fake.setSignUpIdentities(.one)
+        await signUp(model)
+        #expect(model.isWaitingForConfirmation)
+        #expect(await waitFor(.seconds(3)) { sleeper.pendingCount == 1 })
+        // The same model signs up again and the answer says the address has an account.
+        await fake.setSignUpIdentities(.empty)
+        model.password = PW.good
+        model.passwordAgain = PW.good
+        await model.submit()
+        expectExistingAtOnce(model)
+        #expect(model.confirmationAddress == nil)
+        #expect(!model.isHoldingPassword)
+        #expect(sleeper.pendingCount == 0)
+        // Nothing fires or tries after it.
+        clock.advance(seconds: 100)
+        #expect(!sleeper.fireOldest())
+        await model.checkConfirmation()
+        await model.checkConfirmation(pressed: true)
         #expect(await fake.count("POST", "token") == 0)
     }
 

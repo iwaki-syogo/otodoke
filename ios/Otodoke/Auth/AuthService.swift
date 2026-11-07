@@ -108,11 +108,6 @@ final class AuthService {
 
     // MARK: password-v1
 
-    /// Make an account: email_norm of the address (printable ASCII only, else .emailNotAscii; nothing is sent for
-    /// an invalid or non-ASCII address), master off the main thread, then signUp(email: email_norm, password:
-    /// auth_secret, redirectTo: AppConfig.authRedirect, captchaToken:). The password's rule is LoginModel's, on
-    /// the password as typed. user_already_exists, email_exists, over_email_send_rate_limit and a 429 without a
-    /// code answer as sent.
     /// What a sign-up that was accepted tells: `.sent` (a confirmation mail is on its way) or `.existing` (the address
     /// has an account already: Supabase answers a confirmed address with a user whose `identities` is an empty array,
     /// and a 422 user_already_exists when it says so; no mail is sent and the password typed is not set).
@@ -121,6 +116,13 @@ final class AuthService {
         case existing
     }
 
+    /// Make an account: email_norm of the address (printable ASCII only, else .emailNotAscii; nothing is sent for
+    /// an invalid or non-ASCII address), master off the main thread, then signUp(email: email_norm, password:
+    /// auth_secret, redirectTo: AppConfig.authRedirect, captchaToken:). The password's rule is LoginModel's, on
+    /// the password as typed. Answers `.existing` for a user with `identities: []` and for a user_already_exists
+    /// refusal, `.sent` for any other accepted answer and for the refusals that do not tell whether the address has an
+    /// account (over_email_send_rate_limit, email_exists, user_not_found, a 429 without a code); the other refusals
+    /// (captcha, rate, invalid address, network, other) are thrown as LoginFailure.
     @discardableResult
     func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) -> SignUpOutcome {
         let address = PasswordV1.emailNorm(email)
@@ -141,6 +143,9 @@ final class AuthService {
             if case let .user(user) = answer, let identities = user.identities, identities.isEmpty { return .existing }
             return .sent
         } catch {
+            // GoTrue's signUp answers a registered address with identities: [] or user_already_exists; email_exists
+            // belongs to calls other than signUp (changing an address, say), so it stays among the "sent" codes of
+            // mailRefusal (resend and the like share it).
             if case let .refused(_, code) = Self.answer(of: error), code == "user_already_exists" { return .existing }
             if case let .failed(failure) = Self.mailRefusal(error) { throw failure }
             return .sent

@@ -156,6 +156,9 @@ actor FakeSupabase {
     enum SignUpIdentities: Sendable { case auto, empty, one, absent }
     private var signUpIdentities = SignUpIdentities.auto
     func setSignUpIdentities(_ mode: SignUpIdentities) { signUpIdentities = mode }
+    /// Confirmations off: the sign-up answers a session (as GoTrue does when the address needs no mail).
+    private var signUpAnswersWithSession = false
+    func setSignUpAnswersWithSession(_ on: Bool) { signUpAnswersWithSession = on }
 
     /// Ends `forceAuth` for `endpoint`: the next answers are the fake's own again.
     func clearForcedAuth(_ endpoint: String) { forcedAuth[endpoint] = nil }
@@ -329,6 +332,7 @@ actor FakeSupabase {
             guard let address = body["email"] as? String, let secret = body["password"] as? String else {
                 return Self.gotrueError(request, 400, "validation_failed", "missing email or password")
             }
+            if signUpAnswersWithSession { return .json(200, newSession()) }
             let hadAccount = passwordAccounts[address] != nil
             let confirmedAccount = passwordAccounts[address]?.confirmed == true
             if !hadAccount { passwordAccounts[address] = (secret, false) }

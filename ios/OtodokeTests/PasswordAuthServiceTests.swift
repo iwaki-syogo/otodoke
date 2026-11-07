@@ -52,7 +52,8 @@ struct PasswordAuthServiceTests {
         #expect(sent.last?.jsonDictionary?["gotrue_meta_security"] == nil || PW.captcha(sent.last) == nil)
     }
 
-    /// The same answer for an address with an account and one without (no account is told).
+    /// The refusals that do not tell whether the address has an account answer "sent" (user_already_exists is not
+    /// one of them: it is the sign-up's own word for a registered address, see ExistingAddressTests).
     @Test(arguments: [(422, Optional("email_exists")), (429, Optional("over_email_send_rate_limit")), (429, nil)])
     func signUpAnswersSentWhateverTheAddress(status: Int, code: String?) async throws {
         let fake = FakeSupabase.make()
