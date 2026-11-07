@@ -108,9 +108,10 @@ export const LOGIN_ATTEMPT_LIMITS = {
 
 /**
  * Every sign-in this website asks Supabase for, failed or not, per client IP. Supabase allows 100
- * sign-ins and sign-ups per 5 minutes per IP (dashboard setting), and every visitor of the website comes from this
- * server's IP: one visitor must not be able to use that up for everyone (successes included, which
- * the attempt limit gives back). Counted under its own namespace with the IP in the address column,
+ * sign-ins and sign-ups per 5 minutes per IP (dashboard setting), and every visitor of the website
+ * comes from this server's IP: one visitor must not be able to use that up for everyone
+ * (successes included, which the attempt limit gives back). Counted under its own namespace with
+ * the IP in the address column,
  * so the function's 10-minute window applies to the IP: at most 15 in any 10 minutes (so never 100
  * in 5), 60 in an hour. Never given back.
  */

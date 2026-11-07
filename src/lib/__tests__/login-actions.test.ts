@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -35,6 +37,15 @@ const TOKEN = "0.zTm7bLh4Qx-TOKEN-SHOULD-NEVER-BE-LOGGED-9f8e7d6c5b4a";
 const IP = "203.0.113.7";
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const calls = (fn: string) => mocks.rpc.mock.calls.filter(([name]) => name === fn);
+
+/** One integer key of the [auth.rate_limit] section of supabase/config.toml; throws if absent. */
+function authRateLimit(key: string): number {
+  const toml = readFileSync(resolve(process.cwd(), "supabase/config.toml"), "utf8");
+  const section = toml.match(/^\[auth\.rate_limit\]\s*\n([\s\S]*?)(?=^\[|(?![\s\S]))/m);
+  const value = section?.[1].match(new RegExp(`^${key}\\s*=\\s*(\\d+)\\s*(?:#.*)?$`, "m"));
+  if (!value) throw new Error(`[auth.rate_limit] ${key} not found in supabase/config.toml`);
+  return Number(value[1]);
+}
 
 /** claim_login_mail answers `verdict` (claim id 41 when ok); release_login_mail answers 1. */
 function limits(verdict = "ok") {
@@ -110,9 +121,9 @@ describe("signInWithAuthSecret", () => {
     expect(tries).toEqual({ p_email_hash: sha(`otodoke:login-try:email:${IP}`), p_ip_hash: null, p_email_10m_limit: 15, p_email_1h_limit: 60, p_ip_1h_limit: 60 });
     // Any 5 minutes lie in some 10 minutes: one IP's sign-ins, with its sign-ups (the mail limit,
     // per hour) on top, stay under Supabase's 100 per 5 minutes that every visitor shares.
-    // Mirrors the dashboard value (Authentication > Rate Limits > "Rate limit for sign-ups and
-    // sign-ins"); lower it here together with the dashboard.
-    const SUPABASE_SIGN_IN_UP_PER_5_MIN = 100;
+    // Read from supabase/config.toml, which mirrors the dashboard value (Authentication > Rate
+    // Limits > "Rate limit for sign-ups and sign-ins"); change both together.
+    const SUPABASE_SIGN_IN_UP_PER_5_MIN = authRateLimit("sign_in_sign_ups");
     const { LOGIN_MAIL_LIMITS, LOGIN_TRY_LIMITS } = await import("@/lib/login-mail-limit");
     expect(LOGIN_TRY_LIMITS.ipPer10Minutes + LOGIN_MAIL_LIMITS.ipPerHour).toBeLessThan(SUPABASE_SIGN_IN_UP_PER_5_MIN);
     // Only the address's attempt is given back after a success, never the try.
