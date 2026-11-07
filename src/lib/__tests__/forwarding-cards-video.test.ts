@@ -69,7 +69,7 @@ describe("videos in the cards of 設定 › メールの転送", () => {
     expect(findAll(withVideo, (n) => n.tag === "video")).toHaveLength(1);
   });
 
-  it("the Gmail link note is two paragraphs; the Outlook note stays one plain line", () => {
+  it("the Gmail link note is two paragraphs; the Outlook note is two paragraphs; a note without a newline stays one plain line", () => {
     const note = (id: string) => {
       const guide = FORWARDING_GUIDES.find((g) => g.id === id)!;
       const root = parseHtml(`<div>${renderToStaticMarkup(createElement(GuideCardBody, { guide }))}</div>`);
@@ -80,7 +80,14 @@ describe("videos in the cards of 設定 › メールの転送", () => {
     expect(gmail.p).toHaveLength(1);
     expect(String(gmail.p[0].attrs.class)).toContain("whitespace-pre-line");
     const outlook = note("outlook");
-    expect(outlook.guide.linkNote).not.toContain("\n");
+    expect(outlook.guide.linkNote!.split("\n\n")).toHaveLength(2);
     expect(outlook.p).toHaveLength(1);
+    expect(String(outlook.p[0].attrs.class)).toContain("whitespace-pre-line");
+    // Negative control: no shipped note is a single line now, so a made-up guide stands in for one.
+    const plain = { ...FORWARDING_GUIDES.find((g) => g.id === "outlook")!, linkNote: "A plain one-line note." };
+    const plainRoot = parseHtml(`<div>${renderToStaticMarkup(createElement(GuideCardBody, { guide: plain }))}</div>`);
+    const plainP = findAll(plainRoot, (n) => n.tag === "p" && textOf(n) === plain.linkNote);
+    expect(plain.linkNote).not.toContain("\n");
+    expect(plainP).toHaveLength(1);
   });
 });
