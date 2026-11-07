@@ -65,7 +65,6 @@ struct ForwardingGuideView: View {
         VStack(alignment: .leading, spacing: 20) {
             if !servicesOnly {
                 header
-                before
             }
             VStack(spacing: 12) {
                 ForEach(T.services) { service in
@@ -73,9 +72,6 @@ struct ForwardingGuideView: View {
                         serviceBody(service)
                     }
                 }
-            }
-            if !servicesOnly {
-                verify
             }
             // Once, always: the Web shows it under the cards (settings, welcome) and at the end of /guide/forwarding.
             Text(T.videoCredit)
@@ -103,49 +99,6 @@ struct ForwardingGuideView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var before: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(T.beforeHeading)
-                .font(.subheadline.weight(.semibold))
-            ForEach(T.before, id: \.self) { line in
-                bullet(line)
-            }
-        }
-    }
-
-    private var verify: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(T.verifyHeading)
-                .font(.subheadline.weight(.semibold))
-            ForEach(T.verify, id: \.self) { line in
-                bullet(line)
-            }
-            // The Web's button to 「うまく届かないとき」: a link to that page on the settings stack.
-            NavigationLink(value: SettingsPage.delivery) {
-                Text(T.checkAction)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.separator)))
-                    .contentShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-        }
-    }
-
-    private func bullet(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: "•").foregroundStyle(.secondary).accessibilityHidden(true)
-            Text(text)
-                .font(.subheadline)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

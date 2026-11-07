@@ -3,7 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { BEFORE_YOU_START_ACTION, BEFORE_YOU_START_HEADING, FORWARDING_GUIDES, FORWARDING_PITFALLS, GMAIL_FILTER, PITFALLS_LEAD, VIDEO_CREDIT } from "@/lib/forwarding-guide";
+import { BEFORE_YOU_START_ACTION, BEFORE_YOU_START_HEADING, FORWARDING_GUIDES, FORWARDING_PITFALLS, GMAIL_FILTER, PITFALLS_HEADING, PITFALLS_LEAD, VIDEO_CREDIT } from "@/lib/forwarding-guide";
 import * as guideData from "@/lib/forwarding-guide";
 import { withoutComments } from "./source-scan";
 import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
@@ -24,7 +24,7 @@ vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
 
 const PAGE_SOURCE = path.join(process.cwd(), "src/app/guide/forwarding/page.tsx");
 const SETTINGS_SOURCE = path.join(process.cwd(), "src/app/app/settings/forwarding-guide.tsx");
-const HOSTS = ["mail.google.com", "www.icloud.com", "outlook.live.com", "www.kuronekoyamato.co.jp", "faq.kuronekoyamato.co.jp"];
+const HOSTS = ["mail.google.com", "www.icloud.com", "outlook.live.com"];
 
 async function render(): Promise<HtmlNode> {
   const Page = (await import("@/app/guide/forwarding/page")).default;
@@ -58,28 +58,45 @@ describe("/guide/forwarding", () => {
       "設定は最初の 1 回だけです。あとは何もしなくても、荷物のメールが Otodoke に届きます。",
       "お使いのメールを選んでください。どれも 5 分ほどで終わります。",
       "Otodoke の設定の「メールの転送」で、あなた専用の転送先アドレスをコピーしておきます。",
-      "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、ブラウザで Gmail をパソコン版の画面で開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",
+      "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",
       "転送先を登録する",
       "荷物のメールだけを送るフィルタを作る",
-      "「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。",
+      "「転送」の欄は変えずに、次のフィルタへ進みます。荷物のメールだけを送るためです。",
       "「含む」に次の文字列を貼り付けます。",
       "「転送する」にチェックを入れ、横の欄で Otodoke のアドレスを選び、「フィルタを作成」を押します。",
       "「転送後にメッセージを削除」にはチェックを入れません。入れると、iCloud にメールが残りません。",
       "「転送を有効にする」をオンにし、Otodoke のアドレスを貼り付けます。",
       "サインインしていないと Outlook の紹介ページが開きます。サインインしてから、もう一度このボタンを押してください。",
       "Yahoo!メールは、自動転送したメールが Yahoo!メールに残らないので、おすすめしません。",
-      "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。",
-      "届かない人が多い落とし穴",
-      "1. ヤマト運輸などのお届け予定メールを受け取っていない",
-      "2. ショップの「発送のお知らせ」メールを止めている",
-      "3. 荷物のメールが迷惑メールに入っている",
-      "設定できたか確かめる",
-      "出ないときは、設定の「うまく届かないとき」を開いてください。",
+      "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。転送したメールが元のメールにも残る設定にします。",
+      "5 分・ブラウザで",
       GMAIL_FILTER,
-      "@ml2.kuronekoyamato.co.jp",
     ];
     for (const s of expected) expect(text, s).toContain(s);
-    expect(text).toContain(PITFALLS_LEAD);
+  });
+
+  it("does not show the pitfall card or the 確かめる card, nor the sentences that made them look like more work", async () => {
+    const root = await render();
+    const text = textOf(root).replace(/\s+/g, " ");
+    expect(findAll(root, (n) => n.attrs.id === "pitfalls")).toHaveLength(0);
+    expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === "#pitfalls")).toHaveLength(0);
+    expect(text).not.toContain(PITFALLS_HEADING);
+    expect(text).not.toContain(PITFALLS_LEAD);
+    for (const p of FORWARDING_PITFALLS) expect(text).not.toContain(p.title);
+    expect(text).not.toContain("@ml2.kuronekoyamato.co.jp");
+    expect(text).not.toContain("設定できたか確かめる");
+    expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === "/app/settings/trouble")).toHaveLength(0);
+    for (const w of ["パソコン版の画面で開き", "転送を無効にする", "先に確かめてください", "フィルタをまだ作っていなければ"]) expect(text, w).not.toContain(w);
+    expect(text).not.toContain("スマホは Gmail アプリではなく");
+    // Negative control: the same probe finds the heading in a tree that has it.
+    expect(textOf(parseHtml(`<h2>${PITFALLS_HEADING}</h2>`))).toContain(PITFALLS_HEADING);
+  });
+
+  it("still shows the pitfalls on the 「うまく届かないとき」 page (negative control for the removal)", () => {
+    const source = readFileSync(path.join(process.cwd(), "src/app/app/settings/trouble/page.tsx"), "utf8");
+    expect(source).toContain("FORWARDING_PITFALLS");
+    expect(source).toContain("PitfallBody");
+    expect(FORWARDING_PITFALLS).toHaveLength(3);
   });
 
   it("shows every step and note of the data, numbered straight through in Gmail", async () => {
@@ -92,12 +109,11 @@ describe("/guide/forwarding", () => {
     const gmail = findAll(root, (n) => n.tag === "section" && n.attrs.id === "gmail")[0];
     const numbers = findAll(gmail, (n) => n.tag === "span" && /^\d$/.test(textOf(n))).map(textOf);
     expect(numbers).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
-    for (const p of FORWARDING_PITFALLS) expect(text).toContain(p.title);
   });
 
-  it("has the five anchors and chips that jump to them", async () => {
+  it("has the four anchors and chips that jump to them", async () => {
     const root = await render();
-    for (const id of ["gmail", "icloud", "outlook", "other", "pitfalls"]) {
+    for (const id of ["gmail", "icloud", "outlook", "other"]) {
       expect(findAll(root, (n) => n.attrs.id === id), id).toHaveLength(1);
     }
     for (const id of ["gmail", "icloud", "outlook", "other"]) {
@@ -118,7 +134,7 @@ describe("/guide/forwarding", () => {
   it("opens every outside link in a new tab over https, only on the known hosts", async () => {
     const root = await render();
     const links = findAll(root, (n) => n.tag === "a" && /^https?:/.test(n.attrs.href ?? ""));
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(3);
     expect(linkProblems(root)).toEqual([]);
   });
 
@@ -135,9 +151,8 @@ describe("/guide/forwarding", () => {
     else expect(source).toContain('from "@/lib/forwarding-guide"');
   });
 
-  it("sends 「うまく届かないとき」を開く to the trouble page, and the start card to the forwarding page", async () => {
+  it("sends the start card to the forwarding page", async () => {
     const root = await render();
-    expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === "「うまく届かないとき」を開く").map((a) => a.attrs.href)).toEqual(["/app/settings/trouble"]);
     expect(findAll(root, (n) => n.tag === "a" && textOf(n).trim() === BEFORE_YOU_START_ACTION).map((a) => a.attrs.href)).toEqual(["/app/settings/forwarding"]);
   });
 

@@ -59,14 +59,6 @@ enum ForwardingGuideText {
     static let lead = "設定は最初の 1 回だけです。あとは何もしなくても、荷物のメールが Otodoke に届きます。"
     static let supplement = "お使いのメールを選んでください。どれも 5 分ほどで終わります。"
 
-    // MARK: 始める前に
-
-    static let beforeHeading = "始める前に"
-    static let before: [String] = [
-        "Otodoke の設定の「メールの転送」で、あなた専用の転送先アドレスをコピーしておきます。",
-        "アドレスは …@in.otodoke.app の形です。知らない人には教えないでください。",
-    ]
-
     // MARK: Gmail / iCloud / Outlook / そのほか
 
     static let services: [Service] = [
@@ -74,15 +66,15 @@ enum ForwardingGuideText {
             id: "gmail",
             title: "Gmail",
             addresses: nil,
-            meta: "5 分・ブラウザで。スマホは Gmail アプリではなく、ブラウザでパソコン版の画面にしてから進めます",
+            meta: "5 分・ブラウザで",
             video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 94),
             link: Link(title: "Gmail の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/general"),
             linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
             groups: [
                 Group(heading: "転送先を登録する", steps: [
-                    "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、ブラウザで Gmail をパソコン版の画面で開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",
+                    "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",
                     "「次へ」 › 「続行」 › 「OK」の順に押します。本人確認を求められたら済ませて、もう一度アドレスを入れます。",
-                    "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」が出るので、押して承認し、Gmail の画面を読み込み直します。「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。",
+                    "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」が出るので、押して承認し、Gmail の画面を読み込み直します。「転送」の欄は変えずに、次のフィルタへ進みます。荷物のメールだけを送るためです。",
                 ]),
                 Group(heading: "荷物のメールだけを送るフィルタを作る", steps: [
                     "Gmail の上の検索ボックスの右端にある、横線が並んだアイコン「検索オプションを表示」を押します。",
@@ -148,24 +140,13 @@ enum ForwardingGuideText {
             link: nil,
             linkNote: nil,
             groups: [],
-            body: "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。",
+            body: "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。転送したメールが元のメールにも残る設定にします。",
             filterAfterStep: nil,
             notes: [
-                "転送したメールが元のメールにも残る設定か、先に確かめてください。",
                 "Yahoo!メールは、自動転送したメールが Yahoo!メールに残らないので、おすすめしません。",
             ]
         ),
     ]
-
-    // MARK: 設定できたか確かめる
-
-    static let verifyHeading = "設定できたか確かめる"
-    static let verify: [String] = [
-        "次に買い物をしたら、Otodoke の一覧に荷物が出るか見てください。",
-        "出ないときは、設定の「うまく届かないとき」を開いてください。",
-    ]
-    /// The Web's FORWARDING_CHECK_ACTION: the button under the lines, opening 「うまく届かないとき」.
-    static let checkAction = "「うまく届かないとき」を開く"
 
     // MARK: 動画
 

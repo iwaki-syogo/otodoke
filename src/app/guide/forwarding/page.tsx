@@ -1,23 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
-import { GuideGroups, GuideVideo, PitfallBody } from "@/components/forwarding-steps";
+import { GuideGroups, GuideVideo } from "@/components/forwarding-steps";
 import {
   BEFORE_YOU_START,
   BEFORE_YOU_START_ACTION,
   BEFORE_YOU_START_HEADING,
-  FORWARDING_CHECK,
-  FORWARDING_CHECK_ACTION,
   FORWARDING_GUIDES,
   FORWARDING_LEAD,
   FORWARDING_LEAD_NOTE,
-  FORWARDING_PITFALLS,
   FORWARDING_TITLE,
-  PITFALLS_HEADING,
-  PITFALLS_LEAD,
   VIDEO_CREDIT,
   type ForwardingGuide,
-  type ForwardingPitfall,
 } from "@/lib/forwarding-guide";
 
 // Prerendered (○ in `next build`). Readable before signing in (the proxy guards /app only), and it
@@ -74,17 +68,6 @@ function GuideSection({ guide }: { guide: ForwardingGuide }) {
   );
 }
 
-function Pitfall({ pitfall, n }: { pitfall: ForwardingPitfall; n: number }) {
-  return (
-    <div className="mt-5">
-      <h3 className="text-sm font-bold">
-        {n}. {pitfall.title}
-      </h3>
-      <PitfallBody pitfall={pitfall} />
-    </div>
-  );
-}
-
 export default function ForwardingGuidePage() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-4 py-10">
@@ -119,26 +102,6 @@ export default function ForwardingGuidePage() {
       {FORWARDING_GUIDES.map((g) => (
         <GuideSection key={g.id} guide={g} />
       ))}
-
-      <section id="pitfalls" className="scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-        <h2 className="text-base font-bold">{PITFALLS_HEADING}</h2>
-        <p className="mt-2 text-sm leading-6 text-neutral-600">{PITFALLS_LEAD}</p>
-        {FORWARDING_PITFALLS.map((p, i) => (
-          <Pitfall key={p.title} pitfall={p} n={i + 1} />
-        ))}
-      </section>
-
-      <section className={CARD}>
-        <h2 className="text-base font-bold">{FORWARDING_CHECK.heading}</h2>
-        <ul className="mt-2 flex flex-col gap-1 text-sm leading-6 text-neutral-600">
-          {FORWARDING_CHECK.lines.map((t) => (
-            <li key={t}>{t}</li>
-          ))}
-        </ul>
-        <Link href="/app/settings/trouble" className={`${SECONDARY_BUTTON} mt-4`}>
-          {FORWARDING_CHECK_ACTION}
-        </Link>
-      </section>
 
       <p className="text-xs text-neutral-500">{VIDEO_CREDIT}</p>
     </main>

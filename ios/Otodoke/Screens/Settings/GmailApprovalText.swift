@@ -5,5 +5,5 @@
 import Foundation
 
 enum GmailApprovalText {
-    static let filterNote = "フィルタをまだ作っていなければ、「含む」に貼るこの文字列をコピーして Gmail に戻ります。"
+    static let filterNote = "承認したら、この文字列をコピーして Gmail に戻り、フィルタの「含む」に貼ります。"
 }

@@ -5,8 +5,6 @@ import {
   BEFORE_YOU_START,
   BEFORE_YOU_START_ACTION,
   BEFORE_YOU_START_HEADING,
-  FORWARDING_CHECK,
-  FORWARDING_CHECK_ACTION,
   FORWARDING_GUIDES,
   FORWARDING_LEAD,
   FORWARDING_LEAD_NOTE,
@@ -18,6 +16,7 @@ import {
   VIDEO_CREDIT,
   VIDEO_LABEL,
 } from "../forwarding-guide";
+import * as guideData from "../forwarding-guide";
 
 /**
  * The iOS forwarding guide (ios/Otodoke/Screens/Settings/ForwardingGuideText.swift and DeliveryHelpText.swift) holds
@@ -25,9 +24,9 @@ import {
  *
  * The Web draws the pitfall numbers (1. 2. 3.) and the step numbers itself; iOS draws them in its views too, so the
  * numbers are not in the data and not in the Swift literals. The Web's chip labels have no place on iOS.
- * BEFORE_YOU_START_ACTION (「転送先アドレスを開く」) is left out on purpose: the Web's button jumps from the guide page to
- * the settings' address, while iOS draws the guide on the same 「メールの転送」 page that holds the address, so there
- * is nowhere to go. FORWARDING_CHECK_ACTION (「「うまく届かないとき」を開く」) is on iOS: a link to that page.
+ * 「始める前に」 (BEFORE_YOU_START and its heading and button) is left out of iOS on purpose: iOS draws the guide on the same
+ * 「メールの転送」 page that holds the address, right above it. The Web's guide page keeps it. The 「設定できたか確かめる」
+ * card is on neither side any more.
  *
  * The explainer videos are on iOS too (ForwardingGuide.video, VIDEO_LABEL, VIDEO_CREDIT): a row under each service's
  * time that opens the video in Safari (nothing is played in the app), and the credit once at the end, always. Their paths and
@@ -97,7 +96,7 @@ function swiftConstants(src: string): Map<string, string> {
 
 /** What the iOS text file must hold, in the order of its source: every sentence of the Web data except the chips. */
 function expectedGuideLiterals(): string[] {
-  const out: string[] = [FORWARDING_TITLE, FORWARDING_LEAD, FORWARDING_LEAD_NOTE, BEFORE_YOU_START_HEADING, ...BEFORE_YOU_START];
+  const out: string[] = [FORWARDING_TITLE, FORWARDING_LEAD, FORWARDING_LEAD_NOTE];
   for (const g of FORWARDING_GUIDES) {
     out.push(...iosTitle(g));
     if (g.time) out.push(g.time);
@@ -111,7 +110,7 @@ function expectedGuideLiterals(): string[] {
     if (g.intro) out.push(g.intro);
     out.push(...g.notes);
   }
-  out.push(FORWARDING_CHECK.heading, ...FORWARDING_CHECK.lines, FORWARDING_CHECK_ACTION, VIDEO_LABEL, VIDEO_CREDIT);
+  out.push(VIDEO_LABEL, VIDEO_CREDIT);
   return out;
 }
 
@@ -226,9 +225,9 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(found(text.replace(/video: Video\([^)]+\),/, "video: nil,"))).not.toEqual(found(text));
     // The structure checks catch the credit moved into the servicesOnly branch and the video row moved under the link.
     const viewSrc = stripComments(read(VIEWS[0]));
-    const movedCredit = viewSrc.replace("if !servicesOnly {\n                verify", "if !servicesOnly {\n                Text(T.videoCredit)\n                verify");
+    const movedCredit = viewSrc.replace("if !servicesOnly {\n                header", "if !servicesOnly {\n                Text(T.videoCredit)\n                header");
     // A second copy of the credit (or none) is caught by the count above.
-    expect(viewSrc.replace("verify\n            }", "verify\n                Text(T.videoCredit)\n            }").match(/Text\(T\.videoCredit\)/g)).toHaveLength(2);
+    expect(viewSrc.replace("header\n            }", "header\n                Text(T.videoCredit)\n            }").match(/Text\(T\.videoCredit\)/g)).toHaveLength(2);
     expect(viewSrc.replace("Text(T.videoCredit)", "EmptyView()").match(/Text\(T\.videoCredit\)/g)).toBeNull();
     expect(creditIsOutsideServicesOnly(viewSrc)).toBe(true);
     expect(creditIsOutsideServicesOnly(movedCredit)).toBe(false);
@@ -250,13 +249,20 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(FORWARDING_PITFALLS[0].codes).toEqual(["@kuronekoyamato.co.jp", "@ml.kuronekoyamato.co.jp", "@ml2.kuronekoyamato.co.jp"]);
   });
 
-  it("the button under 「設定できたか確かめる」 is the Web's FORWARDING_CHECK_ACTION and opens the 「うまく届かないとき」 page", () => {
-    expect(FORWARDING_CHECK_ACTION).toBe("「うまく届かないとき」を開く");
-    expect(swiftConstants(stripComments(read(TEXT))).get("checkAction")).toBe(FORWARDING_CHECK_ACTION);
+  it("iOS has no 「始める前に」 and no 「設定できたか確かめる」 on the forwarding page", () => {
+    const text = stripComments(read(TEXT));
     const view = stripComments(read(VIEWS[0]));
-    expect(view).toMatch(/NavigationLink\(value: SettingsPage\.delivery\)\s*\{\s*Text\(T\.checkAction\)/);
-    // BEFORE_YOU_START_ACTION is not on iOS.
-    expect(iosTextLiterals()).not.toContain(BEFORE_YOU_START_ACTION);
+    const lits = iosTextLiterals();
+    // The words of both cards are on no side of iOS; the Web's data no longer has the 確かめる card at all.
+    for (const w of [BEFORE_YOU_START_HEADING, BEFORE_YOU_START_ACTION, ...BEFORE_YOU_START, "設定できたか確かめる", "「うまく届かないとき」を開く"]) {
+      expect(lits, w).not.toContain(w);
+    }
+    expect(Object.keys(guideData).filter((k) => k.startsWith("FORWARDING_CHECK"))).toEqual([]);
+    expect(text).not.toMatch(/static let (before|beforeHeading|verify|verifyHeading|checkAction)\b/);
+    expect(view).not.toMatch(/T\.(before|beforeHeading|verify|verifyHeading|checkAction)\b/);
+    expect(view).not.toMatch(/SettingsPage\.delivery/);
+    // Negative control: the check would catch the heading put back.
+    expect([...lits, BEFORE_YOU_START_HEADING]).toContain(BEFORE_YOU_START_HEADING);
   });
 
   it("the views draw no Japanese literal of their own about the guide (the words come from the text files)", () => {

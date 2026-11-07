@@ -69,16 +69,16 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     chip: "Gmail",
     title: "Gmail",
     video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 94 },
-    time: "5 分・ブラウザで。スマホは Gmail アプリではなく、ブラウザでパソコン版の画面にしてから進めます",
+    time: "5 分・ブラウザで",
     link: { label: "Gmail の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/general" },
     linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
     groups: [
       {
         heading: "転送先を登録する",
         steps: [
-          { text: "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、ブラウザで Gmail をパソコン版の画面で開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。" },
+          { text: "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。" },
           { text: "「次へ」 › 「続行」 › 「OK」の順に押します。本人確認を求められたら済ませて、もう一度アドレスを入れます。" },
-          { text: "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」が出るので、押して承認し、Gmail の画面を読み込み直します。「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。" },
+          { text: "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」が出るので、押して承認し、Gmail の画面を読み込み直します。「転送」の欄は変えずに、次のフィルタへ進みます。荷物のメールだけを送るためです。" },
         ],
       },
       {
@@ -144,10 +144,9 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "other",
     chip: "そのほか",
     title: "そのほかのメール",
-    intro: "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。",
+    intro: "お使いのメールの設定にある「自動転送」で、Otodoke のアドレスへ転送してください。転送したメールが元のメールにも残る設定にします。",
     groups: [],
     notes: [
-      "転送したメールが元のメールにも残る設定か、先に確かめてください。",
       "Yahoo!メールは、自動転送したメールが Yahoo!メールに残らないので、おすすめしません。",
     ],
   },
@@ -205,12 +204,3 @@ export const FORWARDING_PITFALLS: ForwardingPitfall[] = [
     body: ["迷惑メールのフォルダに入ったメールは、転送されないことがあります。見つけたら「迷惑メールではない」にします。"],
   },
 ];
-
-export const FORWARDING_CHECK_ACTION = "「うまく届かないとき」を開く";
-export const FORWARDING_CHECK: { heading: string; lines: string[] } = {
-  heading: "設定できたか確かめる",
-  lines: [
-    "次に買い物をしたら、Otodoke の一覧に荷物が出るか見てください。",
-    "出ないときは、設定の「うまく届かないとき」を開いてください。",
-  ],
-};

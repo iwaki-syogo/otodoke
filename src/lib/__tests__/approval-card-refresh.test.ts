@@ -51,7 +51,7 @@ describe.each(PAGES)("%s", (_name, load) => {
     confirmationCame();
     const root = await draw();
     const [card] = findAll(root, (n) => n.attrs.id === "gmail-approval");
-    expect(textOf(card)).toContain("フィルタをまだ作っていなければ、「含む」に貼るこの文字列をコピーして Gmail に戻ります。");
+    expect(textOf(card)).toContain("承認したら、この文字列をコピーして Gmail に戻り、フィルタの「含む」に貼ります。");
     expect(findAll(card, (n) => n.tag === "code").map(textOf)).toEqual([GMAIL_FILTER]);
     expect(findAll(card, (n) => n.tag === "button").map(textOf)).toEqual(["コピー"]);
     expect(probes(root)).toHaveLength(0);
