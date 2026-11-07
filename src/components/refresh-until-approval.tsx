@@ -11,12 +11,13 @@ export const POLL_MS = 20_000;
 export const ACTIVE_MS = 5 * 60_000;
 
 /**
- * Drawn only while Gmail's approval link has not come (and reading it did not fail): refreshes the server
- * data so the yellow approval card appears without a manual reload. router.refresh() keeps client state.
- * Coming back to the tab refreshes once (not within 10 s of the last refresh); a visible page refreshes
- * every 20 s, and stops 5 minutes after the last return until the next one. A window focus, a pointer press or a
- * key press also counts as a return (focus refreshes like the tab coming back; the others only restart polling). Draws nothing. When the link
- * comes, the server stops drawing this, which unmounts it.
+ * Drawn while Gmail's approval link has not come (including when reading it failed) and the address is shown:
+ * refreshes the server data so the yellow approval card appears without a manual reload. router.refresh()
+ * keeps client state. Coming back to the tab refreshes once (not within 10 s of the last refresh); a visible
+ * page refreshes every 20 s, and stops 5 minutes after the last return until the next one. A window focus,
+ * a pointer press or a key press also counts as a return (focus refreshes like the tab coming back; the
+ * others only restart polling). Draws nothing. When the link comes, the server stops drawing this, which
+ * unmounts it.
  */
 export function RefreshUntilApproval() {
   const router = useRouter();

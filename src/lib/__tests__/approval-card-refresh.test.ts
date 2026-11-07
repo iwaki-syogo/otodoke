@@ -6,7 +6,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
 
 /**
  * The yellow Gmail approval card (settings and welcome) carries the filter text to copy, and the
- * page draws RefreshUntilApproval only while the link has not come and reading it did not fail.
+ * page draws RefreshUntilApproval while the link has not come (also when reading it failed) and the address is shown.
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
@@ -69,6 +69,15 @@ describe.each(PAGES)("%s", (_name, load) => {
     const root = await draw();
     expect(textOf(root)).toContain("Gmail の承認の案内を読み込めませんでした");
     expect(probes(root)).toHaveLength(1);
+  });
+
+  it("when reading the link failed and there is no key, the red notice is drawn and the refresh is not", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.rows("user_keys").length = 0;
+    readFails();
+    const root = await draw();
+    expect(textOf(root)).toContain("Gmail の承認の案内を読み込めませんでした");
+    expect(probes(root)).toHaveLength(0);
   });
 
   it("the refresh is drawn only when the address is shown: not without a key, a receiving domain, or when the key read failed", async () => {

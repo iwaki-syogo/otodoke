@@ -45,10 +45,7 @@ export default async function WelcomePage() {
       <p className="mt-2 text-sm leading-6 text-neutral-600">{WELCOME.body}</p>
 
       {confirmation.failed ? (
-        <>
-          <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
-          {showsAddress && <RefreshUntilApproval />}
-        </>
+        <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
       ) : confirmUrl ? (
         <section id="gmail-approval" className="mt-6 scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">Gmail の転送を承認してください</h2>
@@ -58,9 +55,9 @@ export default async function WelcomePage() {
           </a>
           <ApprovalFilterCopy />
         </section>
-      ) : (
-        showsAddress && <RefreshUntilApproval />
-      )}
+      ) : null}
+      {/* One place for every branch, so the timer is not restarted when the branch changes. confirmUrl is null when reading failed. */}
+      {showsAddress && !confirmUrl && <RefreshUntilApproval />}
 
       <section className="mt-8">
         <h2 className="text-base font-bold">{WELCOME.copyStep}</h2>
