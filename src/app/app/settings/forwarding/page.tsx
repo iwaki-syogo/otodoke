@@ -1,3 +1,5 @@
+import { RefreshUntilApproval } from "@/components/refresh-until-approval";
+import { ApprovalFilterCopy } from "@/components/forwarding-steps";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "@/components/copy-button";
@@ -54,8 +56,11 @@ export default async function ForwardingPage() {
           <a href={confirmUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
             承認ページを開く
           </a>
+          <ApprovalFilterCopy />
         </section>
-      ) : null}
+      ) : (
+        <RefreshUntilApproval />
+      )}
 
       <ForwardingGuides />
     </SubPage>

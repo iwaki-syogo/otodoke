@@ -1,6 +1,7 @@
+import { RefreshUntilApproval } from "@/components/refresh-until-approval";
 import Link from "next/link";
 import { CopyButton } from "@/components/copy-button";
-import { FoldCard, GuideCardBody, VideoCredit } from "@/components/forwarding-steps";
+import { ApprovalFilterCopy, FoldCard, GuideCardBody, VideoCredit } from "@/components/forwarding-steps";
 import { FORWARDING_GUIDES, FORWARDING_TITLE, type ForwardingGuide } from "@/lib/forwarding-guide";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { AFTER_WELCOME_PATH, WELCOME } from "@/lib/onboarding";
@@ -50,8 +51,11 @@ export default async function WelcomePage() {
           <a href={confirmUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
             承認ページを開く
           </a>
+          <ApprovalFilterCopy />
         </section>
-      ) : null}
+      ) : (
+        <RefreshUntilApproval />
+      )}
 
       <section className="mt-8">
         <h2 className="text-base font-bold">{WELCOME.copyStep}</h2>

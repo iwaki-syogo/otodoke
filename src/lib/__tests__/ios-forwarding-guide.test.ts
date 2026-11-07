@@ -140,7 +140,7 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
   it("the Web data is the one that was checked: the four guides and the three pitfalls", () => {
     expect(FORWARDING_GUIDES.map((g) => g.id)).toEqual(["gmail", "icloud", "outlook", "other"]);
     expect(FORWARDING_PITFALLS).toHaveLength(3);
-    expect(FORWARDING_GUIDES[0].groups.flatMap((g) => g.steps)).toHaveLength(9);
+    expect(FORWARDING_GUIDES[0].groups.flatMap((g) => g.steps)).toHaveLength(7);
   });
 
   it("the guide text holds exactly the Web's sentences, word for word and in the Web's order", () => {
@@ -152,11 +152,12 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(iosHelpLiterals()).toEqual(expectedHelpLiterals());
   });
 
-  it("Gmail: the steps run 1 to 9 through both groups and the filter text sits under the step that carries the copy box", () => {
+  it("Gmail: the steps run 1 to 7 through both groups and the filter text sits under the step that carries the copy box", () => {
     const gmail = FORWARDING_GUIDES[0];
     const steps = gmail.groups.flatMap((g) => g.steps);
     const copyAt = steps.findIndex((s) => s.copy === "gmailFilter") + 1;
-    expect(copyAt).toBe(7);
+    expect(steps).toHaveLength(7);
+    expect(copyAt).toBe(5);
     expect(read(TEXT)).toContain(`filterAfterStep: ${copyAt},`);
     // Only Gmail has a filter box.
     expect(read(TEXT).match(/filterAfterStep: \d+/g)).toHaveLength(1);
