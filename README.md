@@ -35,7 +35,7 @@
 
 実際のメールは要りません。
 
-提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルのメール 17 通を読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。複数の方で使うため、パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。
+提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルを読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。複数の方で使うため、パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。
 
 1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。画面が「確認のメールを送りました」に変わります。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを別のタブで開いて「確認する」を押すと、元のタブが自動でログインし、最初の案内（/app/welcome）に着きます。そこで「あとで」を押します
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
@@ -45,12 +45,12 @@
      - 確認のメールが来ないときは、アカウントを作る画面で送ったあとに出る「メールを送り直す」を押します
      - 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」と出たら、少し待ってからやり直してください
      - それでも届かないときは support@otodoke.app へ書いてください
-2. 「設定」タブの「サンプルで試す」で「サンプルのメールを読み込む」を押します。匿名化した実際のメール 17 通が、今日の日付に合わせて入ります（保存済みの読み取り結果を使うので、Claude API は呼びません）
+2. 「設定」タブの「サンプルで試す」で「サンプルのメールを読み込む」を押します。匿名化した実際の注文・発送メールと、作り物の 1 年分の注文履歴が、今日の日付に合わせて入ります（中身は下の「持ち込んだデータ」。保存済みの読み取り結果を使うので、Claude API は呼びません）
 3. 見てほしいところ
-   - 「荷物」: 17 通が 6 つの荷物にまとまります。赤い 🤝 の印が、家にいる必要のある荷物です（サンプルでは 4 つ）。メールに対面での受け取りが書いてあったものは「対面受け取り」と出ます。「念のため対面」は、メールに受け取り方法が書いていないので、念のため家にいる必要がある扱いにした荷物です（サンプルの 4 つのうち 3 つ。Amazon はふだん置き配なので、この扱いにしません）
+   - 「荷物」: 実際のメールが、注文から配達まで荷物ごとにまとまります。作り物の履歴はすべて「配達済み」なので、これから届く荷物には並びません。赤い 🤝 の印が、家にいる必要のある荷物です（サンプルでは 4 つ）。メールに対面での受け取りが書いてあったものは「対面受け取り」と出ます。「念のため対面」は、メールに受け取り方法が書いていないので、念のため家にいる必要がある扱いにした荷物です（サンプルの 4 つのうち 3 つ。Amazon はふだん置き配なので、この扱いにしません）
    - 荷物の詳細: 根拠の行が出るのは、メールに書いてあった荷物だけです。サンプルでは、状態が「不在・再配達」の荷物（ヤマト運輸から届いた 1 つ。店名は「送り主不明」と出ます）を開くと、受け取りの欄に「根拠: 「■受取ご希望場所：対面での配達を希望」」が出ます。「念のため対面」の荷物では、根拠の代わりに「メールに記載なし」と出ます。どの荷物も「元メールを見る」で、読み取りメモと元のメールを開けます（暗号化して保存したメールは、パスワードで開きます）
    - 「カレンダー」: 家にいる必要のある日が赤く出ます
-   - 「支出」: 店・分類ごとの内訳と、月ごとの棒グラフ
+   - 「支出」: 店・分類ごとの内訳と、月ごとの棒グラフ。「全期間」では、作り物の履歴の 1 年分の棒が分類ごとに色分けされて出ます
 
 ## 仕組み
 
@@ -94,7 +94,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - **実メールで通す。** 作者の 341 通を本番と同じ処理で読み、できた荷物 101 件のうち 46 件を別のエージェントが元メールと照合しました。誤りは 460 項目中 20 → 直したあと 440 項目中 10、状態・予定日・まとめ方の誤りは 0 になりました。名寄せや金額の規則を変えたら、API を呼ばない `scripts/replay.ts` で件数と合計の差を見ます
 - **セッションを並べて動かす。** 締切の前日（2026-11-07）の未明は、Claude Code のセッション 7 つを、Web の画面・iOS アプリ・転送の説明・説明動画・デモ動画・本番前後の点検・統合のレビューに分けて同時に動かしました。もう 1 つのセッションがまとめ役になり、仕事を割り振り、分けた仕事どうしの継ぎ目（Web と iOS で食い違う文や設定項目など）を担当に照らし合わせさせて、直す先を決めました
 - **モデルを役で使い分ける。** 実装は主に Sonnet のサブエージェントに任せ、レビューと設計の判断は主に Opus が受け持ちました。いくつものセッションの変更が `dev` にたまったところで、`main` に出す前にその全体を作者でないエージェントが観点を分けて（継ぎ目・本番でだけ壊れるもの・公開リポジトリとして）レビューし、そのあとの直しも作者でない目で判定し直しました
-- **公開する物を読み直す。** 説明動画とデモ動画は、切り出したコマを文字認識で読み、個人情報や追跡番号が映っていないかを確かめました。デモの 17 通も見直し、匿名化を足しています（下の「持ち込んだデータ」）
+- **公開する物を読み直す。** 説明動画とデモ動画は、切り出したコマを文字認識で読み、個人情報や追跡番号が映っていないかを確かめました。デモの実際のメールも見直し、匿名化を足しています（下の「持ち込んだデータ」）
 - **自作のスキルで動画まで作る。** デモ動画の冒頭のアニメは、スキル `make-anime` で Claude Code が 1 コマずつコードで描き、静止画で見て直しを重ねたものです。後半のデモと説明動画 3 本は、スキル `make-video` で実画面に日本語のナレーションと曲を重ねて書き出しました。どちらのスキルも、下の [claude-code-setup](https://github.com/iwaki-syogo/claude-code-setup) で公開しています
 
 ## 安全への配慮
@@ -107,7 +107,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - **ログイン**: メールアドレスとパスワード。パスワードはブラウザで 2 つに分け、ログイン用の値だけをサーバーに送ります。パスワードそのものは送りません。確認と再設定のメールのリンクは、開くと確認ボタンが出て、押したときに検証します（メールの検査がリンクを踏んでも使い切られない）。ほかのサイトから送られた確認は断ります。リンクの行き先はコードで決め、リンクの中の行き先は読みません。Web と iOS で同じ計算にするため、メールアドレスは ASCII の文字だけ受け付けます
 - **退会**: 設定の「アカウントを削除」で、アカウントごと消せます。消した人の受信アドレスは、ほかの人に渡しません
 - **確認と再設定のメール、ログイン**: Web の画面から送るメールとログインには、メールアドレスごと・接続ごとに回数の上限を置きます。メールのリンクの確認にも、接続ごとの上限を置きます。どの画面も、ほかのサイトの中に埋め込ませません（ボタンを押させる罠を防ぐ）
-- **公開リポジトリ**: 実メールは置かず、デモの 17 通は匿名化済み。鍵は gitleaks で止めます
+- **公開リポジトリ**: 実メールは置かず、デモの実際のメールは匿名化済み、1 年分の注文履歴は作り物です。鍵は gitleaks で止めます
 
 **まだできないこと**: Amazon の分割発送では、品目が最初の便の分だけになることがあります。メールが来ない注文は、手で登録する画面から入れます。
 
@@ -122,7 +122,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - 荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は本文の抜粋です。一覧・カレンダー・支出を出すのと、読み取った値を元の文で確かめるのと、同じメールを見分けるのに使うためです
 - メールごとの識別子の Message-ID と、Gmail の転送の確認メールにある承認リンクも暗号化しません。同じメールを二度読まないためと、承認ページを出すためです
 - 1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。読み取ったら暗号化します
-- Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません。荷物の情報は残ります。サンプルのメール（匿名化して公開しているもの）は、パスワードでログインする前でも読めるまま入ります
+- Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません。荷物の情報は残ります。サンプルのメール（このリポジトリで公開しているもの）は、パスワードでログインする前でも読めるまま入ります
 - パスワードを忘れたときは、メールで再設定できます。パスワードを決め直すと、前に暗号化して保存したメールは開けなくなります。荷物は残ります。パスワードを変えるだけなら、前のメールもそのまま開けます
 - 受信を受け持つ Resend にも、メールの写しが一定期間残ります
 - 暗号化していない状態のメールは、データベースのバックアップにも最大 7 日間残ります。読み取る前のものと、暗号化する前のものです
@@ -196,9 +196,13 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 
 ## 持ち込んだデータ
 
-`fixtures/demo/` のメール 17 通は、作者自身が受け取った実際の注文・配送メールから、氏名・住所・電話番号・メールアドレス・注文番号・追跡番号を差し替えたものです。2026-11-07 の匿名化では、さらに次を行いました。Message-ID を作り物に差し替え、送信時刻を分に丸め、Amazon の HTML メールにある「おすすめ商品」の欄を消し、追跡番号をチェックディジットの合わない値に替えました。イベント前から存在するデータの持ち込みとして、ここに明記します。コードはすべて期間中の新規制作です。
+サンプルは 2 つでできています。`fixtures/demo/` の実際のメール 17 通（6 つの荷物）と、`fixtures/demo-history/` の作り物の注文履歴 80 件（1 年分、すべて配達済み）です。
 
-精度の評価には、同じ方法で匿名化した 341 通を手元で使っています。買い物の履歴そのものなので、公開するのは 17 通だけです。匿名化の手順は `scripts/anonymize.py`、結果の数字は `docs/eval-log.md` にあります。
+`fixtures/demo/` のメールは、作者自身が受け取った実際の注文・配送メールから、氏名・住所・電話番号・メールアドレス・注文番号・追跡番号を差し替えたものです。2026-11-07 の匿名化では、さらに次を行いました。Message-ID を作り物に差し替え、送信時刻を分に丸め、Amazon の HTML メールにある「おすすめ商品」の欄を消し、追跡番号をチェックディジットの合わない値に替えました。イベント前から存在するデータの持ち込みとして、ここに明記します。コードはすべて期間中の新規制作です。
+
+`fixtures/demo-history/` の注文履歴は作り物です（架空の品名・金額・注文番号で、実在の注文ではありません）。件数・金額の幅・分類・店の割合は、支出の画面に 1 年分の月ごとの棒と 7 つの分類が出るように決めました。メールも読み取り結果も `scripts/make-demo-history.ts` が同じ元データから書くので、Claude は呼びません。差出人とリンクは `sample.otodoke.app` で、実在の店のドメインは入っていません。氏名・住所・電話番号が無いことはテストで確かめています。精度の評価には入れていません。
+
+精度の評価には、同じ方法で匿名化した 341 通を手元で使っています。買い物の履歴そのものなので、公開する実際のメールは `fixtures/demo/` の分だけです。匿名化の手順は `scripts/anonymize.py`、結果の数字は `docs/eval-log.md` にあります。
 
 ## ライセンス
 
@@ -233,7 +237,7 @@ The saved demo results were made with Opus 5.5 and then touched by hand: a categ
 
 Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and real-mail runs: the author's 341 mails went through the production pipeline, and an independent agent checked 46 of the 101 parcels against the original mails (errors 20/460 fields, 10/440 after fixes).
 
-In the early hours of 2026-11-07, the day before the deadline, seven Claude Code sessions ran side by side (web UI, iOS app, forwarding guide, guide videos, demo video, pre- and post-release checks, integration review), and one more session coordinated them: it assigned the work, had the seams between the pieces cross-checked (for example, wording and settings that differed between web and iOS) and decided where each fix should go. Implementation went mostly to Sonnet subagents; review and design decisions stayed mostly with Opus. Once several sessions' work had piled up on `dev`, agents that had not written it reviewed the merged branch from separate angles (seams, production-only breakage, what a public repo must not contain) ahead of the release to `main`, and later fixes were re-checked by non-authors. Frames sampled from the guide and demo videos were read with OCR to check for personal data and tracking numbers, and the 17 demo mails were re-checked and further anonymized.
+In the early hours of 2026-11-07, the day before the deadline, seven Claude Code sessions ran side by side (web UI, iOS app, forwarding guide, guide videos, demo video, pre- and post-release checks, integration review), and one more session coordinated them: it assigned the work, had the seams between the pieces cross-checked (for example, wording and settings that differed between web and iOS) and decided where each fix should go. Implementation went mostly to Sonnet subagents; review and design decisions stayed mostly with Opus. Once several sessions' work had piled up on `dev`, agents that had not written it reviewed the merged branch from separate angles (seams, production-only breakage, what a public repo must not contain) ahead of the release to `main`, and later fixes were re-checked by non-authors. Frames sampled from the guide and demo videos were read with OCR to check for personal data and tracking numbers, and the real demo mails were re-checked and further anonymized.
 
 During the event, 645 commits reached `main`, 606 of them co-authored by Claude Code; one person and Claude Code built the web app, the iOS app and 184 test files (as of 2026-11-08). In the app, each API feature has a job: structured outputs (`messages.parse` with zod) fix the shape, the long system prompt is prompt-cached, the second-stage screen asks Haiku a single yes/no and keeps the mail if the call fails, and a refused mail is kept as unread instead of being dropped or filled with invented values. The opening animation of the demo video was drawn frame by frame in code by Claude Code with the author's `make-anime` skill, and the demo part and the three guide videos were made with `make-video`; both skills are in claude-code-setup (linked below). Hooks from that setup stop the main agent from editing code itself (code is written by Sonnet subagents), block searches that would read env files, and make Claude answer again in Japanese when it drifts into English.
 
@@ -243,8 +247,8 @@ The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks 
 
 Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is in internal TestFlight testing only.
 
-For judges: the submission form's judge link field gives a judge account that already has the 17 sample mails loaded, so you can log in and go straight to what to look at below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. To try it with your own mail, create your own account as follows.
+For judges: the submission form's judge link field gives a judge account that already has the sample loaded, so you can log in and go straight to what to look at below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. To try it with your own mail, create your own account as follows.
 
-Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), the page changes to 「確認のメールを送りました」; open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」, and the first tab logs in by itself and lands on the first-run guide (/app/welcome); press 「あとで」, open 設定 › 「サンプルで試す」 and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
+Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), the page changes to 「確認のメールを送りました」; open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」, and the first tab logs in by itself and lands on the first-run guide (/app/welcome); press 「あとで」, open 設定 › 「サンプルで試す」 and press 「サンプルのメールを読み込む」 (no real mail or API call needed). The sample is anonymized real order and shipping mails plus a made-up year of delivered orders (made-up items, amounts and order numbers; all senders and links on sample.otodoke.app). What to look at: the real mails fold into parcels from order to delivery (the made-up orders are all delivered, so they stay out of what is on its way); a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category, and its 「全期間」 view shows a year of monthly bars from the made-up history.
 
 If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
