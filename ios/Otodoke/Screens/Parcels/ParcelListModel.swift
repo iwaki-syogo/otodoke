@@ -65,8 +65,15 @@ final class ParcelListModel {
 
     let reader: ParcelReader
     let writer: ParcelWriter
+    /// What has come in so far, read only when the list comes back empty (nil: not read, as in the tests).
+    @ObservationIgnored private let readMail: (@Sendable () async -> MailSoFar?)?
 
     private(set) var loadState: LoadState = .idle
+    /// Which of the empty list's three guides to show. A list with parcels, or a mail read that failed before any
+    /// read worked, is .none; a failed read again keeps the guide shown.
+    private(set) var mailSoFar: MailSoFar = .none
+    /// The mail was read once for the list as it is now empty (what mailSoFar shows is that answer, not a guess).
+    @ObservationIgnored private var mailKnown = false
     /// The parcels in ParcelRules.baseOrder.
     private(set) var rows: [ParcelRow] = []
     /// nil until the first load.
@@ -124,8 +131,10 @@ final class ParcelListModel {
         writer: ParcelWriter,
         today: @escaping @Sendable () -> String,
         now: @escaping @Sendable () -> Date,
-        sleep: @escaping Sleep
+        sleep: @escaping Sleep,
+        readMail: (@Sendable () async -> MailSoFar?)? = nil
     ) {
+        self.readMail = readMail
         self.reader = reader
         self.writer = writer
         self.today = today
@@ -134,13 +143,14 @@ final class ParcelListModel {
     }
 
     /// The app's model: the device clock, JST days and real sleeps.
-    static func live(reader: ParcelReader, writer: ParcelWriter) -> ParcelListModel {
+    static func live(reader: ParcelReader, writer: ParcelWriter, readMail: (@Sendable () async -> MailSoFar?)? = nil) -> ParcelListModel {
         ParcelListModel(
             reader: reader,
             writer: writer,
             today: { Format.todayJst(now: Date()) },
             now: { Date() },
-            sleep: { try await Task.sleep(for: $0) }
+            sleep: { try await Task.sleep(for: $0) },
+            readMail: readMail
         )
     }
 
@@ -261,12 +271,16 @@ final class ParcelListModel {
         let generation = writeGeneration
         let at = now()
         let reader = self.reader
+        let readMail = self.readMail
         let task = Task { [weak self] () -> ReadOutcome in
             async let list = reader.allParcels()
             async let counts = reader.counts(now: at)
             let (readList, readCounts) = await (list, counts)
+            // Only an empty list needs to know what has come in (the Web reads it for the empty list only).
+            var mail: MailSoFar?
+            if case let .loaded(fresh) = readList, fresh.isEmpty, let readMail { mail = await readMail() }
             guard let self else { return .failed }
-            return self.finishRead(number: number, generation: generation, list: readList, counts: readCounts)
+            return self.finishRead(number: number, generation: generation, list: readList, counts: readCounts, mail: mail)
         }
         latestRead = task
         return task
@@ -274,7 +288,7 @@ final class ParcelListModel {
 
     /// The counts are taken as they come (each fails on its own); the rows are replaced only by a
     /// complete read. Settles every unconfirmed id: the list now shows what happened to it.
-    private func finishRead(number: Int, generation: Int, list: LoadResult<[ParcelRow]>, counts: ParcelCounts) -> ReadOutcome {
+    private func finishRead(number: Int, generation: Int, list: LoadResult<[ParcelRow]>, counts: ParcelCounts, mail: MailSoFar? = nil) -> ReadOutcome {
         guard number == readNumber else { return .superseded }
         guard generation == writeGeneration, writesInFlight == 0 else { return .stale }
         self.counts = counts
@@ -284,6 +298,16 @@ final class ParcelListModel {
         }
         rows = ParcelRules.baseOrder(fresh)
         rowsVersion &+= 1
+        // A read of the mail that failed (nil) keeps the guide already shown; only a first read answers none.
+        if !fresh.isEmpty {
+            mailSoFar = .none
+            mailKnown = false
+        } else if let mail {
+            mailSoFar = mail
+            mailKnown = true
+        } else if !mailKnown {
+            mailSoFar = .none
+        }
         loadState = .loaded
         refreshFailed = false
         for id in unconfirmed where rowMessages[id] == Self.unconfirmedText {
@@ -584,8 +608,10 @@ extension ParcelListModel {
         saving: Set<String> = [],
         checking: Set<String> = [],
         toast: ListToast? = nil,
-        toastNote: String? = nil
+        toastNote: String? = nil,
+        mailSoFar: MailSoFar = .none
     ) {
+        self.mailSoFar = mailSoFar
         self.rows = ParcelRules.baseOrder(rows)
         rowsVersion &+= 1
         self.counts = counts

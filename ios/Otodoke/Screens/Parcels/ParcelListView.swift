@@ -18,10 +18,12 @@ enum ParcelRoute: Hashable {
 
 struct ParcelListView<Detail: View>: View {
     @Bindable var model: ParcelListModel
-    /// Opens the 設定 tab (the unread-mail notice and 「転送先を見る」).
+    /// Opens the 設定 tab (the unread-mail notice, and the empty list's buttons when the pages below are not given).
     let openSettings: () -> Void
-    /// 「転送先を見る」 of the empty list: opens the 「メールの転送」 page (the settings list when nil).
+    /// The empty list's first button for "none" and "approval": opens the 「メールの転送」 page (the settings list when nil).
     var openForwarding: (() -> Void)?
+    /// The empty list's first button for "received": opens 「うまく届かないとき」 (the settings list when nil).
+    var openTrouble: (() -> Void)?
     /// The detail screen of a parcel.
     @ViewBuilder let detail: (String) -> Detail
 
@@ -94,7 +96,7 @@ struct ParcelListView<Detail: View>: View {
             if model.loadState == .failed {
                 pageLinks
             } else if model.isEmpty {
-                EmptyParcels(openSettings: openForwarding ?? openSettings, openDemo: { openURL(WebLink.settingsDemo) })
+                EmptyParcels(guide: ParcelEmptyText.guide(model.mailSoFar), open: openEmptyGuide, openDemo: { openURL(WebLink.settingsDemo) })
                     .listRowStyle()
                 pageLinks
             } else {
@@ -119,6 +121,13 @@ struct ParcelListView<Detail: View>: View {
         .refreshableToTheEnd { await model.load() }
         .overlay(alignment: .bottom) { toast }
         .animation(.default, value: model.rows)
+    }
+
+    private func openEmptyGuide(_ destination: EmptyDestination) {
+        switch destination {
+        case .forwarding: (openForwarding ?? openSettings)()
+        case .trouble: (openTrouble ?? openSettings)()
+        }
     }
 
     // MARK: rows
@@ -461,7 +470,8 @@ private struct AmberBoxEdge: Shape {
 
 /// The screen with no parcel yet (EmptyState).
 private struct EmptyParcels: View {
-    let openSettings: () -> Void
+    let guide: EmptyGuide
+    let open: (EmptyDestination) -> Void
     let openDemo: () -> Void
 
     var body: some View {
@@ -470,14 +480,14 @@ private struct EmptyParcels: View {
             Text("まだ荷物がありません")
                 .font(.title3.bold())
                 .padding(.top, 16)
-            Text("注文メールを転送用アドレスに送ると、ここに並びます。\nまずは設定から転送先を確認してください。")
+            Text(verbatim: "\(guide.first)\n\(guide.second)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
                 .padding(.top, 8)
-            Button(action: openSettings) {
-                Text("転送先を見る")
+            Button { open(guide.destination) } label: {
+                Text(guide.button)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Color(.systemBackground))
                     .frame(maxWidth: .infinity)

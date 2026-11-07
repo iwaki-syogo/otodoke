@@ -9,6 +9,9 @@ import Foundation
 struct ListPreview {
     enum Scenario: String {
         case list, empty, failed, toast, saving, many, bottom
+        /// The empty list when mail has come in, and when only Gmail's confirmation has.
+        case emptyReceived = "empty-received"
+        case emptyApproval = "empty-approval"
         /// 「確認中…」 on a card, and a toast whose 「元に戻す」 cannot put back every row.
         case checking
         /// As list; a card opens a detail filled with made-up data.
@@ -116,6 +119,9 @@ struct ListPreview {
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
         case .empty:
             model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded)
+        case .emptyReceived, .emptyApproval:
+            model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded,
+                            mailSoFar: scenario == .emptyReceived ? .received : .approval)
         case .failed:
             model.debugShow(rows: [], counts: ParcelCounts(delivered: .failed, cancelled: .loaded(2), unread: .loaded(0)), loadState: .failed)
         case .toast:

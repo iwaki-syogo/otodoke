@@ -47,6 +47,11 @@ struct DroppedMailRow: Decodable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// What has come in so far, for the empty parcel list (the Web's MailSoFar).
+enum MailSoFar: Equatable, Sendable {
+    case none, approval, received
+}
+
 struct SettingsReader: Sendable {
     /// Rows per request (PostgREST's cap).
     static let pageSize = 1000
@@ -124,16 +129,52 @@ struct SettingsReader: Sendable {
                 .eq("user_id", value: me)
                 .gt("created_at", value: at)
         }
-        guard case let .loaded(all) = await Self.count(emails()),
-              case let .loaded(samples) = await Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID)),
-              case let .loaded(confirmations) = await Self.count(emails().eq("classification", value: "forwarding_confirmation")),
-              case let .loaded(screened) = await Self.count(
-                  provider.database.from("screen_events").select("id", head: true, count: .exact)
-                      .eq("user_id", value: me)
-                      .gt("created_at", value: at)
-              )
+        // The four counts are independent: read together.
+        async let allRead = Self.count(emails())
+        async let samplesRead = Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID))
+        async let confirmationsRead = Self.count(emails().eq("classification", value: "forwarding_confirmation"))
+        async let screenedRead = Self.count(
+            provider.database.from("screen_events").select("id", head: true, count: .exact)
+                .eq("user_id", value: me)
+                .gt("created_at", value: at)
+        )
+        let (allResult, samplesResult, confirmationsResult, screenedResult) = await (allRead, samplesRead, confirmationsRead, screenedRead)
+        guard case let .loaded(all) = allResult, case let .loaded(samples) = samplesResult,
+              case let .loaded(confirmations) = confirmationsResult, case let .loaded(screened) = screenedResult
         else { return .failed }
         return .loaded(all - samples - confirmations + screened)
+    }
+
+    /// readMailSoFar of src/app/app/settings/settings-reads.ts, read as the Web reads it (the same conditions, in the
+    /// same order). nil when the confirmation read or a plain count failed: the caller shows the setup question
+    /// (the Web's `?? "none"`).
+    ///  - the newest valid confirmation with a created_at: .approval unless something arrived after it
+    ///    (a failed after-check still answers .approval);
+    ///  - otherwise ordinary mail (all minus samples minus confirmations) or any screen_events row: .received;
+    ///  - otherwise a confirmation at all: .approval; nothing: .none (the samples never count).
+    func mailSoFar() async -> MailSoFar? {
+        guard case let .loaded(rows) = await forwardingConfirmations() else { return nil }
+        if let at = await SettingsModel.pickApproval(rows)?.at {
+            guard case let .loaded(later) = await arrivedAfter(at) else { return .approval }
+            return later <= 0 ? .approval : .received
+        }
+        guard let me = await provider.currentUserID() else { return nil }
+        func emails() -> PostgrestFilterBuilder {
+            provider.database.from("emails").select("id", head: true, count: .exact).eq("user_id", value: me)
+        }
+        // Four independent counts, read together (the empty list waits for them).
+        async let allRead = Self.count(emails())
+        async let samplesRead = Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID))
+        async let confirmationsRead = Self.count(emails().eq("classification", value: "forwarding_confirmation"))
+        async let screenedRead = Self.count(
+            provider.database.from("screen_events").select("id", head: true, count: .exact).eq("user_id", value: me)
+        )
+        let (allResult, samplesResult, confirmationsResult, screenedResult) = await (allRead, samplesRead, confirmationsRead, screenedRead)
+        guard case let .loaded(all) = allResult, case let .loaded(samples) = samplesResult,
+              case let .loaded(confirmations) = confirmationsResult, case let .loaded(screened) = screenedResult
+        else { return nil }
+        if all - samples - confirmations > 0 || screened > 0 { return .received }
+        return confirmations > 0 ? .approval : MailSoFar.none
     }
 
     /// Count of emails with StatusRules.unreadFilter(now:).

@@ -1,6 +1,6 @@
 import XCTest
 
-/// [onboarding] On the DEBUG screen check (`-otodoke-ui-preview`): the empty list's 「転送先を見る」 opens the
+/// [onboarding] On the DEBUG screen check (`-otodoke-ui-preview`): the empty list's first button (「設定する」) opens the
 /// 「メールの転送」 page straight, and the waiting screen after making an account shows the wording file's words.
 final class OnboardingUITests: XCTestCase {
     override func setUp() {
@@ -16,9 +16,23 @@ final class OnboardingUITests: XCTestCase {
 
     func testTheEmptyListsButtonOpensTheForwardingPage() {
         let app = launch("empty")
-        let button = app.buttons["転送先を見る"]
+        let button = app.buttons["設定する"]
         XCTAssertTrue(button.waitForExistence(timeout: 10))
         button.tap()
+        XCTAssertTrue(app.navigationBars["メールの転送"].waitForExistence(timeout: 10))
+    }
+
+    func testTheReceivedGuideOpensTheTroublePage() {
+        let app = launch("empty-received")
+        XCTAssertTrue(app.staticTexts["メールは届いています。\n荷物のメールが届くまで、お待ちください。"].waitForExistence(timeout: 10))
+        app.buttons["設定を見る"].tap()
+        XCTAssertTrue(app.navigationBars["うまく届かないとき"].waitForExistence(timeout: 10))
+    }
+
+    func testTheApprovalGuideOpensTheForwardingPage() {
+        let app = launch("empty-approval")
+        XCTAssertTrue(app.staticTexts["Gmail の転送は承認しましたか？\n承認すると、荷物のメールが届きはじめます。"].waitForExistence(timeout: 10))
+        app.buttons["設定で承認する"].tap()
         XCTAssertTrue(app.navigationBars["メールの転送"].waitForExistence(timeout: 10))
     }
 
