@@ -5,7 +5,7 @@ import { ANCHOR, CATALOG, MONTHS, historyFiles } from "../../../scripts/make-dem
 import { demoInput, loadDemoEntries, readDemoMails } from "@/lib/demo";
 import { CATEGORIES } from "@/lib/category";
 import type { Extraction } from "@/lib/extract/schema";
-import { addDays, todayJst } from "@/lib/format";
+import { addDays, shiftMonth, todayJst } from "@/lib/format";
 import { buildParcelInsert } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { screenMail } from "@/lib/screen";
@@ -225,5 +225,10 @@ describe("what the judges see after loading", () => {
     // 80 history parcels and the web camera of the real mails.
     expect(delivered).toHaveLength(81);
     expect(db.rows("emails").every((r) => r.user_id === USER)).toBe(true);
+    // The whole-period page over every stored parcel, the real mails' ones included: still 12 bars, 7 colours.
+    const stored = db.rows("parcels").filter((p) => p.status !== "cancelled") as Array<{ ordered_at: string | null; total_amount: number | null; category: string | null }>;
+    const bars = withEmptyMonths(spendByMonth(stored));
+    expect(bars.map((b) => b.month)).toEqual(Array.from({ length: 12 }, (_, i) => shiftMonth(today.slice(0, 7), i - 11)));
+    expect(new Set(bars.flatMap((b) => b.segments.map((x) => x.category)))).toEqual(new Set(CATEGORIES));
   });
 });
