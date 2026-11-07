@@ -71,7 +71,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 94 },
     time: "5 分・ブラウザで",
     link: { label: "Gmail の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/general" },
-    linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。このボタンで Gmail のアプリが開いたときは、Chrome で mail.google.com を開きます。右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
+    linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。画面の下のアドレス欄の左にある ≡ のボタンを押し、出てきたメニューを下へスクロールすると「デスクトップ用ウェブサイトを表示」があります。それを選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。このボタンで Gmail のアプリが開いたときは、Chrome で mail.google.com を開きます。右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
     groups: [
       {
         heading: "転送先を登録する",
@@ -106,9 +106,9 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     groups: [
       {
         steps: [
-          { text: "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。スマホ用の画面が出たら、iPhone はアドレス欄の左の ≡ のボタンから「デスクトップ用ウェブサイトを表示」を、Android は右上の ⋮ から「PC 版サイト」を選びます。" },
-          { text: "メールボックスの一覧の上にある「設定」ボタンを押し、「設定」を選びます。" },
-          { text: "左の一覧で「メールの転送」を選びます。" },
+          { text: "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。" },
+          { text: "メールボックスの一覧の上にある歯車のボタンを押し、「設定」を選びます。一覧が見えないときは、左上の「メールボックス」を押すと出ます。" },
+          { text: "設定の項目の一覧で「メールの転送」を選びます。一覧が見えないときは、左上の一覧のボタンを押すと出ます。" },
           { text: "「メールの転送先」にチェックを入れ、欄に Otodoke のアドレスを貼り付けます。下の「転送後にメッセージを削除」は空欄のままで大丈夫です。入れたら、左上の「×」で閉じます。" },
         ],
       },
@@ -119,11 +119,11 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "outlook",
     chip: "Outlook",
     title: "Outlook",
-    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 69 },
+    video: { src: "/guide/videos/otodoke-fwd-outlook-720.mp4", poster: "/guide/videos/otodoke-fwd-outlook-poster.jpg", seconds: 62 },
     addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
     time: "3 分・ブラウザで",
     link: { label: "転送の設定を開く", href: "https://outlook.live.com/mail/0/options/mail/forwarding" },
-    linkNote: "iPhone では Safari で進めます。スマホ用の画面が出たら、アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。スマホ用の画面が出たら、右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。",
+    linkNote: "iPhone では Safari で進めます。スマホ用の画面が出たら、画面の下のアドレス欄の左にある ≡ のボタンを押し、出てきたメニューを下へスクロールすると「デスクトップ用ウェブサイトを表示」があります。それを選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。スマホ用の画面が出たら、右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。",
     groups: [
       {
         steps: [

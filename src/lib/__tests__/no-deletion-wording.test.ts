@@ -24,3 +24,10 @@ describe("wording never says Otodoke deletes the user's own mail", () => {
     expect(hits).toEqual([]);
   });
 });
+
+describe("the iPhone desktop-site wording is the new one", () => {
+  it.each(["アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと", "iPhone はアドレス欄の左の ≡ のボタンから"])("no user-facing text contains 「%s」", (old) => {
+    const hits = files.filter((f) => readFileSync(f, "utf8").includes(old));
+    expect(hits).toEqual([]);
+  });
+});
