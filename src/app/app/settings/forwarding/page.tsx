@@ -1,3 +1,5 @@
+import { RefreshUntilApproval } from "@/components/refresh-until-approval";
+import { ApprovalFilterCopy } from "@/components/forwarding-steps";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { CopyButton } from "@/components/copy-button";
@@ -15,6 +17,8 @@ export default async function ForwardingPage() {
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.
   const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "settings forwarding"), readConfirmUrl(supabase, "settings forwarding")]);
   const confirmUrl = confirmation.url;
+  // Polling only helps a person who has an address to forward to.
+  const showsAddress = Boolean(key && address && !keyError);
 
   return (
     <SubPage title="メールの転送">
@@ -46,7 +50,10 @@ export default async function ForwardingPage() {
       </div>
 
       {confirmation.failed ? (
-        <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
+        <>
+          <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
+          {showsAddress && <RefreshUntilApproval />}
+        </>
       ) : confirmUrl ? (
         <section id="gmail-approval" className="scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">Gmail の転送を承認してください</h2>
@@ -54,8 +61,11 @@ export default async function ForwardingPage() {
           <a href={confirmUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
             承認ページを開く
           </a>
+          <ApprovalFilterCopy />
         </section>
-      ) : null}
+      ) : (
+        showsAddress && <RefreshUntilApproval />
+      )}
 
       <ForwardingGuides />
     </SubPage>

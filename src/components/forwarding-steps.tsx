@@ -1,4 +1,5 @@
 import { CopyButton } from "@/components/copy-button";
+import { PausableVideo } from "@/components/pausable-video";
 import { GMAIL_FILTER, VIDEO_CREDIT, VIDEO_LABEL, type ForwardingGroup, type ForwardingGuide, type ForwardingPitfall } from "@/lib/forwarding-guide";
 
 /**
@@ -14,6 +15,26 @@ export function TextLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** The Gmail filter's search words with a copy button: step 5 of the Gmail guide and the approval card. */
+export function GmailFilterCopy() {
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-xl bg-neutral-50 p-2">
+      <code className="min-w-0 flex-1 break-all text-xs">{GMAIL_FILTER}</code>
+      <CopyButton text={GMAIL_FILTER} />
+    </div>
+  );
+}
+
+/** Under 「承認ページを開く」 in the yellow approval card (settings and welcome): the filter to copy before going back to Gmail. */
+export function ApprovalFilterCopy() {
+  return (
+    <div className="mt-4">
+      <p className="text-sm leading-6">フィルタをまだ作っていなければ、「含む」に貼るこの文字列をコピーして Gmail に戻ります。</p>
+      <GmailFilterCopy />
+    </div>
+  );
+}
+
 function StepList({ steps, start = 1 }: { steps: { text: string; copy?: "gmailFilter" }[]; start?: number }) {
   return (
     <ol className="flex flex-col gap-3">
@@ -23,10 +44,7 @@ function StepList({ steps, start = 1 }: { steps: { text: string; copy?: "gmailFi
           <div className="min-w-0 flex-1 text-sm leading-6 text-neutral-600">
             {step.text}
             {step.copy === "gmailFilter" && (
-              <div className="mt-2 flex items-center gap-2 rounded-xl bg-neutral-50 p-2">
-                <code className="min-w-0 flex-1 break-all text-xs">{GMAIL_FILTER}</code>
-                <CopyButton text={GMAIL_FILTER} />
-              </div>
+              <GmailFilterCopy />
             )}
           </div>
         </li>
@@ -132,9 +150,9 @@ export function GuideVideo({ video, title }: { video: NonNullable<ForwardingGuid
       <h3 className="text-sm font-bold">
         {VIDEO_LABEL}・約 {minutes}
       </h3>
-      <video controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
+      <PausableVideo controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
         <source src={video.src} type="video/mp4" />
-      </video>
+      </PausableVideo>
     </div>
   );
 }
