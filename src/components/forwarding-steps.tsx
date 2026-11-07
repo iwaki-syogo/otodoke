@@ -173,7 +173,7 @@ export function GuideCardBody({ guide }: { guide: ForwardingGuide }) {
       {guide.link && (
         <div className="mt-2">
           <TextLink href={guide.link.href} label={guide.link.label} />
-          {guide.linkNote && <p className="text-xs text-neutral-500">{guide.linkNote}</p>}
+          {guide.linkNote && <p className="whitespace-pre-line text-xs text-neutral-500">{guide.linkNote}</p>}
         </div>
       )}
       <GuideGroups groups={guide.groups} />

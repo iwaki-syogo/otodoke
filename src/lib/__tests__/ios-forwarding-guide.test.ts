@@ -45,8 +45,8 @@ const VIEWS = [
   "ios/Otodoke/Screens/Settings/SettingsPages.swift",
 ];
 
-/** Every string literal of a Swift file, in order (the guide text holds no escaped quote). */
-const literals = (src: string) => [...stripComments(src).matchAll(/"([^"\\]*)"/g)].map((m) => m[1]);
+/** Every string literal of a Swift file, in order (the guide text holds no escaped quote; a Swift \\n is read as the same newline as in JS). */
+const literals = (src: string) => [...stripComments(src).matchAll(/"((?:[^"\\]|\\n)*)"/g)].map((m) => m[1].replace(/\\n/g, "\n"));
 const IDS = /^(gmail|icloud|outlook|others)$/;
 const iosTextLiterals = () => literals(read(TEXT)).filter((s) => !IDS.test(s));
 const iosHelpLiterals = () => literals(read(HELP));

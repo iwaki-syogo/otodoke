@@ -68,4 +68,19 @@ describe("videos in the cards of 設定 › メールの転送", () => {
     const withVideo = parseHtml(`<div>${renderToStaticMarkup(createElement(GuideCardBody, { guide: FORWARDING_GUIDES[0] }))}</div>`);
     expect(findAll(withVideo, (n) => n.tag === "video")).toHaveLength(1);
   });
+
+  it("the Gmail link note is two paragraphs; the Outlook note stays one plain line", () => {
+    const note = (id: string) => {
+      const guide = FORWARDING_GUIDES.find((g) => g.id === id)!;
+      const root = parseHtml(`<div>${renderToStaticMarkup(createElement(GuideCardBody, { guide }))}</div>`);
+      return { guide, p: findAll(root, (n) => n.tag === "p" && textOf(n) === guide.linkNote) };
+    };
+    const gmail = note("gmail");
+    expect(gmail.guide.linkNote!.split("\n\n")).toHaveLength(2);
+    expect(gmail.p).toHaveLength(1);
+    expect(String(gmail.p[0].attrs.class)).toContain("whitespace-pre-line");
+    const outlook = note("outlook");
+    expect(outlook.guide.linkNote).not.toContain("\n");
+    expect(outlook.p).toHaveLength(1);
+  });
 });

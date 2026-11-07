@@ -60,7 +60,7 @@ function GuideSection({ guide }: { guide: ForwardingGuide }) {
       {guide.link && (
         <div className="mt-3">
           <ExternalButton href={guide.link.href} label={guide.link.label} />
-          {guide.linkNote && <p className="mt-2 text-xs text-neutral-500">{guide.linkNote}</p>}
+          {guide.linkNote && <p className="mt-2 whitespace-pre-line text-xs text-neutral-500">{guide.linkNote}</p>}
         </div>
       )}
       {guide.intro && <p className="mt-3 text-sm leading-6 text-neutral-600">{guide.intro}</p>}
