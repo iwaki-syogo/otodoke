@@ -5,9 +5,10 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { todayJst } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
-import { UNREAD_FILTER } from "@/lib/unread";
+import { PENDING_GRACE_MS, UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
 import { PageLink } from "./page-link";
+import { LOAD_DEMO_LABEL } from "./settings/demo-labels";
 import { readMailSoFar, type MailSoFar } from "./settings/settings-reads";
 import { ParcelCard } from "./parcel-card";
 
@@ -67,9 +68,9 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
 
   const sampleBusyNotice = sampleBusy ? (
     <p className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
-      ほかの人がサンプルを読み込んでいるかもしれません。少し待ってから、もう一度サンプルを読み込んでください。
+      ほかの人がサンプルを読み込んでいるかもしれません。{PENDING_GRACE_MS / 60_000} 分ほど待ってから、もう一度サンプルを読み込んでください。
       <Link href="/app/settings/demo" className="mt-3 block w-full rounded-xl border border-neutral-300 bg-white px-5 py-3 text-center text-sm font-medium">
-        サンプルを読み込む
+        {LOAD_DEMO_LABEL}
       </Link>
     </p>
   ) : null;

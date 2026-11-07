@@ -93,7 +93,8 @@ describe("the pages the app opens in the browser", () => {
     has("trouble/page.tsx", "読み取る");
     has("dropped/page.tsx", "これは荷物");
     has("demo-loader.tsx", "すべての荷物を消す");
-    has("demo-loader.tsx", "サンプル");
+    has("demo-loader.tsx", "LOAD_DEMO_LABEL");
+    has("demo-labels.ts", "サンプル");
     expect(read("src/app/app/settings/(list)/page.tsx")).toContain('href: "/app/settings/delete"');
     const model = stripComments(read("ios/Otodoke/Screens/Settings/SettingsModel.swift"));
     expect(model).toMatch(/case \.createPassphrase, \.changePassphrase: WebLink\.settingsPassword/);

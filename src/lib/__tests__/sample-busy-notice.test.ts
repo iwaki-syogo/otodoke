@@ -9,7 +9,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
-const NOTICE = "ほかの人がサンプルを読み込んでいるかもしれません。少し待ってから、もう一度サンプルを読み込んでください。";
+const NOTICE = "ほかの人がサンプルを読み込んでいるかもしれません。3 分ほど待ってから、もう一度サンプルを読み込んでください。";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
@@ -42,7 +42,7 @@ describe("the note that another load is running", () => {
     const tree = await render({ demo: "busy" });
     const notes = findAll(tree, (n) => n.tag === "p" && textOf(n).includes(NOTICE));
     expect(notes).toHaveLength(1);
-    const links = findAll(notes[0], (n) => n.tag === "a" && textOf(n).trim() === "サンプルを読み込む");
+    const links = findAll(notes[0], (n) => n.tag === "a" && textOf(n).trim() === "サンプルのメールを読み込む");
     expect(links).toHaveLength(1);
     expect(links[0].attrs.href).toBe("/app/settings/demo");
   });

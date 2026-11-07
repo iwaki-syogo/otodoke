@@ -132,7 +132,9 @@ describe("every slow button of 設定 shows its press", () => {
       }
     }
     // The ones named in the review, each with its busy words.
-    const all = settings("dropped/page.tsx") + settings("trouble/page.tsx") + settings("demo-loader.tsx");
+    // The sample button reads its words from demo-labels.ts; put them back in place to compare.
+    const loadLabel = /LOAD_DEMO_LABEL = "([^"]+)"/.exec(settings("demo-labels.ts"))![1];
+    const all = settings("dropped/page.tsx") + settings("trouble/page.tsx") + settings("demo-loader.tsx").replace("{LOAD_DEMO_LABEL}", `"${loadLabel}"`);
     for (const [label, busy] of [
       ["読み取る", "読み取っています…"],
       ["これは荷物", "記録しています…"],

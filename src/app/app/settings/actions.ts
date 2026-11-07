@@ -90,7 +90,7 @@ export async function readWaitingMail(): Promise<void> {
         // No sample of that name any more: unreadable, and never a reason to call Claude.
         if (!entry) throw new Error(`sample mail ${file} not found`);
         const input = demoInput(entry, user.id);
-        outcome = await processInboundEmail(db, input.mail, input.options);
+        outcome = await processInboundEmail(db, input.mail, { ...input.options, replacesEmailId: m.id });
       } else {
         outcome = await processInboundEmail(
           db,

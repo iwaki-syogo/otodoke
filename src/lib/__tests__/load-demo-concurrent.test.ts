@@ -163,6 +163,9 @@ describe("loadDemo pressed twice", () => {
     // that is done costs it one lookup) until it catches up.
     const laterLoad = async () => {
       for (let i = 0; i < seed * 3; i++) await new Promise<void>((r) => setImmediate(r));
+      // The first load must still be running when this one starts; if fixtures shrink and it has
+      // already finished, fail here with that cause instead of at the busy assertion below.
+      expect(mocks.redirect).not.toHaveBeenCalled();
       return loadDemo();
     };
     const results = await Promise.allSettled([loadDemo(), laterLoad()]);

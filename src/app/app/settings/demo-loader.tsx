@@ -2,6 +2,7 @@
 
 import { useId } from "react";
 import { clearAllParcels, loadDemo } from "./actions";
+import { LOAD_DEMO_LABEL } from "./demo-labels";
 import { PressButton } from "./press";
 
 /**
@@ -35,7 +36,7 @@ export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; 
 }
 
 function LoadButton() {
-  return <PressButton label="サンプルのメールを読み込む" busyLabel="読み込んでいます…" className="w-full rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white" />;
+  return <PressButton label={LOAD_DEMO_LABEL} busyLabel="読み込んでいます…" className="w-full rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white" />;
 }
 
 function ClearButton() {

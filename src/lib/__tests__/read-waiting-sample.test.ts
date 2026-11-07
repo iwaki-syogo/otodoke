@@ -27,10 +27,8 @@ const { loadDemo, readWaitingMail } = await import("@/app/app/settings/actions")
 const OLD = new Date(Date.now() - 10 * 60_000).toISOString();
 
 const newDb = (emails: Row[] = []) => {
-  const d = new FakeDb({ emails, parcels: [] });
   // The pipeline's "young pending row" check reads the real time.
-  (d as unknown as { clock: number }).clock = Date.now();
-  return d;
+  return new FakeDb({ emails, parcels: [] }, Date.now());
 };
 const run = async (fn: () => Promise<void>) => {
   mocks.redirect.mockClear();
