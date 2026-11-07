@@ -76,6 +76,11 @@ struct ForwardingGuideView: View {
             if !servicesOnly {
                 verify
             }
+            // The Web ends the page with it.
+            Text(T.videoCredit)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -167,6 +172,9 @@ struct ForwardingGuideView: View {
                     }
                 }
             }
+            if let video = service.video {
+                SettingsParts.linkCard(ForwardingGuideVideo.heading(seconds: video.seconds)) { openVideo(video) }
+            }
             if let link = service.link {
                 VStack(alignment: .leading, spacing: 6) {
                     SettingsParts.linkCard(link.title) { open(link.url) }
@@ -227,6 +235,12 @@ struct ForwardingGuideView: View {
         }
         .padding(10)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// The video opens in Safari (https and otodoke.app only); it is not played in the app.
+    private func openVideo(_ video: T.Video) {
+        guard let url = ForwardingGuideVideo.url(path: video.path) else { return }
+        SettingsWeb.openPage(url, openURL)
     }
 
     private func open(_ url: String) {
