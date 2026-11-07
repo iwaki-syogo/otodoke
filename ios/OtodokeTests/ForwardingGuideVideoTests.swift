@@ -49,4 +49,13 @@ final class ForwardingGuideVideoTests: XCTestCase {
         XCTAssertNil(ForwardingGuideVideo.url(path: ""))
         XCTAssertEqual(ForwardingGuideVideo.url(path: "/a.mp4")?.host, "otodoke.app")
     }
+
+    func testTheCreditShowsOnlyWhileACardWithAVideoIsOpen() {
+        let services = ForwardingGuideText.services
+        XCTAssertFalse(ForwardingGuideVideo.showsCredit(opened: [], services: services))
+        XCTAssertTrue(ForwardingGuideVideo.showsCredit(opened: ["gmail"], services: services))
+        XCTAssertTrue(ForwardingGuideVideo.showsCredit(opened: ["outlook", "others"], services: services))
+        // Only the card without a video is open: no credit.
+        XCTAssertFalse(ForwardingGuideVideo.showsCredit(opened: ["others"], services: services))
+    }
 }

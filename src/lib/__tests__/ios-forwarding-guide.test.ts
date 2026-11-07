@@ -54,6 +54,40 @@ const iosHelpLiterals = () => literals(read(HELP));
 /** The Web draws a service's title alone and its addresses on a line of their own under it (C13); iOS does the same. */
 const iosTitle = (g: { title: string; addresses?: string }) => (g.addresses ? [g.title, g.addresses] : [g.title]);
 
+/** The text of the block opened by the first "{" at or after `from` (braces balanced). */
+function braceBlock(src: string, from: number): string {
+  const open = src.indexOf("{", from);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}" && --depth === 0) return src.slice(open, i + 1);
+  }
+  return "";
+}
+/** The credit is in the body's VStack, not inside the `if !servicesOnly { ... }` blocks, so both forms draw it. */
+function creditIsOutsideServicesOnly(view: string): boolean {
+  const at = view.indexOf("Text(T.videoCredit)");
+  if (at < 0) return false;
+  let from = 0;
+  for (;;) {
+    const i = view.indexOf("if !servicesOnly", from);
+    if (i < 0) return true;
+    const block = braceBlock(view, i);
+    const start = view.indexOf(block, i);
+    if (at >= start && at < start + block.length) return false;
+    from = i + 1;
+  }
+}
+/** Inside serviceBody: the meta (time) row, then the video row, then the link, in that order. */
+function videoRowSitsBetweenTimeAndLink(view: string): boolean {
+  const start = view.indexOf("private func serviceBody");
+  const body = braceBlock(view, start);
+  const meta = body.indexOf("service.meta");
+  const video = body.indexOf("service.video");
+  const link = body.indexOf("service.link");
+  return meta >= 0 && video > meta && link > video;
+}
+
 /** Every `static let <name> = "<literal>"`. */
 function swiftConstants(src: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -140,11 +174,15 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     for (const g of FORWARDING_GUIDES) if (g.video) expect(existsSync(path.join(ROOT, "public", g.video.src)), g.video.src).toBe(true);
     expect(swiftConstants(stripComments(text)).get("videoLabel")).toBe(VIDEO_LABEL);
     expect(swiftConstants(stripComments(text)).get("videoCredit")).toBe(VIDEO_CREDIT);
-    // Position in the view: the video row after the time and before the link; the credit after the last section.
+    // Position in the view, by structure (see `structure` below).
     const view = stripComments(read(VIEWS[0]));
-    expect(view.indexOf("service.video")).toBeGreaterThan(view.indexOf("service.meta"));
-    expect(view.indexOf("service.video")).toBeLessThan(view.indexOf("service.link"));
-    expect(view.indexOf("T.videoCredit")).toBeGreaterThan(view.indexOf("verify\n"));
+    expect(creditIsOutsideServicesOnly(view)).toBe(true);
+    expect(videoRowSitsBetweenTimeAndLink(view)).toBe(true);
+    // The credit is drawn only while a card with a video is open.
+    expect(view).toMatch(/if ForwardingGuideVideo\.showsCredit\(opened: opened, services: T\.services\) \{\s*Text\(T\.videoCredit\)/);
+    // The video row's hint is a fixed sentence, set on the row only.
+    expect(swiftConstants(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).get("openHint")).toBe("Safari で動画を開きます");
+    expect(view.match(/\.accessibilityHint\(ForwardingGuideVideo\.openHint\)/g)).toHaveLength(1);
     // Opened in Safari through the https-only opener; no player is added.
     expect(view).toMatch(/ForwardingGuideVideo\.url\(path: video\.path\)[\s\S]*SettingsWeb\.openPage\(url, openURL\)/);
     expect(view).not.toMatch(/AVKit|VideoPlayer|AVPlayer/);
@@ -183,6 +221,17 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     const found = (t: string) => [...t.matchAll(/video: Video\(path: "([^"]+)", seconds: (\d+)\)/g)].map((m) => ({ src: m[1], seconds: Number(m[2]) }));
     expect(found(text.replace("seconds: 131", "seconds: 130"))).not.toEqual(found(text));
     expect(found(text.replace(/video: Video\([^)]+\),/, "video: nil,"))).not.toEqual(found(text));
+    // The structure checks catch the credit moved into the servicesOnly branch and the video row moved under the link.
+    const viewSrc = stripComments(read(VIEWS[0]));
+    const creditBlock = viewSrc.slice(viewSrc.indexOf("if ForwardingGuideVideo.showsCredit"), viewSrc.indexOf("if ForwardingGuideVideo.showsCredit") + 400);
+    const movedCredit = viewSrc.replace("if !servicesOnly {\n                verify", "if !servicesOnly {\n                Text(T.videoCredit)\n                verify").replace(/if ForwardingGuideVideo\.showsCredit[\s\S]*?\n            \}\n/, "");
+    expect(creditBlock).toContain("Text(T.videoCredit)");
+    expect(creditIsOutsideServicesOnly(viewSrc)).toBe(true);
+    expect(creditIsOutsideServicesOnly(movedCredit)).toBe(false);
+    const videoRow = /            if let video = service\.video \{[\s\S]*?\n            \}\n/.exec(viewSrc)?.[0] ?? "";
+    expect(videoRow).not.toBe("");
+    const movedVideo = viewSrc.replace(videoRow, "").replace("            if let body = service.body {", videoRow + "            if let body = service.body {");
+    expect(videoRowSitsBetweenTimeAndLink(movedVideo)).toBe(false);
     const withoutVideos = literals(text.replace(/video: Video\(path: "[^"]+"/g, "video: Video(path: \"\"")).filter((s) => !IDS.test(s));
     expect(withoutVideos).not.toEqual(expectedGuideLiterals());
   });
