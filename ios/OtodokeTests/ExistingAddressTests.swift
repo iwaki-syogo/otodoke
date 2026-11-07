@@ -129,7 +129,7 @@ struct ExistingAddressTests {
         await fake.clearForcedAuth("password")
         gate.open()
         await task.value
-        _ = await waitFor(.seconds(3)) { await MainActor.run { !model.isWaitingForConfirmation } }
+        #expect(await waitFor(.seconds(10)) { await MainActor.run { !model.isWaitingForConfirmation } })
         // Two sends: the refused one, and the one more try that was answered for credentials.
         #expect(await fake.count("POST", "token") == 2)
         #expect(await fake.requests("POST", "token").map { PW.captcha($0) } == ["tok-1", "tok-2"])

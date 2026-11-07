@@ -492,7 +492,7 @@ struct OnboardingFlowTests {
         let (model, _) = make(fake, token: token, timerSleep: sleeper.sleep)
         await signUp(model)
         if let confirmed { await account(fake, confirmed: confirmed) }
-        _ = await waitFor(.seconds(3)) { sleeper.pendingCount == 1 }
+        #expect(await waitFor(.seconds(10)) { sleeper.pendingCount == 1 })
         return (model, sleeper)
     }
 

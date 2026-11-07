@@ -23,7 +23,8 @@ struct TapTokenTests {
         if let confirmed {
             await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good), confirmed: confirmed)
         }
-        _ = await waitFor(.seconds(3)) { sleeper.pendingCount == 1 }
+        // The waiting screen has set its first timer; a test that fires it must not run ahead of that.
+        #expect(await waitFor(.seconds(10)) { sleeper.pendingCount == 1 })
         return (model, token, sleeper)
     }
 
@@ -65,9 +66,11 @@ struct TapTokenTests {
         clock.advance(seconds: 5)
         await model.tokenArrived()
         #expect(await fake.count("POST", "token") == 0)
+        // tokenArrived re-sets the timer (the old one is cancelled, a new task registers the new sleep): wait for it.
+        #expect(await waitFor(.seconds(10)) { sleeper.pendingCount == 1 && sleeper.requested.count == 2 })
         clock.advance(seconds: 15)
         #expect(sleeper.fireOldest())
-        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        #expect(await waitFor(.seconds(10)) { await fake.count("POST", "token") == 1 })
         #expect(PW.captcha(await fake.requests("POST", "token").first) == "tok-auto")
     }
 
