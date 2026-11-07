@@ -361,7 +361,13 @@ export async function readSealedEnvelope(db: AdminClient, userId: string, input:
 }
 
 /** Marks the anonymized sample mails the demo loader stores (public fixtures, not the user's mail). */
-export const SAMPLE_PROVIDER_ID = "demo:%";
+export const SAMPLE_ID_PREFIX = "demo:";
+export const SAMPLE_PROVIDER_ID = `${SAMPLE_ID_PREFIX}%`;
+
+/** The fixture file name a sample mail's provider id stands for, or null when the id is not a sample's. */
+export function sampleFileOf(providerEmailId: string | null): string | null {
+  return providerEmailId?.startsWith(SAMPLE_ID_PREFIX) ? providerEmailId.slice(SAMPLE_ID_PREFIX.length) : null;
+}
 
 /**
  * This user's read mail still in plaintext, counted by the database. The public sample mails are

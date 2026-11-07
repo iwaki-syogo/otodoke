@@ -3,6 +3,8 @@ import path from "node:path";
 import { z } from "zod";
 import { ExtractionSchema, withDefaults, type Extraction } from "@/lib/extract/schema";
 import { addDays, splitDate, todayJst } from "@/lib/format";
+import { SAMPLE_ID_PREFIX } from "@/lib/mail-keys";
+import type { InboundEmail, PipelineOptions } from "@/lib/pipeline";
 
 /**
  * Demo data = anonymized real emails in `fixtures/demo/` (see README「持ち込んだデータ」).
@@ -152,4 +154,35 @@ export async function loadDemoEntries(today = todayJst(), now = new Date()): Pro
   }
   entries.sort((a, b) => (a.mail.date ?? "").localeCompare(b.mail.date ?? ""));
   return keepMailsInThePast(entries, now);
+}
+
+/**
+ * How a sample mail goes into the pipeline: its precomputed Claude result and publicSample, so the
+ * API is never called and the mail stays readable. The one place both the demo loader and the
+ * re-read of waiting mail (設定 › うまく届かないとき) get this shape from.
+ */
+export function demoInput(entry: DemoEntry, userId: string): { mail: InboundEmail; options: PipelineOptions } {
+  const { mail, extraction } = entry;
+  return {
+    mail: {
+      userId,
+      providerEmailId: `${SAMPLE_ID_PREFIX}${mail.file}`,
+      messageId: `${SAMPLE_ID_PREFIX}${mail.file}`,
+      from: mail.from,
+      fromName: mail.from_name,
+      subject: mail.subject,
+      sentAt: mail.date,
+      text: mail.text,
+      html: mail.html,
+    },
+    options: {
+      publicSample: true,
+      precomputed: {
+        data: extraction,
+        model: "precomputed",
+        truncated: false,
+        usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      },
+    },
+  };
 }

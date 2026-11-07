@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { loadDemoEntries } from "@/lib/demo";
+import { demoInput, loadDemoEntries, type DemoEntry } from "@/lib/demo";
+import { sampleFileOf } from "@/lib/mail-keys";
 import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -23,32 +24,11 @@ export async function loadDemo(): Promise<void> {
   let otherIsLoading = false;
   try {
     const db = createAdminClient();
-    for (const { mail, extraction } of await loadDemoEntries()) {
+    for (const entry of await loadDemoEntries()) {
       let outcome;
       try {
-        outcome = await processInboundEmail(
-          db,
-          {
-            userId: user.id,
-            providerEmailId: `demo:${mail.file}`,
-            messageId: `demo:${mail.file}`,
-            from: mail.from,
-            fromName: mail.from_name,
-            subject: mail.subject,
-            sentAt: mail.date,
-            text: mail.text,
-            html: mail.html,
-          },
-          {
-            publicSample: true,
-            precomputed: {
-              data: extraction,
-              model: "precomputed",
-              truncated: false,
-              usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-            },
-          },
-        );
+        const input = demoInput(entry, user.id);
+        outcome = await processInboundEmail(db, input.mail, input.options);
       } catch (err) {
         // A second judge on the shared account is loading this same mail right now. Stop here and
         // leave the rest to them: going on would put the two loads on every other mail in turn
@@ -97,25 +77,39 @@ export async function readWaitingMail(): Promise<void> {
   }
 
   let failure: string | null = null;
+  // A sample mail left pending by an interrupted loadDemo is read the way loadDemo reads it
+  // (precomputed, never Claude); the entries are loaded once, only if one is waiting.
+  let samples: Map<string, DemoEntry> | null = null;
   for (const m of data) {
     try {
-      const outcome = await processInboundEmail(
-        db,
-        {
-          userId: user.id,
-          providerEmailId: m.provider_email_id,
-          messageId: m.message_id,
-          from: m.from_address ?? "",
-          fromName: m.from_name,
-          subject: m.subject ?? "",
-          sentAt: m.sent_at,
-          text: m.text_body,
-          html: m.html_body,
-        },
-        // Without a Message-ID the pipeline cannot find this row again, so it is named: the mail is
-        // read again in this row, in place (never removed and stored anew, so it cannot be lost).
-        m.message_id ? {} : { replacesEmailId: m.id },
-      );
+      const file = sampleFileOf(m.provider_email_id);
+      let outcome;
+      if (file !== null) {
+        samples ??= new Map((await loadDemoEntries()).map((e) => [e.mail.file, e]));
+        const entry = samples.get(file);
+        // No sample of that name any more: unreadable, and never a reason to call Claude.
+        if (!entry) throw new Error(`sample mail ${file} not found`);
+        const input = demoInput(entry, user.id);
+        outcome = await processInboundEmail(db, input.mail, input.options);
+      } else {
+        outcome = await processInboundEmail(
+          db,
+          {
+            userId: user.id,
+            providerEmailId: m.provider_email_id,
+            messageId: m.message_id,
+            from: m.from_address ?? "",
+            fromName: m.from_name,
+            subject: m.subject ?? "",
+            sentAt: m.sent_at,
+            text: m.text_body,
+            html: m.html_body,
+          },
+          // Without a Message-ID the pipeline cannot find this row again, so it is named: the mail is
+          // read again in this row, in place (never removed and stored anew, so it cannot be lost).
+          m.message_id ? {} : { replacesEmailId: m.id },
+        );
+      }
       if (outcome.kind === "over_limit") break;
     } catch (err) {
       // One unreadable mail must not hold back the ones after it.
