@@ -103,15 +103,18 @@ describe("signInWithAuthSecret", () => {
     expect(await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code: "credentials" });
   });
 
-  it("counts every sign-in per IP, 15 in any 10 minutes (never 30 in 5), and never gives one back", async () => {
+  it("counts every sign-in per IP, 15 in any 10 minutes (never 100 in 5), and never gives one back", async () => {
     await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET });
     const [[, tries]] = calls("claim_login_mail");
     // The IP's key goes in the address column: the function's 10-minute window then applies to it.
     expect(tries).toEqual({ p_email_hash: sha(`otodoke:login-try:email:${IP}`), p_ip_hash: null, p_email_10m_limit: 15, p_email_1h_limit: 60, p_ip_1h_limit: 60 });
     // Any 5 minutes lie in some 10 minutes: one IP's sign-ins, with its sign-ups (the mail limit,
-    // per hour) on top, stay under Supabase's 30 per 5 minutes that every visitor shares.
+    // per hour) on top, stay under Supabase's 100 per 5 minutes that every visitor shares.
+    // Mirrors the dashboard value (Authentication > Rate Limits > "Rate limit for sign-ups and
+    // sign-ins"); lower it here together with the dashboard.
+    const SUPABASE_SIGN_IN_UP_PER_5_MIN = 100;
     const { LOGIN_MAIL_LIMITS, LOGIN_TRY_LIMITS } = await import("@/lib/login-mail-limit");
-    expect(LOGIN_TRY_LIMITS.ipPer10Minutes + LOGIN_MAIL_LIMITS.ipPerHour).toBeLessThan(30);
+    expect(LOGIN_TRY_LIMITS.ipPer10Minutes + LOGIN_MAIL_LIMITS.ipPerHour).toBeLessThan(SUPABASE_SIGN_IN_UP_PER_5_MIN);
     // Only the address's attempt is given back after a success, never the try.
     expect(calls("release_login_mail").map(([, args]) => args.p_email_hash)).toEqual([sha(`otodoke:login-attempt:email:${EMAIL}`)]);
   });

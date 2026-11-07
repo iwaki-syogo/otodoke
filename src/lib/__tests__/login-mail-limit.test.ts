@@ -88,7 +88,7 @@ describe("a mail with the mail limit", () => {
       p_ip_hash: sha(`otodoke:login-mail:ip:${IP}`),
       p_email_10m_limit: 3,
       p_email_1h_limit: 6,
-      p_ip_1h_limit: 10,
+      p_ip_1h_limit: 30,
     });
     // Raw values never reach the database.
     expect(JSON.stringify(args)).not.toContain(EMAIL);
