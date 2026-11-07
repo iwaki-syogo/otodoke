@@ -50,4 +50,4 @@ export const RESET_LOSES_MAIL = "パスワードを決め直すと、前に暗�
  * plaintext mail and no key), 「あなたのメールの扱い」 (mail-handling.tsx), /privacy and README.
  * Reword all of them once the pending SQL has run.
  */
-export const PLAINTEXT_DROP_NOTICE = "パスワードでログインしていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。";
+export const PLAINTEXT_DROP_NOTICE = "パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。";

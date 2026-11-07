@@ -62,7 +62,7 @@ enum SettingsWebText {
         "暗号化されていない保存済みのメール \(n) 通も、鍵を作ったあとに暗号化できます。それまでは運営者が読める形です。" + plainDropNotice
     }
     /// src/lib/mail-notices.ts:35 (PLAINTEXT_DROP_NOTICE)
-    static let plainDropNotice = "パスワードでログインしていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。"
+    static let plainDropNotice = "パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。"
 
     // MARK: 「メールの自動転送の設定」 (forwarding-guide.tsx)
 

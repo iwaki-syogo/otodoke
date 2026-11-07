@@ -159,14 +159,14 @@ const SAID_IN_BOTH = [
   `「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE.replace(/。$/, "")}`,
   // A reset loses the mail sealed before; a change keeps it (decision 3).
   `パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます`,
-  // Read and found unrelated to shopping: the mail is deleted (src/lib/pipeline.ts, step 3). No final 「。」.
-  "読み取って買い物に関係ないと分かったメールは消します",
+  // Read and found unrelated to shopping: the mail is not kept (src/lib/pipeline.ts, step 3). No final 「。」.
+  "読み取って買い物に関係ないと分かったメールは、Otodoke に残しません",
   "Message-ID",
   "承認リンク",
   "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します",
   // A marked mail is kept while its sender is remembered, and goes 14 days after 「外す」, as /privacy
   // says. No final 「。」: README's list items end without one.
-  "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で消します",
+  "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で Otodoke から消えます",
   // The iOS app's keychain copy of the opened key. No final 「。」: README's list items end without one.
   "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、アプリの設定で切ることもできます",
 ];

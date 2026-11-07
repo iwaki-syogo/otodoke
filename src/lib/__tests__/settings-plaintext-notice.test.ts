@@ -23,7 +23,7 @@ const { PasswordPanel } = await import("@/app/app/settings/password-panel");
 const { MailHandling } = await import("@/app/app/settings/mail-handling");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
-const NOTICE = "11 月 14 日に件名・差出人・本文を消します。荷物は残ります";
+const NOTICE = "Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです";
 const COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
 
 const panel = (over: { keyCreatedAt?: string | null; plainCount: number | null }) =>
@@ -50,7 +50,7 @@ describe("decision 7 is announced with its date", () => {
     expect(item).toHaveLength(1);
     // password-v1: the key is made at the password sign-in, so "no key" is said in those words.
     expect(textOf(item[0])).toContain(`「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE}`);
-    expect(PLAINTEXT_DROP_NOTICE).toBe(`パスワードでログインしていない場合は、${NOTICE}。`);
+    expect(PLAINTEXT_DROP_NOTICE).toBe(`パスワードでログインしていない場合、${NOTICE}。`);
     expect(textOf(item[0])).not.toContain("合言葉");
   });
 

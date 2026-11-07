@@ -133,7 +133,7 @@ describe("/privacy: what it says", () => {
     // password-v1: the browser splits the password in two and sends only the login value.
     expect(said["パスワード"]).toContain("ブラウザで、ログイン用の値とメールの鍵を開く値の 2 つに分け、ログイン用の値だけをサーバーに送ります");
     expect(said["パスワード"]).toContain("ログイン用の値は、Supabase がハッシュ値に変えて保存します");
-    expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("14 日で消します");
+    expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("14 日で Otodoke から消えます");
     // What login_mail_sends keeps (migration 20261106100000): hashes and the time, pruned after an hour,
     // for the mails and for the sign-ins alike (src/lib/login-mail-limit.ts).
     const record = said["メールの送信とログインを試した記録"];
@@ -155,7 +155,7 @@ describe("/privacy: what it says", () => {
     expect(marked).toContain("押したメールの差出人のドメインを覚えます");
     expect(marked).toContain("ふるいで落ちても Claude Haiku で確かめます");
     expect(marked).toContain("覚えている間は、押したメールの件名と差出人のドメインを残します");
-    expect(marked).toContain("設定の「外す」で外すと、ほかと同じく 14 日で消します");
+    expect(marked).toContain("設定の「外す」で外すと、ほかと同じく 14 日で Otodoke から消えます");
     expect(marked).toContain("Gmail など多くの人が使うドメインは覚えません");
     // Gone: a mark is no longer kept for every sender, nor read without the Haiku check.
     expect(said["読まなかったメールの件名と差出人のドメイン"]).not.toContain("これは荷物");
@@ -266,8 +266,8 @@ describe("/privacy: what it says", () => {
   });
 
   it("decision 7 is the agreed sentence, ending in the notice the screens have said since that morning", () => {
-    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインしていない場合は、11 月 14 日に件名・差出人・本文を消します。荷物は残ります。");
-    expect(PLAINTEXT_DROP_NOTICE.endsWith("11 月 14 日に件名・差出人・本文を消します。荷物は残ります。")).toBe(true);
+    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。");
+    expect(PLAINTEXT_DROP_NOTICE.endsWith("11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。")).toBe(true);
     // No brackets.
     expect(wordingProblems([PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL])).toEqual([]);
   });
