@@ -12,14 +12,14 @@ import { findAll, parseHtml, textOf } from "./html-tree";
 const USER = "00000000-0000-4000-8000-00000000000a";
 const CONFIRM_URL = "https://mail-settings.google.com/mail/vf-xyz";
 
-const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
+const mocks = vi.hoisted(() => ({ state: { db: null as unknown, noDomain: false } }));
 
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), notFound: vi.fn(), useRouter: () => ({ refresh: vi.fn() }), usePathname: () => "/app/welcome" }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => Object.assign(mocks.state.db as FakeDb, { auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) } }),
   getUser: async () => ({ id: USER, email: "qa@example.com" }),
 }));
-vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => "abcdefghjk@in.example.test" }));
+vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => (mocks.state.noDomain ? "" : "abcdefghjk@in.example.test") }));
 // A probe in place of the invisible component, so the page's choice to draw it can be seen.
 vi.mock("@/components/refresh-until-approval", async () => {
   const { createElement } = await import("react");
@@ -30,6 +30,8 @@ let db: FakeDb;
 beforeEach(() => {
   db = new FakeDb();
   mocks.state.db = db;
+  mocks.state.noDomain = false;
+  db.rows("user_keys").push({ user_id: USER, key_id: "a".repeat(32), public_key: "x", wrapped_private_key: "x", wrap_iv: "x", kdf_salt: "x", kdf_iterations: 600000, challenge_hash: "0".repeat(64), created_at: "2026-11-06T00:00:00Z", activated_at: "2026-11-06T00:00:00Z", retired_at: null });
 });
 
 const confirmationCame = () =>
@@ -49,7 +51,7 @@ describe.each(PAGES)("%s", (_name, load) => {
     confirmationCame();
     const root = await draw();
     const [card] = findAll(root, (n) => n.attrs.id === "gmail-approval");
-    expect(textOf(card)).toContain("承認したら、フィルタの「含む」に貼るこの文字列をコピーして Gmail に戻ります。");
+    expect(textOf(card)).toContain("フィルタをまだ作っていなければ、「含む」に貼るこの文字列をコピーして Gmail に戻ります。");
     expect(findAll(card, (n) => n.tag === "code").map(textOf)).toEqual([GMAIL_FILTER]);
     expect(findAll(card, (n) => n.tag === "button").map(textOf)).toEqual(["コピー"]);
     expect(probes(root)).toHaveLength(0);
@@ -61,11 +63,24 @@ describe.each(PAGES)("%s", (_name, load) => {
     expect(probes(root)).toHaveLength(1);
   });
 
-  it("when reading the link failed the refresh is not drawn", async () => {
+  it("when reading the link failed the red notice and the refresh are both drawn", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     readFails();
     const root = await draw();
     expect(textOf(root)).toContain("Gmail の承認の案内を読み込めませんでした");
-    expect(probes(root)).toHaveLength(0);
+    expect(probes(root)).toHaveLength(1);
+  });
+
+  it("the refresh is drawn only when the address is shown: not without a key, a receiving domain, or when the key read failed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(probes(await draw())).toHaveLength(1);
+    db.rows("user_keys").length = 0;
+    expect(probes(await draw())).toHaveLength(0);
+    db.rows("user_keys").push({ user_id: USER, key_id: "a".repeat(32), public_key: "x", wrapped_private_key: "x", wrap_iv: "x", kdf_salt: "x", kdf_iterations: 600000, challenge_hash: "0".repeat(64), created_at: "2026-11-06T00:00:00Z", activated_at: "2026-11-06T00:00:00Z", retired_at: null });
+    mocks.state.noDomain = true;
+    expect(probes(await draw())).toHaveLength(0);
+    mocks.state.noDomain = false;
+    db.hooks.push((q) => (q.table === "user_keys" ? { data: null, error: { message: "boom" } } : undefined));
+    expect(probes(await draw())).toHaveLength(0);
   });
 });

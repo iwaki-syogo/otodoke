@@ -36,6 +36,8 @@ export default async function WelcomePage() {
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.
   const [{ key, failed: keyError }, confirmation] = await Promise.all([readActiveKey(supabase, "welcome"), readConfirmUrl(supabase, "welcome")]);
   const confirmUrl = confirmation.url;
+  // Polling only helps a person who has an address to forward to.
+  const showsAddress = Boolean(key && address && !keyError);
 
   return (
     <div className="flex flex-col">
@@ -43,7 +45,10 @@ export default async function WelcomePage() {
       <p className="mt-2 text-sm leading-6 text-neutral-600">{WELCOME.body}</p>
 
       {confirmation.failed ? (
-        <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
+        <>
+          <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">Gmail の承認の案内を読み込めませんでした</p>
+          {showsAddress && <RefreshUntilApproval />}
+        </>
       ) : confirmUrl ? (
         <section id="gmail-approval" className="mt-6 scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">Gmail の転送を承認してください</h2>
@@ -54,7 +59,7 @@ export default async function WelcomePage() {
           <ApprovalFilterCopy />
         </section>
       ) : (
-        <RefreshUntilApproval />
+        showsAddress && <RefreshUntilApproval />
       )}
 
       <section className="mt-8">

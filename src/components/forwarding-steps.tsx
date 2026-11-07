@@ -1,4 +1,5 @@
 import { CopyButton } from "@/components/copy-button";
+import { PausableVideo } from "@/components/pausable-video";
 import { GMAIL_FILTER, VIDEO_CREDIT, VIDEO_LABEL, type ForwardingGroup, type ForwardingGuide, type ForwardingPitfall } from "@/lib/forwarding-guide";
 
 /**
@@ -28,7 +29,7 @@ export function GmailFilterCopy() {
 export function ApprovalFilterCopy() {
   return (
     <div className="mt-4">
-      <p className="text-sm leading-6">承認したら、フィルタの「含む」に貼るこの文字列をコピーして Gmail に戻ります。</p>
+      <p className="text-sm leading-6">フィルタをまだ作っていなければ、「含む」に貼るこの文字列をコピーして Gmail に戻ります。</p>
       <GmailFilterCopy />
     </div>
   );
@@ -149,9 +150,9 @@ export function GuideVideo({ video, title }: { video: NonNullable<ForwardingGuid
       <h3 className="text-sm font-bold">
         {VIDEO_LABEL}・約 {minutes}
       </h3>
-      <video controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
+      <PausableVideo controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
         <source src={video.src} type="video/mp4" />
-      </video>
+      </PausableVideo>
     </div>
   );
 }
