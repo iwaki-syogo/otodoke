@@ -204,6 +204,8 @@ MIT
 - ロゴの文字は Poppins（SIL Open Font License 1.1）
 - 説明動画（`public/guide/videos` の mp4 3 本）の声は AivisSpeech の「まお」（ACML 1.0）、曲は Mixkit（Mixkit Free License）です。動画の声と曲は MIT ライセンスの対象外です
 
+Otodoke の開発で使った Claude Code の設定一式（スキル・コマンド・サブエージェント・フックなど）は、[claude-code-setup](https://github.com/iwaki-syogo/claude-code-setup) で公開しています。
+
 ## English overview
 
 **Otodoke — stop planning your day around parcels.**
@@ -220,3 +222,4 @@ The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the th
 Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is in internal TestFlight testing only.
 Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), the page changes to 「確認のメールを送りました」; open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」, and the first tab logs in by itself and lands on the first-run guide (/app/welcome); press 「あとで」, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
 If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
+The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks) is published at https://github.com/iwaki-syogo/claude-code-setup.
