@@ -231,3 +231,16 @@ describe("forwarding-guide data has no parentheses", () => {
     for (const s of strings) expect(s, s).not.toMatch(/[()（）]/);
   });
 });
+
+describe("Gmail poster preload", () => {
+  it("asks react-dom to preload the first guide poster as an image", async () => {
+    const preload = vi.fn();
+    vi.resetModules();
+    vi.doMock("react-dom", async (orig) => ({ ...(await orig<typeof import("react-dom")>()), preload }));
+    const Page = (await import("@/app/guide/forwarding/page")).default;
+    renderToStaticMarkup(createElement(Page));
+    vi.doUnmock("react-dom");
+    expect(FORWARDING_GUIDES[0].id).toBe("gmail");
+    expect(preload).toHaveBeenCalledWith("/guide/videos/otodoke-fwd-gmail-poster.jpg", { as: "image" });
+  });
+});

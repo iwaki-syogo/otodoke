@@ -150,7 +150,7 @@ export function GuideVideo({ video, title }: { video: NonNullable<ForwardingGuid
       <h3 className="text-sm font-bold">
         {VIDEO_LABEL}・約 {minutes}
       </h3>
-      <PausableVideo controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
+      <PausableVideo controls preload="none" playsInline poster={video.poster} width={540} height={960} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
         <source src={video.src} type="video/mp4" />
       </PausableVideo>
     </div>
@@ -173,7 +173,7 @@ export function GuideCardBody({ guide }: { guide: ForwardingGuide }) {
       {guide.link && (
         <div className="mt-2">
           <TextLink href={guide.link.href} label={guide.link.label} />
-          {guide.linkNote && <p className="whitespace-pre-line text-xs text-neutral-500">{guide.linkNote}</p>}
+          {guide.linkNote && <p className="whitespace-pre-line text-sm text-neutral-600">{guide.linkNote}</p>}
         </div>
       )}
       <GuideGroups groups={guide.groups} />
