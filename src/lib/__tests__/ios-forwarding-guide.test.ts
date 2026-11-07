@@ -171,7 +171,9 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     // The Swift side computes it the same way: nearest half minute, at least half a minute.
     const impl = stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"));
     expect(impl).toContain("max(0.5, (Double(seconds) / 30).rounded(.toNearestOrAwayFromZero) / 2)");
-    expect(literals(impl).filter((l) => /分|約/.test(l))).toEqual([" 分", "半分", " 分半", "・約 "]);
+    // The literals hold interpolations ("\\(...)"), so they are read with a pattern that allows a backslash.
+    const words = [...impl.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).filter((l) => /分|約/.test(l));
+    expect(words).toEqual(["\\(Int(halves)) 分", "半分", "\\(Int(halves.rounded(.down))) 分半", "\\(ForwardingGuideText.videoLabel)・約 \\(minutes(seconds: seconds))"]);
   });
 
   it("negative control: a wrong row, a missing video and a changed length are caught", () => {
