@@ -69,7 +69,7 @@ enum ForwardingGuideText {
             meta: "5 分・ブラウザで",
             video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 94),
             link: Link(title: "Gmail の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/general"),
-            linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
+            linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。このボタンで Gmail のアプリが開いたときは、Chrome で mail.google.com を開きます。右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
             groups: [
                 Group(heading: "転送先を登録する", steps: [
                     "上の「Gmail の設定を開く」を押すと、Gmail の設定の画面が開きます。上に並んだタブの「メール転送と POP/IMAP」を押します。開かないときは、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。",

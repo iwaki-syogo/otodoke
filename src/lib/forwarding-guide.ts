@@ -71,7 +71,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 94 },
     time: "5 分・ブラウザで",
     link: { label: "Gmail の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/general" },
-    linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
+    linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。このボタンで Gmail のアプリが開いたときは、Chrome で mail.google.com を開きます。右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
     groups: [
       {
         heading: "転送先を登録する",

@@ -76,7 +76,7 @@ describe("videos in the cards of 設定 › メールの転送", () => {
       return { guide, p: findAll(root, (n) => n.tag === "p" && textOf(n) === guide.linkNote) };
     };
     const gmail = note("gmail");
-    expect(gmail.guide.linkNote!.split("\n\n")).toHaveLength(2);
+    expect(gmail.guide.linkNote!.split("\n\n")).toHaveLength(3);
     expect(gmail.p).toHaveLength(1);
     expect(String(gmail.p[0].attrs.class)).toContain("whitespace-pre-line");
     const outlook = note("outlook");
