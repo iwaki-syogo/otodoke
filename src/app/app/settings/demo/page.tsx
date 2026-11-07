@@ -4,7 +4,8 @@ import { SubPage } from "../sub-page";
 
 export const metadata = { title: "サンプルで試す" };
 
-// The demo loader runs several Claude calls in sequence.
+// The demo loader does not call Claude (the extractions are precomputed); maxDuration stays 300
+// because 97 mails go through the pipeline one by one.
 export const maxDuration = 300;
 
 type SearchParams = Promise<{ demo?: string; error?: string; cleared?: string }>;

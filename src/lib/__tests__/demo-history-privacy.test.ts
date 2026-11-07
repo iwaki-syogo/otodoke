@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { CATALOG } from "../../../scripts/make-demo-history";
 
 /**
  * fixtures/demo-history is public and made up. Machine check that it carries nothing of a person
@@ -18,6 +19,10 @@ const files = [
 ].map((p) => ({ name: p, body: readFileSync(path.join(DIR, p), "utf8") }));
 
 const SENDER = "@sample.otodoke.app";
+/** The only local parts the generator gives a sender: the shop slugs of its own catalog. */
+const ALLOWED_LOCAL_PARTS = new Set(CATALOG.map((i) => i.shop.slug));
+const ORDER_NUMBER = /^(AMZ|RKT|YSH|UNQ|YDB|IRS|KRS|SHP)-\d{4}-\d{5}$/;
+const JP_ADDRESS = /(北海道|東京都|(?:京都|大阪)府|.{2,3}県).{1,6}?[市区町村郡]/;
 /** Message-IDs are replaced on loading (demoInput), and use the reserved .invalid domain, like fixtures/demo. */
 const MESSAGE_ID = /^demo-[0-9a-f]+@example\.invalid$/;
 const REAL_STORE_DOMAINS = [
@@ -47,7 +52,8 @@ const REAL_STORE_DOMAINS = [
 function personalInfoIn(body: string): string[] {
   const found: string[] = [];
   for (const m of body.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) {
-    if (!m[0].endsWith(SENDER) && !MESSAGE_ID.test(m[0])) found.push(`address ${m[0]}`);
+    const okSender = m[0].endsWith(SENDER) && ALLOWED_LOCAL_PARTS.has(m[0].slice(0, -SENDER.length));
+    if (!okSender && !MESSAGE_ID.test(m[0])) found.push(`address ${m[0]}`);
   }
   for (const m of body.matchAll(/https?:\/\/([^/\s"<>]+)/g)) {
     if (m[1] !== "sample.otodoke.app") found.push(`link ${m[0]}`);
@@ -57,6 +63,7 @@ function personalInfoIn(body: string): string[] {
   // 03-1234-5678, 090-1234-5678, 0120-123-456, (03)1234-5678, and the same without hyphens.
   for (const m of body.matchAll(/(?<![\w-])\(?0\d{1,4}[-)）(（]\d{1,4}[-)）]?\d{3,4}(?![\d-])/g)) found.push(`phone ${m[0]}`);
   for (const m of body.matchAll(/(?<!\d)0\d{9,10}(?!\d)/g)) found.push(`phone ${m[0]}`);
+  for (const m of body.matchAll(new RegExp(JP_ADDRESS, "g"))) found.push(`japanese address ${m[0]}`);
   if (body.includes("〒")) found.push("postal mark 〒");
   for (const m of body.matchAll(/(?<![\d-])\d{3}-\d{4}(?![\d-])/g)) found.push(`postal code ${m[0]}`);
   // A tracking number is 10 to 14 digits, often in groups. The made-up order numbers have 9.
@@ -86,6 +93,15 @@ describe("fixtures/demo-history carries no personal information", () => {
     }
   });
 
+  it("every extraction's order number is one of the made-up shapes", () => {
+    const extractions = JSON.parse(files.find((f) => f.name === "extractions.json")!.body) as Record<string, { order_number?: { value: string | null } }>;
+    const entries = Object.entries(extractions);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [name, e] of entries) {
+      expect(e.order_number?.value ?? "", name).toMatch(ORDER_NUMBER);
+    }
+  });
+
   it("negative control: each kind of leak is caught", () => {
     const leaks: Array<[string, string]> = [
       ["送信元 order@shop.example.com", "address"],
@@ -102,8 +118,12 @@ describe("fixtures/demo-history carries no personal information", () => {
       ["伝票番号 482915307128", "long number"],
       ["<demo-4040924643f4@example.com>", "address"],
       ["山田 太郎 様", "addressee"],
+      ["送信元 taro.yamada@sample.otodoke.app", "address"],
+      ["お届け先 東京都渋谷区神南1-2-3", "japanese address"],
     ];
     for (const [text, kind] of leaks) expect(personalInfoIn(text).join(" "), text).toContain(kind);
+    expect(ORDER_NUMBER.test("503-1234567-1234567")).toBe(false);
+    expect(ORDER_NUMBER.test("AMZ-3180-60573")).toBe(true);
     // And what the history does write is not taken for a leak.
     expect(personalInfoIn("注文番号：AMZ-3180-60573\nご注文日：2025/12/03（水）\nご請求額：￥1,650\nhttps://sample.otodoke.app/orders/AMZ-3180-60573\nお客様の荷物は配達済みです。")).toEqual([]);
   });
