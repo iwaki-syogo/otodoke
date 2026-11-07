@@ -15,12 +15,13 @@ import path from "node:path";
 
 // The store as React reads it during a render: the snapshot of the moment.
 vi.mock("react", () => ({ useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot() }));
-const signedOut = vi.hoisted(() => ({ calls: 0 }));
+const signedOut = vi.hoisted(() => ({ calls: 0, options: [] as unknown[] }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
-      signOut: async () => {
+      signOut: async (options?: unknown) => {
         signedOut.calls++;
+        signedOut.options.push(options);
         return { error: null };
       },
     },
@@ -86,6 +87,8 @@ describe("the logout leaves the page", () => {
     const { POST } = await import("@/app/auth/signout/route");
     const res = await POST(new Request("https://otodoke.app/auth/signout", { method: "POST" }) as never);
     expect(signedOut.calls).toBe(1);
+    // This device only: the default (global) scope would sign out every device of a shared account.
+    expect(signedOut.options).toEqual([{ scope: "local" }]);
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("https://otodoke.app/");
   });
