@@ -246,9 +246,11 @@ export class FakeDb {
   /** PostgREST's max-rows: a read without a range never returns more. */
   maxRows = 1000;
   private seq = 0;
-  private clock = Date.parse("2026-11-03T00:00:00Z");
+  private clock: number;
 
-  constructor(seed: Record<string, Row[]> = {}) {
+  /** `startMs`: where the clock behind tick() starts (default: a fixed past date). */
+  constructor(seed: Record<string, Row[]> = {}, startMs: number = Date.parse("2026-11-03T00:00:00Z")) {
+    this.clock = startMs;
     this.tables = {};
     for (const [table, rows] of Object.entries(seed)) {
       this.tables[table] = rows.map((r) => ({ ...(DEFAULTS[table] ?? {}), ...r }));

@@ -11,6 +11,7 @@ import { FakeDb, type Query, type Row } from "./fake-db";
  * Made-up mails only.
  */
 
+const fixed = vi.hoisted(() => ({ entries: [] as import("@/lib/demo").DemoEntry[] }));
 const USER = "00000000-0000-4000-8000-00000000000a";
 const mocks = vi.hoisted(() => ({ db: null as unknown, redirect: vi.fn(), revalidatePath: vi.fn() }));
 
@@ -24,8 +25,17 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/supabase/server", () => ({ getUser: async () => ({ id: USER, email: "qa@example.com" }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
+// loadDemoEntries reads fixture files, which finish in an order and at a time set by the machine's
+// load. Both loads must reach their first query on the same turn, so the entries are read once
+// before the tests (real function, real time) and handed back as an already-settled value.
+vi.mock("@/lib/demo", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/demo")>();
+  return { ...real, loadDemoEntries: async () => fixed.entries.slice() };
+});
 
 const { loadDemo } = await import("@/app/app/settings/actions");
+const realDemo = await vi.importActual<typeof import("@/lib/demo")>("@/lib/demo");
+fixed.entries = await realDemo.loadDemoEntries();
 
 const run = async () => {
   mocks.redirect.mockClear();
@@ -82,10 +92,9 @@ const uniqueMessageIndex = (q: Query, d: FakeDb) => {
 };
 
 const newDb = (seed: { emails: Row[]; parcels: Row[] } = { emails: [], parcels: [] }) => {
-  const d = new FakeDb(seed);
-  // The FakeDb stamps rows from its own clock (a past date); the pipeline's "young pending row" check
-  // reads the real time, so start the fake clock there or no row would ever look young.
-  (d as unknown as { clock: number }).clock = Date.now();
+  // The FakeDb stamps rows from its own clock (a past date by default); the pipeline's "young pending
+  // row" check reads the real time, so start the fake clock there or no row would ever look young.
+  const d = new FakeDb(seed, Date.now());
   d.hooks.push(uniqueMessageIndex);
   return d;
 };
@@ -143,7 +152,7 @@ describe("loadDemo pressed twice", () => {
       if (q.table !== "emails" || q.op !== "insert") return undefined;
       const v = q.values as Row;
       const taken = d.rows("emails").some((r) => r.user_id === v.user_id && r.message_id === v.message_id);
-      const reading = d.rows("emails").filter((r) => r.processing_status === "pending");
+      const reading = d.rows("emails").filter((r) => r.user_id === v.user_id && r.processing_status === "pending");
       if (!taken && reading.length > 0) overlaps.push(`${String(v.message_id)} stored while ${String(reading[0].message_id)} is being read`);
       return undefined;
     });
@@ -160,8 +169,10 @@ describe("loadDemo pressed twice", () => {
     expect(results.every((r) => r.status === "rejected" && String((r.reason as Error).message).startsWith("NEXT_REDIRECT"))).toBe(true);
     const to = mocks.redirect.mock.calls.map((c) => c[0] as string);
     expect(to).toHaveLength(2);
-    expect(to).toContain("/app");
-    expect(to.every((t) => t === "/app" || t === "/app?demo=busy")).toBe(true);
+    // Really concurrent, in every timing: the load that was ahead finishes (/app), the other one
+    // meets a mail it is still reading and stops (busy). Two loads that merely ran one after the
+    // other would both end on /app.
+    expect([...to].sort()).toEqual(["/app", "/app?demo=busy"]);
     // They did take turns: the second load looked up mail 0 while the first was still filing it
     // (before the first's last write to the emails row), not after it was done.
     const all = db.calls.map((q) => `${q.table}.${q.op}`);
