@@ -241,6 +241,6 @@ describe("Gmail poster preload", () => {
     renderToStaticMarkup(createElement(Page));
     vi.doUnmock("react-dom");
     expect(FORWARDING_GUIDES[0].id).toBe("gmail");
-    expect(preload).toHaveBeenCalledWith("/guide/videos/otodoke-fwd-gmail-poster.jpg", { as: "image" });
+    expect(preload).toHaveBeenCalledWith("/guide/videos/otodoke-fwd-gmail-poster.jpg", { as: "image", fetchPriority: "high" });
   });
 });
