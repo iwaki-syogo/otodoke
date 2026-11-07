@@ -9,7 +9,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
-const NOTICE = "ほかの人がサンプルを読み込んでいます。少し待ってから、ページを読み込み直してください。";
+const NOTICE = "ほかの人がサンプルを読み込んでいます。少し待ってから、下の「読み込み直す」を押してください。";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
@@ -39,13 +39,19 @@ async function render(searchParams?: { demo?: string }) {
 
 describe("the note that another load is running", () => {
   it("shows once for ?demo=busy", async () => {
-    const notes = findAll(await render({ demo: "busy" }), (n) => n.tag === "p" && textOf(n).trim() === NOTICE);
+    const tree = await render({ demo: "busy" });
+    const notes = findAll(tree, (n) => n.tag === "p" && textOf(n).includes(NOTICE));
     expect(notes).toHaveLength(1);
+    // The link inside it goes to /app without the marker, so the note is gone after pressing it.
+    const links = findAll(notes[0], (n) => n.tag === "a" && textOf(n).trim() === "読み込み直す");
+    expect(links).toHaveLength(1);
+    expect(links[0].attrs.href).toBe("/app");
   });
 
   it("is not shown without the marker, nor for another value", async () => {
     for (const params of [undefined, {}, { demo: "3" }, { demo: "Busy" }]) {
       expect(findAll(await render(params), (n) => textOf(n).includes("サンプルを読み込んでいます"))).toHaveLength(0);
+      expect(findAll(await render(params), (n) => n.tag === "a" && textOf(n).trim() === "読み込み直す")).toHaveLength(0);
     }
   });
 });

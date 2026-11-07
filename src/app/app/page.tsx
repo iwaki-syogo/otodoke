@@ -67,7 +67,10 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
 
   const sampleBusyNotice = sampleBusy ? (
     <p className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
-      ほかの人がサンプルを読み込んでいます。少し待ってから、ページを読み込み直してください。
+      ほかの人がサンプルを読み込んでいます。少し待ってから、下の「読み込み直す」を押してください。
+      <Link href="/app" className="mt-3 block w-full rounded-xl border border-neutral-300 bg-white px-5 py-3 text-center text-sm font-medium">
+        読み込み直す
+      </Link>
     </p>
   ) : null;
 
