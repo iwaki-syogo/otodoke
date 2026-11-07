@@ -124,7 +124,8 @@ describe("the mail-so-far rule (SettingsReader.mailSoFar) follows the Web's read
   it("the empty list reads it only for an empty list, and a failed read is none", () => {
     const model = stripComments(read("ios/Otodoke/Screens/Parcels/ParcelListModel.swift"));
     expect(model).toMatch(/if case let \.loaded\(fresh\) = readList, fresh\.isEmpty, let readMail \{ mail = await readMail\(\) \}/);
-    expect(model).toMatch(/mailSoFar = fresh\.isEmpty \? \(mail \?\? \.none\) : \.none/);
+    // A failed read again keeps the guide shown; only a first failed read, or a list with parcels, is none.
+    expect(model).toMatch(/if !fresh\.isEmpty \{\s*mailSoFar = \.none\s*mailKnown = false\s*\} else if let mail \{\s*mailSoFar = mail\s*mailKnown = true\s*\} else if !mailKnown \{\s*mailSoFar = \.none\s*\}/);
     expect(page).toContain('(await readMailSoFar(supabase, userId, "parcels page")) ?? "none"');
   });
 });

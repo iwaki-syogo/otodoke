@@ -106,6 +106,18 @@ struct EmptyListGuideTests {
         #expect(try await decide(screened: [SettingsRows.dropped(2, ["decision": "kept"])]) == .received)
     }
 
+    // MARK: a confirmation without a created_at (the plain count path)
+
+    @Test func aGoogleConfirmationWithoutATimeAloneIsApproval() async throws {
+        let noTime = confirmation(1, ["created_at": nil])
+        #expect(try await decide(mails: [noTime]) == .approval)
+    }
+
+    @Test func aGoogleConfirmationWithoutATimePlusOwnMailIsReceived() async throws {
+        let noTime = confirmation(1, ["created_at": nil])
+        #expect(try await decide(mails: [noTime, SettingsRows.mail(2)]) == .received)
+    }
+
     // MARK: a failed read is none (nil here, none on the list)
 
     @Test func aFailedConfirmationReadIsNil() async throws {
@@ -182,6 +194,48 @@ struct EmptyListGuideTests {
         #expect(!model.isEmpty)
         #expect(model.mailSoFar == MailSoFar.none)
         #expect(await calls.count == 0)
+    }
+
+    @Test func aFailedReadAgainKeepsTheGuideShown() async throws {
+        let state = GuideMailBox<MailSoFar?>(.received)
+        let model = try await model(FakeSupabase.make()) { await state.value }
+        await model.load()
+        #expect(model.mailSoFar == .received)
+        await state.set(nil)
+        await model.load()
+        // Not the setup question: the guide that was shown stays.
+        #expect(model.mailSoFar == .received)
+        await state.set(.approval)
+        await model.load()
+        #expect(model.mailSoFar == .approval)
+    }
+
+    @Test func aFirstFailedReadIsTheSetupQuestion() async throws {
+        let state = GuideMailBox<MailSoFar?>(nil)
+        let model = try await model(FakeSupabase.make()) { await state.value }
+        await model.load()
+        #expect(model.mailSoFar == MailSoFar.none)
+        await state.set(.received)
+        await model.load()
+        #expect(model.mailSoFar == .received)
+    }
+
+    @Test func aListThatGotParcelsForgetsTheGuide() async throws {
+        let fake = FakeSupabase.make()
+        let state = GuideMailBox<MailSoFar?>(.received)
+        let model = try await model(fake) { await state.value }
+        await model.load()
+        #expect(model.mailSoFar == .received)
+        await fake.insert("parcels", [Rows.parcel(1, ["status": "shipped", "expected_date": "2026-11-05"])])
+        await model.load()
+        #expect(!model.isEmpty)
+        #expect(model.mailSoFar == MailSoFar.none)
+        // Empty again later (the parcel was removed) with a failed read: nothing is remembered from before.
+        await fake.mutate { $0["parcels"] = [] }
+        await state.set(nil)
+        await model.load()
+        #expect(model.isEmpty)
+        #expect(model.mailSoFar == MailSoFar.none)
     }
 
     @Test func theGuideFollowsTheMailOnTheNextRead() async throws {

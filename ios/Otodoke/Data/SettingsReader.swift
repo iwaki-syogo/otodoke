@@ -129,14 +129,18 @@ struct SettingsReader: Sendable {
                 .eq("user_id", value: me)
                 .gt("created_at", value: at)
         }
-        guard case let .loaded(all) = await Self.count(emails()),
-              case let .loaded(samples) = await Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID)),
-              case let .loaded(confirmations) = await Self.count(emails().eq("classification", value: "forwarding_confirmation")),
-              case let .loaded(screened) = await Self.count(
-                  provider.database.from("screen_events").select("id", head: true, count: .exact)
-                      .eq("user_id", value: me)
-                      .gt("created_at", value: at)
-              )
+        // The four counts are independent: read together.
+        async let allRead = Self.count(emails())
+        async let samplesRead = Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID))
+        async let confirmationsRead = Self.count(emails().eq("classification", value: "forwarding_confirmation"))
+        async let screenedRead = Self.count(
+            provider.database.from("screen_events").select("id", head: true, count: .exact)
+                .eq("user_id", value: me)
+                .gt("created_at", value: at)
+        )
+        let (allResult, samplesResult, confirmationsResult, screenedResult) = await (allRead, samplesRead, confirmationsRead, screenedRead)
+        guard case let .loaded(all) = allResult, case let .loaded(samples) = samplesResult,
+              case let .loaded(confirmations) = confirmationsResult, case let .loaded(screened) = screenedResult
         else { return .failed }
         return .loaded(all - samples - confirmations + screened)
     }
@@ -158,12 +162,16 @@ struct SettingsReader: Sendable {
         func emails() -> PostgrestFilterBuilder {
             provider.database.from("emails").select("id", head: true, count: .exact).eq("user_id", value: me)
         }
-        guard case let .loaded(all) = await Self.count(emails()),
-              case let .loaded(samples) = await Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID)),
-              case let .loaded(confirmations) = await Self.count(emails().eq("classification", value: "forwarding_confirmation")),
-              case let .loaded(screened) = await Self.count(
-                  provider.database.from("screen_events").select("id", head: true, count: .exact).eq("user_id", value: me)
-              )
+        // Four independent counts, read together (the empty list waits for them).
+        async let allRead = Self.count(emails())
+        async let samplesRead = Self.count(emails().like("provider_email_id", pattern: Self.sampleProviderID))
+        async let confirmationsRead = Self.count(emails().eq("classification", value: "forwarding_confirmation"))
+        async let screenedRead = Self.count(
+            provider.database.from("screen_events").select("id", head: true, count: .exact).eq("user_id", value: me)
+        )
+        let (allResult, samplesResult, confirmationsResult, screenedResult) = await (allRead, samplesRead, confirmationsRead, screenedRead)
+        guard case let .loaded(all) = allResult, case let .loaded(samples) = samplesResult,
+              case let .loaded(confirmations) = confirmationsResult, case let .loaded(screened) = screenedResult
         else { return nil }
         if all - samples - confirmations > 0 || screened > 0 { return .received }
         return confirmations > 0 ? .approval : MailSoFar.none

@@ -69,8 +69,11 @@ final class ParcelListModel {
     @ObservationIgnored private let readMail: (@Sendable () async -> MailSoFar?)?
 
     private(set) var loadState: LoadState = .idle
-    /// Which of the empty list's three guides to show. A failed read, or a list with parcels, is .none.
+    /// Which of the empty list's three guides to show. A list with parcels, or a mail read that failed before any
+    /// read worked, is .none; a failed read again keeps the guide shown.
     private(set) var mailSoFar: MailSoFar = .none
+    /// The mail was read once for the list as it is now empty (what mailSoFar shows is that answer, not a guess).
+    @ObservationIgnored private var mailKnown = false
     /// The parcels in ParcelRules.baseOrder.
     private(set) var rows: [ParcelRow] = []
     /// nil until the first load.
@@ -295,7 +298,16 @@ final class ParcelListModel {
         }
         rows = ParcelRules.baseOrder(fresh)
         rowsVersion &+= 1
-        mailSoFar = fresh.isEmpty ? (mail ?? .none) : .none
+        // A read of the mail that failed (nil) keeps the guide already shown; only a first read answers none.
+        if !fresh.isEmpty {
+            mailSoFar = .none
+            mailKnown = false
+        } else if let mail {
+            mailSoFar = mail
+            mailKnown = true
+        } else if !mailKnown {
+            mailSoFar = .none
+        }
         loadState = .loaded
         refreshFailed = false
         for id in unconfirmed where rowMessages[id] == Self.unconfirmedText {
