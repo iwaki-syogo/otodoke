@@ -210,8 +210,8 @@ describe("/guide/forwarding", () => {
     const text = textOf(await render()).replace(/\s+/g, " ");
     expect(text).toContain(VIDEO_CREDIT);
     expect(text).toContain("動画で見る・約 1 分半");
-    expect(text.match(/動画で見る・約 1 分半/g)).toHaveLength(2);
-    expect(text.match(/動画で見る・約 1 分(?!半)/g)).toHaveLength(1);
+    expect(text.match(/動画で見る・約 1 分半/g)).toHaveLength(1);
+    expect(text.match(/動画で見る・約 1 分(?!半)/g)).toHaveLength(2);
     expect(text).not.toContain("約 0 分半");
   });
 });
