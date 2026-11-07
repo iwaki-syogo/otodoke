@@ -66,7 +66,7 @@
 
 - メールが注文・発送・配達・キャンセルのどれか、どの値が配達日か、「置き配指定可能」が定型の案内か本当の指定かを読み分けます
 - 出力は zod のスキーマで固定し、値ごとに `evidence`（原文の行）と `confidence` を持たせます。根拠のない値は確信度を低くし、画面で断定しません
-- 使う API の機能は、目的ごとに選びました。読み取りは構造化出力（`messages.parse` と zod）で形を固定し、毎回同じ長い指示はプロンプトキャッシュに載せます。ふるいの 2 段目の Haiku には「この人の買い物の連絡か」の真偽 1 つだけを答えさせ、API が失敗したときは荷物を落とさないよう、読む側に倒します。モデルが辞退したメールは、値を作らずに「関係なし」として残します
+- 使う API の機能は、目的ごとに選びました。読み取りは構造化出力（`messages.parse` と zod）で形を固定し、毎回同じ長い指示はプロンプトキャッシュに載せます。ふるいの 2 段目の Haiku には「この人の買い物の連絡か」の真偽 1 つだけを答えさせ、API が失敗したときは荷物を落とさないよう、読む側に倒します。モデルが辞退したメールは、値を作らず、捨てもせずに、読み取れなかったメールとして残します
 - 運送会社の判定と荷物の名寄せはコードとルールで書き、Claude には任せません。作り話が入る場所を減らすためです
 
 **費用で続かなくならないように。** 届くメールを全部読ませると、使う人が増えるほど赤字になります。1 段目は無料のルール（店の許可リストは使わず、文面だけで判定。迷ったら通す）。迷うものだけ 2 段目で Haiku に聞き、残ったものを読みます。
@@ -86,7 +86,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 コードは Claude Code が書き、人は決めることと確かめることに回りました。期間中に `main` へ入ったコミットは 645 で、そのうち 606 に Claude Code の共同作者の行があります。Web アプリ・iOS アプリ（`ios/`）・テスト 184 ファイルを、1 人と Claude Code で作りました（2026-11-08 時点）。
 
 - **CLAUDE.md をリポジトリの約束にする。** コミットしてはいけないもの、Claude に任せないこと、本番設定の罠を書き、別のエージェント（Codex）も `AGENTS.md` から同じ文書を読みます
-- **フックで止める。** `.claude/settings.json` の PreToolUse が force push・実メール（`fixtures/raw/`）のコミット・gitleaks に引っかかるコミットを止め、PostToolUse が編集したファイルを eslint にかけて結果を Claude に返します。`.githooks/pre-commit` は誰がコミットしても同じ検査をし、ふるい（`src/lib/screen.ts`）を変えると `npm run check:screen` を走らせます。荷物のメールを 1 通でも落とすとコミットできません。作者の設定一式のフックも働いていました。メインのエージェントがコードを直接書くのを止めて Sonnet のサブエージェントに回させるもの、env ファイルまで読む検索を止めるもの、返答が英語になったら日本語で出し直させるものです。
+- **フックで止める。** `.claude/settings.json` の PreToolUse が force push・実メール（`fixtures/raw/`）のコミット・gitleaks に引っかかるコミットを止め、PostToolUse が編集したファイルを eslint にかけて結果を Claude に返します。`.githooks/pre-commit` は誰がコミットしても同じ検査をし、ふるい（`src/lib/screen.ts`）を変えると `npm run check:screen` を走らせます。荷物のメールを 1 通でも落とすとコミットできません。作者の Claude Code の設定一式（下の claude-code-setup）のフックも働いていました。メインのエージェントがコードを直接編集するのを止めるもの（コードは Sonnet のサブエージェントが書きます）、env ファイルまで読む検索を止めるもの、返答が英語になったら日本語で出し直させるものです
 - **サブエージェントで分業する。** まとまった直しは、開発の進め方を決めた作者の自作のコマンド `/orchestrate`（開発用の道具で、Otodoke のコードには含まれません）で、計画 → 失敗するテスト → 実装 → レビュー・セキュリティ・QA → 直し、をサブエージェントに分け、作業用の worktree で進めてから `dev` にまとめました。コミットの `[TDD]` `[task-N]` `[SEC-…]` `[QA-…]` がその跡です。例: 「届いた荷物」の検索は、[失敗するテストを先に書き](https://github.com/iwaki-syogo/otodoke/commit/df36805a372e4b8c9af242d7f3244746777f24e9)、[実装し](https://github.com/iwaki-syogo/otodoke/commit/f40eb215185a7e0fd51247f7530bd5a598902f8c)、[レビューと Codex の指摘を直しました](https://github.com/iwaki-syogo/otodoke/commit/8a0aa63eb4aa80adcbdca71ad0201f5bf9c75773)
 - **別の目でレビューする。** 実装したエージェントとは別のエージェントがレビューし、別の会社のモデル（Codex）にもレビューさせました（コミットの `[Codex-…]`）。メールの処理に手が入る変更は、本番の前に作者でない目のレビューを通しました
 - **本番は人が決める。** `main` への反映＝本番デプロイなので、毎回人が承認してから進めました
@@ -95,7 +95,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - **セッションを並べて動かす。** 締切の前日（2026-11-07）の未明は、Claude Code のセッション 7 つを、Web の画面・iOS アプリ・転送の説明・説明動画・デモ動画・本番前後の点検・統合のレビューに分けて同時に動かしました。もう 1 つのセッションがまとめ役になり、仕事を割り振り、分けた仕事どうしの継ぎ目（Web と iOS で食い違う文や設定項目など）を担当に照らし合わせさせて、直す先を決めました
 - **モデルを役で使い分ける。** 実装は主に Sonnet のサブエージェントに任せ、レビューと設計の判断は主に Opus が受け持ちました。いくつものセッションの変更が `dev` にたまったところで、`main` に出す前にその全体を作者でないエージェントが観点を分けて（継ぎ目・本番でだけ壊れるもの・公開リポジトリとして）レビューし、そのあとの直しも作者でない目で判定し直しました
 - **公開する物を読み直す。** 説明動画とデモ動画は、切り出したコマを文字認識で読み、個人情報や追跡番号が映っていないかを確かめました。デモの 17 通も見直し、匿名化を足しています（下の「持ち込んだデータ」）
-- **自作のスキルで動画まで作る。** デモ動画の冒頭のアニメは、スキル `make-anime` で Claude Code が 1 コマずつコードで描き、静止画で見て直しを重ねたものです。後半のデモと説明動画 3 本は、スキル `make-video` で実画面に日本語のナレーションと曲を重ねて書き出しました。どちらのスキルも、下の claude-code-setup で公開しています
+- **自作のスキルで動画まで作る。** デモ動画の冒頭のアニメは、スキル `make-anime` で Claude Code が 1 コマずつコードで描き、静止画で見て直しを重ねたものです。後半のデモと説明動画 3 本は、スキル `make-video` で実画面に日本語のナレーションと曲を重ねて書き出しました。どちらのスキルも、下の [claude-code-setup](https://github.com/iwaki-syogo/claude-code-setup) で公開しています
 
 ## 安全への配慮
 
@@ -214,20 +214,37 @@ MIT
 ## English overview
 
 **Otodoke — stop planning your day around parcels.**
+
 Demo video: https://youtu.be/BLPMP_bYJ8c (3 min)
+
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home (no 置き配), and how much you spent this month.
+
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
+
 Gmail will move to 「Google でつなぐ」 (reading with the gmail.readonly scope), so no forwarding or filter setup will be needed; Google's restricted-scope verification and CASA assessment will be applied for after the submission.
+
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
+
 Stored mail (subject, sender, body) is sealed in the server right after it is read, to a key only your password opens (ECDH P-256 + HKDF + AES-256-GCM). The browser turns the password into two values (PBKDF2-SHA256 salted with the address, then HKDF): a login secret, the only one sent to the server, and the key that wraps the private key, which never leaves the browser. The operator cannot read sealed mail from the database. Parcel data, the evidence lines (short excerpts of the body) and reading notes, sender domains, Message-IDs and Gmail's forwarding-approval links stay plaintext, and this is disclosed in the app. Mail waiting to be read stays unsealed until it is read; mail read before encryption started stays unsealed until you press 「暗号化する」 in settings. Unsealed mail stays in database backups for up to 7 days. Resend, which receives the mail, also keeps a copy for a while. The iOS app can keep the unlocked key in the device keychain behind Face ID / Touch ID; it never leaves the device, is not synced, and is removed on logout.
+
 A free rule screen drops ads, Haiku checks only unclear mails, and daily caps are claimed in the database before every paid call. Haiku was chosen by measurement: it first matched 71/73 hand-labelled fields on the 17 demo mails (Opus 73/73), the misses were time-slot formats that the code now handles, and the latest run (2026-11-06) is 73/73 at about 1/20 of the cost. Mail types were also checked on all 341 of the author's anonymized mails (314/320). Reading those 341 mails (one year) with the production pipeline cost about $0.4.
+
 The saved demo results were made with Opus 5.5 and then touched by hand: a category was set on all 17, and six reading notes were reworded in plain Japanese. For the public release, four tracking numbers (in 7 readings, value and evidence line) were swapped for made-up ones and one note about recommended products was removed.
+
 Built with Claude Code during the event: CLAUDE.md as the repo contract, hooks that block force pushes, real-email commits and secrets, subagents for test-first work and review, Codex as a cross-reviewer, phone-width browser checks, and real-mail runs: the author's 341 mails went through the production pipeline, and an independent agent checked 46 of the 101 parcels against the original mails (errors 20/460 fields, 10/440 after fixes).
+
 In the early hours of 2026-11-07, the day before the deadline, seven Claude Code sessions ran side by side (web UI, iOS app, forwarding guide, guide videos, demo video, pre- and post-release checks, integration review), and one more session coordinated them: it assigned the work, had the seams between the pieces cross-checked (for example, wording and settings that differed between web and iOS) and decided where each fix should go. Implementation went mostly to Sonnet subagents; review and design decisions stayed mostly with Opus. Once several sessions' work had piled up on `dev`, agents that had not written it reviewed the merged branch from separate angles (seams, production-only breakage, what a public repo must not contain) ahead of the release to `main`, and later fixes were re-checked by non-authors. Frames sampled from the guide and demo videos were read with OCR to check for personal data and tracking numbers, and the 17 demo mails were re-checked and further anonymized.
-During the event, 645 commits reached `main`, 606 of them co-authored by Claude Code: the web app, the iOS app and 184 test files, built by one person with Claude Code (as of 2026-11-08). In the app, each API feature has a job: structured outputs (`messages.parse` with zod) fix the shape, the long system prompt is prompt-cached, the second screen asks Haiku a single yes/no and keeps the mail if the call fails, and a refused mail is stored as unrelated instead of inventing values. The opening animation of the demo video was drawn frame by frame in code by Claude Code with the author's `make-anime` skill, and the demo part and the three guide videos were made with `make-video`; both skills are in claude-code-setup. Hooks from that setup stop the main agent from writing code itself (it goes to Sonnet subagents), block searches that would read env files, and make Claude answer again in Japanese when it drifts into English.
+
+During the event, 645 commits reached `main`, 606 of them co-authored by Claude Code; one person and Claude Code built the web app, the iOS app and 184 test files (as of 2026-11-08). In the app, each API feature has a job: structured outputs (`messages.parse` with zod) fix the shape, the long system prompt is prompt-cached, the second-stage screen asks Haiku a single yes/no and keeps the mail if the call fails, and a refused mail is kept as unread instead of being dropped or filled with invented values. The opening animation of the demo video was drawn frame by frame in code by Claude Code with the author's `make-anime` skill, and the demo part and the three guide videos were made with `make-video`; both skills are in claude-code-setup (linked below). Hooks from that setup stop the main agent from editing code itself (code is written by Sonnet subagents), block searches that would read env files, and make Claude answer again in Japanese when it drifts into English.
+
 The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the three guide videos in `public/guide/videos` are not covered by the MIT license.
+
 The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks and more) is published separately at https://github.com/iwaki-syogo/claude-code-setup; it is not part of the Otodoke code.
+
 Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is in internal TestFlight testing only.
+
 For judges: the submission form's judge link field gives a judge account that already has the 17 sample mails loaded, so you can log in and go straight to what to look at below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. To try it with your own mail, create your own account as follows.
+
 Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), the page changes to 「確認のメールを送りました」; open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」, and the first tab logs in by itself and lands on the first-run guide (/app/welcome); press 「あとで」, open 設定 › 「サンプルで試す」 and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
+
 If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
