@@ -85,6 +85,8 @@ describe("/guide/forwarding", () => {
     for (const p of FORWARDING_PITFALLS) expect(text).not.toContain(p.title);
     expect(text).not.toContain("@ml2.kuronekoyamato.co.jp");
     expect(text).not.toContain("設定できたか確かめる");
+    expect(text).not.toContain("次に買い物をしたら");
+    expect(text).not.toContain("出ないときは、設定の「うまく届かないとき」を開いてください。");
     expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === "/app/settings/trouble")).toHaveLength(0);
     for (const w of ["パソコン版の画面で開き", "転送を無効にする", "先に確かめてください", "フィルタをまだ作っていなければ"]) expect(text, w).not.toContain(w);
     expect(text).not.toContain("スマホは Gmail アプリではなく");

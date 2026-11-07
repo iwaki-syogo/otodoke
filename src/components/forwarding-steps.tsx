@@ -29,7 +29,7 @@ export function GmailFilterCopy() {
 export function ApprovalFilterCopy() {
   return (
     <div className="mt-4">
-      <p className="text-sm leading-6">承認したら、この文字列をコピーして Gmail に戻り、フィルタの「含む」に貼ります。</p>
+      <p className="text-sm leading-6">フィルタを作るときは、この文字列をコピーして「含む」に貼ります。</p>
       <GmailFilterCopy />
     </div>
   );

@@ -65,6 +65,21 @@ const mailRows = (root: HtmlNode) => {
   });
 };
 
+const PITFALL_HOSTS = ["www.kuronekoyamato.co.jp", "faq.kuronekoyamato.co.jp"];
+type PitfallLinks = { links?: { href: string }[] }[];
+function pitfallLinkProblems(root: HtmlNode, pitfalls: PitfallLinks): string[] {
+  const out: string[] = [];
+  const anchors = findAll(root, (n) => n.tag === "a" && /^https?:/.test(n.attrs.href ?? ""));
+  const expected = pitfalls.reduce((sum, p) => sum + (p.links?.length ?? 0), 0);
+  if (anchors.length !== expected) out.push(`count: ${anchors.length} != ${expected}`);
+  for (const a of anchors) {
+    const url = new URL(a.attrs.href);
+    if (url.protocol !== "https:") out.push(`not https: ${a.attrs.href}`);
+    if (!PITFALL_HOSTS.includes(url.hostname)) out.push(`host: ${a.attrs.href}`);
+  }
+  return out;
+}
+
 describe("設定 is a list of titles", () => {
   it("has no description text, and its rows open the six pages", async () => {
     activeKey();
@@ -205,6 +220,20 @@ describe("the trouble page", () => {
       expect(a.attrs.target).toBe("_blank");
       expect(a.attrs.rel).toContain("noopener");
     }
+    expect(pitfallLinkProblems(root, FORWARDING_PITFALLS)).toEqual([]);
+    // Pinned, so that deleting a link from the shared words turns this red.
+    expect(FORWARDING_PITFALLS.reduce((sum, p) => sum + (p.links?.length ?? 0), 0)).toBe(2);
+  });
+
+  it("the pitfall links are counted, https and on the Yamato hosts (negative controls)", async () => {
+    const { FORWARDING_PITFALLS } = await import("@/lib/forwarding-guide");
+    const good = FORWARDING_PITFALLS.flatMap((p: PitfallLinks[number]) => p.links ?? []).map((l: { href: string }) => `<a href="${l.href}">x</a>`);
+    expect(pitfallLinkProblems(parseHtml(`<div>${good.join("")}</div>`), FORWARDING_PITFALLS)).toEqual([]);
+    expect(pitfallLinkProblems(parseHtml(`<div>${good.slice(1).join("")}</div>`), FORWARDING_PITFALLS).length).toBeGreaterThan(0);
+    const http = good.map((h: string, i: number) => (i === 0 ? h.replace("https:", "http:") : h));
+    expect(pitfallLinkProblems(parseHtml(`<div>${http.join("")}</div>`), FORWARDING_PITFALLS).length).toBeGreaterThan(0);
+    const host = good.map((h: string, i: number) => (i === 0 ? h.replace("www.kuronekoyamato.co.jp", "evil.example") : h));
+    expect(pitfallLinkProblems(parseHtml(`<div>${host.join("")}</div>`), FORWARDING_PITFALLS).length).toBeGreaterThan(0);
   });
 
   it("a failed count says 「読み込めませんでした」, never 「未読のメールはありません。」", async () => {
