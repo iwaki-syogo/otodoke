@@ -21,6 +21,7 @@ final class ForwardingGuideVideoTests: XCTestCase {
         (100, "1 分半"),
         (104, "1 分半"),
         (105, "2 分"),
+        (122, "2 分"),
         (131, "2 分"),
         (150, "2 分半"),
         (600, "10 分"),

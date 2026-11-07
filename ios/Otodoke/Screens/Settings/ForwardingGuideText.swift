@@ -75,7 +75,7 @@ enum ForwardingGuideText {
             title: "Gmail",
             addresses: nil,
             meta: "5 分・ブラウザで。スマホは Gmail アプリではなく、ブラウザでパソコン版の画面にしてから進めます",
-            video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 131),
+            video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 122),
             link: Link(title: "Gmail の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/general"),
             linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
             groups: [
@@ -170,5 +170,5 @@ enum ForwardingGuideText {
     // MARK: 動画
 
     static let videoLabel = "動画で見る"
-    static let videoCredit = "動画の画面はイメージです。声は AivisSpeech のまお、曲は Mixkit の素材です。"
+    static let videoCredit = "動画は実際の画面です。名前とアドレスは隠しています。声は AivisSpeech のまお、曲は Mixkit の素材です。"
 }

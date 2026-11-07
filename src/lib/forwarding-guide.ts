@@ -68,7 +68,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "gmail",
     chip: "Gmail",
     title: "Gmail",
-    video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 131 },
+    video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 122 },
     time: "5 分・ブラウザで。スマホは Gmail アプリではなく、ブラウザでパソコン版の画面にしてから進めます",
     link: { label: "Gmail の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/general" },
     linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。アドレス欄の左の ≡ のボタンを押し、「デスクトップ用ウェブサイトを表示」を選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
@@ -154,7 +154,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
 ];
 
 export const VIDEO_LABEL = "動画で見る";
-export const VIDEO_CREDIT = "動画の画面はイメージです。声は AivisSpeech のまお、曲は Mixkit の素材です。";
+export const VIDEO_CREDIT = "動画は実際の画面です。名前とアドレスは隠しています。声は AivisSpeech のまお、曲は Mixkit の素材です。";
 
 export const PITFALLS_HEADING = "届かない人が多い落とし穴";
 export const PITFALLS_LEAD = "Otodoke は、あなたのメールボックスに届いたメールしか読めません。次のどれかに当てはまると、荷物が出ません。必ず確かめてください。";
