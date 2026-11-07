@@ -222,7 +222,7 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(webMinutes(150)).not.toBe("2 分");
     const text = read(TEXT);
     const found = (t: string) => [...t.matchAll(/video: Video\(path: "([^"]+)", seconds: (\d+)\)/g)].map((m) => ({ src: m[1], seconds: Number(m[2]) }));
-    expect(found(text.replace("seconds: 122", "seconds: 121"))).not.toEqual(found(text));
+    expect(found(text.replace("seconds: 94", "seconds: 93"))).not.toEqual(found(text));
     expect(found(text.replace(/video: Video\([^)]+\),/, "video: nil,"))).not.toEqual(found(text));
     // The structure checks catch the credit moved into the servicesOnly branch and the video row moved under the link.
     const viewSrc = stripComments(read(VIEWS[0]));
