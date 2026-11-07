@@ -125,6 +125,7 @@ struct ApprovalRefresherTests {
     @Test func aReturnWithinTenSecondsDoesNotRead() async {
         let w = World()
         let r = refresher(w, autoAdvance: false)
+        r.pageShown()
         w.lastRead = w.now.addingTimeInterval(-9)
         await r.cameBack()
         #expect(w.reads == 0)
