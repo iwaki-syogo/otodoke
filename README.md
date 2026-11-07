@@ -35,6 +35,8 @@
 
 実際のメールは要りません。
 
+提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルのメール 17 通を読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。複数の方で使うため、パスワードの変更と荷物の削除はしないでください。自分でアカウントを作って試すときは、手順 1 から進めます。
+
 1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。画面が「確認のメールを送りました」に変わります。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを別のタブで開いて「確認する」を押すと、元のタブが自動でログインし、最初の案内（/app/welcome）に着きます。そこで「あとで」を押します
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
    - 進めないときは次を見てください
@@ -221,5 +223,6 @@ In the early hours of 2026-11-07, the day before the deadline, seven Claude Code
 The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the three guide videos in `public/guide/videos` are not covered by the MIT license.
 The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks and more) is published separately at https://github.com/iwaki-syogo/claude-code-setup; it is not part of the Otodoke code.
 Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is in internal TestFlight testing only.
+For judges: the submission form's judge link field gives a judge account that already has the 17 sample mails loaded, so you can log in and go straight to what to look at below. Several people share it, so please do not change its password or delete parcels. You can also create your own account as follows.
 Try it: create an account at https://otodoke.app with your email and a password (「アカウントを作る」), the page changes to 「確認のメールを送りました」; open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」, and the first tab logs in by itself and lands on the first-run guide (/app/welcome); press 「あとで」, open 設定, and press 「サンプルのメールを読み込む」 (no real mail or API call needed). What to look at: the 17 mails become 6 parcels; a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category.
 If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
