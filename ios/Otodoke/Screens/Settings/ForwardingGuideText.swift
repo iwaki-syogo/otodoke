@@ -123,7 +123,7 @@ enum ForwardingGuideText {
             title: "Outlook",
             addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
             meta: "3 分・ブラウザで",
-            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 99),
+            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 100),
             link: Link(title: "転送の設定を開く", url: "https://outlook.live.com/mail/0/options/mail/forwarding"),
             linkNote: "サインインしていないと Outlook の紹介ページが開きます。サインインしてから、もう一度このボタンを押してください。",
             groups: [
