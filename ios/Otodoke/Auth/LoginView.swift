@@ -243,6 +243,7 @@ struct LoginView: View {
                 .foregroundStyle(Color(.systemBackground))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+                .frame(minHeight: 44)
                 .background(Color(.label), in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)

@@ -22,12 +22,12 @@ enum OnboardingText {
 
     // MARK: the waiting screen's try is refused for credentials: the address already had an account
 
-    // TODO: Web の onboarding.ts に入ったら、比べる先をそちらに替える (ios-onboarding.test.ts compares with the Web's
-    // file by itself once it holds the sentence; until then with a copy in the test).
     /// Supabase answers a sign-up for a registered address with "sent" and sets no new password: the waiting screen's
     /// sign-in then fails for credentials. Shown in place of LoginText.credentials, under the sign-in form.
     static let existingAddress = "このアドレスは、もう登録されています。前に決めたパスワードでログインしてください。"
-    /// The Web's RESET_LOSES_MAIL (src/lib/mail-notices.ts), shown with the link to the reset.
+    /// The words are the Web's, compared by ios-onboarding.test.ts: existingAddress with EXISTING_ACCOUNT_NOTICE
+    /// (src/lib/onboarding.ts), resetLosesMail with RESET_LOSES_MAIL (src/lib/mail-notices.ts, shown with the link
+    /// to the reset).
     static let resetLosesMail = "パスワードを決め直すと、前に暗号化して保存したメールは開けなくなります。荷物は残ります。"
 
     // MARK: the waiting screen's end when the key did not open or could not be made (the Web's signup-form.tsx)

@@ -243,6 +243,9 @@ describe("the registered address's guidance", () => {
     const button = view.match(/private var forgotPasswordPrimaryButton: some View \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
     expect(button).toContain("openURL(model.forgotPasswordURL)");
     expect(button).toContain("LoginText.forgotPassword");
+    // The standing 「パスワードを忘れた」 link is hidden while the box shows its own: never the same link twice.
+    expect(view).toMatch(/if model\.mode == \.signIn, !model\.isExistingAddress \{\s*forgotPasswordButton\s*\}/);
+    expect(view).toMatch(/\.frame\(minHeight: 44\)\s*\.background\(Color\(\.label\)/);
     expect(view).toMatch(/if model\.isExistingAddress \{\s*existingAddressBox\s*\}/);
   });
 });

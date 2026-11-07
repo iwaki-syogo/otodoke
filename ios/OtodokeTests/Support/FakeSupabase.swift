@@ -151,6 +151,9 @@ actor FakeSupabase {
     /// status with GoTrue's error `code` (nil: no code, e.g. a bare 429 or Cloudflare's 500).
     func forceAuth(_ endpoint: String, status: Int, code: String?) { forcedAuth[endpoint] = (status, code) }
 
+    /// Ends `forceAuth` for `endpoint`: the next answers are the fake's own again.
+    func clearForcedAuth(_ endpoint: String) { forcedAuth[endpoint] = nil }
+
     /// The address Supabase answers in user.email (its own form of the address).
     func setUserEmail(_ email: String) { userEmail = email }
 
