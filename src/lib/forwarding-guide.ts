@@ -99,14 +99,14 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "icloud",
     chip: "iCloud メール",
     title: "iCloud メール",
-    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 93 },
+    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 76 },
     addresses: "@icloud.com・@me.com・@mac.com",
     time: "3 分・ブラウザで",
     link: { label: "iCloud メールを開く", href: "https://www.icloud.com/mail/" },
     groups: [
       {
         steps: [
-          { text: "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。" },
+          { text: "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。スマホ用の画面が出たら、iPhone はアドレス欄の左の ≡ のボタンから「デスクトップ用ウェブサイトを表示」を、Android は右上の ⋮ から「PC 版サイト」を選びます。" },
           { text: "メールボックスの一覧の上にある「設定」ボタンを押し、「設定」を選びます。" },
           { text: "左の一覧で「メールの転送」を選びます。" },
           { text: "「メールの転送先」にチェックを入れ、欄に Otodoke のアドレスを貼り付けます。下の「転送後にメッセージを削除」は空欄のままで大丈夫です。入れたら、左上の「×」で閉じます。" },

@@ -94,12 +94,12 @@ enum ForwardingGuideText {
             title: "iCloud メール",
             addresses: "@icloud.com・@me.com・@mac.com",
             meta: "3 分・ブラウザで",
-            video: Video(path: "/guide/videos/otodoke-fwd-icloud-720.mp4", seconds: 93),
+            video: Video(path: "/guide/videos/otodoke-fwd-icloud-720.mp4", seconds: 76),
             link: Link(title: "iCloud メールを開く", url: "https://www.icloud.com/mail/"),
             linkNote: nil,
             groups: [
                 Group(heading: nil, steps: [
-                    "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。",
+                    "ブラウザで iCloud メールを開き、Apple アカウントでサインインします。スマホ用の画面が出たら、iPhone はアドレス欄の左の ≡ のボタンから「デスクトップ用ウェブサイトを表示」を、Android は右上の ⋮ から「PC 版サイト」を選びます。",
                     "メールボックスの一覧の上にある「設定」ボタンを押し、「設定」を選びます。",
                     "左の一覧で「メールの転送」を選びます。",
                     "「メールの転送先」にチェックを入れ、欄に Otodoke のアドレスを貼り付けます。下の「転送後にメッセージを削除」は空欄のままで大丈夫です。入れたら、左上の「×」で閉じます。",
