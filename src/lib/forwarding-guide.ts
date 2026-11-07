@@ -69,14 +69,14 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     chip: "Gmail",
     title: "Gmail",
     video: { src: "/guide/videos/otodoke-fwd-gmail-720.mp4", poster: "/guide/videos/otodoke-fwd-gmail-poster.jpg", seconds: 131 },
-    time: "5 分・パソコンのブラウザで。スマホの Gmail アプリでは設定できません",
+    time: "5 分・ブラウザで。スマホは Gmail アプリではなく、ブラウザでパソコン版の画面にしてから進めます",
     link: { label: "転送の設定を開く", href: "https://mail.google.com/mail/u/0/#settings/fwdandpop" },
     linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
     groups: [
       {
         heading: "転送先を登録する",
         steps: [
-          { text: "上の「転送の設定を開く」を押すと、「メール転送と POP/IMAP」の画面が開きます。開かないときは、パソコンのブラウザで Gmail を開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。" },
+          { text: "上の「転送の設定を開く」を押すと、「メール転送と POP/IMAP」の画面が開きます。開かないときは、ブラウザで Gmail をパソコン版の画面で開き、右上の歯車 › 「すべての設定を表示」 › 「メール転送と POP/IMAP」を開きます。「転送先アドレスを追加」を押し、Otodoke のアドレスを貼り付けます。" },
           { text: "「次へ」 › 「続行」 › 「OK」の順に押します。本人確認を求められたら済ませて、もう一度アドレスを入れます。" },
           { text: "Gmail からの確認メールは Otodoke に届きます。少し待つと、Otodoke の設定の「メールの転送」に「承認ページを開く」が出るので、押して承認し、Gmail の画面を読み込み直します。「転送」は「転送を無効にする」のままにします。全部のメールではなく、次のフィルタで荷物のメールだけを送ります。" },
         ],
