@@ -343,7 +343,7 @@ final class LoginModel {
 
     /// The end of a try: a person's tap that came during it is tried now.
     private func pickUpTap() async {
-        guard turnstile?.hasTap == true, !isWorking, isWaitingForConfirmation else { return }
+        guard turnstile?.hasTap == true, !isWorking, isWaitingForConfirmation, isInFront else { return }
         await tokenArrived()
     }
 
@@ -427,6 +427,8 @@ final class LoginModel {
             if pressed { notice = OnboardingText.notConfirmedYet } else { autoGate.refusedNotConfirmed() }
         case .credentials:
             dropWait()
+            // A tap held for this try goes with the wait (the other ends of a wait reset the widget themselves).
+            turnstile?.reset()
             mode = .signIn
             canResendConfirmation = false
             unconfirmedAddress = nil

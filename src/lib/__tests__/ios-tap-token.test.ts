@@ -37,6 +37,43 @@ describe("ios b7-tap: the ask for a tap", () => {
 
   it("reaches the model only through the used-once mark", () => {
     expect(model).toMatch(/turnstile\.hasTap/);
-    expect(model).toMatch(/tapSends \+= 1\s*\n\s*lastTapAt = now\(\)\s*\n\s*await check\(\.press\)/);
+    // The tap is counted, stamped and tried as a press in this order (any spacing or line breaks between).
+    expect(model).toMatch(/tapSends\s*\+=\s*1\s*;?\s*lastTapAt\s*=\s*now\(\)\s*;?\s*await\s+check\(\s*\.press\s*\)/);
+  });
+
+  // The text of one function, up to its closing brace (braces counted).
+  function funcText(src: string, name: string): string {
+    const at = src.search(new RegExp(`func ${name}\\(`));
+    if (at < 0) return "";
+    let depth = 0;
+    for (let i = src.indexOf("{", at); i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      if (src[i] === "}" && --depth === 0) return src.slice(at, i + 1);
+    }
+    return "";
+  }
+
+  it("pickUpTap goes through tokenArrived (so through the gap and the limit) and only in front; the ends of a try call it", () => {
+    expect(funcText(model, "pickUpTap")).toMatch(/await\s+tokenArrived\(\)/);
+    expect(funcText(model, "pickUpTap")).toMatch(/isInFront/);
+    expect(funcText(model, "check")).toMatch(/await\s+checkOnce\(trigger\)\s*await\s+pickUpTap\(\)/);
+    expect(funcText(model, "resendConfirmation")).toMatch(/await\s+resendOnce\(\)\s*await\s+pickUpTap\(\)/);
+  });
+
+  it("the ends of a try keep a held tap instead of resetting the widget over it; a wait that ends lets it go", () => {
+    expect(funcText(model, "checkOnce")).toMatch(/turnstile\?\.resetUnlessTapHeld\(\)/);
+    expect(funcText(model, "resendOnce")).toMatch(/turnstile\?\.resetUnlessTapHeld\(\)/);
+    expect(funcText(model, "checkOnce")).toMatch(/case \.credentials:\s*dropWait\(\)\s*\/\/[^\n]*\n\s*turnstile\?\.reset\(\)/);
+  });
+
+  it("negative control: the checks see a pickUpTap that skips tokenArrived, a try's end that resets, a missing pick-up", () => {
+    const noCall = model.replace(/(private func pickUpTap[\s\S]*?)await tokenArrived\(\)/, "$1await check(.token)");
+    expect(funcText(noCall, "pickUpTap")).not.toMatch(/await\s+tokenArrived\(\)/);
+    const resets = model.replace("turnstile?.resetUnlessTapHeld()", "turnstile?.reset()");
+    expect(funcText(resets, "checkOnce")).not.toMatch(/resetUnlessTapHeld/);
+    const noPick = model.replace(/await resendOnce\(\)\s*await pickUpTap\(\)/, "await resendOnce()");
+    expect(funcText(noPick, "resendConfirmation")).not.toMatch(/pickUpTap/);
+    // Spacing alone does not break the order check.
+    expect("tapSends += 1\n\n   lastTapAt = now()\nawait check(.press)").toMatch(/tapSends\s*\+=\s*1\s*;?\s*lastTapAt\s*=\s*now\(\)\s*;?\s*await\s+check\(\s*\.press\s*\)/);
   });
 });

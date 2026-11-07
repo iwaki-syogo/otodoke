@@ -10,7 +10,7 @@ import Testing
 struct TapTokenTests {
     private let clock = TestClock(Date(timeIntervalSince1970: 1_793_000_000))
 
-    private func waiting(_ fake: FakeSupabase, confirmed: Bool = false) async -> (LoginModel, TurnstileToken, ControlledSleeper) {
+    private func waiting(_ fake: FakeSupabase, confirmed: Bool? = false) async -> (LoginModel, TurnstileToken, ControlledSleeper) {
         let sleeper = ControlledSleeper()
         let token = TurnstileToken(now: clock.function)
         let auth = PW.auth(fake, storage: InMemorySessionStorage())
@@ -20,7 +20,9 @@ struct TapTokenTests {
         model.password = PW.good
         model.passwordAgain = PW.good
         await model.submit()
-        await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good), confirmed: confirmed)
+        if let confirmed {
+            await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good), confirmed: confirmed)
+        }
         _ = await waitFor(.seconds(3)) { sleeper.pendingCount == 1 }
         return (model, token, sleeper)
     }
@@ -203,6 +205,97 @@ struct TapTokenTests {
         clock.advance(seconds: 5)
         await model.tokenArrived()
         #expect(await fake.count("POST", "token") == 0)
+    }
+
+    // MARK: the second review (b7-tap round 3)
+
+    /// A try held at the gate (a token taken, the request waiting), so that a tap can come during it.
+    private func heldTry(_ fake: FakeSupabase, _ model: LoginModel, _ token: TurnstileToken) async -> (Task<Void, Never>, Gate) {
+        let gate = Gate()
+        await fake.fail("POST", "token", with: .hold(gate))
+        token.receive(.token("tok-auto"), generation: token.generation)
+        clock.advance(seconds: 30)
+        let first = Task { await model.checkConfirmation() }
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        #expect(model.isWorking)
+        return (first, gate)
+    }
+
+    @Test func aTapKeptDuringATryIsNotSentInTheBackgroundButTheReturnTriesIt() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        let (first, gate) = await heldTry(fake, model, token)
+        tap(token, "tok-tap")
+        await model.tokenArrived()
+        model.isInFront = false
+        gate.open()
+        await first.value
+        try? await Task.sleep(for: .milliseconds(300))
+        // In the background nothing is sent when the try ends.
+        #expect(await fake.count("POST", "token") == 1)
+        // Back in front the return tries, with the token that is held.
+        model.isInFront = true
+        await model.checkConfirmation()
+        #expect(await fake.count("POST", "token") == 2)
+        #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-tap")
+    }
+
+    @Test func aSecondTapDuringATapsTryIsHeldToTheGapWhenThatTryEnds() async {
+        for waited in [false, true] {
+            let fake = FakeSupabase.make()
+            let (model, token, _) = await waiting(fake)
+            let gate = Gate()
+            await fake.fail("POST", "token", with: .hold(gate))
+            clock.advance(seconds: 30)
+            tap(token, "tok-1")
+            let first = Task { await model.tokenArrived() }
+            #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+            // The second tap comes during that try; the pick-up at its end goes through the same gap.
+            tap(token, "tok-2")
+            await model.tokenArrived()
+            if waited { clock.advance(seconds: LoginModel.tapMinGapSeconds + 1) }
+            gate.open()
+            await first.value
+            try? await Task.sleep(for: .milliseconds(300))
+            // Within the gap: not sent (no chain). Negative control: past the gap it is sent.
+            #expect(await fake.count("POST", "token") == (waited ? 2 : 1), "waited \(waited)")
+            #expect(!token.hasTap)
+        }
+    }
+
+    @Test func aTapDuringTheMailBeingSentAgainIsTriedWhenThatEnds() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        let gate = Gate()
+        await fake.fail("POST", "resend", with: .hold(gate))
+        let resend = Task { await model.resendConfirmation() }
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "resend") == 1 })
+        #expect(model.isWorking)
+        tap(token, "tok-tap")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 0)
+        gate.open()
+        await resend.value
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-tap")
+    }
+
+    @Test func aTapHeldWhenTheWaitEndsForCredentialsLeavesNothingInTheWidget() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake, confirmed: nil)
+        // The sign-in is answered for credentials (the address has an account with another password).
+        await fake.forceAuth("password", status: 400, code: "invalid_credentials")
+        let (first, gate) = await heldTry(fake, model, token)
+        tap(token, "tok-tap")
+        await model.tokenArrived()
+        #expect(token.hasTap)
+        gate.open()
+        await first.value
+        // The sign-in was refused for credentials: the wait is over, the widget holds no token and no mark.
+        #expect(!model.isWaitingForConfirmation)
+        #expect(!token.hasToken)
+        #expect(!token.hasTap)
+        #expect(await fake.count("POST", "token") == 1)
     }
 
     // MARK: the mark itself
