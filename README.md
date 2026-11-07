@@ -7,7 +7,7 @@
 テーマは「あなたにしかない深さを。」です。作者が自分の 1 年分の注文・配送メール 341 通を読んで分かった、店や運送会社ごとの書き方の癖を、読み取りの規則の土台にしました（`docs/email-field-map.md`）。
 
 - 本番: https://otodoke.app
-- デモ動画: <!-- DEMO_VIDEO_URL --> （公開準備中）
+- デモ動画: https://youtu.be/BLPMP_bYJ8c （3 分）
 
 > Built with Claude: Japan 2026（2026-11-02 〜 11-08）の提出作品です。コードはすべて期間中に新しく書きました。最初のコミットは 2026-11-02 17:19（日本時間）です。
 
@@ -209,7 +209,7 @@ MIT
 ## English overview
 
 **Otodoke — stop planning your day around parcels.**
-Demo video: <!-- DEMO_VIDEO_URL --> (coming soon)
+Demo video: https://youtu.be/BLPMP_bYJ8c (3 min)
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home (no 置き配), and how much you spent this month.
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
