@@ -42,7 +42,7 @@ const WEB_SOURCES: { name: string; file: string; around?: [string, string] }[] =
   { name: "makeKeyHeading", file: `${WEB}/password-panel.tsx` },
   { name: "makeKeyLead", file: `${WEB}/password-panel.tsx` },
   { name: "plainDropNotice", file: "src/lib/mail-notices.ts" },
-  { name: "timePrefix", file: `${WEB}/forwarding-guide.tsx`, around: ['<p className="mt-1 text-xs text-neutral-500">', "{guide.time}</p>"] },
+  { name: "timePrefix", file: "src/components/forwarding-steps.tsx", around: ['<p className="mt-1 text-xs text-neutral-500">', "{guide.time}</p>"] },
 ];
 
 /** A TSX / TS source without its comments (a sentence that only stands in a comment is not the Web's). */

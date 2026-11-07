@@ -189,9 +189,9 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(read("ios/project.yml")).not.toMatch(/AVKit/);
   });
 
-  /** The Web's two lines (GuideVideo in src/app/guide/forwarding/page.tsx), run as they are. */
+  /** The Web's two lines (GuideVideo in src/components/forwarding-steps.tsx), run as they are. */
   function webMinutes(seconds: number): string {
-    const src = read("src/app/guide/forwarding/page.tsx");
+    const src = read("src/components/forwarding-steps.tsx");
     const halvesLine = src.match(/const halves = (.+);/)?.[1];
     const minutesLine = src.match(/const minutes = (.+);/)?.[1];
     if (!halvesLine || !minutesLine) throw new Error("GuideVideo's rounding lines are not found");

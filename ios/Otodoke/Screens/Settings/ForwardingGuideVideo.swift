@@ -1,5 +1,5 @@
 // The explainer videos of 「メールの自動転送の設定」: the heading's length and the address that opens in Safari.
-// The length is rounded the way the Web does it (GuideVideo in src/app/guide/forwarding/page.tsx): to the nearest
+// The length is rounded the way the Web does it (GuideVideo in src/components/forwarding-steps.tsx): to the nearest
 // half minute, never under half a minute. OtodokeTests/ForwardingGuideVideoTests.swift holds a table of the Web's
 // results, and src/lib/__tests__/ios-forwarding-guide.test.ts runs the Web's own two lines to check that table.
 

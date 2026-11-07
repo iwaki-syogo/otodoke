@@ -1,5 +1,5 @@
 import { CopyButton } from "@/components/copy-button";
-import { GMAIL_FILTER, type ForwardingGroup, type ForwardingPitfall } from "@/lib/forwarding-guide";
+import { GMAIL_FILTER, VIDEO_CREDIT, VIDEO_LABEL, type ForwardingGroup, type ForwardingGuide, type ForwardingPitfall } from "@/lib/forwarding-guide";
 
 /**
  * Pieces shared by the public guide (/guide/forwarding) and the settings pages: they render the
@@ -120,5 +120,50 @@ export function FoldCard({ title, children }: { title: string; children: React.R
       </summary>
       <div className="border-t border-neutral-100 px-4 py-3">{children}</div>
     </details>
+  );
+}
+
+/** The explainer video of a guide: plays in place; the length is rounded to the nearest half minute (iOS: ForwardingGuideVideo.swift). */
+export function GuideVideo({ video, title }: { video: NonNullable<ForwardingGuide["video"]>; title: string }) {
+  const halves = Math.max(0.5, Math.round(video.seconds / 30) / 2);
+  const minutes = Number.isInteger(halves) ? `${halves} 分` : halves < 1 ? "半分" : `${Math.floor(halves)} 分半`;
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-bold">
+        {VIDEO_LABEL}・約 {minutes}
+      </h3>
+      <video controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
+        <source src={video.src} type="video/mp4" />
+      </video>
+    </div>
+  );
+}
+
+/** The terms of the voice and the music in the videos, once under a list of guides. */
+export function VideoCredit() {
+  return <p className="mt-3 text-xs text-neutral-500">{VIDEO_CREDIT}</p>;
+}
+
+/** What a service's card shows when opened (settings and welcome): the video comes before any step. */
+export function GuideCardBody({ guide }: { guide: ForwardingGuide }) {
+  return (
+    <>
+      {guide.addresses && <p className="text-xs text-neutral-500">{guide.addresses}</p>}
+      {guide.time && <p className="mt-1 text-xs text-neutral-500">目安: {guide.time}</p>}
+      {guide.video && <GuideVideo video={guide.video} title={guide.title} />}
+      {guide.intro && <p className="mt-3 text-sm leading-6 text-neutral-600">{guide.intro}</p>}
+      {guide.link && (
+        <div className="mt-2">
+          <TextLink href={guide.link.href} label={guide.link.label} />
+          {guide.linkNote && <p className="text-xs text-neutral-500">{guide.linkNote}</p>}
+        </div>
+      )}
+      <GuideGroups groups={guide.groups} />
+      {guide.notes.map((note) => (
+        <p key={note} className="mt-4 text-xs leading-5 text-neutral-500">
+          {note}
+        </p>
+      ))}
+    </>
   );
 }
