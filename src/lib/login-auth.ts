@@ -174,7 +174,8 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
   }
   if (result.error && result.error.code === "user_already_exists" && step === "sign-up") {
     // Registered already (Supabase 422): an answer, not a failure. Nothing is logged as a refusal and
-    // the claim is kept: the press counts against the mail limit exactly as before.
+    // the claim is kept for an existing address (both identities [] and this 422; unlike other
+    // refusals, which give it back): the press counts against the mail limit.
     return { ok: true, existing: true };
   }
   if (result.error) {

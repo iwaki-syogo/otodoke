@@ -23,7 +23,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * here; signing in with the password sends none.
  * - Someone whose mail is slow or in spam and asks again: Supabase already refuses a second
  *   send to one address within a minute, so 3 per 10 minutes is two retries, 6 per hour plenty.
- *   A send Supabase refuses is given back (releaseLoginMail), so pressing the button again
+ *   A send Supabase refuses is given back (releaseLoginMail; except an already-registered address at
+ *   sign-up, which keeps its claim), so pressing the button again
  *   within that minute does not use up the allowance.
  * - Someone who mistyped the address: the typo is a different address with its own count.
  * - Several judges on one office or venue network (one shared IP): 10 per hour from one IP for

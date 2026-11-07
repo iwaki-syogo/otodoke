@@ -309,6 +309,16 @@ describe("resendConfirmation and sendResetMail answer the same for every address
     expect(await sendResetMail({ email: EMAIL })).toEqual({ ok: false, code: "other" });
   });
 
+  it("negative control: user_already_exists is an answer only at sign-up; resend and reset keep sent and give the allowance back", async () => {
+    const error = { status: 422, code: "user_already_exists" };
+    mocks.resend.mockResolvedValue({ data: null, error });
+    mocks.reset.mockResolvedValue({ data: null, error });
+    expect(await resendConfirmation({ email: EMAIL })).toEqual({ ok: true, code: "confirmation_sent" });
+    expect(calls("release_login_mail")).toHaveLength(1);
+    expect(await sendResetMail({ email: EMAIL })).toEqual({ ok: true, code: "reset_sent" });
+    expect(calls("release_login_mail")).toHaveLength(2);
+  });
+
   it("say what is the same for every address: the bot check, the per-IP limit, an outage, the address's form", async () => {
     for (const [error, code] of [
       [{ status: 400, code: "captcha_failed" }, "captcha"],
