@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-05-20_delivered_b8aaaa08.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-ca99c7438cc6@example.invalid>",
+ "date": "2026-05-20T10:50:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「電動歯ブラシ 替えブラシ 4本」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2026/05/20（水）\nお届け方法：宅配ボックスに配達\n\n注文番号：AMZ-8085-19491\nご注文日：2026/05/18（月）\n\nご注文の商品\n* 電動歯ブラシ 替えブラシ 4本\n  数量：1　価格：￥1,980\n\nご請求額：￥1,980\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-8085-19491\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

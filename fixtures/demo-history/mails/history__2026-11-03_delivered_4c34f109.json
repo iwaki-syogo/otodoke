@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-11-03_delivered_4c34f109.eml",
+ "source": "uniqlo",
+ "stage": "delivered",
+ "message_id": "<demo-b55e6eeb28f5@example.invalid>",
+ "date": "2026-11-03T07:20:00+00:00",
+ "from": "uniqlo-order@sample.otodoke.app",
+ "from_name": "ユニクロ オンラインストア",
+ "subject": "＜ユニクロオンラインストア＞商品お届け完了のお知らせ",
+ "text": "ユニクロ オンラインストア をご利用いただきまして、誠にありがとうございます。\nご注文商品のお届けが完了いたしました。\n\nご注文番号：UNQ-9901-19066\nご注文日：2026年11月1日(日)\nお届け日：2026年11月3日(火)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：ライトダウン ジャケット\n数量：1　単価：5,990円\nお支払い合計：5,990円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/UNQ-9901-19066\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

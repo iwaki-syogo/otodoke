@@ -1,0 +1,12 @@
+{
+ "file": "history/2025-12-10_delivered_646fdbe7.eml",
+ "source": "yodobashi",
+ "stage": "delivered",
+ "message_id": "<demo-e1528263cb10@example.invalid>",
+ "date": "2025-12-10T08:45:00+00:00",
+ "from": "yodobashi-order@sample.otodoke.app",
+ "from_name": "ヨドバシ・ドット・コム",
+ "subject": "【ヨドバシ・ドット・コム】お届け完了のお知らせ",
+ "text": "ヨドバシ・ドット・コム をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YDB-6103-31959\nご注文日：2025年12月7日(日)\nお届け日：2025年12月10日(水)\nお届け方法：宅配ボックス\n\n商品名：ワイヤレスイヤホン ノイズキャンセリング\n数量：1　単価：24,800円\nお支払い合計：24,800円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YDB-6103-31959\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

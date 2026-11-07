@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-04-04_delivered_03cc590b.eml",
+ "source": "yodobashi",
+ "stage": "delivered",
+ "message_id": "<demo-9d8edb61b2b5@example.invalid>",
+ "date": "2026-04-04T02:22:00+00:00",
+ "from": "yodobashi-order@sample.otodoke.app",
+ "from_name": "ヨドバシ・ドット・コム",
+ "subject": "【ヨドバシ・ドット・コム】お届け完了のお知らせ",
+ "text": "ヨドバシ・ドット・コム をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YDB-9358-71270\nご注文日：2026年4月2日(木)\nお届け日：2026年4月4日(土)\nお届け方法：宅配ボックス\n\n商品名：Bluetooth スピーカー\n数量：1　単価：8,800円\nお支払い合計：8,800円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YDB-9358-71270\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

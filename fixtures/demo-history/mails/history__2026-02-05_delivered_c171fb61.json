@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-02-05_delivered_c171fb61.eml",
+ "source": "irisplaza",
+ "stage": "delivered",
+ "message_id": "<demo-98c51d739ce0@example.invalid>",
+ "date": "2026-02-05T01:42:00+00:00",
+ "from": "irisplaza-order@sample.otodoke.app",
+ "from_name": "アイリスプラザ",
+ "subject": "【アイリスプラザ】お届け完了のお知らせ",
+ "text": "アイリスプラザ をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：IRS-9298-19772\nご注文日：2026年2月3日(火)\nお届け日：2026年2月5日(木)\nお届け方法：置き配（玄関前）\n配送業者：佐川急便\n\n商品名：電気ケトル 1.0L\n数量：1　単価：3,980円\nお支払い合計：3,980円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/IRS-9298-19772\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

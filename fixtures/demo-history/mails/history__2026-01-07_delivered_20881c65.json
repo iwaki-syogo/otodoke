@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-01-07_delivered_20881c65.eml",
+ "source": "yahoo",
+ "stage": "delivered",
+ "message_id": "<demo-fb48d66d9240@example.invalid>",
+ "date": "2026-01-07T06:53:00+00:00",
+ "from": "yahoo-kawakomono@sample.otodoke.app",
+ "from_name": "革小物の工房 Yahoo!店",
+ "subject": "【革小物の工房 Yahoo!店】商品配達完了のお知らせ",
+ "text": "革小物の工房 Yahoo!店 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YSH-8375-60362\nご注文日：2026年1月5日(月)\nお届け日：2026年1月7日(水)\nお届け方法：ポスト投函\n配送業者：日本郵便\n\n商品名：冬用 手袋\n数量：1　単価：1,480円\nお支払い合計：1,480円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YSH-8375-60362\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

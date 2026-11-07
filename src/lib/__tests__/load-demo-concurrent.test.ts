@@ -8,7 +8,8 @@ import { FakeDb, type Query, type Row } from "./fake-db";
  * the two would then work on neighbouring mails of one order at once, and the filing step has no
  * lock, so that could make two parcels. Three cases count as "being read" (a young pending row, a
  * lost unique-key race, a lost take-over update); any other error still ends on demo_failed.
- * Made-up mails only.
+ * The sample is the 17 anonymized real mails (6 parcels) and the 80 made-up history orders (80
+ * delivered parcels): 97 mails, 86 parcels. Made-up mails only.
  */
 
 const fixed = vi.hoisted(() => ({ entries: [] as import("@/lib/demo").DemoEntry[] }));
@@ -132,14 +133,14 @@ const parcelStates = (d: FakeDb) =>
     .sort();
 
 describe("loadDemo pressed twice", () => {
-  it("one after the other: leaves 17 mails and 6 parcels, and both loads end on /app", async () => {
+  it("one after the other: leaves 97 mails and 86 parcels, and both loads end on /app", async () => {
     expect(await run()).toEqual(["/app"]);
     expect(await run()).toEqual(["/app"]);
-    expect(db.rows("emails")).toHaveLength(17);
-    expect(db.rows("parcels")).toHaveLength(6);
+    expect(db.rows("emails")).toHaveLength(97);
+    expect(db.rows("parcels")).toHaveLength(86);
   });
 
-  it.each(Array.from({ length: 60 }, (_, i) => i))("at the same time (timing %i): 17 mails, 6 parcels, no doubled items; one load ends on /app, the other on /app or /app?demo=busy", async (seed) => {
+  it.each(Array.from({ length: 60 }, (_, i) => i))("at the same time (timing %i): 97 mails, 86 parcels, no doubled items; one load ends on /app, the other on /app or /app?demo=busy", async (seed) => {
     // The FakeDb answers on microtasks only, so once one load is running it would run to its end
     // before the other got a turn. Here every query waits one macrotask first (slowed()), so the
     // two loads take turns at each await, like two requests on a real database. Timing 0 is strict turns;
@@ -183,15 +184,15 @@ describe("loadDemo pressed twice", () => {
     expect(lookups.length).toBeGreaterThanOrEqual(2);
     if (seed === 0) expect(lookups[1]).toBeLessThan(all.indexOf("emails.update"));
 
-    expect(db.rows("emails")).toHaveLength(17);
-    expect(db.rows("parcels")).toHaveLength(6);
+    expect(db.rows("emails")).toHaveLength(97);
+    expect(db.rows("parcels")).toHaveLength(86);
     const items = db.rows("parcel_items").map((r) => JSON.stringify([r.parcel_id, r.name, r.quantity, r.email_id ?? null]));
     expect(new Set(items).size).toBe(items.length);
     expect(overlaps).toEqual([]);
     // And the same parcels as one load alone leaves (no stale write over a newer state).
     expect(parcelStates(db)).toEqual(parcelStates(await aloneDb()));
     const messageIds = db.rows("emails").map((r) => r.message_id);
-    expect(new Set(messageIds).size).toBe(17);
+    expect(new Set(messageIds).size).toBe(97);
   });
 });
 

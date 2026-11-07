@@ -1,0 +1,12 @@
+{
+ "file": "history/2025-12-13_delivered_d95ae995.eml",
+ "source": "yodobashi",
+ "stage": "delivered",
+ "message_id": "<demo-3ce6fd84bb81@example.invalid>",
+ "date": "2025-12-13T08:09:00+00:00",
+ "from": "yodobashi-order@sample.otodoke.app",
+ "from_name": "ヨドバシ・ドット・コム",
+ "subject": "【ヨドバシ・ドット・コム】お届け完了のお知らせ",
+ "text": "ヨドバシ・ドット・コム をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YDB-0630-69055\nご注文日：2025年12月12日(金)\nお届け日：2025年12月13日(土)\nお届け方法：宅配ボックス\n\n商品名：ワイヤレスマウス\n数量：1　単価：1,980円\nお支払い合計：1,980円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YDB-0630-69055\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

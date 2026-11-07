@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-10-10_delivered_97dd89d3.eml",
+ "source": "uniqlo",
+ "stage": "delivered",
+ "message_id": "<demo-fbd1193524cd@example.invalid>",
+ "date": "2026-10-10T09:17:00+00:00",
+ "from": "uniqlo-order@sample.otodoke.app",
+ "from_name": "ユニクロ オンラインストア",
+ "subject": "＜ユニクロオンラインストア＞商品お届け完了のお知らせ",
+ "text": "ユニクロ オンラインストア をご利用いただきまして、誠にありがとうございます。\nご注文商品のお届けが完了いたしました。\n\nご注文番号：UNQ-0047-84904\nご注文日：2026年10月7日(水)\nお届け日：2026年10月10日(土)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：スウェット パーカー\n数量：1　単価：3,990円\nお支払い合計：3,990円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/UNQ-0047-84904\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

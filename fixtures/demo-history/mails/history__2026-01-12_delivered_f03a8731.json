@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-01-12_delivered_f03a8731.eml",
+ "source": "yahoo",
+ "stage": "delivered",
+ "message_id": "<demo-e8e9df68471f@example.invalid>",
+ "date": "2026-01-12T06:17:00+00:00",
+ "from": "yahoo-sports@sample.otodoke.app",
+ "from_name": "スポーツ用品のお店 Yahoo!店",
+ "subject": "【スポーツ用品のお店 Yahoo!店】商品配達完了のお知らせ",
+ "text": "スポーツ用品のお店 Yahoo!店 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YSH-7946-83533\nご注文日：2026年1月10日(土)\nお届け日：2026年1月12日(月)\nお届け方法：ポスト投函\n配送業者：日本郵便\n\n商品名：ヨガマット 厚さ10mm\n数量：1　単価：1,690円\nお支払い合計：1,690円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YSH-7946-83533\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-09-24_delivered_e35cec99.eml",
+ "source": "kurashi",
+ "stage": "delivered",
+ "message_id": "<demo-f826ae9d1d5c@example.invalid>",
+ "date": "2026-09-24T03:10:00+00:00",
+ "from": "kurashi-mall@sample.otodoke.app",
+ "from_name": "日用品の通販 くらしモール",
+ "subject": "【日用品の通販 くらしモール】お届け完了のお知らせ",
+ "text": "日用品の通販 くらしモール をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：KRS-8997-32503\nご注文日：2026年9月22日(火)\nお届け日：2026年9月24日(木)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：トイレットペーパー 12ロール×4パック\n数量：1　単価：2,980円\nお支払い合計：2,980円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/KRS-8997-32503\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

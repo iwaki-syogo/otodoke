@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-03-20_delivered_dcf88800.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-8da5d1b5f984@example.invalid>",
+ "date": "2026-03-20T04:40:00+00:00",
+ "from": "rakuten-ofuro@sample.otodoke.app",
+ "from_name": "お風呂じかん 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（お風呂じかん 楽天市場店）",
+ "text": "このたびは お風呂じかん 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-9918-13701\n[注文日時] 2026年3月19日(木) 22:00\n[お届け日] 2026年3月20日(金)\n[お届け方法] 置き配（玄関前）\n[配送業者] ヤマト運輸\n\n[商品] 入浴剤 詰め合わせ 30錠\n  価格 1,580円 × 1個\n[合計金額] 1,580円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-9918-13701\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

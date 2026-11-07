@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-04-05_delivered_f6f45395.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-ccb2f73442d4@example.invalid>",
+ "date": "2026-04-05T09:31:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「ボードゲーム 2〜4人用」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2026/04/05（日）\nお届け方法：玄関前に置き配\n\n注文番号：AMZ-0859-41807\nご注文日：2026/04/03（金）\n\nご注文の商品\n* ボードゲーム 2〜4人用\n  数量：1　価格：￥3,520\n\nご請求額：￥3,520\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-0859-41807\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

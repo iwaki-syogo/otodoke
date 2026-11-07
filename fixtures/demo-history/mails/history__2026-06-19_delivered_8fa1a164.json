@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-06-19_delivered_8fa1a164.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-a722e40e88b4@example.invalid>",
+ "date": "2026-06-19T10:55:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「歯ブラシ ふつう 10本」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2026/06/19（金）\nお届け方法：郵便受けに配達\n\n注文番号：AMZ-1244-02341\nご注文日：2026/06/18（木）\n\nご注文の商品\n* 歯ブラシ ふつう 10本\n  数量：1　価格：￥880\n\nご請求額：￥880\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-1244-02341\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

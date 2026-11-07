@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-11-02_delivered_c44e2014.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-0a113e5f40a4@example.invalid>",
+ "date": "2026-11-02T00:47:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「ボックスティッシュ 5箱×3パック」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2026/11/02（月）\nお届け方法：郵便受けに配達\n\n注文番号：AMZ-1590-70974\nご注文日：2026/10/30（金）\n\nご注文の商品\n* ボックスティッシュ 5箱×3パック\n  数量：1　価格：￥1,650\n\nご請求額：￥1,650\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-1590-70974\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

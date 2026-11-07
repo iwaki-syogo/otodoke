@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-05-23_delivered_c44bc038.eml",
+ "source": "uniqlo",
+ "stage": "delivered",
+ "message_id": "<demo-de4874cc3bdf@example.invalid>",
+ "date": "2026-05-23T09:39:00+00:00",
+ "from": "uniqlo-order@sample.otodoke.app",
+ "from_name": "ユニクロ オンラインストア",
+ "subject": "＜ユニクロオンラインストア＞商品お届け完了のお知らせ",
+ "text": "ユニクロ オンラインストア をご利用いただきまして、誠にありがとうございます。\nご注文商品のお届けが完了いたしました。\n\nご注文番号：UNQ-2838-41574\nご注文日：2026年5月20日(水)\nお届け日：2026年5月23日(土)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：ストレッチ スリムパンツ\n数量：1　単価：3,990円\nお支払い合計：3,990円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/UNQ-2838-41574\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

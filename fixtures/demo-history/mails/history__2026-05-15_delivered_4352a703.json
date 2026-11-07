@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-05-15_delivered_4352a703.eml",
+ "source": "kurashi",
+ "stage": "delivered",
+ "message_id": "<demo-9d7b51de31b6@example.invalid>",
+ "date": "2026-05-15T03:21:00+00:00",
+ "from": "kurashi-mall@sample.otodoke.app",
+ "from_name": "日用品の通販 くらしモール",
+ "subject": "【日用品の通販 くらしモール】お届け完了のお知らせ",
+ "text": "日用品の通販 くらしモール をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：KRS-5756-60593\nご注文日：2026年5月12日(火)\nお届け日：2026年5月15日(金)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：キッチンペーパー 12ロール\n数量：1　単価：1,280円\nお支払い合計：1,280円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/KRS-5756-60593\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

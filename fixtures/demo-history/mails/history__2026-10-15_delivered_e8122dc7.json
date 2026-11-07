@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-10-15_delivered_e8122dc7.eml",
+ "source": "kurashi",
+ "stage": "delivered",
+ "message_id": "<demo-20646b93c3e0@example.invalid>",
+ "date": "2026-10-15T04:23:00+00:00",
+ "from": "kurashi-mall@sample.otodoke.app",
+ "from_name": "日用品の通販 くらしモール",
+ "subject": "【日用品の通販 くらしモール】お届け完了のお知らせ",
+ "text": "日用品の通販 くらしモール をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：KRS-2136-75166\nご注文日：2026年10月13日(火)\nお届け日：2026年10月15日(木)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：緑茶 ティーバッグ 100包\n数量：1　単価：1,620円\nお支払い合計：1,620円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/KRS-2136-75166\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

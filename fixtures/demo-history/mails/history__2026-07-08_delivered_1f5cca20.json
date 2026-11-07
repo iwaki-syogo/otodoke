@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-07-08_delivered_1f5cca20.eml",
+ "source": "irisplaza",
+ "stage": "delivered",
+ "message_id": "<demo-a44302b424ad@example.invalid>",
+ "date": "2026-07-08T08:52:00+00:00",
+ "from": "irisplaza-order@sample.otodoke.app",
+ "from_name": "アイリスプラザ",
+ "subject": "【アイリスプラザ】お届け完了のお知らせ",
+ "text": "アイリスプラザ をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：IRS-9792-22795\nご注文日：2026年7月6日(月)\nお届け日：2026年7月8日(水)\nお届け方法：置き配（玄関前）\n配送業者：佐川急便\n\n商品名：玄米 5kg\n数量：1　単価：3,680円\nお支払い合計：3,680円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/IRS-9792-22795\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

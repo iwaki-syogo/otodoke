@@ -129,7 +129,8 @@ describe("reading an answer: a whole number the columns cannot hold is unknown",
   it("gives every demo reading exactly what the schema check alone gave", async () => {
     const plain = zodOutputFormat(ExtractionSchema);
     const entries = await loadDemoEntries("2026-11-04", new Date("2026-11-04T03:00:00Z"));
-    expect(entries.length).toBe(17);
+    // 17 anonymized real mails and 80 made-up history orders.
+    expect(entries.length).toBe(97);
     for (const { mail, extraction } of entries) {
       sdk.answer = JSON.stringify(extraction);
       const { data } = await extractEmail({ from: "a@example.test", subject: "件名", sentAt: null, body: "本文" });

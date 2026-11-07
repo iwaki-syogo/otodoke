@@ -1,0 +1,12 @@
+{
+ "file": "history/2025-12-20_delivered_35ba7923.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-f2cae52d35b5@example.invalid>",
+ "date": "2025-12-20T09:12:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「文庫本 ミステリー 上巻 他1点」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2025/12/20（土）\nお届け方法：郵便受けに配達\n\n注文番号：AMZ-5105-01780\nご注文日：2025/12/19（金）\n\nご注文の商品\n* 文庫本 ミステリー 上巻\n  数量：1　価格：￥792\n* 文庫本 ミステリー 下巻\n  数量：1　価格：￥792\n\nご請求額：￥1,584\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-5105-01780\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

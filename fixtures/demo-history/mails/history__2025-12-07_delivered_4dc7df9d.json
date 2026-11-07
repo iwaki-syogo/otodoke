@@ -1,0 +1,12 @@
+{
+ "file": "history/2025-12-07_delivered_4dc7df9d.eml",
+ "source": "yahoo",
+ "stage": "delivered",
+ "message_id": "<demo-4e2e15efdf20@example.invalid>",
+ "date": "2025-12-07T05:57:00+00:00",
+ "from": "yahoo-nuts@sample.otodoke.app",
+ "from_name": "ナッツの専門店 Yahoo!店",
+ "subject": "【ナッツの専門店 Yahoo!店】商品配達完了のお知らせ",
+ "text": "ナッツの専門店 Yahoo!店 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YSH-0560-97742\nご注文日：2025年12月4日(木)\nお届け日：2025年12月7日(日)\nお届け方法：ポスト投函\n配送業者：日本郵便\n\n商品名：ミックスナッツ 素焼き 1kg\n数量：1　単価：1,850円\nお支払い合計：1,850円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YSH-0560-97742\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

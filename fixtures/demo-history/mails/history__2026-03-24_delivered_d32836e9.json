@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-03-24_delivered_d32836e9.eml",
+ "source": "irisplaza",
+ "stage": "delivered",
+ "message_id": "<demo-c5bc65ea653e@example.invalid>",
+ "date": "2026-03-24T08:29:00+00:00",
+ "from": "irisplaza-order@sample.otodoke.app",
+ "from_name": "アイリスプラザ",
+ "subject": "【アイリスプラザ】お届け完了のお知らせ",
+ "text": "アイリスプラザ をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：IRS-4364-36631\nご注文日：2026年3月21日(土)\nお届け日：2026年3月24日(火)\nお届け方法：置き配（玄関前）\n配送業者：佐川急便\n\n商品名：スチールラック 5段 幅90cm\n数量：1　単価：8,980円\nお支払い合計：8,980円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/IRS-4364-36631\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

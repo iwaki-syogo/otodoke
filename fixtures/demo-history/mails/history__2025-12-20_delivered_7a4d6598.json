@@ -1,0 +1,12 @@
+{
+ "file": "history/2025-12-20_delivered_7a4d6598.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-b07bbdf448a9@example.invalid>",
+ "date": "2025-12-20T06:43:00+00:00",
+ "from": "rakuten-wrapping@sample.otodoke.app",
+ "from_name": "ラッピング資材の店 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（ラッピング資材の店 楽天市場店）",
+ "text": "このたびは ラッピング資材の店 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-8846-29825\n[注文日時] 2025年12月18日(木) 14:16\n[お届け日] 2025年12月20日(土)\n[お届け方法] 宅配ボックス\n[配送業者] 佐川急便\n\n[商品] ギフト ラッピング袋 10枚\n  価格 660円 × 1個\n[合計金額] 660円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-8846-29825\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

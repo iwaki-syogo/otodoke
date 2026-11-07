@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-09-21_delivered_7e647d64.eml",
+ "source": "yahoo",
+ "stage": "delivered",
+ "message_id": "<demo-2f9f05527fb1@example.invalid>",
+ "date": "2026-09-21T05:29:00+00:00",
+ "from": "yahoo-interior@sample.otodoke.app",
+ "from_name": "インテリア雑貨のお店 Yahoo!店",
+ "subject": "【インテリア雑貨のお店 Yahoo!店】商品配達完了のお知らせ",
+ "text": "インテリア雑貨のお店 Yahoo!店 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YSH-1277-10462\nご注文日：2026年9月20日(日)\nお届け日：2026年9月21日(月)\nお届け方法：ポスト投函\n配送業者：日本郵便\n\n商品名：突っ張り棒 2本組\n数量：1　単価：1,380円\nお支払い合計：1,380円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YSH-1277-10462\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

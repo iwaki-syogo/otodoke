@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-07-10_delivered_a75bf276.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-c301f1b11e1c@example.invalid>",
+ "date": "2026-07-10T00:45:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「無地 Tシャツ 3枚セット」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2026/07/10（金）\nお届け方法：玄関前に置き配\n\n注文番号：AMZ-3223-25356\nご注文日：2026/07/08（水）\n\nご注文の商品\n* 無地 Tシャツ 3枚セット\n  数量：1　価格：￥1,980\n\nご請求額：￥1,980\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-3223-25356\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

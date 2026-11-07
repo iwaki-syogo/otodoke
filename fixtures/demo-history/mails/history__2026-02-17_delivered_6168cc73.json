@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-02-17_delivered_6168cc73.eml",
+ "source": "kurashi",
+ "stage": "delivered",
+ "message_id": "<demo-95deacece34e@example.invalid>",
+ "date": "2026-02-17T06:26:00+00:00",
+ "from": "kurashi-mall@sample.otodoke.app",
+ "from_name": "日用品の通販 くらしモール",
+ "subject": "【日用品の通販 くらしモール】お届け完了のお知らせ",
+ "text": "日用品の通販 くらしモール をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：KRS-3510-03282\nご注文日：2026年2月14日(土)\nお届け日：2026年2月17日(火)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：食器用洗剤 詰め替え 大容量\n数量：1　単価：698円\nお支払い合計：698円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/KRS-3510-03282\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

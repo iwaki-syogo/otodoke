@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-09-27_delivered_a3bb2333.eml",
+ "source": "yahoo",
+ "stage": "delivered",
+ "message_id": "<demo-62edfd03bcaf@example.invalid>",
+ "date": "2026-09-27T00:26:00+00:00",
+ "from": "yahoo-bath@sample.otodoke.app",
+ "from_name": "バス用品ストア Yahoo!店",
+ "subject": "【バス用品ストア Yahoo!店】商品配達完了のお知らせ",
+ "text": "バス用品ストア Yahoo!店 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YSH-4395-88696\nご注文日：2026年9月25日(金)\nお届け日：2026年9月27日(日)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：珪藻土 バスマット\n数量：1　単価：1,780円\nお支払い合計：1,780円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YSH-4395-88696\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

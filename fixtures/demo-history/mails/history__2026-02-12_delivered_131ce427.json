@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-02-12_delivered_131ce427.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-ea12a7a38c0c@example.invalid>",
+ "date": "2026-02-12T02:59:00+00:00",
+ "from": "rakuten-coat@sample.otodoke.app",
+ "from_name": "コートの専門店 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（コートの専門店 楽天市場店）",
+ "text": "このたびは コートの専門店 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-0717-83705\n[注文日時] 2026年2月9日(月) 14:26\n[お届け日] 2026年2月12日(木)\n[お届け方法] 宅配ボックス\n[配送業者] 佐川急便\n\n[商品] ウール コート\n  価格 14,800円 × 1個\n[合計金額] 14,800円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-0717-83705\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

@@ -60,6 +60,8 @@ describe("the demo fixtures are traced for the page that renders the DemoLoader"
     expect(read("demo/page.tsx")).toContain("<DemoLoader");
     const includes = nextConfig.outputFileTracingIncludes ?? {};
     expect(includes["/app/settings/demo"]).toContain("./fixtures/demo/**/*.json");
+    // The made-up order history the sample loads with them (src/lib/demo.ts).
+    expect(includes["/app/settings/demo"]).toContain("./fixtures/demo-history/**/*.json");
     // The list page does not read fixtures: only the demo page holds them.
     expect(Object.keys(includes)).toEqual(["/app/settings/demo"]);
   });

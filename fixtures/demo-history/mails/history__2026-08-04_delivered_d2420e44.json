@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-08-04_delivered_d2420e44.eml",
+ "source": "other",
+ "stage": "delivered",
+ "message_id": "<demo-cb044d96a172@example.invalid>",
+ "date": "2026-08-04T03:17:00+00:00",
+ "from": "happa@sample.otodoke.app",
+ "from_name": "グリーンの店 はっぱ",
+ "subject": "【グリーンの店 はっぱ】お届け完了のお知らせ",
+ "text": "グリーンの店 はっぱ をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：SHP-4928-95127\nご注文日：2026年8月2日(日)\nお届け日：2026年8月4日(火)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：観葉植物 鉢植え\n数量：1　単価：3,980円\nお支払い合計：3,980円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/SHP-4928-95127\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-05-02_delivered_2b77a061.eml",
+ "source": "yodobashi",
+ "stage": "delivered",
+ "message_id": "<demo-690fe04ff709@example.invalid>",
+ "date": "2026-05-02T06:00:00+00:00",
+ "from": "yodobashi-order@sample.otodoke.app",
+ "from_name": "ヨドバシ・ドット・コム",
+ "subject": "【ヨドバシ・ドット・コム】お届け完了のお知らせ",
+ "text": "ヨドバシ・ドット・コム をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YDB-8306-52978\nご注文日：2026年4月30日(木)\nお届け日：2026年5月2日(土)\nお届け方法：宅配ボックス\n\n商品名：microSD カード 128GB\n数量：1　単価：1,880円\nお支払い合計：1,880円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YDB-8306-52978\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

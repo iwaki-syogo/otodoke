@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-09-09_delivered_a45e91f0.eml",
+ "source": "other",
+ "stage": "delivered",
+ "message_id": "<demo-c1f4c4dbd35f@example.invalid>",
+ "date": "2026-09-09T08:58:00+00:00",
+ "from": "hana@sample.otodoke.app",
+ "from_name": "花の定期便",
+ "subject": "【花の定期便】お届け完了のお知らせ",
+ "text": "花の定期便 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：SHP-1820-55739\nご注文日：2026年9月8日(火)\nお届け日：2026年9月9日(水)\nお届け方法：宅配ボックス\n配送業者：佐川急便\n\n商品名：季節の花束\n数量：1　単価：3,300円\nお支払い合計：3,300円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/SHP-1820-55739\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

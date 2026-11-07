@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-01-15_delivered_97e7f627.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-15050d505223@example.invalid>",
+ "date": "2026-01-15T00:45:00+00:00",
+ "from": "rakuten-minoriya@sample.otodoke.app",
+ "from_name": "お米の産直 みのり屋 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（お米の産直 みのり屋 楽天市場店）",
+ "text": "このたびは お米の産直 みのり屋 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-3974-61543\n[注文日時] 2026年1月14日(水) 14:04\n[お届け日] 2026年1月15日(木)\n[お届け方法] 宅配ボックス\n[配送業者] 佐川急便\n\n[商品] 無洗米 5kg\n  価格 3,280円 × 1個\n[合計金額] 3,280円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-3974-61543\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

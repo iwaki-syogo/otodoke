@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-06-29_delivered_1003512b.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-48c182dd1e7d@example.invalid>",
+ "date": "2026-06-29T10:15:00+00:00",
+ "from": "rakuten-youhouen@sample.otodoke.app",
+ "from_name": "養蜂園の直売所 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（養蜂園の直売所 楽天市場店）",
+ "text": "このたびは 養蜂園の直売所 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-2980-44963\n[注文日時] 2026年6月28日(日) 07:14\n[お届け日] 2026年6月29日(月)\n[お届け方法] 宅配ボックス\n[配送業者] 佐川急便\n\n[商品] 国産 はちみつ 500g\n  価格 2,680円 × 1個\n[合計金額] 2,680円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-2980-44963\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

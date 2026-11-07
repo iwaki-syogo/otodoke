@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-03-11_delivered_c77e63ae.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-c1c2fdb69f43@example.invalid>",
+ "date": "2026-03-11T06:03:00+00:00",
+ "from": "rakuten-shuno@sample.otodoke.app",
+ "from_name": "収納と暮らしの店 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（収納と暮らしの店 楽天市場店）",
+ "text": "このたびは 収納と暮らしの店 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-4419-32344\n[注文日時] 2026年3月8日(日) 09:47\n[お届け日] 2026年3月11日(水)\n[お届け方法] 宅配ボックス\n[配送業者] 佐川急便\n\n[商品] 収納ケース 引き出し 3段\n  価格 3,480円 × 1個\n[合計金額] 3,480円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-4419-32344\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

@@ -7,10 +7,13 @@ import { SAMPLE_ID_PREFIX } from "@/lib/mail-keys";
 import type { InboundEmail, PipelineOptions } from "@/lib/pipeline";
 
 /**
- * Demo data = anonymized real emails in `fixtures/demo/` (see README「持ち込んだデータ」).
+ * Demo data = anonymized real emails in `fixtures/demo/` (see README「持ち込んだデータ」), and a
+ * made-up year of delivered orders in `fixtures/demo-history/` (written by
+ * scripts/make-demo-history.ts) so the spend page has months to show.
  * Their dates are moved so that the story lands around today; the Claude results are
- * precomputed by `npm run eval -- --set demo --write-demo-cache`, so pressing the demo
- * button costs nothing and returns immediately.
+ * precomputed (`npm run eval -- --set demo --write-demo-cache` for the real mails, the script for
+ * the history), so pressing the demo button costs nothing and never calls the API.
+ * Only `fixtures/demo` is the accuracy set: readDemoMails, which scripts/eval.ts reads, has no history.
  */
 const Mail = z.object({
   file: z.string(),
@@ -39,10 +42,13 @@ const DemoSet = z.object({
 });
 
 const DEMO_DIR = path.join(process.cwd(), "fixtures", "demo");
+const HISTORY_DIR = path.join(process.cwd(), "fixtures", "demo-history");
+/** What the sample loads: the anonymized real mails, then the made-up order history. Each has its own set.json and extractions.json. */
+const SAMPLE_DIRS = [DEMO_DIR, HISTORY_DIR];
 
-function mailPath(file: string): string {
+function mailPath(dir: string, file: string): string {
   if (!/^[a-z]+\/[\w-]+$/.test(file)) throw new Error(`demo set: unexpected path ${file}`);
-  return path.join(DEMO_DIR, "mails", `${file.replace("/", "__")}.json`);
+  return path.join(dir, "mails", `${file.replace("/", "__")}.json`);
 }
 
 const WEEKDAYS = "日月火水木金土";
@@ -110,11 +116,12 @@ function keepMailsInThePast(entries: DemoEntry[], now: Date): DemoEntry[] {
     .reverse();
 }
 
+/** The anonymized real mails only (the accuracy set scripts/eval.ts scores), never the made-up history. */
 export async function readDemoMails(): Promise<DemoMail[]> {
   const set = DemoSet.parse(JSON.parse(await readFile(path.join(DEMO_DIR, "set.json"), "utf8")));
   const mails: DemoMail[] = [];
   for (const g of set.groups) {
-    for (const f of g.files) mails.push(Mail.parse(JSON.parse(await readFile(mailPath(f), "utf8"))));
+    for (const f of g.files) mails.push(Mail.parse(JSON.parse(await readFile(mailPath(DEMO_DIR, f), "utf8"))));
   }
   return mails;
 }
@@ -124,32 +131,40 @@ export interface DemoEntry {
   extraction: Extraction;
 }
 
-/** The demo mails with dates moved around `today`, oldest first, each with its precomputed Claude result. */
+/**
+ * Every sample mail (the real ones and the made-up history) with dates moved around `today`,
+ * oldest first, each with its precomputed Claude result.
+ */
 export async function loadDemoEntries(today = todayJst(), now = new Date()): Promise<DemoEntry[]> {
-  const set = DemoSet.parse(JSON.parse(await readFile(path.join(DEMO_DIR, "set.json"), "utf8")));
-  const cache = z
-    // The cache was written before some fields existed; those are filled with "not stated".
-    .record(z.string(), ExtractionSchema.partial({ package_description: true, expected_date_end: true, other_orders: true, category: true }).transform((x) => withDefaults(x as Extraction)))
-    .parse(JSON.parse(await readFile(path.join(DEMO_DIR, "extractions.json"), "utf8")));
-
   const entries: DemoEntry[] = [];
-  for (const g of set.groups) {
-    const days = daysBetween(g.anchor, addDays(today, g.target));
-    const year = Number(g.anchor.slice(0, 4));
-    for (const f of g.files) {
-      const mail = Mail.parse(JSON.parse(await readFile(mailPath(f), "utf8")));
-      const extraction = cache[mail.file];
-      if (!extraction) throw new Error(`demo set: ${mail.file} has no precomputed extraction`);
-      entries.push({
-        mail: {
-          ...mail,
-          subject: shiftDatesInText(mail.subject, days, year),
-          text: mail.text === null ? null : shiftDatesInText(mail.text, days, year),
-          html: mail.html === null ? null : shiftDatesInText(mail.html, days, year),
-          date: mail.date ? new Date(new Date(mail.date).getTime() + days * 86_400_000).toISOString() : null,
-        },
-        extraction: shiftDatesDeep(extraction, days, year),
-      });
+  const seen = new Set<string>();
+  for (const dir of SAMPLE_DIRS) {
+    const set = DemoSet.parse(JSON.parse(await readFile(path.join(dir, "set.json"), "utf8")));
+    const cache = z
+      // The cache was written before some fields existed; those are filled with "not stated".
+      .record(z.string(), ExtractionSchema.partial({ package_description: true, expected_date_end: true, other_orders: true, category: true }).transform((x) => withDefaults(x as Extraction)))
+      .parse(JSON.parse(await readFile(path.join(dir, "extractions.json"), "utf8")));
+    for (const g of set.groups) {
+      const days = daysBetween(g.anchor, addDays(today, g.target));
+      const year = Number(g.anchor.slice(0, 4));
+      for (const f of g.files) {
+        const mail = Mail.parse(JSON.parse(await readFile(mailPath(dir, f), "utf8")));
+        const extraction = cache[mail.file];
+        if (!extraction) throw new Error(`demo set: ${mail.file} has no precomputed extraction`);
+        // The file name is the mail's id in the database (demoInput): two of one name would be one mail.
+        if (seen.has(mail.file)) throw new Error(`demo set: ${mail.file} appears twice`);
+        seen.add(mail.file);
+        entries.push({
+          mail: {
+            ...mail,
+            subject: shiftDatesInText(mail.subject, days, year),
+            text: mail.text === null ? null : shiftDatesInText(mail.text, days, year),
+            html: mail.html === null ? null : shiftDatesInText(mail.html, days, year),
+            date: mail.date ? new Date(new Date(mail.date).getTime() + days * 86_400_000).toISOString() : null,
+          },
+          extraction: shiftDatesDeep(extraction, days, year),
+        });
+      }
     }
   }
   entries.sort((a, b) => (a.mail.date ?? "").localeCompare(b.mail.date ?? ""));

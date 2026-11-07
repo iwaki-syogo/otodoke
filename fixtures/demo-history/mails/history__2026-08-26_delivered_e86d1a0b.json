@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-08-26_delivered_e86d1a0b.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-567c039c4176@example.invalid>",
+ "date": "2026-08-26T06:09:00+00:00",
+ "from": "rakuten-sotoasobi@sample.otodoke.app",
+ "from_name": "アウトドア用品 そとあそび 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（アウトドア用品 そとあそび 楽天市場店）",
+ "text": "このたびは アウトドア用品 そとあそび 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-4300-62625\n[注文日時] 2026年8月24日(月) 22:44\n[お届け日] 2026年8月26日(水)\n[お届け方法] ポスト投函\n[配送業者] 日本郵便\n\n[商品] LED ランタン キャンプ用\n  価格 2,980円 × 1個\n[合計金額] 2,980円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-4300-62625\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

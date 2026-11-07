@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-09-27_delivered_b9b591b5.eml",
+ "source": "other",
+ "stage": "delivered",
+ "message_id": "<demo-c6a6bb45d7ad@example.invalid>",
+ "date": "2026-09-27T04:03:00+00:00",
+ "from": "kitanomegumi@sample.otodoke.app",
+ "from_name": "北のめぐみ農園",
+ "subject": "【北のめぐみ農園】お届け完了のお知らせ",
+ "text": "北のめぐみ農園 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：SHP-0339-21564\nご注文日：2026年9月24日(木)\nお届け日：2026年9月27日(日)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：北海道産 じゃがいも 5kg\n数量：1　単価：2,980円\nお支払い合計：2,980円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/SHP-0339-21564\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

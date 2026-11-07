@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-04-11_delivered_11986ef7.eml",
+ "source": "uniqlo",
+ "stage": "delivered",
+ "message_id": "<demo-72ff35824379@example.invalid>",
+ "date": "2026-04-11T09:00:00+00:00",
+ "from": "uniqlo-order@sample.otodoke.app",
+ "from_name": "ユニクロ オンラインストア",
+ "subject": "＜ユニクロオンラインストア＞商品お届け完了のお知らせ",
+ "text": "ユニクロ オンラインストア をご利用いただきまして、誠にありがとうございます。\nご注文商品のお届けが完了いたしました。\n\nご注文番号：UNQ-1636-57754\nご注文日：2026年4月9日(木)\nお届け日：2026年4月11日(土)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：靴下 3足組\n数量：1　単価：990円\nお支払い合計：990円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/UNQ-1636-57754\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

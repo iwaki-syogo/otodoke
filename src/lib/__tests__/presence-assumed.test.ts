@@ -274,9 +274,15 @@ describe("the demo set the judges load", () => {
       if (chosen) Object.assign(chosen, buildParcelUpdate(chosen, x, mail.date));
       else if (startsParcel(x)) rows.push({ ...buildParcelInsert("demo", x, mail.date), id: String(rows.length), created_at: mail.date ?? "", itemNames: x.items.map((i) => i.name) } as unknown as ParcelCandidate);
     }
-    expect(rows).toHaveLength(6);
+    // The 6 parcels of the real mails and the 80 of the made-up history, which are all delivered.
+    expect(rows).toHaveLength(86);
     const { PresenceBadge } = await import("@/app/app/parcel-card");
     const red = rows.filter((r) => faceToFace(r) === true);
+    // The history adds no red mark: every one of its mails says the parcel was left at the door.
+    const history = rows.filter((r) => r.status === "delivered" && /^[A-Z]{3}-\d{4}-\d{5}$/.test(r.order_number ?? ""));
+    expect(history).toHaveLength(80);
+    for (const r of history) expect(r.requires_presence, r.order_number ?? "").toBe(false);
+    expect(red.length).toBe(rows.filter((r) => !history.includes(r) && faceToFace(r) === true).length);
     const assumed = red.filter((r) => faceToFaceAssumed(r));
     const stated = red.filter((r) => !faceToFaceAssumed(r));
     // Both kinds are in the demo, so both wordings are on the judges' screens.

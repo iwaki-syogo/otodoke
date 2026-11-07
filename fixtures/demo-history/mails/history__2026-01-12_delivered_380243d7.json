@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-01-12_delivered_380243d7.eml",
+ "source": "uniqlo",
+ "stage": "delivered",
+ "message_id": "<demo-a5a0978cc408@example.invalid>",
+ "date": "2026-01-12T07:59:00+00:00",
+ "from": "uniqlo-order@sample.otodoke.app",
+ "from_name": "ユニクロ オンラインストア",
+ "subject": "＜ユニクロオンラインストア＞商品お届け完了のお知らせ",
+ "text": "ユニクロ オンラインストア をご利用いただきまして、誠にありがとうございます。\nご注文商品のお届けが完了いたしました。\n\nご注文番号：UNQ-8000-79088\nご注文日：2026年1月9日(金)\nお届け日：2026年1月12日(月)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：あったか 長袖インナー\n数量：2　単価：1,290円\nお支払い合計：2,580円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/UNQ-8000-79088\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

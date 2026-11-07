@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-05-26_delivered_8d7ca06d.eml",
+ "source": "other",
+ "stage": "delivered",
+ "message_id": "<demo-d6969c313913@example.invalid>",
+ "date": "2026-05-26T00:30:00+00:00",
+ "from": "yamanami@sample.otodoke.app",
+ "from_name": "キャンプ用品の専門店 やまなみ",
+ "subject": "【キャンプ用品の専門店 やまなみ】お届け完了のお知らせ",
+ "text": "キャンプ用品の専門店 やまなみ をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：SHP-3267-29674\nご注文日：2026年5月23日(土)\nお届け日：2026年5月26日(火)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：ドーム型 テント 2人用\n数量：1　単価：12,800円\nお支払い合計：12,800円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/SHP-3267-29674\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

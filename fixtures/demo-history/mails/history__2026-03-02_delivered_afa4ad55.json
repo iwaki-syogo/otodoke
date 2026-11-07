@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-03-02_delivered_afa4ad55.eml",
+ "source": "rakuten",
+ "stage": "delivered",
+ "message_id": "<demo-f1a38633ac25@example.invalid>",
+ "date": "2026-03-02T07:08:00+00:00",
+ "from": "rakuten-mameya@sample.otodoke.app",
+ "from_name": "自家焙煎珈琲 まめや 楽天市場店",
+ "subject": "【楽天市場】商品お届け完了のお知らせ（自家焙煎珈琲 まめや 楽天市場店）",
+ "text": "このたびは 自家焙煎珈琲 まめや 楽天市場店 をご利用いただき、誠にありがとうございます。\nご注文の商品のお届けが完了しました。\n\n[受注番号] RKT-3970-92538\n[注文日時] 2026年2月27日(金) 07:29\n[お届け日] 2026年3月2日(月)\n[お届け方法] 置き配（玄関前）\n[配送業者] ヤマト運輸\n\n[商品] コーヒー豆 中煎り 500g\n  価格 2,380円 × 1個\n[合計金額] 2,380円\n\nご注文の確認はこちら\nhttps://sample.otodoke.app/orders/RKT-3970-92538\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

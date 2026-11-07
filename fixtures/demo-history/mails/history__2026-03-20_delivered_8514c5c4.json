@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-03-20_delivered_8514c5c4.eml",
+ "source": "irisplaza",
+ "stage": "delivered",
+ "message_id": "<demo-7924c84aa3a4@example.invalid>",
+ "date": "2026-03-20T03:54:00+00:00",
+ "from": "irisplaza-order@sample.otodoke.app",
+ "from_name": "アイリスプラザ",
+ "subject": "【アイリスプラザ】お届け完了のお知らせ",
+ "text": "アイリスプラザ をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：IRS-9493-01591\nご注文日：2026年3月18日(水)\nお届け日：2026年3月20日(金)\nお届け方法：置き配（玄関前）\n配送業者：佐川急便\n\n商品名：天然水 2L×9本\n数量：1　単価：1,580円\nお支払い合計：1,580円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/IRS-9493-01591\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

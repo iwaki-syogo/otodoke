@@ -251,7 +251,8 @@ describe("demo mails", () => {
       const now = new Date(nowIso);
       const today = todayJst(now);
       const entries = await loadDemoEntries(today, now);
-      expect(entries).toHaveLength(17);
+      // 17 anonymized real mails and 80 made-up history orders.
+      expect(entries).toHaveLength(97);
       const sent = entries.map((e) => new Date(e.mail.date!).getTime());
       for (const [i, time] of sent.entries()) {
         expect(time, entries[i].mail.file).toBeLessThanOrEqual(now.getTime());

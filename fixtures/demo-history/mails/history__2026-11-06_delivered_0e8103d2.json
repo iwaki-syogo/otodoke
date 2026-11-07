@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-11-06_delivered_0e8103d2.eml",
+ "source": "yahoo",
+ "stage": "delivered",
+ "message_id": "<demo-d6b1984e081d@example.invalid>",
+ "date": "2026-11-06T06:24:00+00:00",
+ "from": "yahoo-cosme@sample.otodoke.app",
+ "from_name": "コスメのお店 Yahoo!店",
+ "subject": "【コスメのお店 Yahoo!店】商品配達完了のお知らせ",
+ "text": "コスメのお店 Yahoo!店 をご利用いただきまして、誠にありがとうございます。\nご注文の商品をお届けしました。\n\nご注文番号：YSH-3632-84290\nご注文日：2026年11月3日(火)\nお届け日：2026年11月6日(金)\nお届け方法：置き配（玄関前）\n配送業者：ヤマト運輸\n\n商品名：ハンドクリーム 3本\n数量：1　単価：1,320円\nお支払い合計：1,320円\n\nご注文履歴\nhttps://sample.otodoke.app/orders/YSH-3632-84290\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

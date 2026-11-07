@@ -1,0 +1,12 @@
+{
+ "file": "history/2026-08-15_delivered_6534591e.eml",
+ "source": "amazon",
+ "stage": "delivered",
+ "message_id": "<demo-4040924643f4@example.invalid>",
+ "date": "2026-08-15T08:06:00+00:00",
+ "from": "shipment-tracking@sample.otodoke.app",
+ "from_name": "Amazon",
+ "subject": "配達済み：「炭酸水 500ml×24本」",
+ "text": "Amazon をご利用いただき、ありがとうございます。\n\nお客様の荷物は配達済みです。\n配達日：2026/08/15（土）\nお届け方法：宅配ボックスに配達\n\n注文番号：AMZ-4589-31366\nご注文日：2026/08/14（金）\n\nご注文の商品\n* 炭酸水 500ml×24本\n  数量：1　価格：￥1,890\n\nご請求額：￥1,890\n\n注文の詳細を見る\nhttps://sample.otodoke.app/orders/AMZ-4589-31366\n\n※このメールは Otodoke の見本として作ったものです。実在の注文ではありません。",
+ "html": null
+}

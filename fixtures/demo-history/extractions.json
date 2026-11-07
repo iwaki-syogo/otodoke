@@ -1,0 +1,5928 @@
+{
+  "history/2025-12-04_delivered_c1e011e7.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-3180-60573",
+      "evidence": "注文番号：AMZ-3180-60573",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "猫砂 7L×4袋",
+        "quantity": 1,
+        "unit_price": 2980,
+        "evidence": "* 猫砂 7L×4袋"
+      }
+    ],
+    "category": "other",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2980,
+      "evidence": "ご請求額：￥2,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-03",
+      "evidence": "ご注文日：2025/12/03（水）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-04",
+      "evidence": "配達日：2025/12/04（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025/12/04（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-05_delivered_ab1fdcf6.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-4567-50917",
+      "evidence": "注文番号：AMZ-4567-50917",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "漫画 全10巻セット",
+        "quantity": 1,
+        "unit_price": 6380,
+        "evidence": "* 漫画 全10巻セット"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 6380,
+      "evidence": "ご請求額：￥6,380",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-04",
+      "evidence": "ご注文日：2025/12/04（木）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-05",
+      "evidence": "配達日：2025/12/05（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025/12/05（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-07_delivered_4dc7df9d.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "ナッツの専門店 Yahoo!店",
+    "shop_key": "yahoo",
+    "order_number": {
+      "value": "YSH-0560-97742",
+      "evidence": "ご注文番号：YSH-0560-97742",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ミックスナッツ 素焼き 1kg",
+        "quantity": 1,
+        "unit_price": 1850,
+        "evidence": "商品名：ミックスナッツ 素焼き 1kg"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1850,
+      "evidence": "お支払い合計：1,850円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-04",
+      "evidence": "ご注文日：2025年12月4日(木)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "配送業者：日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-07",
+      "evidence": "お届け日：2025年12月7日(日)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025年12月7日(日)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-08_delivered_a0cc1cc9.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "ニットとシャツの店 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-6398-05049",
+      "evidence": "[受注番号] RKT-6398-05049",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ニット セーター",
+        "quantity": 1,
+        "unit_price": 3990,
+        "evidence": "[商品] ニット セーター"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3990,
+      "evidence": "[合計金額] 3,990円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-06",
+      "evidence": "[注文日時] 2025年12月6日(土) 18:11",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "[配送業者] 日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-08",
+      "evidence": "[お届け日] 2025年12月8日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025年12月8日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-10_delivered_646fdbe7.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "ヨドバシ・ドット・コム",
+    "shop_key": "yodobashi",
+    "order_number": {
+      "value": "YDB-6103-31959",
+      "evidence": "ご注文番号：YDB-6103-31959",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ワイヤレスイヤホン ノイズキャンセリング",
+        "quantity": 1,
+        "unit_price": 24800,
+        "evidence": "商品名：ワイヤレスイヤホン ノイズキャンセリング"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 24800,
+      "evidence": "お支払い合計：24,800円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-07",
+      "evidence": "ご注文日：2025年12月7日(日)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-10",
+      "evidence": "お届け日：2025年12月10日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025年12月10日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-12_delivered_4f9017f7.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1185-54023",
+      "evidence": "注文番号：AMZ-1185-54023",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "化粧水 大容量 500ml",
+        "quantity": 1,
+        "unit_price": 1650,
+        "evidence": "* 化粧水 大容量 500ml"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1650,
+      "evidence": "ご請求額：￥1,650",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-11",
+      "evidence": "ご注文日：2025/12/11（木）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-12",
+      "evidence": "配達日：2025/12/12（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025/12/12（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-13_delivered_d95ae995.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "ヨドバシ・ドット・コム",
+    "shop_key": "yodobashi",
+    "order_number": {
+      "value": "YDB-0630-69055",
+      "evidence": "ご注文番号：YDB-0630-69055",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ワイヤレスマウス",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "商品名：ワイヤレスマウス"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "お支払い合計：1,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-12",
+      "evidence": "ご注文日：2025年12月12日(金)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-13",
+      "evidence": "お届け日：2025年12月13日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025年12月13日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-20_delivered_7a4d6598.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "ラッピング資材の店 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-8846-29825",
+      "evidence": "[受注番号] RKT-8846-29825",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ギフト ラッピング袋 10枚",
+        "quantity": 1,
+        "unit_price": 660,
+        "evidence": "[商品] ギフト ラッピング袋 10枚"
+      }
+    ],
+    "category": "other",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 660,
+      "evidence": "[合計金額] 660円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-18",
+      "evidence": "[注文日時] 2025年12月18日(木) 14:16",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "[配送業者] 佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-20",
+      "evidence": "[お届け日] 2025年12月20日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025年12月20日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2025-12-20_delivered_35ba7923.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-5105-01780",
+      "evidence": "注文番号：AMZ-5105-01780",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "文庫本 ミステリー 上巻",
+        "quantity": 1,
+        "unit_price": 792,
+        "evidence": "* 文庫本 ミステリー 上巻"
+      },
+      {
+        "name": "文庫本 ミステリー 下巻",
+        "quantity": 1,
+        "unit_price": 792,
+        "evidence": "* 文庫本 ミステリー 下巻"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1584,
+      "evidence": "ご請求額：￥1,584",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2025-12-19",
+      "evidence": "ご注文日：2025/12/19（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2025-12-20",
+      "evidence": "配達日：2025/12/20（土）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2025/12/20（土）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-01-07_delivered_20881c65.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "革小物の工房 Yahoo!店",
+    "shop_key": "yahoo",
+    "order_number": {
+      "value": "YSH-8375-60362",
+      "evidence": "ご注文番号：YSH-8375-60362",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "冬用 手袋",
+        "quantity": 1,
+        "unit_price": 1480,
+        "evidence": "商品名：冬用 手袋"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1480,
+      "evidence": "お支払い合計：1,480円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-01-05",
+      "evidence": "ご注文日：2026年1月5日(月)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "配送業者：日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-01-07",
+      "evidence": "お届け日：2026年1月7日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年1月7日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-01-12_delivered_f03a8731.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "スポーツ用品のお店 Yahoo!店",
+    "shop_key": "yahoo",
+    "order_number": {
+      "value": "YSH-7946-83533",
+      "evidence": "ご注文番号：YSH-7946-83533",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ヨガマット 厚さ10mm",
+        "quantity": 1,
+        "unit_price": 1690,
+        "evidence": "商品名：ヨガマット 厚さ10mm"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1690,
+      "evidence": "お支払い合計：1,690円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-01-10",
+      "evidence": "ご注文日：2026年1月10日(土)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "配送業者：日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-01-12",
+      "evidence": "お届け日：2026年1月12日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年1月12日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-01-12_delivered_380243d7.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文商品のお届けが完了いたしました。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "UNQ-8000-79088",
+      "evidence": "ご注文番号：UNQ-8000-79088",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "あったか 長袖インナー",
+        "quantity": 2,
+        "unit_price": 1290,
+        "evidence": "商品名：あったか 長袖インナー"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2580,
+      "evidence": "お支払い合計：2,580円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-01-09",
+      "evidence": "ご注文日：2026年1月9日(金)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-01-12",
+      "evidence": "お届け日：2026年1月12日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年1月12日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-01-15_delivered_97e7f627.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "お米の産直 みのり屋 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-3974-61543",
+      "evidence": "[受注番号] RKT-3974-61543",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "無洗米 5kg",
+        "quantity": 1,
+        "unit_price": 3280,
+        "evidence": "[商品] 無洗米 5kg"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3280,
+      "evidence": "[合計金額] 3,280円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-01-14",
+      "evidence": "[注文日時] 2026年1月14日(水) 14:04",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "[配送業者] 佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-01-15",
+      "evidence": "[お届け日] 2026年1月15日(木)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年1月15日(木)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-01-28_delivered_21afef76.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1296-17840",
+      "evidence": "注文番号：AMZ-1296-17840",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ペットシーツ レギュラー 200枚",
+        "quantity": 1,
+        "unit_price": 1780,
+        "evidence": "* ペットシーツ レギュラー 200枚"
+      }
+    ],
+    "category": "other",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1780,
+      "evidence": "ご請求額：￥1,780",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-01-27",
+      "evidence": "ご注文日：2026/01/27（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-01-28",
+      "evidence": "配達日：2026/01/28（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/01/28（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-02-01_delivered_9afacc6d.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "生活雑貨 ここち 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-6701-95145",
+      "evidence": "[受注番号] RKT-6701-95145",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "洗濯ネット 6枚セット",
+        "quantity": 1,
+        "unit_price": 798,
+        "evidence": "[商品] 洗濯ネット 6枚セット"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 798,
+      "evidence": "[合計金額] 798円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-01-30",
+      "evidence": "[注文日時] 2026年1月30日(金) 13:22",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "[配送業者] ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-02-01",
+      "evidence": "[お届け日] 2026年2月1日(日)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年2月1日(日)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-02-05_delivered_c171fb61.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "IRS-9298-19772",
+      "evidence": "ご注文番号：IRS-9298-19772",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "電気ケトル 1.0L",
+        "quantity": 1,
+        "unit_price": 3980,
+        "evidence": "商品名：電気ケトル 1.0L"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3980,
+      "evidence": "お支払い合計：3,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-02-03",
+      "evidence": "ご注文日：2026年2月3日(火)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "配送業者：佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-02-05",
+      "evidence": "お届け日：2026年2月5日(木)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年2月5日(木)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-02-12_delivered_131ce427.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "コートの専門店 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-0717-83705",
+      "evidence": "[受注番号] RKT-0717-83705",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ウール コート",
+        "quantity": 1,
+        "unit_price": 14800,
+        "evidence": "[商品] ウール コート"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 14800,
+      "evidence": "[合計金額] 14,800円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-02-09",
+      "evidence": "[注文日時] 2026年2月9日(月) 14:26",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "[配送業者] 佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-02-12",
+      "evidence": "[お届け日] 2026年2月12日(木)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年2月12日(木)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-02-17_delivered_6168cc73.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "日用品の通販 くらしモール",
+    "shop_key": "other",
+    "order_number": {
+      "value": "KRS-3510-03282",
+      "evidence": "ご注文番号：KRS-3510-03282",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "食器用洗剤 詰め替え 大容量",
+        "quantity": 1,
+        "unit_price": 698,
+        "evidence": "商品名：食器用洗剤 詰め替え 大容量"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 698,
+      "evidence": "お支払い合計：698円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-02-14",
+      "evidence": "ご注文日：2026年2月14日(土)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-02-17",
+      "evidence": "お届け日：2026年2月17日(火)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年2月17日(火)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-02-25_delivered_143860d4.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "スキンケアの店 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-2308-28870",
+      "evidence": "[受注番号] RKT-2308-28870",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "美容液 30ml",
+        "quantity": 1,
+        "unit_price": 5500,
+        "evidence": "[商品] 美容液 30ml"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 5500,
+      "evidence": "[合計金額] 5,500円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-02-23",
+      "evidence": "[注文日時] 2026年2月23日(月) 22:07",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "[配送業者] ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-02-25",
+      "evidence": "[お届け日] 2026年2月25日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年2月25日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-02_delivered_afa4ad55.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "自家焙煎珈琲 まめや 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-3970-92538",
+      "evidence": "[受注番号] RKT-3970-92538",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "コーヒー豆 中煎り 500g",
+        "quantity": 1,
+        "unit_price": 2380,
+        "evidence": "[商品] コーヒー豆 中煎り 500g"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2380,
+      "evidence": "[合計金額] 2,380円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-02-27",
+      "evidence": "[注文日時] 2026年2月27日(金) 07:29",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "[配送業者] ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-02",
+      "evidence": "[お届け日] 2026年3月2日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年3月2日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-06_delivered_6f5ae7d6.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-2130-70339",
+      "evidence": "注文番号：AMZ-2130-70339",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "マルチビタミン サプリ 90日分",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "* マルチビタミン サプリ 90日分"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "ご請求額：￥1,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-03-05",
+      "evidence": "ご注文日：2026/03/05（木）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-06",
+      "evidence": "配達日：2026/03/06（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/03/06（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-11_delivered_c77e63ae.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "収納と暮らしの店 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-4419-32344",
+      "evidence": "[受注番号] RKT-4419-32344",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "収納ケース 引き出し 3段",
+        "quantity": 1,
+        "unit_price": 3480,
+        "evidence": "[商品] 収納ケース 引き出し 3段"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3480,
+      "evidence": "[合計金額] 3,480円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-03-08",
+      "evidence": "[注文日時] 2026年3月8日(日) 09:47",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "[配送業者] 佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-11",
+      "evidence": "[お届け日] 2026年3月11日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年3月11日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-17_delivered_43b134e6.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "ヘアケア専門店 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-5419-19233",
+      "evidence": "[受注番号] RKT-5419-19233",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "シャンプー 詰め替え",
+        "quantity": 2,
+        "unit_price": 880,
+        "evidence": "[商品] シャンプー 詰め替え"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1760,
+      "evidence": "[合計金額] 1,760円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-03-16",
+      "evidence": "[注文日時] 2026年3月16日(月) 10:37",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "[配送業者] 日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-17",
+      "evidence": "[お届け日] 2026年3月17日(火)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年3月17日(火)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-20_delivered_8514c5c4.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "IRS-9493-01591",
+      "evidence": "ご注文番号：IRS-9493-01591",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "天然水 2L×9本",
+        "quantity": 1,
+        "unit_price": 1580,
+        "evidence": "商品名：天然水 2L×9本"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1580,
+      "evidence": "お支払い合計：1,580円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-03-18",
+      "evidence": "ご注文日：2026年3月18日(水)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "配送業者：佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-20",
+      "evidence": "お届け日：2026年3月20日(金)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年3月20日(金)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-20_delivered_dcf88800.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "お風呂じかん 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-9918-13701",
+      "evidence": "[受注番号] RKT-9918-13701",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "入浴剤 詰め合わせ 30錠",
+        "quantity": 1,
+        "unit_price": 1580,
+        "evidence": "[商品] 入浴剤 詰め合わせ 30錠"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1580,
+      "evidence": "[合計金額] 1,580円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-03-19",
+      "evidence": "[注文日時] 2026年3月19日(木) 22:00",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "[配送業者] ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-20",
+      "evidence": "[お届け日] 2026年3月20日(金)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年3月20日(金)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-03-24_delivered_d32836e9.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "IRS-4364-36631",
+      "evidence": "ご注文番号：IRS-4364-36631",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "スチールラック 5段 幅90cm",
+        "quantity": 1,
+        "unit_price": 8980,
+        "evidence": "商品名：スチールラック 5段 幅90cm"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 8980,
+      "evidence": "お支払い合計：8,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-03-21",
+      "evidence": "ご注文日：2026年3月21日(土)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "配送業者：佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-03-24",
+      "evidence": "お届け日：2026年3月24日(火)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年3月24日(火)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-04_delivered_03cc590b.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "ヨドバシ・ドット・コム",
+    "shop_key": "yodobashi",
+    "order_number": {
+      "value": "YDB-9358-71270",
+      "evidence": "ご注文番号：YDB-9358-71270",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "Bluetooth スピーカー",
+        "quantity": 1,
+        "unit_price": 8800,
+        "evidence": "商品名：Bluetooth スピーカー"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 8800,
+      "evidence": "お支払い合計：8,800円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-02",
+      "evidence": "ご注文日：2026年4月2日(木)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-04",
+      "evidence": "お届け日：2026年4月4日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年4月4日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-05_delivered_f6f45395.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-0859-41807",
+      "evidence": "注文番号：AMZ-0859-41807",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ボードゲーム 2〜4人用",
+        "quantity": 1,
+        "unit_price": 3520,
+        "evidence": "* ボードゲーム 2〜4人用"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3520,
+      "evidence": "ご請求額：￥3,520",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-03",
+      "evidence": "ご注文日：2026/04/03（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-05",
+      "evidence": "配達日：2026/04/05（日）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/04/05（日）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-09_delivered_ac4a09b0.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-3229-18318",
+      "evidence": "注文番号：AMZ-3229-18318",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "フローリングワイパー 取り替えシート 60枚",
+        "quantity": 1,
+        "unit_price": 1180,
+        "evidence": "* フローリングワイパー 取り替えシート 60枚"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1180,
+      "evidence": "ご請求額：￥1,180",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-06",
+      "evidence": "ご注文日：2026/04/06（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-09",
+      "evidence": "配達日：2026/04/09（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/04/09（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-09_delivered_96f8c40e.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "ヨドバシ・ドット・コム",
+    "shop_key": "yodobashi",
+    "order_number": {
+      "value": "YDB-7565-51844",
+      "evidence": "ご注文番号：YDB-7565-51844",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ロボット掃除機",
+        "quantity": 1,
+        "unit_price": 29800,
+        "evidence": "商品名：ロボット掃除機"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 29800,
+      "evidence": "お支払い合計：29,800円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-06",
+      "evidence": "ご注文日：2026年4月6日(月)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-09",
+      "evidence": "お届け日：2026年4月9日(木)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年4月9日(木)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-11_delivered_11986ef7.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文商品のお届けが完了いたしました。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "UNQ-1636-57754",
+      "evidence": "ご注文番号：UNQ-1636-57754",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "靴下 3足組",
+        "quantity": 1,
+        "unit_price": 990,
+        "evidence": "商品名：靴下 3足組"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 990,
+      "evidence": "お支払い合計：990円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-09",
+      "evidence": "ご注文日：2026年4月9日(木)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-11",
+      "evidence": "お届け日：2026年4月11日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年4月11日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-23_delivered_f8aafc0f.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-9245-11307",
+      "evidence": "注文番号：AMZ-9245-11307",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "衣料用洗剤 ジェル 詰め替え 3個",
+        "quantity": 1,
+        "unit_price": 1480,
+        "evidence": "* 衣料用洗剤 ジェル 詰め替え 3個"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1480,
+      "evidence": "ご請求額：￥1,480",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-20",
+      "evidence": "ご注文日：2026/04/20（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-23",
+      "evidence": "配達日：2026/04/23（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/04/23（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-24_delivered_85fc966d.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "讃岐の麺工房 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-1386-35207",
+      "evidence": "[受注番号] RKT-1386-35207",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "冷凍 讃岐うどん 20玉",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "[商品] 冷凍 讃岐うどん 20玉"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "[合計金額] 1,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-22",
+      "evidence": "[注文日時] 2026年4月22日(水) 22:25",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "[配送業者] 日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-24",
+      "evidence": "[お届け日] 2026年4月24日(金)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年4月24日(金)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-04-24_delivered_90a62387.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-8992-64768",
+      "evidence": "注文番号：AMZ-8992-64768",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "水彩色鉛筆 36色",
+        "quantity": 1,
+        "unit_price": 1870,
+        "evidence": "* 水彩色鉛筆 36色"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1870,
+      "evidence": "ご請求額：￥1,870",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-21",
+      "evidence": "ご注文日：2026/04/21（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-04-24",
+      "evidence": "配達日：2026/04/24（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/04/24（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-02_delivered_2b77a061.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "ヨドバシ・ドット・コム",
+    "shop_key": "yodobashi",
+    "order_number": {
+      "value": "YDB-8306-52978",
+      "evidence": "ご注文番号：YDB-8306-52978",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "microSD カード 128GB",
+        "quantity": 1,
+        "unit_price": 1880,
+        "evidence": "商品名：microSD カード 128GB"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1880,
+      "evidence": "お支払い合計：1,880円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-04-30",
+      "evidence": "ご注文日：2026年4月30日(木)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-02",
+      "evidence": "お届け日：2026年5月2日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年5月2日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-13_delivered_bf35f4da.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-6523-97023",
+      "evidence": "注文番号：AMZ-6523-97023",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ドリップコーヒー 個包装 50袋",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "* ドリップコーヒー 個包装 50袋"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "ご請求額：￥1,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-12",
+      "evidence": "ご注文日：2026/05/12（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-13",
+      "evidence": "配達日：2026/05/13（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/05/13（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-13_delivered_368cfc2f.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-9045-32051",
+      "evidence": "注文番号：AMZ-9045-32051",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "柔軟剤 詰め替え 特大",
+        "quantity": 1,
+        "unit_price": 1080,
+        "evidence": "* 柔軟剤 詰め替え 特大"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1080,
+      "evidence": "ご請求額：￥1,080",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-12",
+      "evidence": "ご注文日：2026/05/12（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-13",
+      "evidence": "配達日：2026/05/13（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/05/13（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-14_delivered_522e11c4.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1620-87888",
+      "evidence": "注文番号：AMZ-1620-87888",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ヘアドライヤー 大風量",
+        "quantity": 1,
+        "unit_price": 9800,
+        "evidence": "* ヘアドライヤー 大風量"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 9800,
+      "evidence": "ご請求額：￥9,800",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-12",
+      "evidence": "ご注文日：2026/05/12（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-14",
+      "evidence": "配達日：2026/05/14（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/05/14（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-15_delivered_4352a703.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "日用品の通販 くらしモール",
+    "shop_key": "other",
+    "order_number": {
+      "value": "KRS-5756-60593",
+      "evidence": "ご注文番号：KRS-5756-60593",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "キッチンペーパー 12ロール",
+        "quantity": 1,
+        "unit_price": 1280,
+        "evidence": "商品名：キッチンペーパー 12ロール"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1280,
+      "evidence": "お支払い合計：1,280円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-12",
+      "evidence": "ご注文日：2026年5月12日(火)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-15",
+      "evidence": "お届け日：2026年5月15日(金)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年5月15日(金)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-20_delivered_b8aaaa08.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-8085-19491",
+      "evidence": "注文番号：AMZ-8085-19491",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "電動歯ブラシ 替えブラシ 4本",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "* 電動歯ブラシ 替えブラシ 4本"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "ご請求額：￥1,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-18",
+      "evidence": "ご注文日：2026/05/18（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-20",
+      "evidence": "配達日：2026/05/20（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/05/20（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-23_delivered_c44bc038.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文商品のお届けが完了いたしました。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "UNQ-2838-41574",
+      "evidence": "ご注文番号：UNQ-2838-41574",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ストレッチ スリムパンツ",
+        "quantity": 1,
+        "unit_price": 3990,
+        "evidence": "商品名：ストレッチ スリムパンツ"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3990,
+      "evidence": "お支払い合計：3,990円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-20",
+      "evidence": "ご注文日：2026年5月20日(水)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-23",
+      "evidence": "お届け日：2026年5月23日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年5月23日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-05-26_delivered_8d7ca06d.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "キャンプ用品の専門店 やまなみ",
+    "shop_key": "other",
+    "order_number": {
+      "value": "SHP-3267-29674",
+      "evidence": "ご注文番号：SHP-3267-29674",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ドーム型 テント 2人用",
+        "quantity": 1,
+        "unit_price": 12800,
+        "evidence": "商品名：ドーム型 テント 2人用"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 12800,
+      "evidence": "お支払い合計：12,800円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-05-23",
+      "evidence": "ご注文日：2026年5月23日(土)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-05-26",
+      "evidence": "お届け日：2026年5月26日(火)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年5月26日(火)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-06-08_delivered_c815cbb6.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-5940-30870",
+      "evidence": "注文番号：AMZ-5940-30870",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "日焼け止め SPF50",
+        "quantity": 1,
+        "unit_price": 1480,
+        "evidence": "* 日焼け止め SPF50"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1480,
+      "evidence": "ご請求額：￥1,480",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-07",
+      "evidence": "ご注文日：2026/06/07（日）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-06-08",
+      "evidence": "配達日：2026/06/08（月）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/06/08（月）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-06-09_delivered_ec6da8c1.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-7761-36588",
+      "evidence": "注文番号：AMZ-7761-36588",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "レインコート",
+        "quantity": 1,
+        "unit_price": 2980,
+        "evidence": "* レインコート"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2980,
+      "evidence": "ご請求額：￥2,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-06",
+      "evidence": "ご注文日：2026/06/06（土）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-06-09",
+      "evidence": "配達日：2026/06/09（火）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/06/09（火）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-06-11_delivered_f3a18981.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-7447-89954",
+      "evidence": "注文番号：AMZ-7447-89954",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "単3形 アルカリ乾電池 20本",
+        "quantity": 1,
+        "unit_price": 1180,
+        "evidence": "* 単3形 アルカリ乾電池 20本"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1180,
+      "evidence": "ご請求額：￥1,180",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-09",
+      "evidence": "ご注文日：2026/06/09（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-06-11",
+      "evidence": "配達日：2026/06/11（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/06/11（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-06-19_delivered_8fa1a164.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1244-02341",
+      "evidence": "注文番号：AMZ-1244-02341",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "歯ブラシ ふつう 10本",
+        "quantity": 1,
+        "unit_price": 880,
+        "evidence": "* 歯ブラシ ふつう 10本"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 880,
+      "evidence": "ご請求額：￥880",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-18",
+      "evidence": "ご注文日：2026/06/18（木）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-06-19",
+      "evidence": "配達日：2026/06/19（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/06/19（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-06-29_delivered_1003512b.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "養蜂園の直売所 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-2980-44963",
+      "evidence": "[受注番号] RKT-2980-44963",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "国産 はちみつ 500g",
+        "quantity": 1,
+        "unit_price": 2680,
+        "evidence": "[商品] 国産 はちみつ 500g"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2680,
+      "evidence": "[合計金額] 2,680円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-28",
+      "evidence": "[注文日時] 2026年6月28日(日) 07:14",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "[配送業者] 佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-06-29",
+      "evidence": "[お届け日] 2026年6月29日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年6月29日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-01_delivered_ce3057fe.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-7033-71452",
+      "evidence": "注文番号：AMZ-7033-71452",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "モバイルバッテリー 10000mAh",
+        "quantity": 1,
+        "unit_price": 3280,
+        "evidence": "* モバイルバッテリー 10000mAh"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3280,
+      "evidence": "ご請求額：￥3,280",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-29",
+      "evidence": "ご注文日：2026/06/29（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-01",
+      "evidence": "配達日：2026/07/01（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/01（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-02_delivered_8d565869.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-9121-35552",
+      "evidence": "注文番号：AMZ-9121-35552",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "プロテイン ココア味 1kg",
+        "quantity": 1,
+        "unit_price": 4980,
+        "evidence": "* プロテイン ココア味 1kg"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 4980,
+      "evidence": "ご請求額：￥4,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-06-30",
+      "evidence": "ご注文日：2026/06/30（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-02",
+      "evidence": "配達日：2026/07/02（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/02（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-08_delivered_1f5cca20.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "アイリスプラザ",
+    "shop_key": "irisplaza",
+    "order_number": {
+      "value": "IRS-9792-22795",
+      "evidence": "ご注文番号：IRS-9792-22795",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "玄米 5kg",
+        "quantity": 1,
+        "unit_price": 3680,
+        "evidence": "商品名：玄米 5kg"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3680,
+      "evidence": "お支払い合計：3,680円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-07-06",
+      "evidence": "ご注文日：2026年7月6日(月)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "配送業者：佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-08",
+      "evidence": "お届け日：2026年7月8日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年7月8日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-10_delivered_a75bf276.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-3223-25356",
+      "evidence": "注文番号：AMZ-3223-25356",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "無地 Tシャツ 3枚セット",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "* 無地 Tシャツ 3枚セット"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "ご請求額：￥1,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-07-08",
+      "evidence": "ご注文日：2026/07/08（水）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-10",
+      "evidence": "配達日：2026/07/10（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/10（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-16_delivered_11b2661c.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-8994-00968",
+      "evidence": "注文番号：AMZ-8994-00968",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "LED デスクライト",
+        "quantity": 1,
+        "unit_price": 5980,
+        "evidence": "* LED デスクライト"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 5980,
+      "evidence": "ご請求額：￥5,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-07-14",
+      "evidence": "ご注文日：2026/07/14（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-16",
+      "evidence": "配達日：2026/07/16（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/16（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-19_delivered_10836448.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1400-81807",
+      "evidence": "注文番号：AMZ-1400-81807",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "すべらない ハンガー 30本",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "* すべらない ハンガー 30本"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "ご請求額：￥1,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-07-17",
+      "evidence": "ご注文日：2026/07/17（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-19",
+      "evidence": "配達日：2026/07/19（日）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/19（日）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-29_delivered_5c7797d8.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-5441-45572",
+      "evidence": "注文番号：AMZ-5441-45572",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "キッチン スポンジ 10個入り",
+        "quantity": 1,
+        "unit_price": 598,
+        "evidence": "* キッチン スポンジ 10個入り"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 598,
+      "evidence": "ご請求額：￥598",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-07-28",
+      "evidence": "ご注文日：2026/07/28（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-29",
+      "evidence": "配達日：2026/07/29（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/29（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-07-31_delivered_4966c9c8.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-0654-67972",
+      "evidence": "注文番号：AMZ-0654-67972",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ゴミ袋 45L 100枚",
+        "quantity": 1,
+        "unit_price": 980,
+        "evidence": "* ゴミ袋 45L 100枚"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 980,
+      "evidence": "ご請求額：￥980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-07-30",
+      "evidence": "ご注文日：2026/07/30（木）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-07-31",
+      "evidence": "配達日：2026/07/31（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/07/31（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-03_delivered_51b8e879.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-8096-85485",
+      "evidence": "注文番号：AMZ-8096-85485",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "スニーカー ホワイト",
+        "quantity": 1,
+        "unit_price": 8990,
+        "evidence": "* スニーカー ホワイト"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 8990,
+      "evidence": "ご請求額：￥8,990",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-01",
+      "evidence": "ご注文日：2026/08/01（土）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-03",
+      "evidence": "配達日：2026/08/03（月）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/08/03（月）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-04_delivered_d2420e44.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "グリーンの店 はっぱ",
+    "shop_key": "other",
+    "order_number": {
+      "value": "SHP-4928-95127",
+      "evidence": "ご注文番号：SHP-4928-95127",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "観葉植物 鉢植え",
+        "quantity": 1,
+        "unit_price": 3980,
+        "evidence": "商品名：観葉植物 鉢植え"
+      }
+    ],
+    "category": "other",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3980,
+      "evidence": "お支払い合計：3,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-02",
+      "evidence": "ご注文日：2026年8月2日(日)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-04",
+      "evidence": "お届け日：2026年8月4日(火)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年8月4日(火)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-07_delivered_8bd4cd4b.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "くだもの便 果実堂 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-4482-63557",
+      "evidence": "[受注番号] RKT-4482-63557",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "季節のくだもの 詰め合わせ",
+        "quantity": 1,
+        "unit_price": 3980,
+        "evidence": "[商品] 季節のくだもの 詰め合わせ"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3980,
+      "evidence": "[合計金額] 3,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-05",
+      "evidence": "[注文日時] 2026年8月5日(水) 15:56",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "[配送業者] 日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-07",
+      "evidence": "[お届け日] 2026年8月7日(金)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年8月7日(金)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-13_delivered_3453d1e5.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-7213-67566",
+      "evidence": "注文番号：AMZ-7213-67566",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ゲームソフト アクションRPG",
+        "quantity": 1,
+        "unit_price": 6578,
+        "evidence": "* ゲームソフト アクションRPG"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 6578,
+      "evidence": "ご請求額：￥6,578",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-12",
+      "evidence": "ご注文日：2026/08/12（水）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-13",
+      "evidence": "配達日：2026/08/13（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/08/13（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-15_delivered_6534591e.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-4589-31366",
+      "evidence": "注文番号：AMZ-4589-31366",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "炭酸水 500ml×24本",
+        "quantity": 1,
+        "unit_price": 1890,
+        "evidence": "* 炭酸水 500ml×24本"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1890,
+      "evidence": "ご請求額：￥1,890",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-14",
+      "evidence": "ご注文日：2026/08/14（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-15",
+      "evidence": "配達日：2026/08/15（土）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/08/15（土）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-26_delivered_e86d1a0b.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "アウトドア用品 そとあそび 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-4300-62625",
+      "evidence": "[受注番号] RKT-4300-62625",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "LED ランタン キャンプ用",
+        "quantity": 1,
+        "unit_price": 2980,
+        "evidence": "[商品] LED ランタン キャンプ用"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2980,
+      "evidence": "[合計金額] 2,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-24",
+      "evidence": "[注文日時] 2026年8月24日(月) 22:44",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "[配送業者] 日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-26",
+      "evidence": "[お届け日] 2026年8月26日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年8月26日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-08-26_delivered_1b4889bc.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-4051-26398",
+      "evidence": "注文番号：AMZ-4051-26398",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "USB-C 充電器 65W",
+        "quantity": 1,
+        "unit_price": 3980,
+        "evidence": "* USB-C 充電器 65W"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3980,
+      "evidence": "ご請求額：￥3,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-08-24",
+      "evidence": "ご注文日：2026/08/24（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-08-26",
+      "evidence": "配達日：2026/08/26（水）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/08/26（水）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-09_delivered_a45e91f0.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "花の定期便",
+    "shop_key": "other",
+    "order_number": {
+      "value": "SHP-1820-55739",
+      "evidence": "ご注文番号：SHP-1820-55739",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "季節の花束",
+        "quantity": 1,
+        "unit_price": 3300,
+        "evidence": "商品名：季節の花束"
+      }
+    ],
+    "category": "other",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3300,
+      "evidence": "お支払い合計：3,300円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-08",
+      "evidence": "ご注文日：2026年9月8日(火)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "配送業者：佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-09",
+      "evidence": "お届け日：2026年9月9日(水)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月9日(水)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-13_delivered_28064898.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "アウトドア用品 そとあそび 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-1523-44230",
+      "evidence": "[受注番号] RKT-1523-44230",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "キャンプ用 折りたたみチェア",
+        "quantity": 1,
+        "unit_price": 4980,
+        "evidence": "[商品] キャンプ用 折りたたみチェア"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 4980,
+      "evidence": "[合計金額] 4,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-12",
+      "evidence": "[注文日時] 2026年9月12日(土) 07:12",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "佐川急便",
+      "evidence": "[配送業者] 佐川急便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-13",
+      "evidence": "[お届け日] 2026年9月13日(日)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月13日(日)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] 宅配ボックス",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-14_delivered_e59ce817.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品のお届けが完了しました。",
+    "shop_name": "寝具のふとん工房 楽天市場店",
+    "shop_key": "rakuten",
+    "order_number": {
+      "value": "RKT-8583-26681",
+      "evidence": "[受注番号] RKT-8583-26681",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "布団カバー セミダブル",
+        "quantity": 1,
+        "unit_price": 2780,
+        "evidence": "[商品] 布団カバー セミダブル"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2780,
+      "evidence": "[合計金額] 2,780円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-13",
+      "evidence": "[注文日時] 2026年9月13日(日) 15:59",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "[配送業者] 日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-14",
+      "evidence": "[お届け日] 2026年9月14日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月14日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "[お届け方法] ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-21_delivered_7e647d64.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "インテリア雑貨のお店 Yahoo!店",
+    "shop_key": "yahoo",
+    "order_number": {
+      "value": "YSH-1277-10462",
+      "evidence": "ご注文番号：YSH-1277-10462",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "突っ張り棒 2本組",
+        "quantity": 1,
+        "unit_price": 1380,
+        "evidence": "商品名：突っ張り棒 2本組"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1380,
+      "evidence": "お支払い合計：1,380円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-20",
+      "evidence": "ご注文日：2026年9月20日(日)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "日本郵便",
+      "evidence": "配送業者：日本郵便",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-21",
+      "evidence": "お届け日：2026年9月21日(月)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月21日(月)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：ポスト投函",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-24_delivered_e35cec99.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "日用品の通販 くらしモール",
+    "shop_key": "other",
+    "order_number": {
+      "value": "KRS-8997-32503",
+      "evidence": "ご注文番号：KRS-8997-32503",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "トイレットペーパー 12ロール×4パック",
+        "quantity": 1,
+        "unit_price": 2980,
+        "evidence": "商品名：トイレットペーパー 12ロール×4パック"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2980,
+      "evidence": "お支払い合計：2,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-22",
+      "evidence": "ご注文日：2026年9月22日(火)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-24",
+      "evidence": "お届け日：2026年9月24日(木)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月24日(木)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-27_delivered_a3bb2333.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "バス用品ストア Yahoo!店",
+    "shop_key": "yahoo",
+    "order_number": {
+      "value": "YSH-4395-88696",
+      "evidence": "ご注文番号：YSH-4395-88696",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "珪藻土 バスマット",
+        "quantity": 1,
+        "unit_price": 1780,
+        "evidence": "商品名：珪藻土 バスマット"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1780,
+      "evidence": "お支払い合計：1,780円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-25",
+      "evidence": "ご注文日：2026年9月25日(金)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-27",
+      "evidence": "お届け日：2026年9月27日(日)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月27日(日)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-09-27_delivered_b9b591b5.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "北のめぐみ農園",
+    "shop_key": "other",
+    "order_number": {
+      "value": "SHP-0339-21564",
+      "evidence": "ご注文番号：SHP-0339-21564",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "北海道産 じゃがいも 5kg",
+        "quantity": 1,
+        "unit_price": 2980,
+        "evidence": "商品名：北海道産 じゃがいも 5kg"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 2980,
+      "evidence": "お支払い合計：2,980円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-09-24",
+      "evidence": "ご注文日：2026年9月24日(木)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-09-27",
+      "evidence": "お届け日：2026年9月27日(日)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年9月27日(日)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-10-05_delivered_aa6bfdf9.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-6707-88700",
+      "evidence": "注文番号：AMZ-6707-88700",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "旅の雑誌 秋号",
+        "quantity": 1,
+        "unit_price": 990,
+        "evidence": "* 旅の雑誌 秋号"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 990,
+      "evidence": "ご請求額：￥990",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-02",
+      "evidence": "ご注文日：2026/10/02（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-10-05",
+      "evidence": "配達日：2026/10/05（月）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/10/05（月）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：玄関前に置き配",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-10-10_delivered_97dd89d3.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文商品のお届けが完了いたしました。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "UNQ-0047-84904",
+      "evidence": "ご注文番号：UNQ-0047-84904",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "スウェット パーカー",
+        "quantity": 1,
+        "unit_price": 3990,
+        "evidence": "商品名：スウェット パーカー"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 3990,
+      "evidence": "お支払い合計：3,990円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-07",
+      "evidence": "ご注文日：2026年10月7日(水)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-10-10",
+      "evidence": "お届け日：2026年10月10日(土)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年10月10日(土)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-10-15_delivered_e8122dc7.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "日用品の通販 くらしモール",
+    "shop_key": "other",
+    "order_number": {
+      "value": "KRS-2136-75166",
+      "evidence": "ご注文番号：KRS-2136-75166",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "緑茶 ティーバッグ 100包",
+        "quantity": 1,
+        "unit_price": 1620,
+        "evidence": "商品名：緑茶 ティーバッグ 100包"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1620,
+      "evidence": "お支払い合計：1,620円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-13",
+      "evidence": "ご注文日：2026年10月13日(火)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-10-15",
+      "evidence": "お届け日：2026年10月15日(木)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年10月15日(木)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-10-22_delivered_de1d48f8.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-3071-56038",
+      "evidence": "注文番号：AMZ-3071-56038",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "スマホ 保護フィルム 2枚",
+        "quantity": 1,
+        "unit_price": 1180,
+        "evidence": "* スマホ 保護フィルム 2枚"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1180,
+      "evidence": "ご請求額：￥1,180",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-19",
+      "evidence": "ご注文日：2026/10/19（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-10-22",
+      "evidence": "配達日：2026/10/22（木）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/10/22（木）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-10-31_delivered_641ae9eb.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-0350-77468",
+      "evidence": "注文番号：AMZ-0350-77468",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ジグソーパズル 1000ピース",
+        "quantity": 1,
+        "unit_price": 1980,
+        "evidence": "* ジグソーパズル 1000ピース"
+      }
+    ],
+    "category": "hobby",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1980,
+      "evidence": "ご請求額：￥1,980",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-30",
+      "evidence": "ご注文日：2026/10/30（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-10-31",
+      "evidence": "配達日：2026/10/31（土）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/10/31（土）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-11-01_delivered_8c40591f.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-5543-96136",
+      "evidence": "注文番号：AMZ-5543-96136",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "オートミール 1kg",
+        "quantity": 2,
+        "unit_price": 980,
+        "evidence": "* オートミール 1kg"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1960,
+      "evidence": "ご請求額：￥1,960",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-29",
+      "evidence": "ご注文日：2026/10/29（木）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-01",
+      "evidence": "配達日：2026/11/01（日）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/11/01（日）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-11-02_delivered_c44e2014.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1590-70974",
+      "evidence": "注文番号：AMZ-1590-70974",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ボックスティッシュ 5箱×3パック",
+        "quantity": 1,
+        "unit_price": 1650,
+        "evidence": "* ボックスティッシュ 5箱×3パック"
+      }
+    ],
+    "category": "daily",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1650,
+      "evidence": "ご請求額：￥1,650",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-10-30",
+      "evidence": "ご注文日：2026/10/30（金）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-02",
+      "evidence": "配達日：2026/11/02（月）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/11/02（月）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：郵便受けに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-11-03_delivered_e6882e46.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-2562-66397",
+      "evidence": "注文番号：AMZ-2562-66397",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "レトルトカレー 中辛 10食",
+        "quantity": 1,
+        "unit_price": 1780,
+        "evidence": "* レトルトカレー 中辛 10食"
+      }
+    ],
+    "category": "food",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1780,
+      "evidence": "ご請求額：￥1,780",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-11-02",
+      "evidence": "ご注文日：2026/11/02（月）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-03",
+      "evidence": "配達日：2026/11/03（火）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/11/03（火）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-11-03_delivered_4c34f109.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文商品のお届けが完了いたしました。",
+    "shop_name": "ユニクロ オンラインストア",
+    "shop_key": "uniqlo",
+    "order_number": {
+      "value": "UNQ-9901-19066",
+      "evidence": "ご注文番号：UNQ-9901-19066",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ライトダウン ジャケット",
+        "quantity": 1,
+        "unit_price": 5990,
+        "evidence": "商品名：ライトダウン ジャケット"
+      }
+    ],
+    "category": "fashion",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 5990,
+      "evidence": "お支払い合計：5,990円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-11-01",
+      "evidence": "ご注文日：2026年11月1日(日)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-03",
+      "evidence": "お届け日：2026年11月3日(火)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年11月3日(火)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-11-06_delivered_0e8103d2.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "ご注文の商品をお届けしました。",
+    "shop_name": "コスメのお店 Yahoo!店",
+    "shop_key": "yahoo",
+    "order_number": {
+      "value": "YSH-3632-84290",
+      "evidence": "ご注文番号：YSH-3632-84290",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "ハンドクリーム 3本",
+        "quantity": 1,
+        "unit_price": 1320,
+        "evidence": "商品名：ハンドクリーム 3本"
+      }
+    ],
+    "category": "beauty",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1320,
+      "evidence": "お支払い合計：1,320円",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-11-03",
+      "evidence": "ご注文日：2026年11月3日(火)",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": "ヤマト運輸",
+      "evidence": "配送業者：ヤマト運輸",
+      "confidence": 0.95
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-06",
+      "evidence": "お届け日：2026年11月6日(金)",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026年11月6日(金)",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：置き配（玄関前）",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  },
+  "history/2026-11-06_delivered_340a8b30.eml": {
+    "relevance": "delivered",
+    "relevance_evidence": "お客様の荷物は配達済みです。",
+    "shop_name": "Amazon",
+    "shop_key": "amazon",
+    "order_number": {
+      "value": "AMZ-1278-46940",
+      "evidence": "注文番号：AMZ-1278-46940",
+      "confidence": 0.95
+    },
+    "items": [
+      {
+        "name": "USB-C ケーブル 2m 2本",
+        "quantity": 1,
+        "unit_price": 1580,
+        "evidence": "* USB-C ケーブル 2m 2本"
+      }
+    ],
+    "category": "electronics",
+    "package_description": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "total_amount": {
+      "value": 1580,
+      "evidence": "ご請求額：￥1,580",
+      "confidence": 0.95
+    },
+    "ordered_at": {
+      "value": "2026-11-03",
+      "evidence": "ご注文日：2026/11/03（火）",
+      "confidence": 0.95
+    },
+    "carrier": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "tracking_number": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_date": {
+      "value": "2026-11-06",
+      "evidence": "配達日：2026/11/06（金）",
+      "confidence": 0.95
+    },
+    "expected_date_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_start": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_window_end": {
+      "value": null,
+      "evidence": null,
+      "confidence": 0.9
+    },
+    "expected_text": "2026/11/06（金）",
+    "requires_presence": {
+      "value": false,
+      "evidence": "お届け方法：宅配ボックスに配達",
+      "confidence": 0.95
+    },
+    "other_orders": [],
+    "overall_confidence": 0.95,
+    "notes": null
+  }
+}
