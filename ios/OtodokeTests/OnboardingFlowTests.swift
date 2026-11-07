@@ -7,7 +7,7 @@ import Testing
 ///    password in memory only; coming back to the front or pressing 「確認しました」 tries the existing password
 ///    sign-in; not_confirmed is a quiet wait; one try at a time; starting over drops the password;
 ///  - the guide screen is shown only when this login made the key (KeySetupOutcome.created);
-///  - the empty list's 「転送先を見る」 opens the 「メールの転送」 page.
+///  - the empty list's 「設定する」 opens the 「メールの転送」 page.
 @Suite("Onboarding: waiting for the confirmation (onboarding)")
 @MainActor
 struct OnboardingFlowTests {

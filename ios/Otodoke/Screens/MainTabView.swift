@@ -29,7 +29,7 @@ enum MainTab: CaseIterable, Hashable, Sendable {
     }
 }
 
-/// Which tab is shown, and the 設定 tab's stack: the empty list's 「転送先を見る」 opens 「メールの転送」 straight.
+/// Which tab is shown, and the 設定 tab's stack: the empty list's buttons open 「メールの転送」 or 「うまく届かないとき」 straight.
 struct TabRoute: Equatable {
     var tab: MainTab = .parcels
     var settingsPath: [SettingsPage] = []
@@ -48,6 +48,12 @@ struct TabRoute: Equatable {
     /// The 設定 tab with 「メールの転送」 pushed (replacing what was open there).
     mutating func showForwarding() {
         settingsPath = [.forward]
+        tab = .settings
+    }
+
+    /// The 設定 tab with 「うまく届かないとき」 pushed (replacing what was open there).
+    mutating func showTrouble() {
+        settingsPath = [.delivery]
         tab = .settings
     }
 }
@@ -89,7 +95,7 @@ final class MainScreens {
         let today: @Sendable () -> String = { Format.todayJst(now: Date()) }
         let screens = MainScreens(
             changes: changes,
-            list: .live(reader: reader, writer: writer),
+            list: .live(reader: reader, writer: writer, readMail: { await SettingsReader(provider: auth.provider).mailSoFar() }),
             calendar: CalendarModel(reader: reader, changes: changes, today: today),
             spend: SpendModel(reader: reader, writer: writer, changes: changes, today: today),
             settings: .live(auth: auth, changes: changes),
@@ -255,7 +261,7 @@ struct MainTabView: View {
         switch tab {
         case .parcels:
             let list = screens.list
-            ParcelListView(model: list, openSettings: { route.showSettings() }, openForwarding: { route.showForwarding() }) { id in
+            ParcelListView(model: list, openSettings: { route.showSettings() }, openForwarding: { route.showForwarding() }, openTrouble: { route.showTrouble() }) { id in
                 TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
             .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }

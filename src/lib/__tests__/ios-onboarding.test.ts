@@ -323,7 +323,8 @@ describe("the wiring", () => {
     expect(tabs).toMatch(/openForwarding:\s*\{\s*route\.showForwarding\(\)\s*\}/);
     expect(tabs).toMatch(/settingsPath = \[\.forward\]/);
     const list = stripComments(read("ios/Otodoke/Screens/Parcels/ParcelListView.swift"));
-    expect(list).toMatch(/EmptyParcels\(openSettings: openForwarding \?\? openSettings/);
+    expect(list).toMatch(/case \.forwarding: \(openForwarding \?\? openSettings\)\(\)/);
+    expect(list).toMatch(/EmptyParcels\(guide: ParcelEmptyText\.guide\(model\.mailSoFar\), open: openEmptyGuide/);
   });
 });
 

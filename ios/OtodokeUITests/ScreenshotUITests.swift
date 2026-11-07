@@ -97,6 +97,21 @@ final class ScreenshotUITests: XCTestCase {
         }
     }
 
+    /// The empty list's three guides, light and dark.
+    func testTheEmptyListGuides() throws {
+        for scenario in ["empty", "empty-received", "empty-approval"] {
+            for style in ["Light", "Dark"] {
+                // The launch argument -AppleInterfaceStyle does not reach the app here: set the device's appearance.
+                XCUIDevice.shared.appearance = style == "Dark" ? .dark : .light
+                let app = launch(scenario)
+                XCTAssertTrue(app.staticTexts["まだ荷物がありません"].waitForExistence(timeout: 10), scenario)
+                try shoot("\(scenario)-\(style)")
+                app.terminate()
+            }
+            XCUIDevice.shared.appearance = .light
+        }
+    }
+
     func testTheLoginScreens() throws {
         for scenario in ["login", "login-signup", "login-error", "login-sent"] {
             let app = launch(scenario)
