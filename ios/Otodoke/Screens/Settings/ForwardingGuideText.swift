@@ -16,6 +16,12 @@ enum ForwardingGuideText {
         let steps: [String]
     }
 
+    /// An explainer video: the path under https://otodoke.app and its length (opened in Safari, not played here).
+    struct Video: Sendable {
+        let path: String
+        let seconds: Int
+    }
+
     struct Service: Identifiable, Sendable {
         let id: String
         let title: String
@@ -23,6 +29,7 @@ enum ForwardingGuideText {
         let addresses: String?
         /// How long it takes and where (shown with a clock).
         let meta: String?
+        let video: Video?
         let link: Link?
         let linkNote: String?
         let groups: [Group]
@@ -68,6 +75,7 @@ enum ForwardingGuideText {
             title: "Gmail",
             addresses: nil,
             meta: "5 分・パソコンのブラウザで。スマホの Gmail アプリでは設定できません",
+            video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 131),
             link: Link(title: "転送の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/fwdandpop"),
             linkNote: "Gmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
             groups: [
@@ -96,6 +104,7 @@ enum ForwardingGuideText {
             title: "iCloud メール",
             addresses: "@icloud.com・@me.com・@mac.com",
             meta: "3 分・ブラウザで",
+            video: Video(path: "/guide/videos/otodoke-fwd-icloud-720.mp4", seconds: 92),
             link: Link(title: "iCloud メールを開く", url: "https://www.icloud.com/mail/"),
             linkNote: nil,
             groups: [
@@ -116,6 +125,7 @@ enum ForwardingGuideText {
             title: "Outlook",
             addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
             meta: "3 分・ブラウザで",
+            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 99),
             link: Link(title: "転送の設定を開く", url: "https://outlook.live.com/mail/0/options/mail/forwarding"),
             linkNote: "サインインしていないと Outlook の紹介ページが開きます。サインインしてから、もう一度このボタンを押してください。",
             groups: [
@@ -136,6 +146,7 @@ enum ForwardingGuideText {
             title: "そのほかのメール",
             addresses: nil,
             meta: nil,
+            video: nil,
             link: nil,
             linkNote: nil,
             groups: [],
@@ -157,4 +168,9 @@ enum ForwardingGuideText {
     ]
     /// The Web's FORWARDING_CHECK_ACTION: the button under the lines, opening 「うまく届かないとき」.
     static let checkAction = "「うまく届かないとき」を開く"
+
+    // MARK: 動画
+
+    static let videoLabel = "動画で見る"
+    static let videoCredit = "動画の画面はイメージです。声は AivisSpeech のまお、曲は Mixkit の素材です。"
 }

@@ -15,6 +15,8 @@ import {
   GMAIL_FILTER,
   PITFALLS_HEADING,
   PITFALLS_LEAD,
+  VIDEO_CREDIT,
+  VIDEO_LABEL,
 } from "../forwarding-guide";
 
 /**
@@ -27,9 +29,9 @@ import {
  * the settings' address, while iOS draws the guide on the same 「メールの転送」 page that holds the address, so there
  * is nowhere to go. FORWARDING_CHECK_ACTION (「「うまく届かないとき」を開く」) is on iOS: a link to that page.
  *
- * Left out on purpose, for now: the explainer videos (ForwardingGuide.video, VIDEO_LABEL, VIDEO_CREDIT). The videos are
- * not in production yet, so iOS does not show them; they are put into the iOS text (and into the comparison above)
- * when the videos are live.
+ * The explainer videos are on iOS too (ForwardingGuide.video, VIDEO_LABEL, VIDEO_CREDIT): a row under each service's
+ * time that opens the video in Safari (nothing is played in the app), and the credit at the end. Their paths and
+ * seconds are compared below, and so is the rounding of the length (the Web's own two lines are run).
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
@@ -52,6 +54,40 @@ const iosHelpLiterals = () => literals(read(HELP));
 /** The Web draws a service's title alone and its addresses on a line of their own under it (C13); iOS does the same. */
 const iosTitle = (g: { title: string; addresses?: string }) => (g.addresses ? [g.title, g.addresses] : [g.title]);
 
+/** The text of the block opened by the first "{" at or after `from` (braces balanced). */
+function braceBlock(src: string, from: number): string {
+  const open = src.indexOf("{", from);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}" && --depth === 0) return src.slice(open, i + 1);
+  }
+  return "";
+}
+/** The credit is in the body's VStack, not inside the `if !servicesOnly { ... }` blocks, so both forms draw it. */
+function creditIsOutsideServicesOnly(view: string): boolean {
+  const at = view.indexOf("Text(T.videoCredit)");
+  if (at < 0) return false;
+  let from = 0;
+  for (;;) {
+    const i = view.indexOf("if !servicesOnly", from);
+    if (i < 0) return true;
+    const block = braceBlock(view, i);
+    const start = view.indexOf(block, i);
+    if (at >= start && at < start + block.length) return false;
+    from = i + 1;
+  }
+}
+/** Inside serviceBody: the meta (time) row, then the video row, then the link, in that order. */
+function videoRowSitsBetweenTimeAndLink(view: string): boolean {
+  const start = view.indexOf("private func serviceBody");
+  const body = braceBlock(view, start);
+  const meta = body.indexOf("service.meta");
+  const video = body.indexOf("service.video");
+  const link = body.indexOf("service.link");
+  return meta >= 0 && video > meta && link > video;
+}
+
 /** Every `static let <name> = "<literal>"`. */
 function swiftConstants(src: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -65,6 +101,7 @@ function expectedGuideLiterals(): string[] {
   for (const g of FORWARDING_GUIDES) {
     out.push(...iosTitle(g));
     if (g.time) out.push(g.time);
+    if (g.video) out.push(g.video.src);
     if (g.link) out.push(g.link.label, g.link.href);
     if (g.linkNote) out.push(g.linkNote);
     for (const group of g.groups) {
@@ -74,7 +111,7 @@ function expectedGuideLiterals(): string[] {
     if (g.intro) out.push(g.intro);
     out.push(...g.notes);
   }
-  out.push(FORWARDING_CHECK.heading, ...FORWARDING_CHECK.lines, FORWARDING_CHECK_ACTION);
+  out.push(FORWARDING_CHECK.heading, ...FORWARDING_CHECK.lines, FORWARDING_CHECK_ACTION, VIDEO_LABEL, VIDEO_CREDIT);
   return out;
 }
 
@@ -125,6 +162,78 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(read(TEXT).match(/filterAfterStep: \d+/g)).toHaveLength(1);
     const filter = read("ios/Otodoke/Screens/Settings/SettingsModel.swift").match(/static let gmailFilter = "([^"]+)"/)?.[1];
     expect(filter).toBe(GMAIL_FILTER);
+  });
+
+  it("each video row is the Web's: path and seconds per service, none for the others, drawn under the time and above the link", () => {
+    const text = read(TEXT);
+    const withVideo = FORWARDING_GUIDES.filter((g) => g.video).map((g) => g.id);
+    expect(withVideo).toEqual(["gmail", "icloud", "outlook"]);
+    const found = [...text.matchAll(/video: Video\(path: "([^"]+)", seconds: (\d+)\)/g)].map((m) => ({ src: m[1], seconds: Number(m[2]) }));
+    expect(found).toEqual(FORWARDING_GUIDES.flatMap((g) => (g.video ? [{ src: g.video.src, seconds: g.video.seconds }] : [])));
+    expect(text.match(/video: nil,/g)).toHaveLength(FORWARDING_GUIDES.length - withVideo.length);
+    for (const g of FORWARDING_GUIDES) if (g.video) expect(existsSync(path.join(ROOT, "public", g.video.src)), g.video.src).toBe(true);
+    expect(swiftConstants(stripComments(text)).get("videoLabel")).toBe(VIDEO_LABEL);
+    expect(swiftConstants(stripComments(text)).get("videoCredit")).toBe(VIDEO_CREDIT);
+    // Position in the view, by structure (see `structure` below).
+    const view = stripComments(read(VIEWS[0]));
+    expect(creditIsOutsideServicesOnly(view)).toBe(true);
+    expect(videoRowSitsBetweenTimeAndLink(view)).toBe(true);
+    // The credit is drawn only while a card with a video is open.
+    expect(view).toMatch(/if ForwardingGuideVideo\.showsCredit\(opened: opened, services: T\.services\) \{\s*Text\(T\.videoCredit\)/);
+    // The video row's hint is a fixed sentence, set on the row only.
+    expect(swiftConstants(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).get("openHint")).toBe("Safari で動画を開きます");
+    expect(view.match(/\.accessibilityHint\(ForwardingGuideVideo\.openHint\)/g)).toHaveLength(1);
+    // Opened in Safari through the https-only opener; no player is added.
+    expect(view).toMatch(/ForwardingGuideVideo\.url\(path: video\.path\)[\s\S]*SettingsWeb\.openPage\(url, openURL\)/);
+    expect(view).not.toMatch(/AVKit|VideoPlayer|AVPlayer/);
+    expect(read("ios/project.yml")).not.toMatch(/AVKit/);
+  });
+
+  /** The Web's two lines (GuideVideo in src/app/guide/forwarding/page.tsx), run as they are. */
+  function webMinutes(seconds: number): string {
+    const src = read("src/app/guide/forwarding/page.tsx");
+    const halvesLine = src.match(/const halves = (.+);/)?.[1];
+    const minutesLine = src.match(/const minutes = (.+);/)?.[1];
+    if (!halvesLine || !minutesLine) throw new Error("GuideVideo's rounding lines are not found");
+    return new Function("video", `const halves = ${halvesLine}; return ${minutesLine};`)({ seconds }) as string;
+  }
+
+  it("the length is rounded as the Web does: 89, 90, 91, 131, 150 and the table the Swift test holds", () => {
+    expect([89, 90, 91, 131, 150, 14, 45].map(webMinutes)).toEqual(["1 分半", "1 分半", "1 分半", "2 分", "2 分半", "半分", "1 分"]);
+    const swiftTest = read("ios/OtodokeTests/ForwardingGuideVideoTests.swift");
+    const table = swiftTest.slice(swiftTest.indexOf("WEB-TABLE-BEGIN"), swiftTest.indexOf("WEB-TABLE-END"));
+    const rows = [...table.matchAll(/\((\d+), "([^"]+)"\)/g)].map((m) => ({ seconds: Number(m[1]), minutes: m[2] }));
+    const seconds = rows.map((r) => r.seconds);
+    for (const s of [89, 90, 91, 131, 150, ...FORWARDING_GUIDES.flatMap((g) => (g.video ? [g.video.seconds] : []))]) expect(seconds).toContain(s);
+    for (const r of rows) expect(r.minutes, `${r.seconds} seconds`).toBe(webMinutes(r.seconds));
+    // The Swift side computes it the same way: nearest half minute, at least half a minute.
+    const impl = stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"));
+    expect(impl).toContain("max(0.5, (Double(seconds) / 30).rounded(.toNearestOrAwayFromZero) / 2)");
+    // The literals hold interpolations ("\\(...)"), so they are read with a pattern that allows a backslash.
+    const words = [...impl.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).filter((l) => /分|約/.test(l));
+    expect(words).toEqual(["\\(Int(halves)) 分", "半分", "\\(Int(halves.rounded(.down))) 分半", "\\(ForwardingGuideText.videoLabel)・約 \\(minutes(seconds: seconds))"]);
+  });
+
+  it("negative control: a wrong row, a missing video and a changed length are caught", () => {
+    expect(webMinutes(131)).not.toBe("2 分半");
+    expect(webMinutes(150)).not.toBe("2 分");
+    const text = read(TEXT);
+    const found = (t: string) => [...t.matchAll(/video: Video\(path: "([^"]+)", seconds: (\d+)\)/g)].map((m) => ({ src: m[1], seconds: Number(m[2]) }));
+    expect(found(text.replace("seconds: 131", "seconds: 130"))).not.toEqual(found(text));
+    expect(found(text.replace(/video: Video\([^)]+\),/, "video: nil,"))).not.toEqual(found(text));
+    // The structure checks catch the credit moved into the servicesOnly branch and the video row moved under the link.
+    const viewSrc = stripComments(read(VIEWS[0]));
+    const creditBlock = viewSrc.slice(viewSrc.indexOf("if ForwardingGuideVideo.showsCredit"), viewSrc.indexOf("if ForwardingGuideVideo.showsCredit") + 400);
+    const movedCredit = viewSrc.replace("if !servicesOnly {\n                verify", "if !servicesOnly {\n                Text(T.videoCredit)\n                verify").replace(/if ForwardingGuideVideo\.showsCredit[\s\S]*?\n            \}\n/, "");
+    expect(creditBlock).toContain("Text(T.videoCredit)");
+    expect(creditIsOutsideServicesOnly(viewSrc)).toBe(true);
+    expect(creditIsOutsideServicesOnly(movedCredit)).toBe(false);
+    const videoRow = /            if let video = service\.video \{[\s\S]*?\n            \}\n/.exec(viewSrc)?.[0] ?? "";
+    expect(videoRow).not.toBe("");
+    const movedVideo = viewSrc.replace(videoRow, "").replace("            if let body = service.body {", videoRow + "            if let body = service.body {");
+    expect(videoRowSitsBetweenTimeAndLink(movedVideo)).toBe(false);
+    const withoutVideos = literals(text.replace(/video: Video\(path: "[^"]+"/g, "video: Video(path: \"\"")).filter((s) => !IDS.test(s));
+    expect(withoutVideos).not.toEqual(expectedGuideLiterals());
   });
 
   it("every link is https", () => {

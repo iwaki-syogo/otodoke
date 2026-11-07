@@ -43,7 +43,16 @@ struct SettingsScreenShots {
     @Test(.enabled(if: dir != nil), arguments: SettingsPage.allCases)
     func shootPage(_ page: SettingsPage) async throws {
         let model = try await Self.model(.keyPresent)
-        try await shootBoth(SettingsView(model: model, expanded: true, page: page), "page-\(page)", height: page == .handling ? 2400 : page == .forward ? 3600 : 1500)
+        try await shootBoth(SettingsView(model: model, expanded: true, page: page), "page-\(page)", height: page == .handling ? 2400 : page == .forward ? 3900 : 1500)
+    }
+
+    /// The video credit follows the cards: nothing open (no credit) and only Gmail open (credit), in both forms.
+    @Test(.enabled(if: dir != nil), arguments: [("closed", Set<String>()), ("gmail", Set(["gmail"]))])
+    func shootVideoCredit(_ state: (String, Set<String>)) async throws {
+        for servicesOnly in [false, true] {
+            let view = ScrollView { ForwardingGuideView(servicesOnly: servicesOnly, openIDs: state.1).padding(16) }
+            try await shootBoth(view, "video-credit-\(state.0)-\(servicesOnly ? "onboarding" : "page")", height: state.0 == "gmail" ? 1700 : 900)
+        }
     }
 
     @Test(.enabled(if: dir != nil), arguments: [Scenario.keyFailed, .keyNone])
@@ -52,7 +61,7 @@ struct SettingsScreenShots {
         try await shootBoth(SettingsView(model: model, page: .key), "page-key-\(scenario.rawValue)", height: 900)
     }
 
-    private func shootBoth(_ view: SettingsView, _ name: String, height: CGFloat) async throws {
+    private func shootBoth(_ view: some View, _ name: String, height: CGFloat) async throws {
         for style in [UIUserInterfaceStyle.light, .dark] {
             let image = try await Self.render(view, style: style, height: height)
             let url = URL(fileURLWithPath: try #require(Self.dir)).appendingPathComponent("settings-\(name)-\(style == .dark ? "dark" : "light").png")

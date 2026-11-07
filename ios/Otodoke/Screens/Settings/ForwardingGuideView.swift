@@ -55,9 +55,10 @@ struct ForwardingGuideView: View {
     private let servicesOnly: Bool
 
     /// `expanded`: every service starts open (the screen check).
-    init(expanded: Bool = false, servicesOnly: Bool = false) {
+    /// `openIDs`: only these services start open (the screen check of the credit).
+    init(expanded: Bool = false, servicesOnly: Bool = false, openIDs: Set<String> = []) {
         self.servicesOnly = servicesOnly
-        _opened = State(initialValue: expanded ? Set(T.services.map(\.id)) : [])
+        _opened = State(initialValue: expanded ? Set(T.services.map(\.id)) : openIDs)
     }
 
     var body: some View {
@@ -75,6 +76,13 @@ struct ForwardingGuideView: View {
             }
             if !servicesOnly {
                 verify
+            }
+            // The Web ends the page with it. Here only while a card with a video is open (the video rows are inside the cards).
+            if ForwardingGuideVideo.showsCredit(opened: opened, services: T.services) {
+                Text(T.videoCredit)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -167,6 +175,10 @@ struct ForwardingGuideView: View {
                     }
                 }
             }
+            if let video = service.video {
+                SettingsParts.linkCard(ForwardingGuideVideo.heading(seconds: video.seconds)) { openVideo(video) }
+                    .accessibilityHint(ForwardingGuideVideo.openHint)
+            }
             if let link = service.link {
                 VStack(alignment: .leading, spacing: 6) {
                     SettingsParts.linkCard(link.title) { open(link.url) }
@@ -227,6 +239,12 @@ struct ForwardingGuideView: View {
         }
         .padding(10)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// The video opens in Safari (https and otodoke.app only); it is not played in the app.
+    private func openVideo(_ video: T.Video) {
+        guard let url = ForwardingGuideVideo.url(path: video.path) else { return }
+        SettingsWeb.openPage(url, openURL)
     }
 
     private func open(_ url: String) {
