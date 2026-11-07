@@ -53,7 +53,7 @@ struct PasswordAuthServiceTests {
     }
 
     /// The same answer for an address with an account and one without (no account is told).
-    @Test(arguments: [(400, Optional("user_already_exists")), (422, Optional("email_exists")), (429, Optional("over_email_send_rate_limit")), (429, nil)])
+    @Test(arguments: [(422, Optional("email_exists")), (429, Optional("over_email_send_rate_limit")), (429, nil)])
     func signUpAnswersSentWhateverTheAddress(status: Int, code: String?) async throws {
         let fake = FakeSupabase.make()
         await fake.forceAuth("signup", status: status, code: code)

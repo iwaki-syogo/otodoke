@@ -222,6 +222,116 @@ struct ExistingAddressTests {
         #expect(model.errorMessage == nil)
     }
 
+    // MARK: the sign-up's own answer tells (identities: [] / 422 user_already_exists)
+
+    private func signUp(_ model: LoginModel) async {
+        model.setMode(.signUp)
+        model.password = PW.good
+        model.passwordAgain = PW.good
+        await model.submit()
+    }
+
+    /// The registered address at once: the sign-in form, the guidance, nothing waited for and nothing held.
+    private func expectExistingAtOnce(_ model: LoginModel) {
+        expectExistingAddress(model)
+        #expect(model.passwordAgain.isEmpty)
+        #expect(!model.canResendConfirmation)
+        #expect(!model.canCheckConfirmation)
+        #expect(model.toast == nil)
+    }
+
+    private func expectWaiting(_ model: LoginModel) {
+        #expect(model.isWaitingForConfirmation)
+        #expect(model.isHoldingPassword)
+        #expect(!model.isExistingAddress)
+        #expect(model.notice == LoginText.signupExistsOrSent)
+        #expect(model.errorMessage == nil)
+        #expect(model.email == FakeSupabase.email)
+    }
+
+    @Test func aSignUpAnsweredWithNoIdentitiesIsAnExistingAddress() async {
+        await fake.setSignUpIdentities(.empty)
+        let model = make(fake)
+        await signUp(model)
+        expectExistingAtOnce(model)
+    }
+
+    @Test func aSignUpAnsweredWithOneIdentityWaitsForTheMail() async {
+        await fake.setSignUpIdentities(.one)
+        let model = make(fake)
+        await signUp(model)
+        expectWaiting(model)
+    }
+
+    @Test func aSignUpAnsweredWithoutTheIdentitiesFieldWaitsForTheMail() async {
+        await fake.setSignUpIdentities(.absent)
+        let model = make(fake)
+        await signUp(model)
+        expectWaiting(model)
+    }
+
+    @Test func aSignUpAnsweredWith422UserAlreadyExistsIsAnExistingAddress() async {
+        await fake.forceAuth("signup", status: 422, code: "user_already_exists")
+        let model = make(fake)
+        await signUp(model)
+        expectExistingAtOnce(model)
+    }
+
+    @Test func theFakeServersOwnAnswerForARegisteredAddressIsAnExistingAddress() async {
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: "someone-elses", confirmed: true)
+        let model = make(fake)
+        await signUp(model)
+        expectExistingAtOnce(model)
+        // Nothing is waited for: no try is made after it.
+        await model.checkConfirmation()
+        #expect(await fake.count("POST", "token") == 0)
+    }
+
+    @Test func aNewAddressStillWaitsForTheMail() async {
+        let model = make(fake)
+        await signUp(model)
+        expectWaiting(model)
+    }
+
+    @Test func aSignInPressedAfterTheImmediateGuidanceSaysTheOrdinaryWordsWhenWrong() async {
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: "someone-elses", confirmed: true)
+        let model = make(fake)
+        await signUp(model)
+        #expect(model.isExistingAddress)
+        model.password = PW.good
+        await model.submit()
+        #expect(!model.isExistingAddress)
+        #expect(model.errorMessage == LoginText.credentials)
+    }
+
+    @Test func aFailedSignUpKeepsItsOwnWordsAndSaysNothingAboutTheAddress() async {
+        await fake.forceAuth("signup", status: 400, code: "captcha_failed")
+        let model = make(fake)
+        await signUp(model)
+        #expect(model.errorMessage == LoginText.captcha)
+        #expect(!model.isExistingAddress)
+        #expect(!model.isWaitingForConfirmation)
+        await fake.forceAuth("signup", status: 429, code: "over_request_rate_limit")
+        await signUp(model)
+        #expect(model.errorMessage == LoginText.rate)
+        #expect(!model.isExistingAddress)
+    }
+
+    @Test func theServiceTellsTheOutcome() async throws {
+        let auth = PW.auth(fake, storage: InMemorySessionStorage())
+        await fake.setSignUpIdentities(.empty)
+        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .existing)
+        await fake.setSignUpIdentities(.one)
+        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .sent)
+        await fake.setSignUpIdentities(.absent)
+        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .sent)
+        await fake.forceAuth("signup", status: 422, code: "user_already_exists")
+        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .existing)
+        // The answers that do not say whether the address has an account stay "sent".
+        await fake.forceAuth("signup", status: 429, code: "over_email_send_rate_limit")
+        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .sent)
+    }
+
     @Test func otherRefusalsOfTheWaitDoNotSayIt() async {
         let model = make(fake)
         model.setMode(.signUp)

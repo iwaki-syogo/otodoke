@@ -259,7 +259,16 @@ final class LoginModel {
                 canResendConfirmation = false
                 unconfirmedAddress = nil
             case .signUp:
-                try await auth.signUp(email: address, password: typed, captchaToken: captchaToken)
+                let outcome = try await auth.signUp(email: address, password: typed, captchaToken: captchaToken)
+                if outcome == .existing {
+                    // The address has an account: no mail was sent and the password typed was not set. No wait and no
+                    // held password: the sign-in form with the guidance of a registered address, the address kept.
+                    self.mode = .signIn
+                    existingAddress = address
+                    canResendConfirmation = false
+                    unconfirmedAddress = nil
+                    break
+                }
                 notice = LoginText.signupExistsOrSent
                 // Wait for the mail's link; the mail can be sent again from the waiting screen.
                 confirmationAddress = address

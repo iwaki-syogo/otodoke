@@ -151,6 +151,12 @@ actor FakeSupabase {
     /// status with GoTrue's error `code` (nil: no code, e.g. a bare 429 or Cloudflare's 500).
     func forceAuth(_ endpoint: String, status: Int, code: String?) { forcedAuth[endpoint] = (status, code) }
 
+    /// What the user object of a sign-up answer says about `identities` (the real GoTrue's: one identity for a new or unconfirmed
+    /// account, [] for a confirmed one; `.auto` picks by the address's account).
+    enum SignUpIdentities: Sendable { case auto, empty, one, absent }
+    private var signUpIdentities = SignUpIdentities.auto
+    func setSignUpIdentities(_ mode: SignUpIdentities) { signUpIdentities = mode }
+
     /// Ends `forceAuth` for `endpoint`: the next answers are the fake's own again.
     func clearForcedAuth(_ endpoint: String) { forcedAuth[endpoint] = nil }
 
@@ -323,12 +329,27 @@ actor FakeSupabase {
             guard let address = body["email"] as? String, let secret = body["password"] as? String else {
                 return Self.gotrueError(request, 400, "validation_failed", "missing email or password")
             }
-            if passwordAccounts[address] == nil { passwordAccounts[address] = (secret, false) }
+            let hadAccount = passwordAccounts[address] != nil
+            let confirmedAccount = passwordAccounts[address]?.confirmed == true
+            if !hadAccount { passwordAccounts[address] = (secret, false) }
             // Confirm email is on: the user object only, no session (also for an address that has an account).
             var u = user()
             u["email"] = address
             u["email_confirmed_at"] = NSNull()
             u["confirmed_at"] = NSNull()
+            // GoTrue: a new account, and an unconfirmed one (its mail is sent again), has its email identity; an address with a confirmed account gets identities: [].
+            let identity: [String: Any] = [
+                "id": Self.me, "identity_id": "00000000-0000-4000-8000-0000000000a1", "user_id": Self.me,
+                "identity_data": ["email": address], "provider": "email",
+                "created_at": "2026-11-01T00:00:00.000000Z", "last_sign_in_at": "2026-11-01T00:00:00.000000Z",
+                "updated_at": "2026-11-01T00:00:00.000000Z",
+            ]
+            switch signUpIdentities {
+            case .auto: u["identities"] = confirmedAccount ? [Any]() : [identity]
+            case .empty: u["identities"] = [Any]()
+            case .one: u["identities"] = [identity]
+            case .absent: u["identities"] = nil
+            }
             return .json(200, u)
         case ("POST", "resend"):
             if let forced = forcedAuth["resend"] { return forcedReply(request, forced) }

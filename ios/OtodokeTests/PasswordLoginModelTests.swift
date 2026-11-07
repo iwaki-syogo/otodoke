@@ -190,7 +190,9 @@ struct PasswordLoginModelTests {
         #expect(auth.state != .signedIn(userID: FakeSupabase.me))
     }
 
-    @Test func anAddressWithAnAccountGetsTheSameWords() async {
+    /// Supabase's own words for it (422 user_already_exists) are recognised now: no "sent" sentence, the sign-in form
+    /// with the registered address's guidance (ExistingAddressTests has the whole state).
+    @Test func anAddressTheAnswerSaysHasAnAccountGetsTheGuidanceNotTheSentSentence() async {
         let fake = FakeSupabase.make()
         await fake.forceAuth("signup", status: 422, code: "user_already_exists")
         let (model, _) = make(fake)
@@ -198,8 +200,9 @@ struct PasswordLoginModelTests {
         model.password = PW.good
         model.passwordAgain = PW.good
         await model.submit()
-        #expect(model.notice == LoginText.signupExistsOrSent)
+        #expect(model.notice == nil)
         #expect(model.errorMessage == nil)
+        #expect(model.isExistingAddress)
     }
 
     @Test func aNonASCIIAddressIsRefusedWithTheWebsWords() async {

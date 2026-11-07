@@ -113,7 +113,16 @@ final class AuthService {
     /// auth_secret, redirectTo: AppConfig.authRedirect, captchaToken:). The password's rule is LoginModel's, on
     /// the password as typed. user_already_exists, email_exists, over_email_send_rate_limit and a 429 without a
     /// code answer as sent.
-    func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) {
+    /// What a sign-up that was accepted tells: `.sent` (a confirmation mail is on its way) or `.existing` (the address
+    /// has an account already: Supabase answers a confirmed address with a user whose `identities` is an empty array,
+    /// and a 422 user_already_exists when it says so; no mail is sent and the password typed is not set).
+    enum SignUpOutcome: Equatable, Sendable {
+        case sent
+        case existing
+    }
+
+    @discardableResult
+    func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) -> SignUpOutcome {
         let address = PasswordV1.emailNorm(email)
         guard Self.isValidEmail(address) else { throw .invalidEmail }
         guard Self.isASCIIAddress(address) else { throw .emailNotAscii }
@@ -127,9 +136,14 @@ final class AuthService {
                 // afterwards, as the Web does, so this session is not kept.
                 try? await provider.auth.signOut(scope: .local)
             }
+            // identities: [] is the fake user Supabase answers for an address that already has an account; nil (the
+            // field missing) and one or more identities are a new account waiting for its mail.
+            if case let .user(user) = answer, let identities = user.identities, identities.isEmpty { return .existing }
+            return .sent
         } catch {
-            if case .sent = Self.mailRefusal(error) { return }
+            if case let .refused(_, code) = Self.answer(of: error), code == "user_already_exists" { return .existing }
             if case let .failed(failure) = Self.mailRefusal(error) { throw failure }
+            return .sent
         }
     }
 
