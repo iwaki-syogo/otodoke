@@ -126,6 +126,9 @@ describe("signInWithAuthSecret", () => {
     const SUPABASE_SIGN_IN_UP_PER_5_MIN = authRateLimit("sign_in_sign_ups");
     const { LOGIN_MAIL_LIMITS, LOGIN_TRY_LIMITS } = await import("@/lib/login-mail-limit");
     expect(LOGIN_TRY_LIMITS.ipPer10Minutes + LOGIN_MAIL_LIMITS.ipPerHour).toBeLessThan(SUPABASE_SIGN_IN_UP_PER_5_MIN);
+    // One IP's mails per hour stay below Supabase's project-wide mail limit (config.toml email_sent),
+    // so a single IP cannot take the whole mail allowance.
+    expect(LOGIN_MAIL_LIMITS.ipPerHour).toBeLessThan(authRateLimit("email_sent"));
     // Only the address's attempt is given back after a success, never the try.
     expect(calls("release_login_mail").map(([, args]) => args.p_email_hash)).toEqual([sha(`otodoke:login-attempt:email:${EMAIL}`)]);
   });
