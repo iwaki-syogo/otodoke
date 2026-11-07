@@ -46,7 +46,7 @@ struct SettingsScreenShots {
         try await shootBoth(SettingsView(model: model, expanded: true, page: page), "page-\(page)", height: page == .handling ? 2400 : page == .forward ? 3900 : 1500)
     }
 
-    /// The video credit follows the cards: nothing open (no credit) and only Gmail open (credit), in both forms.
+    /// The video credit is under the cards once and always: nothing open and only Gmail open, in both forms.
     @Test(.enabled(if: dir != nil), arguments: [("closed", Set<String>()), ("gmail", Set(["gmail"]))])
     func shootVideoCredit(_ state: (String, Set<String>)) async throws {
         for servicesOnly in [false, true] {

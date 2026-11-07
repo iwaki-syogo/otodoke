@@ -492,7 +492,7 @@ struct SettingsModelTests {
         await s.model.sceneBecameActive()
         #expect(await s.fake.count("GET", "user_keys") == before + 1)
     }
-    // MARK: 「メールの転送」 page shown (Gmail step 4: open it again after a while)
+    // MARK: 「メールの転送」 page shown (the Gmail approval: open it again after a while)
 
     private func confirmationReads(_ fake: FakeSupabase) async -> Int {
         await fake.requests("GET", "emails").filter { $0.query("classification") == ["eq.forwarding_confirmation"] }.count

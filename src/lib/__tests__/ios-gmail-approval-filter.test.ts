@@ -15,7 +15,9 @@ const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").repl
 const DIR = "ios/Otodoke/Screens/Settings";
 const ROWS = stripComments(read(`${DIR}/SettingsStatusRows.swift`));
 const GUIDE = stripComments(read(`${DIR}/ForwardingGuideView.swift`));
-const NOTE = "フィルタをまだ作っていなければ、「含む」に貼るこの文字列をコピーして Gmail に戻ります。";
+/** The Web's sentence, read from ApprovalFilterCopy itself. */
+const WEB_STEPS = read("src/components/forwarding-steps.tsx");
+const NOTE = WEB_STEPS.slice(WEB_STEPS.indexOf("export function ApprovalFilterCopy")).match(/<p className="[^"]*">([^<]+)<\/p>/)?.[1] ?? "";
 
 /** The text of the block opened by the first "{" at or after `from` (braces balanced). */
 function braceBlock(src: string, from: number): string {
@@ -38,6 +40,14 @@ describe("Gmail approval card: filter text and copy button", () => {
   it("the sentence is held once, in GmailApprovalText, and is the owner's words", () => {
     const text = read(`${DIR}/GmailApprovalText.swift`);
     expect(text.match(/static let filterNote = "([^"]+)"/)?.[1]).toBe(NOTE);
+    // Negative control: the Web's sentence was found, and a changed iOS word would not match it.
+    expect(NOTE.length).toBeGreaterThan(20);
+    expect(text.replace("「含む」", "『含む』").match(/static let filterNote = "([^"]+)"/)?.[1]).not.toBe(NOTE);
+    // Same order as the Web's ApprovalFilterCopy: the sentence, then the shared box (GmailFilterCopy).
+    const webCard = WEB_STEPS.slice(WEB_STEPS.indexOf("export function ApprovalFilterCopy"));
+    expect(webCard.indexOf(NOTE)).toBeGreaterThan(0);
+    expect(webCard.indexOf("<GmailFilterCopy />")).toBeGreaterThan(webCard.indexOf(NOTE));
+    expect(ROWS.indexOf("GmailFilterBox()")).toBeGreaterThan(ROWS.indexOf("GmailApprovalText.filterNote"));
     expect(ROWS).not.toContain("フィルタをまだ");
     expect(GUIDE).not.toContain("フィルタをまだ");
   });

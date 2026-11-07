@@ -1,6 +1,6 @@
-// The sentence of the Gmail approval card that points to the filter text under it. It is the owner's decision
-// and is not on the Web yet; it lives here, apart from SettingsWebText (whose words are all looked up in the Web's
-// source), until the Web's constant arrives and a test can compare the two.
+// The sentence of the Gmail approval card that points to the filter text under it: the Web's ApprovalFilterCopy
+// (src/components/forwarding-steps.tsx). src/lib/__tests__/ios-gmail-approval-filter.test.ts compares it word for word.
+// It lives here, apart from SettingsWebText, whose words are looked up in the Web's settings pages.
 
 import Foundation
 

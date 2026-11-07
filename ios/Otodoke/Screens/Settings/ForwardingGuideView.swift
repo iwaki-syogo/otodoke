@@ -238,7 +238,7 @@ struct ForwardingGuideView: View {
     }
 }
 
-/// The Gmail filter text with its copy button (under step 7 of the Gmail card, and in the approval card).
+/// The Gmail filter text with its copy button (under the Gmail card's filter step, and in the approval card; the Web's GmailFilterCopy).
 struct GmailFilterBox: View {
     var body: some View {
         HStack(spacing: 8) {

@@ -205,6 +205,7 @@ final class SettingsModel {
         }
         unread = readWaiting
         dropped = readDropped
+        lastApprovalRead = at
     }
 
     /// The reads of load(): each fails on its own.
@@ -254,12 +255,33 @@ final class SettingsModel {
     }
 
     /// A page of the list was shown (pushed or come back to): reads again through load(), so a mail that
-    /// came while the tab stayed open (the Gmail approval, step 4 of the guide) shows without leaving the
+    /// came while the tab stayed open (the Gmail approval) shows without leaving the
     /// tab. Nothing is cleared while it reads. Skipped while a read is running, unless that read was
     /// cut off (its answers will be dropped).
     func pageShown() async {
         guard loadsRunning == 0 || cutOff?.isRaised == true else { return }
         await load()
+    }
+
+    /// The card's auto refresh runs only for a person who has an address to forward to and no approval link yet
+    /// (a failed read of the confirmation counts as "no link yet", as on the Web).
+    var pollsForApproval: Bool {
+        guard case .present? = keyPanel, addressCanBeCopied, confirmURL == nil else { return false }
+        return true
+    }
+
+    /// When the confirmation mail was last read (by load() or refreshApproval()).
+    private(set) var lastApprovalRead: Date?
+
+    /// Reads only the forwarding confirmation again (the auto refresh): no other state is touched. Skipped while a
+    /// full read runs, and dropped if one began meanwhile (it owns the state).
+    func refreshApproval() async {
+        guard pollsForApproval, loadsRunning == 0 else { return }
+        lastApprovalRead = now()
+        let result = await reader.forwardingConfirmations()
+        guard pollsForApproval, loadsRunning == 0 else { return }
+        confirmURL = result.value.flatMap(Self.pickApproval)?.url
+        if case .failed = result { confirmationFailed = true } else { confirmationFailed = false }
     }
 
     /// iOS-12: the app came back to the front while this screen is shown.

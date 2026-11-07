@@ -10,6 +10,8 @@ struct SettingsForwardPage: View {
     let model: SettingsModel
     /// The guide's Gmail and other cards open from the start (the screen check).
     var expandsGuide = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var refresher: ApprovalRefresher?
 
     var body: some View {
         SettingsParts.page(spacing: 32) {
@@ -18,7 +20,26 @@ struct SettingsForwardPage: View {
             ForwardingGuideView(expanded: expandsGuide)
         }
         .refreshableToTheEnd { await model.load() }
-        .task { await model.pageShown() }
+        .task {
+            await model.pageShown()
+            guard !Task.isCancelled else { return }
+            // The approval card appears by itself (the Web's RefreshUntilApproval): see ApprovalRefresher.
+            let refresher = ApprovalRefresher(
+                isWaiting: { model.pollsForApproval },
+                lastRead: { model.lastApprovalRead },
+                read: { await model.refreshApproval() }
+            )
+            self.refresher = refresher
+            refresher.pageShown()
+        }
+        .onDisappear { refresher?.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await refresher?.cameBack() }
+            } else {
+                refresher?.stop()
+            }
+        }
         .navigationTitle(SettingsMenuText.forwardTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
