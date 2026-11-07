@@ -13,15 +13,35 @@ const walk = (dir: string, exts: string[]): string[] =>
   });
 
 // User-facing text only: tests and fixtures are skipped on purpose.
-const files = [...walk(join(ROOT, "src"), [".ts", ".tsx"]), ...walk(join(ROOT, "ios", "Otodoke"), [".swift"])];
+const files = [
+  ...walk(join(ROOT, "src"), [".ts", ".tsx"]),
+  ...walk(join(ROOT, "ios", "Otodoke"), [".swift"]),
+  join(ROOT, "README.md"),
+];
+
+const containsPhrase = (text: string, phrase: string): boolean => text.includes(phrase);
+const filesContaining = (phrase: string): string[] => files.filter((f) => containsPhrase(readFileSync(f, "utf8"), phrase));
+
+const DELETION_PHRASES = [
+  "関係ないと分かったメールは消します",
+  "件名・差出人・本文を消します",
+  "14 日で消します",
+  "毎日まとめて消します",
+];
 
 describe("wording never says Otodoke deletes the user's own mail", () => {
   it("scans real files", () => {
     expect(files.length).toBeGreaterThan(20);
   });
-  it.each(["関係ないと分かったメールは消します", "件名・差出人・本文を消します"])("no user-facing text contains 「%s」", (old) => {
-    const hits = files.filter((f) => readFileSync(f, "utf8").includes(old));
-    expect(hits).toEqual([]);
+  it.each(DELETION_PHRASES)("no user-facing text contains 「%s」", (old) => {
+    expect(filesContaining(old)).toEqual([]);
+  });
+  it.each(DELETION_PHRASES)("negative control: the check catches a text containing 「%s」", (old) => {
+    expect(containsPhrase(`前の文。${old}。後ろの文。`, old)).toBe(true);
+  });
+  it("the new wording is not caught by the banned list", () => {
+    const text = "読み取って買い物に関係ないと分かったメールは、Otodoke に残しません。";
+    expect(DELETION_PHRASES.filter((p) => containsPhrase(text, p))).toEqual([]);
   });
 });
 
