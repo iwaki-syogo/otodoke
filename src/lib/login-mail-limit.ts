@@ -27,13 +27,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *   sign-up, which keeps its claim), so pressing the button again
  *   within that minute does not use up the allowance.
  * - Someone who mistyped the address: the typo is a different address with its own count.
- * - Several judges on one office or venue network (one shared IP): 10 per hour from one IP for
- *   the three mails together. Ten people can make their accounts within one hour, or five if each
- *   has the mail sent again, and a reset for a forgotten password takes from the same ten. One
- *   more is told to try again later and can once the oldest of those sends is an hour old; one IP
- *   alone can no longer take the whole allowance through the forms. Raising the 10 is bounded by
- *   LOGIN_TRY_LIMITS: together they keep one IP's sign-ups and sign-ins under Supabase's own
- *   per-IP limit, which every visitor shares (login-actions.test.ts checks the sum).
+ * - Several judges on one office or venue network (one shared IP): 20 per hour from one IP for
+ *   the three mails together. Twenty people can make their accounts within one hour, or ten if
+ *   each has the mail sent again, and a reset for a forgotten password takes from the same twenty.
+ *   One more is told to try again later and can once the oldest of those sends is an hour old.
+ *   The 20 has two upper bounds, both checked by login-actions.test.ts:
+ *   1. It stays below Supabase's project-wide mail limit (30 mails per hour, `email_sent` in
+ *      supabase/config.toml), so one IP can no longer take the whole mail allowance through the
+ *      forms and leave nobody else a mail.
+ *   2. Together with LOGIN_TRY_LIMITS (sign-in tries per IP), the mails per IP stay below
+ *      Supabase's 100 sign-ins and sign-ups per 5 minutes (Authentication > Rate Limits), which
+ *      every visitor shares.
  *
  * Fails open: if the check itself fails (DB down, function missing, no service key locally), the
  * mail is sent and a warning is logged. Locking everyone out is worse than a missing cap.
@@ -41,7 +45,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const LOGIN_MAIL_LIMITS = {
   emailPer10Minutes: 3,
   emailPerHour: 6,
-  ipPerHour: 10,
+  ipPerHour: 20,
 } as const;
 
 export type LoginMailVerdict = "ok" | "email_10m" | "email_1h" | "ip_1h";
@@ -106,11 +110,12 @@ export const LOGIN_ATTEMPT_LIMITS = {
 } as const;
 
 /**
- * Every sign-in this website asks Supabase for, failed or not, per client IP. Supabase allows 30
- * sign-ins and sign-ups per 5 minutes per IP, and every visitor of the website comes from this
- * server's IP: one visitor must not be able to use that up for everyone (successes included, which
- * the attempt limit gives back). Counted under its own namespace with the IP in the address column,
- * so the function's 10-minute window applies to the IP: at most 15 in any 10 minutes (so never 30
+ * Every sign-in this website asks Supabase for, failed or not, per client IP. Supabase allows 100
+ * sign-ins and sign-ups per 5 minutes per IP (dashboard setting), and every visitor of the website
+ * comes from this server's IP: one visitor must not be able to use that up for everyone
+ * (successes included, which the attempt limit gives back). Counted under its own namespace with
+ * the IP in the address column,
+ * so the function's 10-minute window applies to the IP: at most 15 in any 10 minutes (so never 100
  * in 5), 60 in an hour. Never given back.
  */
 export const LOGIN_TRY_LIMITS = {
