@@ -195,6 +195,8 @@ export function SignupForm() {
 
   function submit(e: React.FormEvent): Promise<void> | undefined {
     e.preventDefault();
+    // Leaving for /login (the fields were emptied): a press now is the press that is leaving.
+    if (leaveFor) return;
     const problem = addressProblem() ?? passwordProblem(password, again);
     if (problem) {
       setError(problem);
@@ -221,6 +223,7 @@ export function SignupForm() {
     running.current = "signup";
     setActive("signup");
     setCreating(true);
+    let leaving = false;
     try {
       const captchaToken = await pressToken();
       let result: Awaited<ReturnType<typeof signUpWithPassword>>;
@@ -234,6 +237,15 @@ export function SignupForm() {
         setError(pressText(result.code, captchaToken, flowMessage(result.code)));
         return;
       }
+      if (result.code === "signup_existing") {
+        // Registered and confirmed already: no mail was sent, so there is nothing to wait for.
+        handOffToLogin({ email: typed.email, code: EXISTING_ACCOUNT });
+        leaving = true;
+        setPassword("");
+        setAgain("");
+        setLeaveFor("/login");
+        return;
+      }
       account.current = { email: typed.email, password: typed.password };
       waitingShown.current = true;
       // The backoff counts from the moment the waiting screen appears.
@@ -242,8 +254,11 @@ export function SignupForm() {
       setAgain("");
       setSentTo(typed.email);
     } finally {
-      setCreating(false);
-      release();
+      // Leaving for /login: the press stays shown (and held) until that page is drawn.
+      if (!leaving) {
+        setCreating(false);
+        release();
+      }
     }
   }
 
@@ -620,6 +635,7 @@ export function SignupForm() {
       <Link href="/privacy" className="mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
       </Link>
+      {leaveFor ? <LeaveFor href={leaveFor} /> : null}
     </>
   );
 }

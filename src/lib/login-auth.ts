@@ -139,14 +139,14 @@ function mailRefusal(error: AuthError): MailRequestFailure | "sent" {
   return "other";
 }
 
-type MailSend = (client: ReturnType<typeof throwawayAuthClient>, email: string, redirectTo: string, captchaToken: string | undefined) => Promise<{ error: AuthError | null; accessToken?: string }>;
+type MailSend = (client: ReturnType<typeof throwawayAuthClient>, email: string, redirectTo: string, captchaToken: string | undefined) => Promise<{ error: AuthError | null; accessToken?: string; existing?: boolean }>;
 
 /**
  * A mail Supabase sends to an address (confirmation, again, reset), through a client that keeps no
  * session: this browser's cookies are not touched. Counted against the app's mail limit; given
  * back when Supabase sent nothing.
  */
-async function requestMail(step: string, input: unknown, send: MailSend, asciiOnly: boolean): Promise<{ ok: true } | { ok: false; code: MailRequestFailure | "email_not_ascii" }> {
+async function requestMail(step: string, input: unknown, send: MailSend, asciiOnly: boolean): Promise<{ ok: true; existing?: boolean } | { ok: false; code: MailRequestFailure | "email_not_ascii" }> {
   const email = normalizeLoginAddress((input as { email?: unknown } | null)?.email);
   if (!isLoginAddress(email)) return { ok: false, code: "invalid_email" };
   if (asciiOnly && !isAsciiAddress(email)) return { ok: false, code: "email_not_ascii" };
@@ -172,18 +172,27 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
     const { error } = await client.auth.admin.signOut(result.accessToken, "local");
     if (error) logRefusal(`${step} (ending the session it made)`, error);
   }
+  if (result.error && result.error.code === "user_already_exists" && step === "sign-up") {
+    // Registered already (Supabase 422): an answer, not a failure. Nothing is logged as a refusal and
+    // the claim is kept for an existing address (both identities [] and this 422; unlike other
+    // refusals, which give it back): the press counts against the mail limit.
+    return { ok: true, existing: true };
+  }
   if (result.error) {
     logRefusal(step, result.error);
     await releaseLoginMail(email, claim.claimId);
     const code = mailRefusal(result.error);
     return code === "sent" ? { ok: true } : { ok: false, code };
   }
-  return { ok: true };
+  return result.existing ? { ok: true, existing: true } : { ok: true };
 }
 
 /**
- * Make an account: the address and the login secret. Supabase mails the confirmation link; the
- * answer is the same whether the address had an account already or not.
+ * Make an account: the address and the login secret. Supabase mails the confirmation link for a new
+ * or still-unconfirmed address (signup_exists_or_sent). An address that is registered and confirmed
+ * already gets no mail and is told apart (signup_existing), so the signup form can send the person
+ * straight to /login. Supabase's own answer says which: a success with an empty `identities`, or
+ * a `user_already_exists` refusal (confirmations turned off).
  */
 export async function signUp(input: unknown): Promise<SignUpResult> {
   const parsed = SignUpInputSchema.safeParse(input);
@@ -193,11 +202,15 @@ export async function signUp(input: unknown): Promise<SignUpResult> {
     parsed.data,
     async (client, email, redirectTo, captchaToken) => {
       const { data, error } = await client.auth.signUp({ email, password: parsed.data.authSecret, options: { emailRedirectTo: redirectTo, captchaToken } });
-      return { error, accessToken: data.session?.access_token };
+      // Supabase answers a repeat sign-up of a confirmed address as a success with no mail and a
+      // user whose `identities` is an empty array: the address is registered already.
+      const existing = !error && Array.isArray(data.user?.identities) && data.user.identities.length === 0;
+      return { error, accessToken: data.session?.access_token, existing };
     },
     true,
   );
-  return result.ok ? { ok: true, code: "signup_exists_or_sent" } : result;
+  if (!result.ok) return result;
+  return { ok: true, code: result.existing ? "signup_existing" : "signup_exists_or_sent" };
 }
 
 /** The confirmation mail again. The same answer for every address. */

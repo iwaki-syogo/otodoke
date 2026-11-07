@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PASSWORD_RULE } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
+import { EXISTING_ACCOUNT, clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
 import type { TokenField } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -16,6 +17,7 @@ import { mount, type Mounted } from "./hook-harness";
 
 const actions = vi.hoisted(() => ({ signUp: vi.fn(), resend: vi.fn() }));
 const widget = vi.hoisted(() => ({ token: null as { current: TokenField } | null, round: -1 }));
+const nav = vi.hoisted(() => ({ to: [] as string[] }));
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -28,6 +30,12 @@ vi.mock("next/link", async () => {
   const Link = ({ href, children, prefetch, ...rest }: Record<string, unknown>) => h("a", { href: String(href), ...rest }, children as never);
   return { default: Link };
 });
+vi.mock("@/components/leave-for", () => ({
+  LeaveFor: ({ href }: { href: string }) => {
+    nav.to.push(href);
+    return null;
+  },
+}));
 vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
 vi.mock("@/app/login/turnstile-widget", () => ({
   TurnstileWidget: (props: { tokenRef: { current: TokenField }; round: number }) => {
@@ -74,6 +82,8 @@ beforeEach(() => {
   actions.signUp.mockReset();
   actions.resend.mockReset();
   widget.token = null;
+  nav.to = [];
+  vi.unstubAllGlobals();
 });
 
 describe("making the account", () => {
@@ -101,6 +111,51 @@ describe("making the account", () => {
     expect(view.hosts((h) => h.type === "input")).toHaveLength(0);
     expect(view.hosts((h) => h.type === "button").map(textOfHost)).toEqual(["確認しました", "メールを送り直す", "別のアドレスでやり直す"]);
     expect(widget.round).toBe(1);
+  });
+
+  it("signup_existing: no waiting screen; the address (never the password) is handed to /login and the tab goes there", async () => {
+    vi.stubGlobal("window", {});
+    clearLoginHandoff();
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_existing" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(peekLoginHandoff()).toEqual({ email: EMAIL, code: EXISTING_ACCOUNT });
+    expect(JSON.stringify(peekLoginHandoff())).not.toContain(PASSWORD);
+    await vi.waitFor(() => expect(nav.to).toEqual(["/login"]));
+    expect(view.text()).not.toContain("確認のメールを送りました");
+    expect(view.hosts((h) => h.type === "input").length).toBeGreaterThan(0);
+    clearLoginHandoff();
+  });
+
+  it("signup_existing: the press stays shown while leaving, so a second press before the page changes does nothing", async () => {
+    vi.stubGlobal("window", {});
+    clearLoginHandoff();
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_existing" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(nav.to).toEqual(["/login"]);
+    expect(textOfHost(button(view))).toBe("作っています…");
+    expect(button(view).props["aria-busy"]).toBe(true);
+    await press(view);
+    await drawn();
+    expect(actions.signUp).toHaveBeenCalledTimes(1);
+    // No password error flashes (the fields were emptied on the way out).
+    expect(view.text()).not.toContain("10 文字以上にしてください");
+    clearLoginHandoff();
+  });
+
+  it("negative control: signup_exists_or_sent still shows the waiting screen and hands nothing to /login", async () => {
+    vi.stubGlobal("window", {});
+    clearLoginHandoff();
+    actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(peekLoginHandoff()).toBeNull();
+    expect(nav.to).toEqual([]);
+    expect(view.text()).toContain("確認のメールを送りました");
   });
 
   it("「メールを送り直す」 asks for the confirmation mail again, to the same address, and says what came back", async () => {

@@ -35,12 +35,13 @@ type Notice = { kind: "error"; text: string } | { kind: "existing_account" } | {
  * After the sign-in the tab goes on to `next`, or to the first-run guide when this sign-in made the
  * user's first key (landingAfterSignIn), straight there.
  *
- * Coming from /signup's waiting screen after a `credentials` refusal right after a sign-up (the
- * address is already registered), the address is filled in and the existing_account notice with the
- * forgot-password link is shown (src/lib/login-handoff.ts, this tab's memory; no password is handed off).
+ * Coming from /signup (the waiting screen after a `credentials` refusal right after a sign-up, or
+ * the signup form itself when the address was registered already: signup_existing), the address is
+ * filled in and the existing_account notice with the forgot-password link is shown
+ * (src/lib/login-handoff.ts, this tab's memory; no password is handed off).
  */
 export function LoginForm({ next }: { next: string }) {
-  // /signup's waiting screen may have handed over the address and why it stopped (login-handoff.ts).
+  // /signup (the waiting screen or the signup form) may have handed over the address and why it stopped (login-handoff.ts).
   const [email, setEmail] = useState(() => peekLoginHandoff()?.email ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -103,6 +104,18 @@ export function LoginForm({ next }: { next: string }) {
 
   return (
     <>
+      {/* Above the form: on a phone a box below it can be off-screen. */}
+      {notice?.kind === "existing_account" ? (
+        <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+          <p className="font-medium">{EXISTING_ACCOUNT_NOTICE}</p>
+          <div className="mt-3">
+            <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+              パスワードを忘れた
+            </Link>
+          </div>
+          <p className="mt-3">{RESET_LOSES_MAIL}</p>
+        </div>
+      ) : null}
       <form method="post" onSubmit={submit} className="mt-6 flex flex-col gap-3">
         <label className="text-sm font-medium" htmlFor="login-email">
           メールアドレス
@@ -122,17 +135,6 @@ export function LoginForm({ next }: { next: string }) {
           </p>
         ) : null}
       </form>
-      {notice?.kind === "existing_account" ? (
-        <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-          <p className="font-medium">{EXISTING_ACCOUNT_NOTICE}</p>
-          <div className="mt-3">
-            <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
-              パスワードを忘れた
-            </Link>
-          </div>
-          <p className="mt-3">{RESET_LOSES_MAIL}</p>
-        </div>
-      ) : null}
       {notice?.kind === "not_opened" || notice?.kind === "key_failed" ? (
         <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
           {notice.kind === "not_opened" ? (
