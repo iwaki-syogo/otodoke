@@ -236,7 +236,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
 
   it("the clear-all warning names the mail too, and the checkbox is described by it", async () => {
     const root = await render("demo");
-    const warning = findAll(root, (n) => n.tag === "p" && textOf(n) === "荷物と保存したメールを消します。消すと元に戻せません。");
+    const warning = findAll(root, (n) => n.tag === "p" && textOf(n) === "Otodoke の荷物と、Otodoke に保存したメールを消します。お使いのメールの受信箱は、そのままです。消すと元に戻せません。");
     expect(warning).toHaveLength(1);
     expect(warning[0].attrs.id).toBeTruthy();
     const box = findAll(root, (n) => n.tag === "input" && n.attrs.type === "checkbox" && n.attrs.name === "confirm");
@@ -311,7 +311,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
     const { createElement } = await import("react");
     const { DemoLoader } = await import("@/app/app/settings/demo-loader");
     const render = (cleared: boolean) => textOf(parseHtml(renderToStaticMarkup(createElement(DemoLoader, { loaded: null, error: null, cleared }))));
-    expect(render(true)).toContain("荷物と保存したメールを消しました。");
-    expect(render(false)).not.toContain("荷物と保存したメールを消しました。");
+    expect(render(true)).toContain("Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
+    expect(render(false)).not.toContain("Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
   });
 });

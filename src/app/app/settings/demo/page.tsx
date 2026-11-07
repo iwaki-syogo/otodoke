@@ -18,7 +18,7 @@ export default async function DemoPage({ searchParams }: { searchParams: SearchP
   return (
     <SubPage title="サンプルで試す">
       <section id="demo" className="scroll-mt-4 rounded-2xl border border-dashed border-neutral-300 p-4">
-        <p className="text-sm leading-6 text-neutral-600">匿名化した実際の注文・発送メールを読み込みます。日付は今日に合わせてずらしてあります。</p>
+        <p className="text-sm leading-6 text-neutral-600">匿名化した実際の注文・発送メールを読み込みます。日付は、読み込んだ日に合わせてずらします。</p>
         <DemoLoader loaded={demoLoaded} error={errorMessage} cleared={Boolean(cleared)} />
       </section>
     </SubPage>

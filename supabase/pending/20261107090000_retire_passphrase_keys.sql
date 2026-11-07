@@ -1,3 +1,7 @@
+-- WARNING (2026-11-08): password-v1 is in production. Running this now would make keys created
+-- with a password unusable, including the judge account's. Do NOT run it until judging ends
+-- (2026-11-10).
+--
 -- Decision 8 (2026-11-06): retire the mail keys made with a passphrase, once, right after the
 -- password sign-in (password-v1, docs/crypto/password-v1.md) reaches production. A one-off data
 -- change, written ahead and NOT applied. On 2026-11-06 production had one such key in use.

@@ -108,7 +108,7 @@ describe("/app/settings?error= shows fixed words only", () => {
       const label = source.match(/<label[^>]*>\s*<input type="checkbox" name="confirm"[^>]*\/>\s*([^<]*?)\s*<\/label>/);
       expect(label, file).not.toBeNull();
       expect(label![1], file).toBe(asked);
-      expect(source, file).toContain(file.endsWith("demo-loader.tsx") ? "荷物と保存したメールを消します。消すと元に戻せません。" : "消すと元に戻せません。");
+      expect(source, file).toContain(file.endsWith("demo-loader.tsx") ? "Otodoke の荷物と、Otodoke に保存したメールを消します。お使いのメールの受信箱は、そのままです。消すと元に戻せません。" : "消すと元に戻せません。");
     }
   });
 

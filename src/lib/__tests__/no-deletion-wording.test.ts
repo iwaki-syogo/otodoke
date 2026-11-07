@@ -27,6 +27,9 @@ const DELETION_PHRASES = [
   "件名・差出人・本文を消します",
   "14 日で消します",
   "毎日まとめて消します",
+  "荷物、保存したメール、転送先アドレスを、アカウントごと消します",
+  "荷物と保存したメールを消します",
+  "荷物と保存したメールを消しました",
 ];
 
 describe("wording never says Otodoke deletes the user's own mail", () => {
@@ -42,6 +45,14 @@ describe("wording never says Otodoke deletes the user's own mail", () => {
   it("the new wording is not caught by the banned list", () => {
     const text = "読み取って買い物に関係ないと分かったメールは、Otodoke に残しません。";
     expect(DELETION_PHRASES.filter((p) => containsPhrase(text, p))).toEqual([]);
+  });
+  it("the new removal wording (Otodoke only, own inbox untouched) is not caught by the banned list", () => {
+    const texts = [
+      "Otodoke の荷物と、Otodoke に保存したメール、転送先アドレスを、アカウントごと消します。お使いのメールの受信箱は、そのままです。元に戻せません。",
+      "Otodoke の荷物と、Otodoke に保存したメールを消します。お使いのメールの受信箱は、そのままです。消すと元に戻せません。",
+      "Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。",
+    ];
+    for (const t of texts) expect(DELETION_PHRASES.filter((p) => containsPhrase(t, p))).toEqual([]);
   });
 });
 

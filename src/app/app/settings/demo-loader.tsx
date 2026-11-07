@@ -17,13 +17,13 @@ export function DemoLoader({ loaded, error, cleared }: { loaded: number | null; 
         <LoadButton />
       </form>
       {loaded !== null && error ? <p className="text-sm text-neutral-700">{loaded} 通は読み込めました。</p> : null}
-      {cleared ? <p className="text-sm text-neutral-700">荷物と保存したメールを消しました。</p> : null}
+      {cleared ? <p className="text-sm text-neutral-700">Otodoke の荷物と、保存したメールを消しました。お使いのメールの受信箱は、そのままです。</p> : null}
       {error ? <p className="break-words text-sm text-red-800">{error}</p> : null}
 
       <details className="text-sm">
         <summary className="cursor-pointer text-neutral-500">すべての荷物を消す</summary>
         <form action={clearAllParcels} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
-          <p id={warningId} className="text-sm leading-6">荷物と保存したメールを消します。消すと元に戻せません。</p>
+          <p id={warningId} className="text-sm leading-6">Otodoke の荷物と、Otodoke に保存したメールを消します。お使いのメールの受信箱は、そのままです。消すと元に戻せません。</p>
           <label className="flex items-center gap-2">
             <input type="checkbox" name="confirm" value="yes" aria-describedby={warningId} className="h-4 w-4" />
             本当に消す

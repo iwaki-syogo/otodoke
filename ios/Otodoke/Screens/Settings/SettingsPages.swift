@@ -269,7 +269,7 @@ struct SettingsSamplePage: View {
 
     var body: some View {
         SettingsParts.page(spacing: 8) {
-            SettingsParts.secondaryText("匿名化した実際の注文・発送メールを読み込みます。日付は今日に合わせてずらしてあります。")
+            SettingsParts.secondaryText("匿名化した実際の注文・発送メールを読み込みます。日付は、読み込んだ日に合わせてずらします。")
             SettingsParts.primaryButton("サンプルのメールを読み込む", fullWidth: true) { SettingsWeb.open(.sample, openURL) }
                 .padding(.top, 4)
             Button { SettingsWeb.open(.clearAll, openURL) } label: {
