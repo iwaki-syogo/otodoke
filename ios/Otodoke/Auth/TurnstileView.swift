@@ -39,9 +39,9 @@ enum Turnstile {
     static let contentSecurityPolicy = "default-src 'none'; script-src 'unsafe-inline' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com; style-src 'unsafe-inline'"
 
     /// The widget's page for one generation: renders explicitly with `sitekey`, and posts
-    /// {"generation": n, "kind": "token"|"expired"|"error"|"timeout"|"unavailable", "token": "..."} to
+    /// {"generation": n, "kind": "token"|"expired"|"error"|"timeout"|"interactive"|"interactive-end"|"unavailable", "token": "..."} to
     /// `messageHandlerName` from callback, expired-callback, error-callback (which returns true),
-    /// timeout-callback and the script's onerror.
+    /// timeout-callback, before-/after-interactive-callback and the script's onerror.
     static func html(generation: Int) -> String {
         """
         <!DOCTYPE html>
@@ -70,6 +70,8 @@ enum Turnstile {
                 callback: function (token) { post("token", token); },
                 "expired-callback": function () { post("expired"); },
                 "timeout-callback": function () { post("timeout"); },
+                "before-interactive-callback": function () { post("interactive"); },
+                "after-interactive-callback": function () { post("interactive-end"); },
                 "error-callback": function () { post("error"); return true; }
               });
             } catch (e) {
@@ -106,6 +108,10 @@ enum Turnstile {
         case "expired": return (generation, .expired)
         case "error": return (generation, .error)
         case "timeout": return (generation, .timeout)
+        case "interactive": return (generation, .interactive)
+        // after-interactive-callback: Cloudflare does not say whether it comes before or after `callback`, so it
+        // clears nothing (the mark is used up by the token, or by expired / error / timeout / reset).
+        case "interactive-end": return nil
         case "unavailable": return (generation, .unavailable)
         default: return nil
         }

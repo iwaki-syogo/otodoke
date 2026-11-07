@@ -100,8 +100,9 @@ struct LoginView: View {
         .animation(.default, value: model.toast)
         // A Turnstile token arrives while waiting (the tap on the widget): the screen goes on at once, without
         // another button. The same rationing as every try by itself.
-        .onChange(of: model.turnstile?.hasToken ?? false) { _, has in
-            guard has, scenePhase == .active, model.isWaitingForConfirmation else { return }
+        // Watches the count of tokens received, not hasToken: a held token replaced by a new one (a tap) keeps it true.
+        .onChange(of: model.turnstile?.receivedCount ?? 0) { _, _ in
+            guard model.turnstile?.hasToken == true, scenePhase == .active, model.isWaitingForConfirmation else { return }
             Task { await model.tokenArrived() }
         }
         // The screen is left (closed, gone back from): the timer, the wait for a token and the held password stop.
