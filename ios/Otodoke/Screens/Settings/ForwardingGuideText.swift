@@ -67,7 +67,7 @@ enum ForwardingGuideText {
             title: "Gmail",
             addresses: nil,
             meta: "5 分・ブラウザで",
-            video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 94),
+            video: Video(path: "/guide/videos/otodoke-fwd-gmail-720.mp4", seconds: 97),
             link: Link(title: "Gmail の設定を開く", url: "https://mail.google.com/mail/u/0/#settings/general"),
             linkNote: "iPhone では Safari で進めます。このボタンで Gmail のアプリが開いたときは、Safari で mail.google.com を開きます。画面の下のアドレス欄の左にある ≡ のボタンを押し、出てきたメニューを下へスクロールすると「デスクトップ用ウェブサイトを表示」があります。それを選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。このボタンで Gmail のアプリが開いたときは、Chrome で mail.google.com を開きます。右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。\n\nGmail を 2 つ以上使っている人は、開いた画面の右上で、荷物のメールが届くアカウントに切り替えてから、下の手順 1 から進めます。",
             groups: [
@@ -114,7 +114,7 @@ enum ForwardingGuideText {
             title: "Outlook",
             addresses: "@outlook.jp・@outlook.com・@hotmail.co.jp など",
             meta: "3 分・ブラウザで",
-            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 62),
+            video: Video(path: "/guide/videos/otodoke-fwd-outlook-720.mp4", seconds: 65),
             link: Link(title: "転送の設定を開く", url: "https://outlook.live.com/mail/0/options/mail/forwarding"),
             linkNote: "iPhone では Safari で進めます。スマホ用の画面が出たら、画面の下のアドレス欄の左にある ≡ のボタンを押し、出てきたメニューを下へスクロールすると「デスクトップ用ウェブサイトを表示」があります。それを選ぶと、パソコン版の画面になります。見当たらないときは、メニューの「…」の中にあります。\n\nAndroid では Chrome で進めます。スマホ用の画面が出たら、右上の ⋮ のメニューを下へ送り、「PC 版サイト」にチェックを入れると、パソコン版の画面になります。",
             groups: [
