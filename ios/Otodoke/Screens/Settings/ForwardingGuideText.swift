@@ -102,7 +102,7 @@ enum ForwardingGuideText {
             title: "iCloud メール",
             addresses: "@icloud.com・@me.com・@mac.com",
             meta: "3 分・ブラウザで",
-            video: Video(path: "/guide/videos/otodoke-fwd-icloud-720.mp4", seconds: 92),
+            video: Video(path: "/guide/videos/otodoke-fwd-icloud-720.mp4", seconds: 93),
             link: Link(title: "iCloud メールを開く", url: "https://www.icloud.com/mail/"),
             linkNote: nil,
             groups: [

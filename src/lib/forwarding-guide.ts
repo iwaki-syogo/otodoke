@@ -99,7 +99,7 @@ export const FORWARDING_GUIDES: ForwardingGuide[] = [
     id: "icloud",
     chip: "iCloud メール",
     title: "iCloud メール",
-    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 92 },
+    video: { src: "/guide/videos/otodoke-fwd-icloud-720.mp4", poster: "/guide/videos/otodoke-fwd-icloud-poster.jpg", seconds: 93 },
     addresses: "@icloud.com・@me.com・@mac.com",
     time: "3 分・ブラウザで",
     link: { label: "iCloud メールを開く", href: "https://www.icloud.com/mail/" },
