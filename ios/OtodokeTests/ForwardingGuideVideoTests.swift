@@ -1,7 +1,7 @@
 import XCTest
 @testable import Otodoke
 
-/// The Web's results for GuideVideo's rounding (src/app/guide/forwarding/page.tsx). src/lib/__tests__/ios-forwarding-guide.test.ts
+/// The Web's results for GuideVideo's rounding (src/components/forwarding-steps.tsx). src/lib/__tests__/ios-forwarding-guide.test.ts
 /// runs the Web's own two lines and fails when a row of this table differs from them.
 final class ForwardingGuideVideoTests: XCTestCase {
     // WEB-TABLE-BEGIN

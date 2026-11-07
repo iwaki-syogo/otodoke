@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
-import { GuideGroups, PitfallBody } from "@/components/forwarding-steps";
+import { GuideGroups, GuideVideo, PitfallBody } from "@/components/forwarding-steps";
 import {
   BEFORE_YOU_START,
   BEFORE_YOU_START_ACTION,
@@ -16,7 +16,6 @@ import {
   PITFALLS_HEADING,
   PITFALLS_LEAD,
   VIDEO_CREDIT,
-  VIDEO_LABEL,
   type ForwardingGuide,
   type ForwardingPitfall,
 } from "@/lib/forwarding-guide";
@@ -48,21 +47,6 @@ function ExternalButton({ href, label }: { href: string; label: string }) {
       {label}
       <ExternalIcon />
     </a>
-  );
-}
-
-function GuideVideo({ video, title }: { video: NonNullable<ForwardingGuide["video"]>; title: string }) {
-  const halves = Math.max(0.5, Math.round(video.seconds / 30) / 2);
-  const minutes = Number.isInteger(halves) ? `${halves} 分` : halves < 1 ? "半分" : `${Math.floor(halves)} 分半`;
-  return (
-    <div className="mt-4">
-      <h3 className="text-sm font-bold">
-        {VIDEO_LABEL}・約 {minutes}
-      </h3>
-      <video controls preload="none" playsInline poster={video.poster} width={720} height={1280} aria-label={`${title} の転送の設定の動画`} className="mx-auto mt-2 block h-auto w-56 rounded-2xl border border-neutral-200 bg-white">
-        <source src={video.src} type="video/mp4" />
-      </video>
-    </div>
   );
 }
 

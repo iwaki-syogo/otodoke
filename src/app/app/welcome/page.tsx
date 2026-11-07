@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CopyButton } from "@/components/copy-button";
-import { FoldCard, GuideGroups, TextLink } from "@/components/forwarding-steps";
+import { FoldCard, GuideCardBody, VideoCredit } from "@/components/forwarding-steps";
 import { FORWARDING_GUIDES, FORWARDING_TITLE, type ForwardingGuide } from "@/lib/forwarding-guide";
 import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { AFTER_WELCOME_PATH, WELCOME } from "@/lib/onboarding";
@@ -13,21 +13,7 @@ export const metadata = { title: FORWARDING_TITLE };
 function GuideCard({ guide }: { guide: ForwardingGuide }) {
   return (
     <FoldCard title={guide.title}>
-      {guide.addresses && <p className="text-xs text-neutral-500">{guide.addresses}</p>}
-      {guide.time && <p className="mt-1 text-xs text-neutral-500">目安: {guide.time}</p>}
-      {guide.intro && <p className="text-sm leading-6 text-neutral-600">{guide.intro}</p>}
-      {guide.link && (
-        <div className="mt-2">
-          <TextLink href={guide.link.href} label={guide.link.label} />
-          {guide.linkNote && <p className="text-xs text-neutral-500">{guide.linkNote}</p>}
-        </div>
-      )}
-      <GuideGroups groups={guide.groups} />
-      {guide.notes.map((note) => (
-        <p key={note} className="mt-4 text-xs leading-5 text-neutral-500">
-          {note}
-        </p>
-      ))}
+      <GuideCardBody guide={guide} />
     </FoldCard>
   );
 }
@@ -92,6 +78,7 @@ export default async function WelcomePage() {
             <GuideCard key={guide.id} guide={guide} />
           ))}
         </div>
+        <VideoCredit />
       </section>
 
       <div className="mt-8 flex flex-col gap-3">

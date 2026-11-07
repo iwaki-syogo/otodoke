@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FORWARDING_GUIDES } from "@/lib/forwarding-guide";
+import { FORWARDING_GUIDES, VIDEO_CREDIT } from "@/lib/forwarding-guide";
 import { FakeDb } from "./fake-db";
 import { classesOf, findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
 
@@ -135,5 +135,27 @@ describe("/app/welcome", () => {
     const [theirs] = sectionTitled(await forwarding(), "転送先アドレス");
     const planted = parseHtml('<section><p class="mt-1 text-sm leading-6 text-neutral-600">メールの鍵を作ると、ここに出ます。</p></section>');
     expect(paragraphs(theirs)).not.toContainEqual(paragraphs(planted)[0]);
+  });
+
+  it("the cards of Gmail, iCloud and Outlook play their video first: after 「目安」, before the steps; the credit once under the cards", async () => {
+    activeKey();
+    const html = renderToStaticMarkup(await (await import("@/app/app/welcome/page")).default());
+    const root = parseHtml(html);
+    const cards = findAll(root, (n) => n.tag === "details");
+    for (const [i, guide] of FORWARDING_GUIDES.entries()) {
+      const videos = findAll(cards[i], (n) => n.tag === "video");
+      if (!guide.video) {
+        expect(videos, guide.id).toHaveLength(0);
+        continue;
+      }
+      expect(videos, guide.id).toHaveLength(1);
+      expect(videos[0].attrs.poster).toBe(guide.video.poster);
+      expect(findAll(videos[0], (n) => n.tag === "source").map((s) => s.attrs.src)).toEqual([guide.video.src]);
+    }
+    for (const card of html.split("<details").slice(1, 4)) {
+      expect(card.indexOf("<video")).toBeGreaterThan(card.indexOf("目安:"));
+      expect(card.indexOf("<video")).toBeLessThan(card.indexOf("<ol"));
+    }
+    expect(html.split(VIDEO_CREDIT)).toHaveLength(2);
   });
 });
