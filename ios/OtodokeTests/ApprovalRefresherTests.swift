@@ -167,7 +167,8 @@ struct ApprovalRefreshModelTests {
 
     @Test func aFailedReadShowsTheNoteAndKeepsPolling() async throws {
         let (model, fake) = try await make(key: true)
-        await fake.fail("GET", "emails", with: .http(500))
+        // The first confirmation read was load()'s; the second is the refresh's.
+        await fake.fail(where: { $0.method == "GET" && $0.url.lastPathComponent == "emails" && $0.query("classification") == ["eq.forwarding_confirmation"] && $0.query("limit") == ["10"] }, nth: 2, with: .http(500))
         await model.refreshApproval()
         #expect(model.approvalNote != nil)
         #expect(model.pollsForApproval)
