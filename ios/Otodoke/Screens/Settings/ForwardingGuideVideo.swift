@@ -9,11 +9,6 @@ enum ForwardingGuideVideo {
     /// The VoiceOver hint of the video row (it opens Safari).
     static let openHint = "Safari で動画を開きます"
 
-    /// The credit is shown while a card that has a video is open.
-    static func showsCredit(opened: Set<String>, services: [ForwardingGuideText.Service]) -> Bool {
-        services.contains { $0.video != nil && opened.contains($0.id) }
-    }
-
     /// 89 -> "1 分半", 131 -> "2 分", 14 -> "半分".
     static func minutes(seconds: Int) -> String {
         let halves = max(0.5, (Double(seconds) / 30).rounded(.toNearestOrAwayFromZero) / 2)

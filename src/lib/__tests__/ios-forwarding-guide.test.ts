@@ -30,7 +30,7 @@ import {
  * is nowhere to go. FORWARDING_CHECK_ACTION (「「うまく届かないとき」を開く」) is on iOS: a link to that page.
  *
  * The explainer videos are on iOS too (ForwardingGuide.video, VIDEO_LABEL, VIDEO_CREDIT): a row under each service's
- * time that opens the video in Safari (nothing is played in the app), and the credit at the end. Their paths and
+ * time that opens the video in Safari (nothing is played in the app), and the credit once at the end, always. Their paths and
  * seconds are compared below, and so is the rounding of the length (the Web's own two lines are run).
  */
 
@@ -178,8 +178,10 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     const view = stripComments(read(VIEWS[0]));
     expect(creditIsOutsideServicesOnly(view)).toBe(true);
     expect(videoRowSitsBetweenTimeAndLink(view)).toBe(true);
-    // The credit is drawn only while a card with a video is open.
-    expect(view).toMatch(/if ForwardingGuideVideo\.showsCredit\(opened: opened, services: T\.services\) \{\s*Text\(T\.videoCredit\)/);
+    // The credit is drawn once and always (the Web shows it under the cards and at the end of /guide/forwarding).
+    expect(view.match(/Text\(T\.videoCredit\)/g)).toHaveLength(1);
+    expect(view).not.toMatch(/showsCredit/);
+    expect(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).not.toMatch(/showsCredit/);
     // The video row's hint is a fixed sentence, set on the row only.
     expect(swiftConstants(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).get("openHint")).toBe("Safari で動画を開きます");
     expect(view.match(/\.accessibilityHint\(ForwardingGuideVideo\.openHint\)/g)).toHaveLength(1);
@@ -223,9 +225,10 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(found(text.replace(/video: Video\([^)]+\),/, "video: nil,"))).not.toEqual(found(text));
     // The structure checks catch the credit moved into the servicesOnly branch and the video row moved under the link.
     const viewSrc = stripComments(read(VIEWS[0]));
-    const creditBlock = viewSrc.slice(viewSrc.indexOf("if ForwardingGuideVideo.showsCredit"), viewSrc.indexOf("if ForwardingGuideVideo.showsCredit") + 400);
-    const movedCredit = viewSrc.replace("if !servicesOnly {\n                verify", "if !servicesOnly {\n                Text(T.videoCredit)\n                verify").replace(/if ForwardingGuideVideo\.showsCredit[\s\S]*?\n            \}\n/, "");
-    expect(creditBlock).toContain("Text(T.videoCredit)");
+    const movedCredit = viewSrc.replace("if !servicesOnly {\n                verify", "if !servicesOnly {\n                Text(T.videoCredit)\n                verify");
+    // A second copy of the credit (or none) is caught by the count above.
+    expect(viewSrc.replace("verify\n            }", "verify\n                Text(T.videoCredit)\n            }").match(/Text\(T\.videoCredit\)/g)).toHaveLength(2);
+    expect(viewSrc.replace("Text(T.videoCredit)", "EmptyView()").match(/Text\(T\.videoCredit\)/g)).toBeNull();
     expect(creditIsOutsideServicesOnly(viewSrc)).toBe(true);
     expect(creditIsOutsideServicesOnly(movedCredit)).toBe(false);
     const videoRow = /            if let video = service\.video \{[\s\S]*?\n            \}\n/.exec(viewSrc)?.[0] ?? "";

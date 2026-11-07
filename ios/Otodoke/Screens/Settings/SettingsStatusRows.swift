@@ -55,6 +55,14 @@ struct SettingsStatusRows: View {
                     SettingsWeb.openPage(url, openURL)
                 }
                 .padding(.top, 8)
+                // The filter text to paste into Gmail, as under step 7 of the Gmail card.
+                Text(GmailApprovalText.filterNote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+                GmailFilterBox()
+                    .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)

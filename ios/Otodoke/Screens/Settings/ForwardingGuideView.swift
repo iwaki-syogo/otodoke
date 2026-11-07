@@ -77,13 +77,11 @@ struct ForwardingGuideView: View {
             if !servicesOnly {
                 verify
             }
-            // The Web ends the page with it. Here only while a card with a video is open (the video rows are inside the cards).
-            if ForwardingGuideVideo.showsCredit(opened: opened, services: T.services) {
-                Text(T.videoCredit)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            // Once, always: the Web shows it under the cards (settings, welcome) and at the end of /guide/forwarding.
+            Text(T.videoCredit)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -225,20 +223,7 @@ struct ForwardingGuideView: View {
 
     private func filter(_ service: T.Service, in range: Range<Int>) -> (number: Int, content: AnyView)? {
         guard let number = service.filterAfterStep, range.contains(number) else { return nil }
-        return (number, AnyView(filterBox))
-    }
-
-    private var filterBox: some View {
-        HStack(spacing: 8) {
-            Text(SettingsModel.gmailFilter)
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            CopyButton(text: SettingsModel.gmailFilter)
-        }
-        .padding(10)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        return (number, AnyView(GmailFilterBox()))
     }
 
     /// The video opens in Safari (https and otodoke.app only); it is not played in the app.
@@ -250,6 +235,22 @@ struct ForwardingGuideView: View {
     private func open(_ url: String) {
         guard let url = URL(string: url) else { return }
         SettingsWeb.openPage(url, openURL)
+    }
+}
+
+/// The Gmail filter text with its copy button (under step 7 of the Gmail card, and in the approval card).
+struct GmailFilterBox: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(SettingsModel.gmailFilter)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            CopyButton(text: SettingsModel.gmailFilter)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
