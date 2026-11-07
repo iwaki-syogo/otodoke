@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 /**
  * [iOS b7-tap] A token made by a person's tap on the Turnstile check tries the waiting screen at once. The widget
  * page tells Swift that it asks for a tap (before-interactive-callback, Cloudflare's widget configurations); the
- * kind it posts must be the one the Swift notice reads, and the model must read the mark through takeTap().
+ * kind it posts must be the one the Swift notice reads, and the model must read the mark through hasTap and clearTap().
  */
 const ROOT = path.resolve(__dirname, "../../..");
 const read = (f: string) => readFileSync(path.join(ROOT, f), "utf8");
@@ -36,7 +36,7 @@ describe("ios b7-tap: the ask for a tap", () => {
   });
 
   it("reaches the model only through the used-once mark", () => {
-    expect(model).toMatch(/turnstile\?\.takeTap\(\)/);
-    expect(model).toMatch(/tapped \? \.press : \.token/);
+    expect(model).toMatch(/turnstile\.hasTap/);
+    expect(model).toMatch(/tapSends \+= 1\s*\n\s*lastTapAt = now\(\)\s*\n\s*await check\(\.press\)/);
   });
 });

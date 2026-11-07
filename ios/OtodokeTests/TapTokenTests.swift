@@ -48,6 +48,8 @@ struct TapTokenTests {
         let fake = FakeSupabase.make()
         let (model, token, _) = await waiting(fake)
         for i in 1...7 {
+            // Past the least gap between two such tries (round 2), so only the limit of 5 is under test here.
+            clock.advance(seconds: LoginModel.tapMinGapSeconds + 1)
             tap(token, "tok-\(i)")
             await model.tokenArrived()
             #expect(await fake.count("POST", "token") == i)
@@ -85,11 +87,12 @@ struct TapTokenTests {
     @Test func theSameMarkAnswersOnlyOnce() {
         let token = TurnstileToken(now: clock.function)
         tap(token, "tok")
-        #expect(token.takeTap())
-        #expect(!token.takeTap())
+        #expect(token.hasTap)
+        token.clearTap()
+        #expect(!token.hasTap)
         // A second token of the same generation, with no new ask for a tap, is not a tap.
         token.receive(.token("tok-2"), generation: token.generation)
-        #expect(!token.takeTap())
+        #expect(!token.hasTap)
     }
 
     @Test func aTapThenLeavingTheScreenSendsNothing() async {
@@ -97,12 +100,108 @@ struct TapTokenTests {
         let (model, token, _) = await waiting(fake)
         tap(token, "tok-tap")
         model.leaveWait()
-        #expect(!token.takeTap())
+        #expect(!token.hasTap)
         await model.tokenArrived()
         // A marked token of the new generation, after the screen was left, is not sent either.
         tap(token, "tok-late")
         await model.tokenArrived()
         try? await Task.sleep(for: .milliseconds(200))
+        #expect(await fake.count("POST", "token") == 0)
+    }
+
+    // MARK: the review's three cases (b7-tap round 2)
+
+    @Test func aTapDuringATryKeepsItsMarkAndIsTriedWhenThatTryEnds() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        let gate = Gate()
+        await fake.fail("POST", "token", with: .hold(gate))
+        token.receive(.token("tok-auto"), generation: token.generation)
+        clock.advance(seconds: 30)
+        let first = Task { await model.checkConfirmation() }
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 1 })
+        #expect(model.isWorking)
+        // A person taps while that try is under way: nothing is sent now, the mark is kept.
+        tap(token, "tok-tap")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 1)
+        #expect(token.hasTap)
+        gate.open()
+        await first.value
+        // When the try is over the tap is tried, once.
+        #expect(await waitFor(.seconds(3)) { await fake.count("POST", "token") == 2 })
+        #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-tap")
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(await fake.count("POST", "token") == 2)
+        #expect(!token.hasTap)
+    }
+
+    @Test func aTapThatReplacesAHeldTokenIsCountedAsReceivedAndTriedOnce() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        token.receive(.token("tok-auto"), generation: token.generation)
+        let before = token.receivedCount
+        // The widget asks for a tap while a token is held, then gives a new one: hasToken never turns false, the
+        // count is what the screen watches.
+        token.receive(.interactive, generation: token.generation)
+        token.receive(.token("tok-tap"), generation: token.generation)
+        #expect(token.hasToken)
+        #expect(token.receivedCount == before + 1)
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 1)
+        #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-tap")
+    }
+
+    @Test func aSecondTapWithinTheGapIsLeftToTheTimerAndOneAfterItIsTried() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        tap(token, "tok-1")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 1)
+        clock.advance(seconds: LoginModel.tapMinGapSeconds - 1)
+        tap(token, "tok-2")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 1)
+        #expect(!token.hasTap)
+        // Negative control: past the gap a tap is tried at once.
+        clock.advance(seconds: 2)
+        tap(token, "tok-3")
+        await model.tokenArrived()
+        #expect(await fake.count("POST", "token") == 2)
+        #expect(PW.captcha(await fake.requests("POST", "token").last) == "tok-3")
+    }
+
+    @Test func theEleventhTapOfAWaitIsLeftToTheTimer() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        for i in 1...(LoginModel.tapMaxPerWait + 1) {
+            clock.advance(seconds: LoginModel.tapMinGapSeconds + 1)
+            tap(token, "tok-\(i)")
+            await model.tokenArrived()
+            #expect(await fake.count("POST", "token") == min(i, LoginModel.tapMaxPerWait), "tap \(i)")
+        }
+    }
+
+    @Test func theButtonItselfIsNeverLimited() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        for i in 1...(LoginModel.tapMaxPerWait + 2) {
+            token.receive(.token("tok-\(i)"), generation: token.generation)
+            await model.checkConfirmation(pressed: true)
+            #expect(await fake.count("POST", "token") == i, "press \(i)")
+        }
+    }
+
+    @Test func anAskForATapOfAnotherGenerationMarksNothing() async {
+        let fake = FakeSupabase.make()
+        let (model, token, _) = await waiting(fake)
+        token.reset()
+        let old = token.generation - 1
+        token.receive(.interactive, generation: old)
+        token.receive(.token("tok"), generation: token.generation)
+        #expect(!token.hasTap)
+        clock.advance(seconds: 5)
+        await model.tokenArrived()
         #expect(await fake.count("POST", "token") == 0)
     }
 
@@ -114,27 +213,27 @@ struct TapTokenTests {
             token.receive(.interactive, generation: token.generation)
             token.receive(event, generation: token.generation)
             token.receive(.token("tok"), generation: token.generation)
-            #expect(!token.takeTap(), "\(event)")
+            #expect(!token.hasTap, "\(event)")
         }
         let reset = TurnstileToken(now: clock.function)
         tap(reset, "tok")
         reset.reset()
         reset.receive(.token("tok-2"), generation: reset.generation)
-        #expect(!reset.takeTap())
+        #expect(!reset.hasTap)
         let old = TurnstileToken(now: clock.function)
         let first = old.generation
         old.reset()
         old.receive(.interactive, generation: first)
         old.receive(.token("tok"), generation: old.generation)
-        #expect(!old.takeTap())
+        #expect(!old.hasTap)
         // Positive control: the same sequence in the current generation is a tap.
         let control = TurnstileToken(now: clock.function)
         tap(control, "tok")
-        #expect(control.takeTap())
+        #expect(control.hasTap)
         // An ask for a tap with no token is no tap.
         let asked = TurnstileToken(now: clock.function)
         asked.receive(.interactive, generation: asked.generation)
-        #expect(!asked.takeTap())
+        #expect(!asked.hasTap)
     }
 
     @Test func theWidgetReportsTheAskForATap() {

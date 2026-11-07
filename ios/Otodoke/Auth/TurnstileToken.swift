@@ -28,6 +28,9 @@ final class TurnstileToken {
     private(set) var resetCount = 0
     /// The script could not load for the current generation (shows TurnstileText.unavailable).
     private(set) var isUnavailable = false
+    /// How many tokens were received (every one, also a new one while another is held): what the screen watches,
+    /// as `hasToken` stays true when a held token is replaced.
+    private(set) var receivedCount = 0
     /// The token of the current generation, not sent yet.
     private var token: String?
     /// The widget asked for a tap (before-interactive-callback) and no token has come since: the next token is
@@ -56,6 +59,7 @@ final class TurnstileToken {
         case let .token(value):
             token = value.isEmpty ? nil : value
             tokenAt = token == nil ? nil : now()
+            if token != nil { receivedCount += 1 }
             tokenIsTap = token != nil && interactiveSeen
             interactiveSeen = false
             isUnavailable = false
@@ -83,11 +87,18 @@ final class TurnstileToken {
         return token
     }
 
-    /// true once if the held token came after the widget asked for a tap (a person tapped the check); the mark is
-    /// used up by this call, so the same tap is never answered twice. false for a token that came by itself.
-    func takeTap() -> Bool {
-        defer { tokenIsTap = false }
-        return token != nil && tokenIsTap
+    /// The held token came after the widget asked for a tap (a person tapped the check). A token that came by
+    /// itself has no mark. Used up by `clearTap()`, so the same tap is never answered twice.
+    var hasTap: Bool { token != nil && tokenIsTap }
+
+    /// Uses the mark up (the caller took the tap as a press, or decided not to). The token stays.
+    func clearTap() { tokenIsTap = false }
+
+    /// The end of a try: the widget is moved on, unless a person's tap came meanwhile (its token and mark are
+    /// kept, to be tried at once when the try is over).
+    func resetUnlessTapHeld() {
+        if hasTap { return }
+        reset()
     }
 
     private func clearTapMarks() {

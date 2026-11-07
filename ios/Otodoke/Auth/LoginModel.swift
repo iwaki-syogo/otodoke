@@ -197,6 +197,7 @@ final class LoginModel {
         confirmationAddress = nil
         heldPassword = nil
         autoGate = AutoSignInGate(now: now())
+        resetTapLimits()
     }
 
     /// The screen is left (closed, gone back from, the app ending): the timer, the wait for a token and the held
@@ -276,6 +277,7 @@ final class LoginModel {
                 confirmationAddress = address
                 heldPassword = typed
                 autoGate = AutoSignInGate(now: now())
+                resetTapLimits()
                 canResendConfirmation = true
                 unconfirmedAddress = address
             }
@@ -291,7 +293,8 @@ final class LoginModel {
     }
 
     /// What tries the sign-in of the waiting screen: the button, the app shown again, a Turnstile token that came
-    /// while waiting, or the timer at the next point of the backoff.
+    /// while waiting, or the timer at the next point of the backoff. A token of a person's tap (see tokenArrived)
+    /// is not `.token`: it is handled as `.press`.
     enum ConfirmTrigger: Equatable, Sendable {
         case press, returned, token, timer
     }
@@ -301,12 +304,47 @@ final class LoginModel {
         await check(pressed ? .press : .returned)
     }
 
+    /// The least gap between two tries made at once for a tap. Cloudflare does not promise that a token after
+    /// before-interactive-callback is a person's, and a tap's try counts as a press (not against the limit of 5, no
+    /// wider gap), so a widget that kept giving marked tokens by itself would send without end: a tap within this
+    /// gap of the last such try is left to the timer.
+    static let tapMinGapSeconds: TimeInterval = 5
+    /// The most tries made at once for a tap in one wait (the same reason; the button itself is never limited).
+    static let tapMaxPerWait = 10
+    @ObservationIgnored private var tapSends = 0
+    @ObservationIgnored private var lastTapAt: Date?
+
+    private func resetTapLimits() {
+        tapSends = 0
+        lastTapAt = nil
+    }
+
     /// A Turnstile token came while waiting. When a person tapped the check (the widget had asked for a tap), it
     /// is handled as a press of 「確認しました」 at once, once: not counted, no wider gap, whatever the timer's point
-    /// (the tap said "now"). A token that came by itself waits for the timer's point as before.
+    /// (the tap said "now"), within tapMinGapSeconds and tapMaxPerWait. While another try is under way the mark is
+    /// kept and the tap is tried when that one is over. A token that came by itself waits for the timer's point.
     func tokenArrived() async {
-        let tapped = turnstile?.takeTap() ?? false
-        await check(tapped ? .press : .token)
+        guard let turnstile, turnstile.hasTap, confirmationAddress != nil, heldPassword != nil else {
+            await check(.token)
+            return
+        }
+        // Not taken yet: the mark stays, and pickUpTap() (the end of that try) answers it.
+        guard !isWorking else { return }
+        if tapSends >= Self.tapMaxPerWait || lastTapAt.map({ now().timeIntervalSince($0) < Self.tapMinGapSeconds }) == true {
+            turnstile.clearTap()
+            await check(.token)
+            return
+        }
+        turnstile.clearTap()
+        tapSends += 1
+        lastTapAt = now()
+        await check(.press)
+    }
+
+    /// The end of a try: a person's tap that came during it is tried now.
+    private func pickUpTap() async {
+        guard turnstile?.hasTap == true, !isWorking, isWaitingForConfirmation else { return }
+        await tokenArrived()
     }
 
     /// While waiting for the confirmation (after making an account): tries the existing password sign-in. The
@@ -323,6 +361,11 @@ final class LoginModel {
     ///    ends); two returns within 2 seconds are one. A token tries when the timer's point has come (else the timer
     ///    does). The timer tries at its point.
     private func check(_ trigger: ConfirmTrigger) async {
+        await checkOnce(trigger)
+        await pickUpTap()
+    }
+
+    private func checkOnce(_ trigger: ConfirmTrigger) async {
         guard let address = confirmationAddress, let typed = heldPassword, !isWorking else { return }
         let pressed = trigger == .press
         let epoch = waitEpoch
@@ -368,7 +411,7 @@ final class LoginModel {
             autoGate.countSend()
             failure = await signInOnce(address: address, typed: typed, captchaToken: fresh)
         }
-        turnstile?.reset()
+        turnstile?.resetUnlessTapHeld()
         guard let failure else {
             // Signed in (the screens come up from AuthService's state): the password is not needed any more.
             cancelTimer()
@@ -426,6 +469,11 @@ final class LoginModel {
     /// After not_confirmed: the confirmation mail again (the same answer for every address). While waiting after
     /// making an account the notice is 「送り直しました」.
     func resendConfirmation() async {
+        await resendOnce()
+        await pickUpTap()
+    }
+
+    private func resendOnce() async {
         guard canResendConfirmation, let address = unconfirmedAddress, !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
@@ -445,7 +493,7 @@ final class LoginModel {
         } catch {
             errorMessage = error.message
         }
-        turnstile?.reset()
+        turnstile?.resetUnlessTapHeld()
         // A timed try that met this request on its way was dropped: the next point is set again.
         scheduleAuto()
     }

@@ -171,7 +171,7 @@ describe("the tries by itself are rationed with the Web's numbers", () => {
     expect(auto).not.toMatch(/await|waitUntilSettled/);
     expect(auto).toMatch(/return \(false, nil\)/);
     const view = stripComments(read("ios/Otodoke/Auth/LoginView.swift"));
-    expect(view).toMatch(/onChange\(of: model\.turnstile\?\.hasToken \?\? false\)[\s\S]*?tokenArrived\(\)/);
+    expect(view).toMatch(/onChange\(of: model\.turnstile\?\.receivedCount \?\? 0\)[\s\S]*?tokenArrived\(\)/);
   });
 
   it("「送り直しました」 is a toast that goes by itself (ToastBanner over the screen, the model clears it), not a box", () => {
@@ -293,7 +293,7 @@ describe("the wiring", () => {
   it("the sign-in after the mail's link is the existing one (AuthService.signIn), not a new route", () => {
     const model = stripComments(read("ios/Otodoke/Auth/LoginModel.swift"));
     expect(model).toMatch(/auth\.signIn\(email: address, password: typed/);
-    const body = model.match(/private func check\(_ trigger[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    const body = model.match(/private func checkOnce\(_ trigger[\s\S]*?\n    \}\n/)?.[0] ?? "";
     expect(body).toMatch(/signInOnce\(/);
     expect(model).not.toMatch(/signInWith|verifyOTP|URLSession/);
   });
