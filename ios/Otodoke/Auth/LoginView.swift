@@ -38,6 +38,10 @@ struct LoginView: View {
                     Text(model.mode == .signIn ? LoginText.signInTitle : LoginText.signUpTitle)
                         .font(.largeTitle.bold())
                         .padding(.bottom, 8)
+                    // Above the form, as the Web's /login does: on a phone a box below it can be off-screen.
+                    if model.isExistingAddress {
+                        existingAddressBox
+                    }
                     emailField
                     switch model.mode {
                     case .signIn:
@@ -63,9 +67,6 @@ struct LoginView: View {
                 }
                 if let message = model.errorMessage {
                     messageBox(message, error: true)
-                }
-                if model.isExistingAddress {
-                    existingAddressBox
                 }
                 if model.canResendConfirmation {
                     Button {
