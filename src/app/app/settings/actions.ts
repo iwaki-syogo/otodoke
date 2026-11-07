@@ -20,6 +20,7 @@ export async function loadDemo(): Promise<void> {
 
   let processed = 0;
   let failure: string | null = null;
+  let otherIsLoading = false;
   try {
     const db = createAdminClient();
     for (const { mail, extraction } of await loadDemoEntries()) {
@@ -49,9 +50,15 @@ export async function loadDemo(): Promise<void> {
           },
         );
       } catch (err) {
-        // A second judge on the shared account is loading this same mail right now and will store
-        // it: skip this one, the sample ends up complete either way. Any other error still stops the load.
-        if (err instanceof MailBeingReadError) continue;
+        // A second judge on the shared account is loading this same mail right now. Stop here and
+        // leave the rest to them: going on would put the two loads on every other mail in turn
+        // (the one behind passes the mails the other has finished and catches up), and two loads
+        // filing neighbouring mails of one order at once can make two parcels. The other load
+        // finishes the sample. Any other error still stops the load as a failure.
+        if (err instanceof MailBeingReadError) {
+          otherIsLoading = true;
+          break;
+        }
         throw err;
       }
       if (outcome.kind === "processed" || outcome.kind === "noted" || outcome.kind === "duplicate") processed++;
@@ -66,7 +73,8 @@ export async function loadDemo(): Promise<void> {
     console.error("loadDemo failed:", failure);
     redirect(settingsErrorPath("demo_failed", `&demo=${processed}`));
   }
-  redirect("/app");
+  // The list shows a one-line note for this; the other load is still going.
+  redirect(otherIsLoading ? "/app?demo=busy" : "/app");
 }
 
 /** Read mail that arrived after the daily limit. Stops when today's allowance runs out again. */

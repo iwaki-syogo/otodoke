@@ -13,7 +13,11 @@ import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
 
-export default async function ParcelsPage() {
+type SearchParams = Promise<{ demo?: string }>;
+
+export default async function ParcelsPage({ searchParams }: { searchParams?: SearchParams } = {}) {
+  // Only a fixed marker is read: the sample load leaves ?demo=busy when another load is running.
+  const sampleBusy = (await searchParams)?.demo === "busy";
   const user = await getUser();
   if (!user) redirect("/login");
   const supabase = await createClient();
@@ -61,6 +65,12 @@ export default async function ParcelsPage() {
     </Link>
   ) : null;
 
+  const sampleBusyNotice = sampleBusy ? (
+    <p className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
+      ほかの人がサンプルを読み込んでいます。少し待ってから、ページを読み込み直してください。
+    </p>
+  ) : null;
+
   // At the end of the list, on the empty screen too.
   const pageLinks = (
     <div className="flex flex-col gap-3">
@@ -73,7 +83,8 @@ export default async function ParcelsPage() {
     return (
       <div className="flex flex-col gap-4">
         {addLink}
-        {waitingNotice}
+        {sampleBusyNotice}
+      {waitingNotice}
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         {pageLinks}
       </div>
@@ -84,7 +95,8 @@ export default async function ParcelsPage() {
     return (
       <div className="flex flex-col gap-4">
         {addLink}
-        {waitingNotice}
+        {sampleBusyNotice}
+      {waitingNotice}
         <EmptyState mail={await mailSoFar(supabase, user.id)} />
         {pageLinks}
       </div>
@@ -95,6 +107,7 @@ export default async function ParcelsPage() {
     <DeliveredToastProvider>
     <div className="flex flex-col gap-8">
       {addLink}
+      {sampleBusyNotice}
       {waitingNotice}
       <CheckSection items={toCheck} />
       <Section title="配達中" count={delivering.length} items={delivering} swipe />

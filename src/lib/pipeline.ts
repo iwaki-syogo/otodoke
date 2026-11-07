@@ -87,8 +87,9 @@ async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | nu
 
 /**
  * Thrown only when another run of the same mail is storing or reading it right now (its row is
- * pending and young, or the insert lost the unique-key race). Callers that can simply skip the
- * mail (the sample load) match on this class; every other failure stays a plain Error.
+ * pending and young, the insert lost the unique-key race, or the take-over update lost to another
+ * run). The sample load matches on this class and stops, leaving the rest to the run that is ahead;
+ * every other failure stays a plain Error.
  */
 export class MailBeingReadError extends Error {
   constructor(message: string) {
@@ -195,7 +196,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       .select("id")
       .maybeSingle();
     if (error) throw new Error(`emails update failed: ${error.message}`);
-    if (!data) throw new Error("this mail changed while it was being stored; it is read on the next try");
+    // Another run took the row over first (two presses at once): not a failure of this mail.
+    if (!data) throw new MailBeingReadError("this mail changed while it was being stored; it is read on the next try");
     // What an earlier, unfinished read of this row left: read again from the start, as for a new row.
     const { error: leftoverError } = await db.from("extractions").delete().eq("email_id", stored.id).eq("user_id", mail.userId);
     if (leftoverError) throw new Error(`extractions cleanup failed: ${leftoverError.message}`);

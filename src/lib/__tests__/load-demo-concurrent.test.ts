@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeDb, type Query } from "./fake-db";
+import { FakeDb, type Query, type Row } from "./fake-db";
 
 /**
  * Two judges share one account and press 「サンプルを読み込む」 almost together. The one who
- * comes second meets mails the first is still storing: that is not a failure of the load. Only
- * those two cases (a young pending row, a lost unique-key race) are skipped; any other error
- * still ends on demo_failed. Made-up mails only.
+ * comes second meets a mail the first is still storing: that is not a failure of the load. It
+ * stops there and leaves the rest to the first (/app?demo=busy), and does not go on mail by mail:
+ * the two would then work on neighbouring mails of one order at once, and the filing step has no
+ * lock, so that could make two parcels. Three cases count as "being read" (a young pending row, a
+ * lost unique-key race, a lost take-over update); any other error still ends on demo_failed.
+ * Made-up mails only.
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
@@ -31,54 +34,208 @@ const run = async () => {
 };
 
 let db: FakeDb;
+
+/** The same db, but each query is answered one macrotask later, so concurrent loads really alternate. */
+const slowed = (real: FakeDb, seed = 0): unknown => {
+  // seed 0: one macrotask per query (strict turns). Other seeds: 1 to 3 macrotasks, from a small
+  // seeded generator, so one load drifts ahead or behind the other in a way that can be replayed.
+  let state = seed * 2654435761 + 1;
+  const pause = async () => {
+    const ticks = seed === 0 ? 1 : 1 + (Math.abs((state = (state * 1103515245 + 12345) % 2147483648)) % 3);
+    for (let i = 0; i < ticks; i++) await new Promise<void>((r) => setImmediate(r));
+  };
+  return new Proxy(real, {
+    get(target, prop) {
+      if (prop === "from") {
+        return (table: string) => {
+          const query = target.from(table);
+          const proxy: object = new Proxy(query, {
+            get(q, p) {
+              if (p === "then") {
+                return (ok: never, bad: never) => pause().then(() => q.then(ok, bad));
+              }
+              const v = Reflect.get(q, p) as unknown;
+              return typeof v === "function" ? (...args: unknown[]) => { const out = (v as (...a: unknown[]) => unknown).apply(q, args); return out === q ? proxy : out; } : v;
+            },
+          });
+          return proxy;
+        };
+      }
+      if (prop === "rpc") return async (...args: Parameters<FakeDb["rpc"]>) => { await pause(); return target.rpc(...args); };
+      const v = Reflect.get(target, prop) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+};
+
+/**
+ * What emails_user_message_idx does (supabase/migrations/20261102090000_init.sql:37): a second
+ * row with the same (user_id, message_id) is refused with 23505. The FakeDb has no unique keys.
+ */
+const uniqueMessageIndex = (q: Query, d: FakeDb) => {
+  if (q.table !== "emails" || q.op !== "insert") return undefined;
+  const v = q.values as { user_id: string; message_id: string | null };
+  if (v.message_id && d.rows("emails").some((r) => r.user_id === v.user_id && r.message_id === v.message_id)) {
+    return { data: null, error: { message: 'duplicate key value violates unique constraint "emails_user_message_idx"', code: "23505" } };
+  }
+  return undefined;
+};
+
+const newDb = (seed: { emails: Row[]; parcels: Row[] } = { emails: [], parcels: [] }) => {
+  const d = new FakeDb(seed);
+  // The FakeDb stamps rows from its own clock (a past date); the pipeline's "young pending row" check
+  // reads the real time, so start the fake clock there or no row would ever look young.
+  (d as unknown as { clock: number }).clock = Date.now();
+  d.hooks.push(uniqueMessageIndex);
+  return d;
+};
+
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
-  db = new FakeDb({ emails: [], parcels: [] });
+  db = newDb();
   mocks.db = db;
   mocks.redirect.mockReset();
   mocks.revalidatePath.mockReset();
 });
 
-/** Fails the n-th (0-based) insert into emails with the given error. */
-const failEmailInsert = (n: number, error: { message: string; code?: string }) => {
-  let seen = 0;
-  db.hooks.push((q: Query) => (q.table === "emails" && q.op === "insert" && seen++ === n ? { data: null, error } : undefined));
+/** Runs the first load against a scratch db to get the stored row of demo mail 0, then goes back to a fresh one. */
+const firstMailRow = async () => {
+  const probe = newDb();
+  mocks.db = probe;
+  await run();
+  return probe.rows("emails")[0];
 };
 
+/** What one load alone leaves, to compare a concurrent run with. */
+const aloneDb = async () => {
+  const d = newDb();
+  mocks.db = d;
+  await run();
+  return d;
+};
+
+/** The parcels as the user sees them, without ids and stamps, in a fixed order. */
+const parcelStates = (d: FakeDb) =>
+  d
+    .rows("parcels")
+    .map((p) => JSON.stringify({ status: p.status, title: p.title, order_number: p.order_number, tracking_number: p.tracking_number, expected_date: p.expected_date, total_amount: p.total_amount, items: d.rows("parcel_items").filter((i) => i.parcel_id === p.id).length }))
+    .sort();
+
 describe("loadDemo pressed twice", () => {
-  it("leaves 17 mails and 6 parcels, and both loads end on /app", async () => {
+  it("one after the other: leaves 17 mails and 6 parcels, and both loads end on /app", async () => {
     expect(await run()).toEqual(["/app"]);
     expect(await run()).toEqual(["/app"]);
     expect(db.rows("emails")).toHaveLength(17);
     expect(db.rows("parcels")).toHaveLength(6);
   });
+
+  it.each(Array.from({ length: 60 }, (_, i) => i))("at the same time (timing %i): 17 mails, 6 parcels, no doubled items; one load ends on /app, the other on /app or /app?demo=busy", async (seed) => {
+    // The FakeDb answers on microtasks only, so once one load is running it would run to its end
+    // before the other got a turn. Here every query waits one macrotask first (slowed()), so the
+    // two loads take turns at each await, like two requests on a real database. Timing 0 is strict turns;
+    // the others drift by 1 to 3 macrotasks per query and start the second load later (a replayable seed).
+    // The harm of two loads working on neighbouring mails (two judges filing one order at once, with
+    // no lock in the filing step) is timing luck in a fake; what is checked is the cause: a mail is
+    // never stored while another mail of this account is still being read.
+    const overlaps: string[] = [];
+    db.hooks.unshift((q, d) => {
+      if (q.table !== "emails" || q.op !== "insert") return undefined;
+      const v = q.values as Row;
+      const taken = d.rows("emails").some((r) => r.user_id === v.user_id && r.message_id === v.message_id);
+      const reading = d.rows("emails").filter((r) => r.processing_status === "pending");
+      if (!taken && reading.length > 0) overlaps.push(`${String(v.message_id)} stored while ${String(reading[0].message_id)} is being read`);
+      return undefined;
+    });
+    mocks.db = slowed(db, seed);
+    mocks.redirect.mockClear();
+    // The second judge presses a little after the first: timing n starts it n * 3 macrotasks later, so
+    // it comes in while the first is some mails ahead and passes the finished ones quickly (a mail
+    // that is done costs it one lookup) until it catches up.
+    const laterLoad = async () => {
+      for (let i = 0; i < seed * 3; i++) await new Promise<void>((r) => setImmediate(r));
+      return loadDemo();
+    };
+    const results = await Promise.allSettled([loadDemo(), laterLoad()]);
+    expect(results.every((r) => r.status === "rejected" && String((r.reason as Error).message).startsWith("NEXT_REDIRECT"))).toBe(true);
+    const to = mocks.redirect.mock.calls.map((c) => c[0] as string);
+    expect(to).toHaveLength(2);
+    expect(to).toContain("/app");
+    expect(to.every((t) => t === "/app" || t === "/app?demo=busy")).toBe(true);
+    // They did take turns: the second load looked up mail 0 while the first was still filing it
+    // (before the first's last write to the emails row), not after it was done.
+    const all = db.calls.map((q) => `${q.table}.${q.op}`);
+    const lookups = all.flatMap((c, i) => (c === "emails.select" ? [i] : []));
+    expect(lookups.length).toBeGreaterThanOrEqual(2);
+    if (seed === 0) expect(lookups[1]).toBeLessThan(all.indexOf("emails.update"));
+
+    expect(db.rows("emails")).toHaveLength(17);
+    expect(db.rows("parcels")).toHaveLength(6);
+    const items = db.rows("parcel_items").map((r) => JSON.stringify([r.parcel_id, r.name, r.quantity, r.email_id ?? null]));
+    expect(new Set(items).size).toBe(items.length);
+    expect(overlaps).toEqual([]);
+    // And the same parcels as one load alone leaves (no stale write over a newer state).
+    expect(parcelStates(db)).toEqual(parcelStates(await aloneDb()));
+    const messageIds = db.rows("emails").map((r) => r.message_id);
+    expect(new Set(messageIds).size).toBe(17);
+  });
 });
 
 describe("loadDemo meeting the other judge's load", () => {
-  it("skips a mail still being read and a mail that lost the insert race, and reads the rest", async () => {
+  it("stops at a mail still being read and leaves the rest to the other load (/app?demo=busy)", async () => {
     // Mail 0: a row of the first judge, pending and young (what the pipeline refuses for 3 minutes).
-    const probe = new FakeDb({ emails: [], parcels: [] });
-    mocks.db = probe;
-    await run();
-    const first = probe.rows("emails")[0];
-    db = new FakeDb({ emails: [{ ...first, processing_status: "pending", created_at: new Date().toISOString() }], parcels: [] });
+    const first = await firstMailRow();
+    db = newDb({ emails: [{ ...first, processing_status: "pending", created_at: new Date().toISOString() }], parcels: [] });
     mocks.db = db;
-    // Mail 1 (the first insert, as mail 0 already has a row): the unique key is taken meanwhile.
-    failEmailInsert(0, { message: 'duplicate key value violates unique constraint "emails_user_message_key"', code: "23505" });
-    expect(await run()).toEqual(["/app"]);
-    // 17 demo mails minus the one left to the other judge and the one lost in the race.
-    expect(db.rows("emails")).toHaveLength(1 + 15);
-    expect(db.callsOn("emails", "insert")).toHaveLength(16);
+    expect(await run()).toEqual(["/app?demo=busy"]);
+    // Nothing after mail 0 was touched.
+    expect(db.rows("emails")).toHaveLength(1);
+    expect(db.callsOn("emails", "insert")).toHaveLength(0);
+  });
+
+  it("stops at a mail that lost the insert race, with the other load's row really there", async () => {
+    const first = await firstMailRow();
+    // Mail 0 has a row, so the first insert is mail 1. The other load stores it between the lookup
+    // and the insert: its row is there when this insert meets the unique key.
+    db = newDb({ emails: [{ ...first, processing_status: "processed" }], parcels: [] });
+    mocks.db = db;
+    let seen = 0;
+    db.hooks.unshift((q, d) => {
+      if (q.table === "emails" && q.op === "insert" && seen++ === 0) {
+        const v = q.values as Row;
+        d.rows("emails").push({ ...v, id: "11111111-1111-4111-8111-111111111111", processing_status: "pending", created_at: new Date().toISOString() });
+      }
+      return undefined;
+    });
+    expect(await run()).toEqual(["/app?demo=busy"]);
+    expect(db.rows("emails")).toHaveLength(2);
+    expect(db.callsOn("emails", "insert")).toHaveLength(1);
+  });
+
+  it("stops at a mail whose take-over update lost to the other load", async () => {
+    const first = await firstMailRow();
+    // Mail 0's row failed earlier, so this load takes it over; the other load does it first.
+    db = newDb({ emails: [{ ...first, processing_status: "failed", created_at: "2026-11-01T00:00:00.000Z" }], parcels: [] });
+    mocks.db = db;
+    let seen = 0;
+    db.hooks.push((q, d) => {
+      if (q.table === "emails" && q.op === "update" && seen++ === 0) {
+        for (const r of d.rows("emails")) r.created_at = new Date().toISOString();
+      }
+      return undefined;
+    });
+    expect(await run()).toEqual(["/app?demo=busy"]);
+    expect(db.callsOn("emails", "insert")).toHaveLength(0);
   });
 
   it("negative control: any other error still ends on demo_failed", async () => {
-    failEmailInsert(2, { message: "connection reset" });
+    let seen = 0;
+    db.hooks.push((q: Query) => (q.table === "emails" && q.op === "insert" && seen++ === 2 ? { data: null, error: { message: "connection reset" } } : undefined));
     const [to] = await run();
     expect(to).toContain("error=demo_failed");
     expect(to).toContain("demo=2");
     // A 23505 on another table is no sign of the other judge either.
-    db = new FakeDb({ emails: [], parcels: [] });
+    db = newDb();
     mocks.db = db;
     db.hooks.push((q: Query) => (q.table === "parcels" && q.op === "insert" ? { data: null, error: { message: "duplicate key", code: "23505" } } : undefined));
     const [again] = await run();
