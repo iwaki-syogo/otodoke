@@ -141,4 +141,13 @@ describe("share metadata", () => {
     expect(html.indexOf('role="region"')).toBeGreaterThan(html.indexOf("根拠が見える"));
     expect(html.indexOf("<footer")).toBeGreaterThan(html.indexOf("youtu.be"));
   });
+
+  it("links the iPhone beta on TestFlight after the demo video, opening safely in a new tab", async () => {
+    const html = renderToStaticMarkup(await Home());
+    const a = findAll(parseHtml(html), (n) => n.tag === "a" && n.attrs.href === "https://testflight.apple.com/join/8UPKQ6zR")[0];
+    expect(a.attrs.target).toBe("_blank");
+    expect(a.attrs.rel).toContain("noopener");
+    expect(textOf(a).trim()).toBe("iPhone アプリ（ベータ版）");
+    expect(html.indexOf("testflight.apple.com")).toBeGreaterThan(html.indexOf("youtu.be"));
+  });
 });

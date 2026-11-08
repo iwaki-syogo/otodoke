@@ -72,6 +72,13 @@ export default async function Home() {
           <Image src="/screens/video-thumb.jpg" alt="" width={960} height={540} sizes="(max-width: 448px) 100vw, 416px" className="h-auto w-full rounded-2xl" />
           <span className="mt-2 block text-sm text-neutral-600">デモ動画（3 分）</span>
         </a>
+        <p className="mt-6 text-sm leading-6 text-neutral-600">
+          <a href="https://testflight.apple.com/join/8UPKQ6zR" target="_blank" rel="noopener noreferrer" className="inline-block py-1 font-medium underline underline-offset-4">
+            iPhone アプリ（ベータ版）
+          </a>
+          <br />
+          TestFlight で試せます。同じアカウントでログインできます
+        </p>
       </div>
 
       <footer className="mt-auto pt-16 text-xs leading-5 text-neutral-500">
