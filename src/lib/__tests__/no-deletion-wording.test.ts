@@ -66,13 +66,11 @@ describe("the iPhone desktop-site wording is the new one", () => {
 // Old plaintext mail is sealed by the server by itself: no text may say the user has to press
 // something first, or that the operator can read the mail until then.
 const MANUAL_SEAL_PHRASES = ["運営者が読める形で残ります", "運営者が読める形です", "押すまで", "「暗号化する」を押"];
-// The iOS card that still says it is removed by another session; delete this entry with the card.
-const MANUAL_SEAL_ALLOWED = ["ios/Otodoke/Screens/Settings/SettingsKeyPage.swift"];
 const relative = (f: string) => f.slice(ROOT.length + 1);
 
 describe("wording never says the user must press something to have old mail encrypted", () => {
   it.each(MANUAL_SEAL_PHRASES)("no user-facing text contains 「%s」", (phrase) => {
-    expect(filesContaining(phrase).map(relative).filter((f) => !MANUAL_SEAL_ALLOWED.includes(f))).toEqual([]);
+    expect(filesContaining(phrase).map(relative)).toEqual([]);
   });
   it.each(MANUAL_SEAL_PHRASES)("negative control: the check catches a text containing 「%s」", (phrase) => {
     expect(containsPhrase(`前の文。${phrase}。後ろの文。`, phrase)).toBe(true);
