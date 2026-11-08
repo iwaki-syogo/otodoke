@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { demoInput, loadDemoEntries, type DemoEntry } from "@/lib/demo";
 import { sampleFileOf } from "@/lib/mail-keys";
-import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
+import { runClearAllParcels, runLoadDemo } from "@/lib/demo-run";
+import { processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
@@ -19,42 +20,16 @@ export async function loadDemo(): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
 
-  let processed = 0;
-  let failure: string | null = null;
-  let otherIsLoading = false;
-  try {
-    const db = createAdminClient();
-    for (const entry of await loadDemoEntries()) {
-      let outcome;
-      try {
-        const input = demoInput(entry, user.id);
-        outcome = await processInboundEmail(db, input.mail, input.options);
-      } catch (err) {
-        // A second judge on the shared account is loading this same mail right now. Stop here and
-        // leave the rest to them: going on would put the two loads on every other mail in turn
-        // (the one behind passes the mails the other has finished and catches up), and two loads
-        // filing neighbouring mails of one order at once can make two parcels. The other load
-        // finishes the sample. Any other error still stops the load as a failure.
-        if (err instanceof MailBeingReadError) {
-          otherIsLoading = true;
-          break;
-        }
-        throw err;
-      }
-      if (outcome.kind === "processed" || outcome.kind === "noted" || outcome.kind === "duplicate") processed++;
-    }
-  } catch (err) {
-    failure = err instanceof Error ? err.message : String(err);
-  }
+  const loaded = await runLoadDemo(createAdminClient, user.id);
 
   revalidatePath("/app", "layout");
-  if (failure) {
+  if (!loaded.ok) {
     // The message stays in the server log; the page shows fixed words for the code.
-    console.error("loadDemo failed:", failure);
-    redirect(settingsErrorPath("demo_failed", `&demo=${processed}`));
+    console.error("loadDemo failed:", loaded.message);
+    redirect(settingsErrorPath("demo_failed", `&demo=${loaded.processed}`));
   }
   // The list shows a one-line note for this; the other load is still going.
-  redirect(otherIsLoading ? "/app?demo=busy" : "/app");
+  redirect(loaded.busy ? "/app?demo=busy" : "/app");
 }
 
 /** Read mail that arrived after the daily limit. Stops when today's allowance runs out again. */
@@ -183,11 +158,7 @@ export async function clearAllParcels(formData: FormData): Promise<void> {
   if (!user) redirect("/login");
   if (formData.get("confirm") !== "yes") redirect(settingsErrorPath("clear_confirm"));
 
-  const db = createAdminClient();
-  // extractions and parcel_items cascade from parcels / emails.
-  const { error: e1 } = await db.from("parcels").delete().eq("user_id", user.id);
-  const { error: e2 } = await db.from("emails").delete().eq("user_id", user.id);
-  const failure = e1?.message ?? e2?.message ?? null;
+  const failure = await runClearAllParcels(createAdminClient(), user.id);
 
   revalidatePath("/app", "layout");
   if (failure) {

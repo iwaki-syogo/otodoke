@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
+import { scheduleSealRemaining } from "@/lib/seal-later";
 import { todayJst } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
@@ -21,13 +22,16 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   const sampleBusy = (await searchParams)?.demo === "busy";
   const user = await getUser();
   if (!user) redirect("/login");
+  // Old plaintext mail is sealed in the background, bounded; nothing to do without a key or plaintext.
+  scheduleSealRemaining(user.id);
   const supabase = await createClient();
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
-  // and never stands in for the list or the other counts.
-  const [list, { count: waiting }, { count: deliveredCount, error: deliveredError }, { count: cancelledCount, error: cancelledError }] =
+  // and never stands in for the list. The links to the delivered and cancelled pages carry no
+  // count; the number is seen after opening the page.
+  const [list, { count: waiting }] =
     await Promise.all([
       // Every parcel, past the 1000-row cap: the sections and their counts are read as complete.
-      // A failed page is caught here, so the counts below still show.
+      // A failed page is caught here, so the links below and the rest of the page still show.
       readAll<ParcelRow>(() =>
         supabase
           .from("parcels")
@@ -43,9 +47,6 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
         },
       ),
       supabase.from("emails").select("id", { count: "exact", head: true }).or(UNREAD_FILTER()),
-      // Counted by the database, so the 1000-row cap on reads cannot cut it short.
-      supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "delivered"),
-      supabase.from("parcels").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "cancelled"),
     ]);
   // A failed read is told apart from having no parcels: by null, never by the empty list.
   const listFailed = list === null;
@@ -78,8 +79,8 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   // At the end of the list, on the empty screen too.
   const pageLinks = (
     <div className="flex flex-col gap-3">
-      <PageLink href="/app/delivered" label="届いた荷物" count={deliveredError ? undefined : (deliveredCount ?? undefined)} />
-      <PageLink href="/app/cancelled" label="キャンセルした荷物" count={cancelledError ? undefined : (cancelledCount ?? undefined)} />
+      <PageLink href="/app/delivered" label="届いた荷物" />
+      <PageLink href="/app/cancelled" label="キャンセルした荷物" />
     </div>
   );
 

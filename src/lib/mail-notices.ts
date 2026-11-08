@@ -47,7 +47,7 @@ export const RESET_LOSES_MAIL = "パスワードを決め直すと、前に暗�
  * second half is the notice the screens have said since the review fixes of 2026-11-06.
  *
  * Used in: 設定's password panel (src/app/app/settings/password-panel.tsx, to a user with
- * plaintext mail and no key), 「あなたのメールの扱い」 (mail-handling.tsx), /privacy and README.
+ * no key), 「あなたのメールの扱い」 (mail-handling.tsx), /privacy and README.
  * Reword all of them once the pending SQL has run.
  */
-export const PLAINTEXT_DROP_NOTICE = "パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。";
+export const PLAINTEXT_DROP_NOTICE = "パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。";

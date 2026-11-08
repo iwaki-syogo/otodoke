@@ -11,7 +11,7 @@ import { findAll, linksTo, parseHtml, textOf, type HtmlNode } from "./html-tree"
  * [Feedback 4-6] The parcel list.
  * 5: 「届いた荷物 ›」 is a PageLink (see calendar.test.ts for the part itself).
  * 4: cancelled parcels leave the list for their own page /app/cancelled, reached by
- *    「キャンセルした荷物 ›」 right under 「届いた荷物 ›」, shown even at 0 and counted by the database.
+ *    「キャンセルした荷物 ›」 right under 「届いた荷物 ›」, shown even at 0. Neither link shows a count (owner's rule).
  * 6: the red 「対面受け取りが必要な商品」 card leaves the list; the card's badge stays.
  * [Codex-P1] The two links are at the end of the list on the empty screen too.
  */
@@ -74,6 +74,13 @@ const one = (root: HtmlNode, href: string) => {
   return links[0];
 };
 
+/** Neither link on the list shows a count: the number is seen after opening the page. */
+function expectNoCount(root: HtmlNode) {
+  for (const href of ["/app/delivered", "/app/cancelled"]) {
+    expect(textOf(one(root, href)), href).not.toMatch(/\d\s*件|\d/);
+  }
+}
+
 /** 「届いた荷物 ›」 then 「キャンセルした荷物 ›」 right under it, with nothing in between. */
 function expectLinksTogether(html: string) {
   const delivered = html.indexOf('href="/app/delivered"');
@@ -86,10 +93,9 @@ function expectLinksTogether(html: string) {
 }
 
 describe("[Feedback 4/5] 「届いた荷物 ›」 and 「キャンセルした荷物 ›」 in the list", () => {
-  it("[Codex-P1] shows both links on the empty screen, with 0 件, and keeps the empty screen", async () => {
+  it("[Codex-P1] shows both links on the empty screen, with no count, and keeps the empty screen", async () => {
     const { html, root } = await renderList();
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/届いた荷物[\s\S]*0\s*件/);
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/キャンセルした荷物[\s\S]*0\s*件/);
+    expectNoCount(root);
     expectLinksTogether(html);
     expect(textOf(root)).toContain("まだ荷物がありません");
     expect(linksTo(root, "/app/parcels/new")).toHaveLength(1);
@@ -99,8 +105,7 @@ describe("[Feedback 4/5] 「届いた荷物 ›」 and 「キャンセルした�
     db = new FakeDb({ parcels: [parcel({ status: "delivered" }), parcel({ status: "delivered" }), parcel({ status: "cancelled" })], emails: [] });
     mocks.state.db = db;
     const { html, root } = await renderList();
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/2\s*件/);
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/1\s*件/);
+    expectNoCount(root);
     expectLinksTogether(html);
   });
 
@@ -115,8 +120,7 @@ describe("[Feedback 4/5] 「届いた荷物 ›」 and 「キャンセルした�
     db = new FakeDb({ parcels: seeded, emails: [] });
     mocks.state.db = db;
     const { html, root } = await renderList();
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/届いた荷物[\s\S]*1\s*件/);
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/キャンセルした荷物[\s\S]*2\s*件/);
+    expectNoCount(root);
     expectLinksTogether(html);
     // No parcel card after the two links.
     const lastCard = Math.max(...seeded.map((p) => html.lastIndexOf(`href="/app/parcels/${p.id}"`)));
@@ -134,29 +138,21 @@ describe("[Feedback 4/5] 「届いた荷物 ›」 and 「キャンセルした�
     expect(textOf(root)).not.toMatch(/キャンセル\s*\d+\s*件/);
   });
 
-  it("counts cancelled parcels in the database (a head count), not from the rows it read", async () => {
-    db = new FakeDb({ parcels: [parcel({ status: "shipped", expected_date: day(2) }), parcel({ status: "cancelled" })], emails: [] });
+  it("shows neither link with a count, and reads no delivered/cancelled head count", async () => {
+    db = new FakeDb({ parcels: [parcel({ status: "delivered" }), parcel({ status: "cancelled" }), parcel({ status: "shipped", expected_date: day(2) })], emails: [] });
     mocks.state.db = db;
-    await renderList();
-    const counted = db
-      .callsOn("parcels", "select")
-      .filter((q: Query) => q.head && q.count === "exact" && q.filters.some((f) => f.method === "eq" && f.args[0] === "status" && f.args[1] === "cancelled"));
-    expect(counted.map(describeQuery)).toHaveLength(1);
+    const { root } = await renderList();
+    expectNoCount(root);
+    const heads = db.callsOn("parcels", "select").filter((q: Query) => q.head);
+    expect(heads.map(describeQuery)).toHaveLength(0);
   });
 
-  it("shows 「キャンセルした荷物 ›」 without a count when the count fails", async () => {
-    db = new FakeDb({ parcels: [parcel({ status: "shipped", expected_date: day(2) }), parcel({ status: "cancelled" })], emails: [] });
-    mocks.state.db = db;
-    db.hooks.push((q) =>
-      q.table === "parcels" && q.head && q.filters.some((f) => f.method === "eq" && f.args[0] === "status" && f.args[1] === "cancelled")
-        ? { data: null, error: { message: "boom" }, count: null }
-        : undefined,
-    );
-    const { root } = await renderList();
-    const link = one(root, "/app/cancelled");
-    expect(textOf(link)).toContain("キャンセルした荷物");
-    expect(textOf(link)).not.toContain("件");
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/0\s*件/);
+  it("[negative control] expectNoCount fails on a link that carries a count", async () => {
+    const { PageLink } = (await import("@/app/app/page-link")) as unknown as {
+      PageLink: (p: { href: string; label: string; count?: number }) => ReturnType<typeof createElement>;
+    };
+    const root = parseHtml(renderToStaticMarkup(createElement(PageLink, { href: "/app/delivered", label: "届いた荷物", count: 2 })));
+    expect(() => expect(textOf(one(root, "/app/delivered"))).not.toMatch(/\d\s*件/)).toThrow();
   });
 });
 

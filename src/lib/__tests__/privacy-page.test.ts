@@ -194,15 +194,15 @@ describe("/privacy: what it says", () => {
     expect(said["保存と暗号化"]).toContain("iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もせず、運営者にも送りません。ログアウトしたときと、アプリの設定で切ったときに消えます。");
     expect(said["バックアップ"]).toContain("最大 7 日間");
     const unsealed = findAll(part, (n) => n.tag === "li").map((li) => textOf(li).split("。")[0]);
-    expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール", "Otodoke が暗号化を始める前に読み取ったメール"]);
+    expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール"]);
     // A mail read once sealing began while the user has no key, that is before their first password
     // sign-in: not kept (src/lib/mail-seal.ts, "dropped").
     const noKey = said["パスワードでログインする前と、忘れたとき"];
     expect(noKey).toContain("Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません");
     // A reset loses the mail sealed before; a change keeps it (decision 3).
     expect(noKey).toContain(`パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます。`);
-    // Decision 7, told as the settings tell it.
-    expect(textOf(findAll(part, (n) => n.tag === "li")[3])).toContain(PLAINTEXT_DROP_NOTICE);
+    // Decision 7, told as the settings tell it, with the automatic sealing of the older mail.
+    expect(noKey).toContain(PLAINTEXT_DROP_NOTICE);
   });
 
   it("names each outside service, what it does, and where its data is", async () => {
@@ -266,7 +266,7 @@ describe("/privacy: what it says", () => {
   });
 
   it("decision 7 is the agreed sentence, ending in the notice the screens have said since that morning", () => {
-    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。");
+    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。");
     expect(PLAINTEXT_DROP_NOTICE.endsWith("11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。")).toBe(true);
     // No brackets.
     expect(wordingProblems([PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL])).toEqual([]);

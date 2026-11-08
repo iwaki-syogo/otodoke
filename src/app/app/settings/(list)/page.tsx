@@ -1,5 +1,4 @@
 import { Fragment } from "react";
-import { countPlainRead } from "@/lib/mail-keys";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { LogoutForm } from "../logout-form";
 import { readActiveKey, readDroppedCount, readApprovalBadge, readUnreadCount } from "../settings-reads";
@@ -17,28 +16,14 @@ type Row = LinkRow | { kind: "info"; id: string; icon: IconName; title: string; 
 export default async function SettingsPage() {
   const user = (await getUser())!;
   const supabase = await createClient();
-  const [{ key, failed: keyFailed }, waiting, confirmation, dropped, plainCount] = await Promise.all([
+  const [{ key, failed: keyFailed }, waiting, confirmation, dropped] = await Promise.all([
     readActiveKey(supabase, "settings list"),
     readUnreadCount(supabase, "settings list"),
     readApprovalBadge(supabase, user.id, "settings list"),
     readDroppedCount(supabase, "settings list"),
-    // Mail still readable by the operator, from before the encryption; null when it could not be counted.
-    countPlainRead(supabase, user.id).catch((err: unknown) => {
-      console.error("settings list (plain count):", err instanceof Error ? err.message : "unknown error");
-      return null;
-    }),
   ]);
-  // The key row: no key (未設定); with a key, mail not encrypted yet is the most important badge
-  // (as on iOS), and a count that failed is shown as unknown, never as none.
-  const keyBadge: Badge | null = keyFailed
-    ? UNKNOWN
-    : !key
-      ? { text: "未設定", tone: "amber" }
-      : plainCount === null
-        ? UNKNOWN
-        : plainCount > 0
-          ? { text: `未暗号化 ${plainCount.toLocaleString("ja-JP")} 通`, tone: "amber" }
-          : null;
+  // The key row: no key (未設定); a read that failed is shown as unknown, never as none.
+  const keyBadge: Badge | null = keyFailed ? UNKNOWN : !key ? { text: "未設定", tone: "amber" } : null;
 
   const mailRows: LinkRow[] = [
     {

@@ -16,6 +16,8 @@ const fixed = vi.hoisted(() => ({ entries: [] as import("@/lib/demo").DemoEntry[
 const USER = "00000000-0000-4000-8000-00000000000a";
 const mocks = vi.hoisted(() => ({ db: null as unknown, redirect: vi.fn(), revalidatePath: vi.fn() }));
 
+// The iOS endpoint asks Supabase Auth about the Bearer token; here the token is always user USER.
+vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) } }) }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 // The real redirect() throws to leave the action; so does this one.
 vi.mock("next/navigation", () => ({
@@ -35,6 +37,7 @@ vi.mock("@/lib/demo", async (importOriginal) => {
 });
 
 const { loadDemo } = await import("@/app/app/settings/actions");
+const { POST: apiLoad } = await import("@/app/api/demo/load/route");
 const realDemo = await vi.importActual<typeof import("@/lib/demo")>("@/lib/demo");
 fixed.entries = await realDemo.loadDemoEntries();
 
@@ -255,5 +258,42 @@ describe("loadDemo meeting the other judge's load", () => {
     db.hooks.push((q: Query) => (q.table === "parcels" && q.op === "insert" ? { data: null, error: { message: "duplicate key", code: "23505" } } : undefined));
     const [again] = await run();
     expect(again).toContain("error=demo_failed");
+  });
+});
+
+describe("the iOS endpoint POST /api/demo/load shares the guard", () => {
+  const b64url = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
+  const token = `${b64url({ alg: "ES256" })}.${b64url({ sub: USER })}.c2ln`;
+  const callApi = async () => {
+    const res = await apiLoad(new Request("https://otodoke.app/api/demo/load", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}" }));
+    return (await res.json()) as { ok: boolean; processed?: number; busy?: boolean };
+  };
+
+  it.each([0, 1, 7, 23])("an API load while a web load runs (timing %i): one of them answers busy, no duplicated mails or parcels", async (seed) => {
+    mocks.db = slowed(db, seed);
+    mocks.redirect.mockClear();
+    const laterApi = async () => {
+      for (let i = 0; i < seed * 3; i++) await new Promise<void>((r) => setImmediate(r));
+      expect(mocks.redirect).not.toHaveBeenCalled();
+      return callApi();
+    };
+    const [web, api] = await Promise.allSettled([loadDemo(), laterApi()]);
+    expect(web.status).toBe("rejected");
+    expect(api.status).toBe("fulfilled");
+    const answer = (api as PromiseFulfilledResult<Awaited<ReturnType<typeof callApi>>>).value;
+    expect(answer.ok).toBe(true);
+    // The web load was ahead, so the API load met a mail still being read and stopped.
+    expect(answer.busy).toBe(true);
+    expect(mocks.redirect.mock.calls.map((c) => c[0] as string)).toEqual(["/app"]);
+    expect(db.rows("emails")).toHaveLength(97);
+    expect(db.rows("parcels")).toHaveLength(86);
+    const items = db.rows("parcel_items").map((r) => JSON.stringify([r.parcel_id, r.name, r.quantity, r.email_id ?? null]));
+    expect(new Set(items).size).toBe(items.length);
+  });
+
+  it("one API load alone: ok, busy false, 97 mails and 86 parcels", async () => {
+    expect(await callApi()).toMatchObject({ ok: true, busy: false });
+    expect(db.rows("emails")).toHaveLength(97);
+    expect(db.rows("parcels")).toHaveLength(86);
   });
 });

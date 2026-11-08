@@ -86,8 +86,8 @@ async function screens(): Promise<Record<string, string>> {
     signup: html(createElement(SignupForm)),
     reset: html(createElement(ResetForm, { email: "someone@example.test", userId: USER })),
     unlock: html(createElement(UnlockForm, { userId: USER, email: "qa@example.com" })),
-    "settings without a key": html(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: null, plainCount: 2, oldKeyCount: 0 } })),
-    "settings with a key": html(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: "2026-11-06T00:00:00Z", plainCount: 2, oldKeyCount: 1 } })),
+    "settings without a key": html(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: null, oldKeyCount: 0, hasPlain: true } })),
+    "settings with a key": html(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: "2026-11-06T00:00:00Z", oldKeyCount: 1, hasPlain: false } })),
     "sealed mail": html(createElement(SealedMail, { userId: USER, email: "qa@example.com", emailId: "e1", fromDomain: "example.test", notes: null, confidence: null })),
   };
 }

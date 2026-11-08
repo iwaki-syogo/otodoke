@@ -14,7 +14,6 @@ import { mount } from "./hook-harness";
  */
 
 const status = vi.hoisted(() => ({ pending: false }));
-const seal = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   const { harnessHooks } = await import("./hook-harness");
@@ -25,11 +24,10 @@ vi.mock("react-dom", async (importOriginal) => ({
   useFormStatus: () => ({ pending: status.pending, data: null, method: null, action: null }),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
-vi.mock("@/app/app/settings/key-actions", () => ({ sealStoredMail: seal.fn, registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), readMailKey: vi.fn(), readRetiredMailKeys: vi.fn(), readSealedMail: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), readMailKey: vi.fn(), readRetiredMailKeys: vi.fn(), readSealedMail: vi.fn() }));
 vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
 const { PressButton } = await import("@/app/app/settings/press");
-const { SealBanner } = await import("@/app/app/settings/password-panel");
 
 const settings = (file: string) => readFileSync(path.resolve(__dirname, "../../app/app/settings", file), "utf8");
 const html = () => renderToStaticMarkup(createElement(PressButton, { label: "読み取る", busyLabel: "読み取っています…", className: "x" }));
@@ -39,7 +37,6 @@ const DISABLED_WHILE_BUSY = /(?<![-\w])disabled=\{busy/;
 
 beforeEach(() => {
   status.pending = false;
-  seal.fn.mockReset();
 });
 
 describe("PressButton (a Server Action form's submit button)", () => {
@@ -100,27 +97,6 @@ describe("PressButton (a Server Action form's submit button)", () => {
   });
 });
 
-describe("「暗号化する」 (batches of Server Action calls from the browser)", () => {
-  it("shows the spinner and the count left at once, runs once however often it is pressed, and is never disabled", async () => {
-    let finish: (v: unknown) => void = () => {};
-    seal.fn.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
-    const view = mount(() => SealBanner({ count: 3 }));
-    const button = () => view.host((h) => h.type === "button");
-    (button().props.onClick as () => void)();
-    (button().props.onClick as () => void)();
-    await Promise.resolve();
-    expect(seal.fn).toHaveBeenCalledTimes(1);
-    expect(view.text()).toContain("暗号化しています…あと 3 通");
-    expect(button().props["aria-disabled"]).toBe(true);
-    expect(String(button().props.className)).toContain("pointer-events-none");
-    expect(button().props.disabled).toBeUndefined();
-    finish({ ok: true, sealed: 3, failed: [], next: "c", remaining: 0 });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(view.text()).toContain("すべて暗号化しました。");
-    expect(seal.fn).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe("every slow button of 設定 shows its press", () => {
   it("each Server Action form submits with PressButton, not a bare button", () => {
     for (const file of ["dropped/page.tsx", "trouble/page.tsx", "demo-loader.tsx"]) {
@@ -150,13 +126,13 @@ describe("every slow button of 設定 shows its press", () => {
     const panel = settings("password-panel.tsx");
     expect(panel).not.toMatch(DISABLED_WHILE_BUSY);
     expect(panel).not.toMatch(/(?<![-\w])disabled=/);
-    // 「鍵を作る」 and 「変える」 through the shared submit button, 「暗号化する」 as before.
+    // 「鍵を作る」 and 「変える」 through the shared submit button; nothing else presses (sealing is automatic).
     expect(panel.match(/<PendingSubmitButton pending=\{busy && !needsTick\}/g)).toHaveLength(2);
-    expect(panel.match(/pressLabel\(busy,/g)).toHaveLength(1);
+    expect(panel).not.toContain("pressLabel(");
     // Every run starts by taking the ref, and gives it back when it ends.
-    expect(panel.match(/running\.current = true;/g)).toHaveLength(3);
-    expect(panel.match(/running\.current = false;/g)).toHaveLength(3);
-    for (const words of ["作っています…", "変えています…", "暗号化しています…"]) expect(panel).toContain(words);
+    expect(panel.match(/running\.current = true;/g)).toHaveLength(2);
+    expect(panel.match(/running\.current = false;/g)).toHaveLength(2);
+    for (const words of ["作っています…", "変えています…"]) expect(panel).toContain(words);
   });
 
   it("negative control: the checks catch a bare button and a disabled-while-busy one", () => {

@@ -79,16 +79,13 @@ describe("the settings words copied from the Web's dev branch", () => {
     }
   });
 
-  it("the two sentences with a number, piece by piece in the Web's order: the dropped summary and the note about mail not encrypted yet", () => {
+  it("the sentence with a number in the Web order (the dropped summary), and the note under makeKeyLead is the Web PLAINTEXT_DROP_NOTICE alone", () => {
     const summary = src.match(/droppedSummary[\s\S]*?\{\s*"([^"]+)"/)?.[1] ?? "";
     expect(pieces(summary).length).toBe(2);
     expect(hasInOrder(stripTsx(read(`${WEB}/dropped/page.tsx`)), pieces(summary))).toBe(true);
-    const note = src.match(/plainMailNote[\s\S]*?\{\s*"([^"]+)"/)?.[1] ?? "";
-    expect(pieces(note).length).toBe(2);
-    expect(hasInOrder(stripTsx(read(`${WEB}/password-panel.tsx`)), pieces(note))).toBe(true);
-    // PLAINTEXT_DROP_NOTICE follows with no space (the Web's `{PLAINTEXT_DROP_NOTICE}` right after the sentence).
-    expect(src).toMatch(/plainMailNote[\s\S]*?\+ plainDropNotice/);
-    expect(stripTsx(read(`${WEB}/password-panel.tsx`))).toMatch(/それまでは運営者が読める形です。\{PLAINTEXT_DROP_NOTICE\}/);
+    // plainMailNote is the notice and nothing else: the Web paragraph is `{PLAINTEXT_DROP_NOTICE}` alone.
+    expect(src).toMatch(/static func plainMailNote\(_ n: Int\) -> String \{\s*plainDropNotice\s*\}/);
+    expect(stripTsx(read(`${WEB}/password-panel.tsx`))).toContain("{PLAINTEXT_DROP_NOTICE}");
   });
 
   it("the key badge is 未設定, the one on the Web's list page", () => {

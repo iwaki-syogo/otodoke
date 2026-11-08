@@ -72,21 +72,23 @@ const one = (root: HtmlNode, href: string) => {
 };
 
 const askedForUser = (q: Query) => q.filters.some((f) => f.method === "eq" && f.args[0] === "user_id" && f.args[1] === USER);
-const isCount = (status: string) => (q: Query) =>
-  q.table === "parcels" && q.head && q.filters.some((f) => f.method === "eq" && f.args[0] === "status" && f.args[1] === status);
+/** Neither link on the list shows a count (owner rule): the number is seen after opening the page. */
+function expectNoCount(root: HtmlNode) {
+  for (const href of ["/app/delivered", "/app/cancelled"]) expect(textOf(one(root, href)), href).not.toMatch(/\d/);
+}
 const fail = { data: null, error: { message: "boom" }, count: null };
 
 describe("[SEC-N1] the list reads only the user's parcels", () => {
-  it("adds user_id = the session's id to every parcels read, the counts included", async () => {
+  it("adds user_id = the session's id to every parcels read (the list; the links carry no count)", async () => {
     db = new FakeDb({ parcels: [parcel({ expected_date: day(1) })], emails: [] });
     mocks.state.db = db;
     await renderList();
     const reads = db.callsOn("parcels", "select");
-    expect(reads.length).toBe(3);
+    expect(reads.length).toBe(1);
     for (const q of reads) expect(askedForUser(q), describeQuery(q)).toBe(true);
   });
 
-  it("neither lists nor counts another user's parcels", async () => {
+  it("does not list another user's parcels, and the links carry no count", async () => {
     const mine = parcel({ status: "shipped", expected_date: day(1), title: "自分の品" });
     const theirs = parcel({ user_id: OTHER, status: "shipped", expected_date: day(1), title: "他人の品" });
     db = new FakeDb({
@@ -98,8 +100,7 @@ describe("[SEC-N1] the list reads only the user's parcels", () => {
     expect(linksTo(root, `/app/parcels/${mine.id}`)).toHaveLength(1);
     expect(linksTo(root, `/app/parcels/${theirs.id}`)).toHaveLength(0);
     expect(textOf(root)).not.toContain("他人の品");
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/1\s*件/);
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/0\s*件/);
+    expectNoCount(root);
   });
 });
 
@@ -136,46 +137,20 @@ describe("[N1] each of the list's reads failing alone", () => {
     return open;
   };
 
-  it("the unread-mail count: no notice, the list and both counts stay", async () => {
+  it("the unread-mail count: no notice, the list and both links stay", async () => {
     const open = seed();
     db.hooks.push((q) => (q.table === "emails" ? fail : undefined));
     const root = await renderList();
     expect(textOf(root)).not.toContain("まだ読んでいないメール");
     expect(linksTo(root, `/app/parcels/${open.id}`)).toHaveLength(1);
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/2\s*件/);
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/1\s*件/);
+    expectNoCount(root);
   });
 
-  it("the delivered count: that link shows no count, the rest stays", async () => {
-    const open = seed();
-    db.hooks.push((q) => (isCount("delivered")(q) ? fail : undefined));
-    const root = await renderList();
-    const delivered = one(root, "/app/delivered");
-    expect(textOf(delivered)).toContain("届いた荷物");
-    expect(textOf(delivered)).not.toContain("件");
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/1\s*件/);
-    expect(linksTo(root, `/app/parcels/${open.id}`)).toHaveLength(1);
-    expect(textOf(root)).toContain("まだ読んでいないメール");
-  });
-
-  it("the cancelled count: that link shows no count, the rest stays", async () => {
-    const open = seed();
-    db.hooks.push((q) => (isCount("cancelled")(q) ? fail : undefined));
-    const root = await renderList();
-    const cancelled = one(root, "/app/cancelled");
-    expect(textOf(cancelled)).toContain("キャンセルした荷物");
-    expect(textOf(cancelled)).not.toContain("件");
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/2\s*件/);
-    expect(linksTo(root, `/app/parcels/${open.id}`)).toHaveLength(1);
-    expect(textOf(root)).toContain("まだ読んでいないメール");
-  });
-
-  it("the list itself: both counts and the unread notice stay", async () => {
+  it("the list itself: both links and the unread notice stay", async () => {
     seed();
     db.hooks.push((q) => (q.table === "parcels" && !q.head ? fail : undefined));
     const root = await renderList();
-    expect(textOf(one(root, "/app/delivered"))).toMatch(/2\s*件/);
-    expect(textOf(one(root, "/app/cancelled"))).toMatch(/1\s*件/);
+    expectNoCount(root);
     expect(textOf(root)).toContain("まだ読んでいないメール");
   });
 });
