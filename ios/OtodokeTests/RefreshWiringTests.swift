@@ -101,6 +101,58 @@ struct ScreenRefresherTests {
         r.disappeared(again)
     }
 
+    /// S-1: a long load finished (DataChanges moved) while a tab was in front: that screen reads again if it is
+    /// stale, the way its onAppear would; a screen that is not in front reads nothing.
+    @Test func aPublishReadsOnlyTheStaleScreenInFront() async {
+        let changes = DataChanges()
+        let r = ScreenRefresher()
+        r.select(.parcels)
+        var reads: [ScreenID] = []
+        let parcelsMark = ChangeMark(changes)
+        let calendarMark = ChangeMark(changes)
+        parcelsMark.markRead()
+        calendarMark.markRead()
+        func ifStale(_ id: ScreenID, _ mark: ChangeMark) -> ScreenRefresher.Refresh {
+            {
+                guard mark.isStale else { return }
+                reads.append(id)
+                mark.markRead()
+            }
+        }
+        let parcels = r.appeared(.parcels, in: .parcels, refresh: {}, refreshIfStale: ifStale(.parcels, parcelsMark))
+        let calendar = r.appeared(.calendar, in: .calendar, refresh: {}, refreshIfStale: ifStale(.calendar, calendarMark))
+        // Nothing moved: nothing is read.
+        await r.dataChanged()
+        #expect(reads.isEmpty)
+        changes.publish()
+        await r.dataChanged()
+        #expect(reads == [.parcels])
+        // Read once; a second call finds it fresh (negative control: the calendar behind was never read).
+        await r.dataChanged()
+        #expect(reads == [.parcels])
+        r.disappeared(parcels)
+        r.disappeared(calendar)
+    }
+
+    @Test func aPublishWithNothingInFrontOrNoStaleCheckReadsNothing() async {
+        let changes = DataChanges()
+        let r = ScreenRefresher()
+        r.select(.spend)
+        var reads = 0
+        // The spend tab shows nothing yet; the parcels tab (not selected) has a check.
+        let behind = r.appeared(.parcels, in: .parcels, refresh: {}, refreshIfStale: { reads += 1 })
+        changes.publish()
+        await r.dataChanged()
+        #expect(reads == 0)
+        // The front screen has no stale check (the settings tab): nothing is read either.
+        r.select(.settings)
+        let settings = r.appeared(.settings, in: .settings, refresh: { reads += 1 })
+        await r.dataChanged()
+        #expect(reads == 0)
+        r.disappeared(behind)
+        r.disappeared(settings)
+    }
+
     @Test func eachComingBackReadsOnce() async {
         let counter = Counter()
         let r = ScreenRefresher()

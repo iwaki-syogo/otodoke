@@ -17,23 +17,11 @@ enum WebLink {
     /// https://otodoke.app/app/settings/delete (アカウントの削除)
     static let settingsDelete = page("/app/settings/delete")
 
-    /// https://otodoke.app/app/parcels/{id} (a sealed mail, M1)
-    static func parcel(id: String) -> URL {
-        page("/app/parcels/\(segment(id))")
-    }
-
     /// https://otodoke.app/privacy
     static let privacy = page("/privacy")
 
     /// https://otodoke.app/app
     static let app = page("/app")
-
-    /// An id as one path segment ("/" and "?" encoded too).
-    private static func segment(_ id: String) -> String {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove("/")
-        return id.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-    }
 
     /// base + path ("/app/..."), as an absolute URL. Falls back to the base for a path that is not a URL.
     private static func page(_ path: String) -> URL {

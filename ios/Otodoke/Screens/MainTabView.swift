@@ -196,6 +196,12 @@ struct MainTabView: View {
         .onChange(of: selection, initial: true) { _, tab in
             screens.refresher.select(tab)
         }
+        // S-1: a long load or write finished (the version moved) while another screen was in front: the screen in
+        // front reads again if it is stale (the others do so when shown).
+        .onChange(of: screens.changes.version) {
+            let refresher = screens.refresher
+            Task { await refresher.dataChanged() }
+        }
         // A sample load went through: the 荷物 tab shows it (with the note while another load is running).
         .onChange(of: screens.settings.demo?.loadedCount) { _, count in
             if count != nil { route.tab = .parcels }
@@ -280,7 +286,7 @@ struct MainTabView: View {
             ParcelListView(model: list, openSettings: { route.showSettings() }, openForwarding: { route.showForwarding() }, openTrouble: { route.showTrouble() }, openSample: { route.showSample() }) { id in
                 TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
-            .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }
+            .shownScreen(.parcels, in: .parcels, screens.refresher, refresh: { await list.load() }, ifStale: { await list.onAppear() })
             // Everything was cleared: what the 荷物 tab has open (a parcel's detail, the delivered page) is gone, so the
             // tab starts again from its list.
             .id(screens.settings.demo?.clearedCount ?? 0)
@@ -294,13 +300,13 @@ struct MainTabView: View {
             CalendarView(model: calendar) { id in
                 TrackedDetail(screens: screens, id: id, tab: .calendar)
             }
-            .shownScreen(.calendar, in: .calendar, screens.refresher) { await calendar.sceneBecameActive() }
+            .shownScreen(.calendar, in: .calendar, screens.refresher, refresh: { await calendar.sceneBecameActive() }, ifStale: { await calendar.onAppear() })
         case .spend:
             let spend = screens.spend
             SpendView(model: spend) { id in
                 TrackedDetail(screens: screens, id: id, tab: .spend)
             }
-            .shownScreen(.spend, in: .spend, screens.refresher) { await spend.sceneBecameActive() }
+            .shownScreen(.spend, in: .spend, screens.refresher, refresh: { await spend.sceneBecameActive() }, ifStale: { await spend.onAppear() })
         case .settings:
             let settings = screens.settings
             SettingsView(model: settings, path: $route.settingsPath, register: { manualForm = ManualParcelModel.live(list: screens.list) })
@@ -329,7 +335,7 @@ private struct TrackedDetail: View {
     var body: some View {
         let model = self.model
         ParcelDetailView(model: model)
-            .shownScreen(.detail(model.id), in: tab, depth: depth, refresher) { [weak model] in await model?.load() }
+            .shownScreen(.detail(model.id), in: tab, depth: depth, refresher, refresh: { [weak model] in await model?.load() }, ifStale: { [weak model] in await model?.onAppear() })
     }
 }
 
@@ -342,13 +348,14 @@ struct ShownScreen: ViewModifier {
     let depth: Int?
     let refresher: ScreenRefresher
     let refresh: ScreenRefresher.Refresh
+    let refreshIfStale: ScreenRefresher.Refresh?
     @State private var token: ScreenToken?
 
     func body(content: Content) -> some View {
         content
             .onAppear {
                 if let token { refresher.disappeared(token) }
-                token = refresher.appeared(id, in: tab, depth: depth, refresh: refresh)
+                token = refresher.appeared(id, in: tab, depth: depth, refresh: refresh, refreshIfStale: refreshIfStale)
             }
             .onDisappear {
                 if let token { refresher.disappeared(token) }
@@ -360,8 +367,8 @@ struct ShownScreen: ViewModifier {
 extension View {
     /// Tells the refresher while this screen of `tab` is shown (`depth` deep on the tab's stack,
     /// `id.depth` when nil), and how it reads again.
-    func shownScreen(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh) -> some View {
-        modifier(ShownScreen(id: id, tab: tab, depth: depth, refresher: refresher, refresh: refresh))
+    func shownScreen(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, _ refresher: ScreenRefresher, refresh: @escaping ScreenRefresher.Refresh, ifStale: ScreenRefresher.Refresh? = nil) -> some View {
+        modifier(ShownScreen(id: id, tab: tab, depth: depth, refresher: refresher, refresh: refresh, refreshIfStale: ifStale))
     }
 }
 

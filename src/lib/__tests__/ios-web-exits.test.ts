@@ -35,10 +35,13 @@ function webLinksUsed(sources: { file: string; src: string }[]): string[] {
   return [...used].sort();
 }
 
-/** The files that open a URL (openURL(...) or SettingsWeb.open...). */
+/** The calls that open a URL: openURL(...), SettingsWeb.open..., a SwiftUI Link, UIApplication's open, a Safari view, a share sheet. */
+const OPENS_A_URL = /\bopenURL\(|\bSettingsWeb\.open(Page)?\(|\bLink\(destination:|\bUIApplication\.shared\.open\(|\bSFSafariViewController\b|\bShareLink\b/;
+
+/** The files that open a URL. */
 function openers(sources: { file: string; src: string }[]): string[] {
   return sources
-    .filter(({ src }) => /\bopenURL\(|\bSettingsWeb\.open(Page)?\(/.test(src))
+    .filter(({ src }) => OPENS_A_URL.test(src))
     .map(({ file }) => file.replace("ios/Otodoke/", ""))
     .sort();
 }
@@ -46,6 +49,8 @@ function openers(sources: { file: string; src: string }[]): string[] {
 const ALLOWED_WEBLINKS = ["app", "base", "privacy", "settingsDelete", "settingsPassword"];
 const ALLOWED_OPENERS = [
   "Auth/LoginView.swift", // 「パスワードを忘れた」
+  "Auth/TurnstileView.swift", // UIApplication.shared.open: the page the Turnstile check asks to open in a new window
+  "Screens/Detail/ParcelDetailView.swift", // Link(destination: amazon): the Amazon order page, a kind of tracking page
   "Screens/Detail/TrackingLinkView.swift", // the carrier's tracking page
   "Screens/Settings/ForwardingGuideView.swift", // the guide's video and links
   "Screens/Settings/SettingsKeyPage.swift", // 「パスワードを変える」
@@ -79,6 +84,13 @@ describe("the iOS app opens the Web only for the things that must be there", () 
     expect(openers(added)).not.toEqual(ALLOWED_OPENERS);
     expect(openers([...SOURCES, { file: "ios/Otodoke/Screens/Detail/Other.swift", src: "SettingsWeb.open(.privacy, openURL)" }])).not.toEqual(ALLOWED_OPENERS);
     expect(webLinksUsed([{ file: "ios/Otodoke/Screens/Shared/OpenWeb.swift", src: "WebLink.anything" }])).toEqual([]);
+  });
+
+  it("negative control: a SwiftUI Link, UIApplication's open, a Safari view or a ShareLink in another file is caught", () => {
+    const calls = ["Link(destination: url) { Text(x) }", "UIApplication.shared.open(url)", "SFSafariViewController(url: url)", "ShareLink(item: url)"];
+    for (const src of calls) {
+      expect(openers([...SOURCES, { file: "ios/Otodoke/Screens/Spend/SpendView.swift", src }]), src).not.toEqual(ALLOWED_OPENERS);
+    }
   });
 });
 

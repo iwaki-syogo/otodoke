@@ -192,14 +192,4 @@ struct MailBodyTests {
         #expect(select.contains("from_domain"))
         #expect(!select.contains("body_envelope"))
     }
-
-    // MARK: M1: a sealed mail opens the Web's parcel page
-
-    @Test func aSealedMailOpensTheParcelPageOnTheWeb() {
-        let url = WebLink.parcel(id: Rows.id(1))
-        #expect(url.absoluteString == "https://otodoke.app/app/parcels/\(Rows.id(1))")
-        #expect(url.scheme == "https")
-        // An id is one path segment, never more.
-        #expect(WebLink.parcel(id: "a/b?c").absoluteString == "https://otodoke.app/app/parcels/a%2Fb%3Fc")
-    }
 }

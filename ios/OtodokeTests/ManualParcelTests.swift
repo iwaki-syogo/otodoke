@@ -335,6 +335,26 @@ struct ManualParcelTests {
         #expect(await fake.requests("PATCH", "parcels").count == 1)
     }
 
+    @Test func aDuplicateDoesNotSetBackAStatusTheMailMovedOn() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        var mine = try row { $0.title = "最初の品名" }
+        mine.id = Rows.id(9)
+        #expect(await writer.createManual(mine) == .success(Rows.id(9)))
+        // A delivery mail moved it on while the first answer was lost.
+        await fake.touch("parcels", id: Rows.id(9), ["status": "out_for_delivery"])
+        // Pressed again with a changed title: the title is written over, the status the mail set stays.
+        mine.title = "変えた品名"
+        #expect(await writer.createManual(mine) == .success(Rows.id(9)))
+        let stored = await fake.row("parcels", id: Rows.id(9))
+        #expect(stored?["title"]?.string == "変えた品名")
+        #expect(stored?["status"]?.string == "out_for_delivery")
+        // Pressed again with nothing else changed: nothing is written at all.
+        let patches = await fake.requests("PATCH", "parcels").count
+        #expect(await writer.createManual(mine) == .success(Rows.id(9)))
+        #expect(await fake.requests("PATCH", "parcels").count == patches)
+    }
+
     @Test func aDuplicateThatCannotBeReadIsUnknown() async throws {
         let fake = FakeSupabase.make()
         let (writer, _) = try await writer(fake)

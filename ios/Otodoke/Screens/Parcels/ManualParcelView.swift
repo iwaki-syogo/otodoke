@@ -123,7 +123,6 @@ struct ManualParcelView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(ManualParcelText.deleteWarning).font(.subheadline)
                     ConfirmCheck(title: ManualParcelText.deleteConfirm, isOn: $model.deleteConfirmed, identifier: "manual-delete-check")
-                        .font(.subheadline)
                     if let message = model.deleteError {
                         Text(message)
                             .font(.subheadline)

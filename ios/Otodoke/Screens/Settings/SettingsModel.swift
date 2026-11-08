@@ -75,8 +75,8 @@ final class SettingsModel {
     @ObservationIgnored private var hasRead = false
     /// Reads running now (load() adds one while it runs).
     @ObservationIgnored private var loadsRunning = 0
-/// How many full reads have begun (the auto refresh drops its answers when this moved).
-@ObservationIgnored private var loadsStarted = 0
+    /// How many full reads have begun (the auto refresh drops its answers when this moved).
+    @ObservationIgnored private var loadsStarted = 0
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
 

@@ -276,13 +276,15 @@ struct ParcelWriter: Sendable {
         } catch {
             return .unknown
         }
+        // A status the mail already moved on (配達中・不在) is not the form's to set back: it is neither compared nor written.
+        let keepsStatus = ManualParcel.carriedStatuses.contains(stored.status)
         let same = stored.title == row.title && stored.shop == row.shop && stored.orderedAt == row.orderedAt
             && stored.expectedDate == row.expectedDate && stored.totalAmount == row.totalAmount
             && stored.category == row.category && stored.categorySource == row.categorySource
             && stored.trackingNumber == row.trackingNumber && stored.carrier == row.carrier
-            && stored.requiresPresence == row.requiresPresence && stored.status == row.status
+            && stored.requiresPresence == row.requiresPresence && (keepsStatus || stored.status == row.status)
         if same { return .success(id) }
-        let columns: [String: ManualParcel.Column] = [
+        var columns: [String: ManualParcel.Column] = [
             "title": .text(row.title),
             "shop": .text(row.shop),
             "shop_key": .text(row.shopKey),
@@ -296,6 +298,7 @@ struct ParcelWriter: Sendable {
             "requires_presence": ManualParcel.Column(row.requiresPresence),
             "status": .text(row.status),
         ]
+        if keepsStatus { columns["status"] = nil }
         switch await write(id: id, .manualEdit(columns, updatedAt: stored.updatedAt)) {
         case .success: return .success(id)
         case let .notUpdated(reason): return .notUpdated(reason)

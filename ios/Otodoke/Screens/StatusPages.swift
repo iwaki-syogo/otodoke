@@ -48,6 +48,7 @@ struct StatusPage<Model: AnyObject, Content: View>: View {
     let tab: MainTab
     let refresher: ScreenRefresher
     let refresh: @MainActor (Model) async -> Void
+    let ifStale: @MainActor (Model) async -> Void
     @ViewBuilder let content: (Model) -> Content
     @State private var model: Model
 
@@ -57,12 +58,14 @@ struct StatusPage<Model: AnyObject, Content: View>: View {
         _ refresher: ScreenRefresher,
         in tab: MainTab,
         refresh: @escaping @MainActor (Model) async -> Void,
+        ifStale: @escaping @MainActor (Model) async -> Void,
         @ViewBuilder content: @escaping (Model) -> Content
     ) {
         self.id = id
         self.tab = tab
         self.refresher = refresher
         self.refresh = refresh
+        self.ifStale = ifStale
         self.content = content
         _model = State(initialValue: make())
     }
@@ -70,12 +73,16 @@ struct StatusPage<Model: AnyObject, Content: View>: View {
     var body: some View {
         let model = self.model
         let refresh = self.refresh
+        let ifStale = self.ifStale
         content(model)
             // The page's links hand this to the detail they push (StatusPageGroups).
             .environment(\.detailDepth, id.depth + 1)
-            .shownScreen(id, in: tab, refresher) { [weak model] in
+            .shownScreen(id, in: tab, refresher, refresh: { [weak model] in
                 guard let model else { return }
                 await refresh(model)
-            }
+            }, ifStale: { [weak model] in
+                guard let model else { return }
+                await ifStale(model)
+            })
     }
 }

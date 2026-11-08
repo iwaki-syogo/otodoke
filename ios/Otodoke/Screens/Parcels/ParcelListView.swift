@@ -53,13 +53,13 @@ struct ParcelListView<Detail: View>: View {
                     case let .parcel(id): detail(id)
                     case .delivered:
                         if let pages {
-                            StatusPage(pages.delivered, .delivered, pages.refresher, in: .parcels, refresh: { await $0.sceneBecameActive() }) { model in
+                            StatusPage(pages.delivered, .delivered, pages.refresher, in: .parcels, refresh: { await $0.sceneBecameActive() }, ifStale: { await $0.onAppear() }) { model in
                                 DeliveredView(model: model, detail: detail)
                             }
                         }
                     case .cancelled:
                         if let pages {
-                            StatusPage(pages.cancelled, .cancelled, pages.refresher, in: .parcels, refresh: { await $0.sceneBecameActive() }) { model in
+                            StatusPage(pages.cancelled, .cancelled, pages.refresher, in: .parcels, refresh: { await $0.sceneBecameActive() }, ifStale: { await $0.onAppear() }) { model in
                                 CancelledView(model: model, detail: detail)
                             }
                         }

@@ -41,6 +41,8 @@ final class ScreenRefresher {
         /// On the tab's stack: the root 0; deeper is over it.
         let depth: Int
         let refresh: Refresh
+        /// Reads again only when the screen is stale (its onAppear): what DataChanges moving calls.
+        let refreshIfStale: Refresh?
     }
 
     private var appearances: [ScreenToken: Appearance] = [:]
@@ -57,10 +59,10 @@ final class ScreenRefresher {
 
     /// A screen of `tab` appeared (its root, or a screen pushed on its stack, `depth` deep: `id.depth`
     /// when nil); `refresh` is kept until `disappeared` with the token given back.
-    func appeared(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, refresh: @escaping Refresh) -> ScreenToken {
+    func appeared(_ id: ScreenID, in tab: MainTab, depth: Int? = nil, refresh: @escaping Refresh, refreshIfStale: Refresh? = nil) -> ScreenToken {
         lastToken += 1
         let token = ScreenToken(raw: lastToken)
-        appearances[token] = Appearance(id: id, tab: tab, order: lastToken, depth: depth ?? id.depth, refresh: refresh)
+        appearances[token] = Appearance(id: id, tab: tab, order: lastToken, depth: depth ?? id.depth, refresh: refresh, refreshIfStale: refreshIfStale)
         return token
     }
 
@@ -89,6 +91,14 @@ final class ScreenRefresher {
         refreshingTokens.insert(front.token)
         defer { refreshingTokens.remove(front.token) }
         await front.appearance.refresh()
+    }
+
+    /// DataChanges moved (a long load or write finished while another screen was in front): the screen in
+    /// front reads again when it is stale, as its onAppear would; the others wait for theirs. The models'
+    /// fences keep a read already running from being doubled.
+    func dataChanged() async {
+        guard let refreshIfStale = front?.appearance.refreshIfStale else { return }
+        await refreshIfStale()
     }
 }
 
