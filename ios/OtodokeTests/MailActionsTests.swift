@@ -18,21 +18,23 @@ struct MailActionsTests {
         let model: SettingsModel
         let actions: MailActionsModel
         let counter: Counter
+        let changes: DataChanges
         let firstID = Rows.id(60_001)
     }
 
-    private func setUp(token: Bool = true) async throws -> Setup {
+    private func setUp(token: Bool = true, live: Bool = false) async throws -> Setup {
         let fake = FakeSupabase.make()
         await fake.insert("user_keys", [SettingsRows.key(1, keyID: "k1")])
         await fake.insert("screen_events", [SettingsRows.dropped(1), SettingsRows.dropped(2)])
         await fake.setUnreadEmails(3)
         let (provider, auth) = try await TestSession.signedIn(fake)
+        let changes = DataChanges()
         let model = SettingsModel(
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
             inboundDomain: fake.config.inboundDomain,
-            changes: DataChanges(),
+            changes: changes,
             now: { ISO.date("2026-11-04T03:00:00Z")! }
         )
         await model.load()
@@ -47,10 +49,12 @@ struct MailActionsTests {
             reload: { [unowned model] in
                 counter.reloads += 1
                 await model.load()
-            }
+            },
+            announceChange: { ParcelWriter.announceOutsideChange(changes) }
         )
-        model.mailActions = actions
-        return Setup(fake: fake, server: server, model: model, actions: actions, counter: counter)
+        // `live`: the model's own wiring (its server is the Web's real host, which the stub session refuses).
+        if !live { model.mailActions = actions }
+        return Setup(fake: fake, server: server, model: model, actions: live ? model.mailActions : actions, counter: counter, changes: changes)
     }
 
     /// The dropped row `id` as the list shows it.
@@ -273,6 +277,117 @@ struct MailActionsTests {
         await s.actions.readWaiting()
         #expect(s.actions.readNote == nil)
         #expect(s.model.unread == .loaded(0))
+    }
+
+    // MARK: the other tabs
+
+    @Test func readingTellsTheOtherTabsOnceWhateverCameOfIt() async throws {
+        let answers: [FakeMailServer.Forced?] = [
+            nil,
+            .answer(status: 500, ok: false, code: "read_failed"),
+            .transport(.timedOut),
+            .transport(.networkConnectionLost),
+        ]
+        for forced in answers {
+            let s = try await setUp()
+            if let forced { await s.server.force("read-waiting", forced) }
+            let before = s.changes.version
+            await s.actions.readWaiting()
+            #expect(s.changes.version == before + 1, "\(String(describing: forced))")
+        }
+    }
+
+    @Test func markingAParcelDoesNotTellTheOtherTabs() async throws {
+        for outcome in [MarkParcelOutcome.remembered, .shared] {
+            let s = try await setUp()
+            await s.server.setOutcome(outcome)
+            let before = s.changes.version
+            await s.actions.markAsParcel(id: s.firstID)
+            #expect(s.changes.version == before, "\(outcome)")
+        }
+    }
+
+    @Test func theModelsOwnWiringPublishesToItsChanges() async throws {
+        // The live wiring points at the Web's real host, which the stub session refuses: nothing leaves the test,
+        // and a run whose answer did not come still announces (parcels may have been added).
+        let s = try await setUp(live: true)
+        let before = s.changes.version
+        await s.actions.readWaiting()
+        #expect(s.changes.version == before + 1)
+        await s.actions.markAsParcel(id: s.firstID)
+        #expect(s.changes.version == before + 1)
+    }
+
+    // MARK: the connection breaks after sending
+
+    @Test func aBrokenConnectionOrAGatewayPageIsNotShownAsAFailure() async throws {
+        let cases: [FakeMailServer.Forced] = [.transport(.networkConnectionLost), .transport(.secureConnectionFailed), .raw(status: 504), .raw(status: 502)]
+        for forced in cases {
+            let marking = try await setUp()
+            await marking.server.force("mark-parcel", forced)
+            await marking.actions.markAsParcel(id: marking.firstID)
+            #expect(marking.actions.markNote == nil, "\(forced)")
+            #expect(marking.counter.reloads == 1, "\(forced)")
+            let reading = try await setUp()
+            await reading.server.force("read-waiting", forced)
+            await reading.actions.readWaiting()
+            #expect(reading.actions.readNote == nil, "\(forced)")
+            #expect(reading.counter.reloads == 1, "\(forced)")
+        }
+        // Negative control: nothing was sent, or it is not a gateway: still a failure.
+        for forced in [FakeMailServer.Forced.transport(.notConnectedToInternet), .transport(.cannotConnectToHost), .raw(status: 404), .raw(status: 302)] {
+            let s = try await setUp()
+            await s.server.force("mark-parcel", forced)
+            await s.actions.markAsParcel(id: s.firstID)
+            #expect(s.actions.markNote?.isError == true, "\(forced)")
+        }
+    }
+
+    // MARK: leaving the page
+
+    @Test func leavingTheSettingsTakesTheReadNoteAway() async throws {
+        let s = try await setUp()
+        await s.server.force("read-waiting", .answer(status: 500, ok: false, code: "read_failed"))
+        await s.actions.readWaiting()
+        #expect(s.actions.readNote != nil)
+        s.actions.clearReadNote()
+        #expect(s.actions.readNote == nil)
+    }
+
+    @Test func aPageLeftWhileItRunsKeepsNoNoteWhenItEnds() async throws {
+        let s = try await setUp()
+        let gate = Gate()
+        await s.server.hold("mark-parcel", on: gate)
+        await s.server.force("mark-parcel", .answer(status: 503, ok: false, code: "unavailable"))
+        let marking = Task { await s.actions.markAsParcel(id: s.firstID) }
+        await waitForRequests(s.server, "mark-parcel", 1)
+        s.actions.clearNotes()
+        gate.open()
+        await marking.value
+        #expect(s.actions.markNote == nil)
+
+        let readGate = Gate()
+        await s.server.hold("read-waiting", on: readGate)
+        await s.server.force("read-waiting", .answer(status: 500, ok: false, code: "read_failed"))
+        let reading = Task { await s.actions.readWaiting() }
+        await waitForRequests(s.server, "read-waiting", 1)
+        s.actions.clearReadNote()
+        readGate.open()
+        await reading.value
+        #expect(s.actions.readNote == nil)
+        // Negative control: a run not left shows its note.
+        await s.server.hold("read-waiting", on: Gate.opened())
+        await s.server.force("read-waiting", nth: 2, .answer(status: 500, ok: false, code: "read_failed"))
+        await s.actions.readWaiting()
+        #expect(s.actions.readNote != nil)
+    }
+
+    @Test func theRequestsCarryTheirTimeouts() async throws {
+        let s = try await setUp()
+        await s.actions.markAsParcel(id: s.firstID)
+        await s.actions.readWaiting()
+        #expect(await s.server.requests("mark-parcel").first?.timeoutInterval == 30)
+        #expect(await s.server.requests("read-waiting").first?.timeoutInterval == 310)
     }
 
     // MARK: no Web page

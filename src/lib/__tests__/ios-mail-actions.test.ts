@@ -200,3 +200,39 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     expect(client.replace("case forwarded", "case forward")).not.toContain("case forwarded");
   });
 });
+
+describe("the other tabs, the reading aloud and the 44 pt button (review fixes)", () => {
+  const writer = read("ios/Otodoke/Data/ParcelWriter.swift");
+  const model = stripComments(read("ios/Otodoke/Screens/Settings/MailActionsModel.swift"));
+  const buttons = stripComments(read("ios/Otodoke/Screens/Settings/MailActionButtons.swift"));
+  const client = stripComments(read("ios/Otodoke/Data/MailActionsAPI.swift"));
+  const rows = stripComments(read("ios/Otodoke/Screens/Settings/SettingsStatusRows.swift"));
+
+  it("ParcelWriter carries the shared announceOutsideChange, and only ParcelWriter publishes", () => {
+    expect(writer).toContain("    @MainActor\n    static func announceOutsideChange(_ changes: DataChanges?) {\n        changes?.publish()\n    }\n");
+    expect(writer.indexOf("announceOutsideChange")).toBeGreaterThan(writer.indexOf("// MARK: 「古くなった」 (CX1)"));
+    expect(writer.indexOf("announceOutsideChange")).toBeLessThan(writer.indexOf("private func announce<T>"));
+    expect(model).not.toContain(".publish(");
+  });
+
+  it("reading announces once after the answer, whatever it was; marking announces nothing", () => {
+    const read = model.match(/func readWaiting\(\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    const mark = model.match(/func markAsParcel\(id: String\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    expect(read).not.toBe("");
+    expect(read.match(/announceChange\(\)/g)?.length).toBe(1);
+    expect(read.indexOf("announceChange()")).toBeGreaterThan(read.indexOf("api.readWaiting"));
+    expect(mark).not.toContain("announceChange");
+  });
+
+  it("the notes are read aloud, the read note goes when the settings are left, the button is 44 pt tall", () => {
+    expect(model).toContain("AccessibilityNotification.Announcement(");
+    expect(rows).toContain("clearReadNote()");
+    expect(buttons).toMatch(/MarkParcelButton[\s\S]*\.frame\(minHeight: 44\)/);
+  });
+
+  it("a connection that broke after sending, or a 5xx that is not JSON, is a result not known", () => {
+    expect(client).toMatch(/mayHaveBeenSent: Set<URLError\.Code>[\s\S]*networkConnectionLost[\s\S]*secureConnectionFailed/);
+    expect(client).not.toMatch(/mayHaveBeenSent[^\]]*(notConnectedToInternet|cannotConnectToHost)/);
+    expect(client).toMatch(/statusCode >= 500 \? \.unknownResult : \.network/);
+  });
+});

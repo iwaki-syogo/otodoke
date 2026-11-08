@@ -129,7 +129,8 @@ final class SettingsModel {
         return MailActionsModel(
             api: MailActionsClient(session: provider.urlSession),
             accessToken: { try? await provider.auth.session.accessToken },
-            reload: { [weak self] in await self?.load() }
+            reload: { [weak self] in await self?.load() },
+            announceChange: { [changes = mark.changes] in ParcelWriter.announceOutsideChange(changes) }
         )
     }()
 

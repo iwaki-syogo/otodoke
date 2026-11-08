@@ -184,6 +184,13 @@ struct ParcelWriter: Sendable {
 
     // MARK: 「古くなった」 (CX1)
 
+    /// A change made outside this writer (the sample load, clearing everything through the Web's endpoints) tells the
+    /// other tabs the same way.
+    @MainActor
+    static func announceOutsideChange(_ changes: DataChanges?) {
+        changes?.publish()
+    }
+
     /// Publishes once when any of the outcomes may have changed a row (a success or an unknown result).
     private func announce<T>(_ outcomes: [WriteOutcome<T>]) async {
         guard let changes, outcomes.contains(where: Self.mayHaveWritten) else { return }

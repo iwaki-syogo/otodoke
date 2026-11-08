@@ -15,6 +15,8 @@ actor FakeMailServer {
     enum Forced: Sendable {
         case answer(status: Int, ok: Bool, code: String?, extra: [String: Bool] = [:])
         case transport(URLError.Code)
+        /// A gateway page that is not JSON.
+        case raw(status: Int)
     }
 
     private(set) var requests: [StubRequest] = []
@@ -66,6 +68,7 @@ actor FakeMailServer {
                 for (k, v) in extra { body[k] = v }
                 return .json(status, body, headers: ["Cache-Control": "no-store"])
             case let .transport(code): return .failure(code)
+            case let .raw(status): return .http(status: status, headers: ["Content-Type": "text/html"], body: Data("<html>Gateway Timeout</html>".utf8))
             }
         }
         guard request.method == "POST", request.url.path.hasPrefix("/api/mail/") else { return .json(405, ["ok": false]) }

@@ -722,6 +722,13 @@ actor FakeSupabase {
 
 /// Holds a request until the test opens it (to see the spinner while a request is in flight).
 final class Gate: @unchecked Sendable {
+    /// A gate that is already open.
+    static func opened() -> Gate {
+        let gate = Gate()
+        gate.open()
+        return gate
+    }
+
     private let lock = NSLock()
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []

@@ -13,6 +13,8 @@ struct SettingsStatusRows: View {
             unreadSection
             approvalSection
         }
+        // Leaving the settings takes the red line of 「読み取る」 with it.
+        .onDisappear { model.mailActions.clearReadNote() }
     }
 
     // MARK: unread, approval

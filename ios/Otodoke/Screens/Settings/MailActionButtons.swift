@@ -53,6 +53,8 @@ struct MarkParcelButton: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
             .opacity(isWorking ? 0.6 : 1)
         }
         .buttonStyle(.plain)

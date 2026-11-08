@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -32,29 +33,43 @@ final class MailActionsModel {
     @ObservationIgnored private let accessToken: @MainActor () async -> String?
     @ObservationIgnored private let reload: @MainActor () async -> Void
 
-    init(api: any MailActionsAPI, accessToken: @escaping @MainActor () async -> String?, reload: @escaping @MainActor () async -> Void) {
+    /// Tells the other tabs 「古くなった」 (ParcelWriter.announceOutsideChange): after 「読み取る」 only, which can add parcels.
+    @ObservationIgnored private let announceChange: @MainActor () -> Void
+    /// The page was left while a request ran: its answer leaves no note behind.
+    @ObservationIgnored private var discardMarkNote = false
+    @ObservationIgnored private var discardReadNote = false
+
+    init(
+        api: any MailActionsAPI,
+        accessToken: @escaping @MainActor () async -> String?,
+        reload: @escaping @MainActor () async -> Void,
+        announceChange: @escaping @MainActor () -> Void = {}
+    ) {
         self.api = api
         self.accessToken = accessToken
         self.reload = reload
+        self.announceChange = announceChange
     }
 
     /// 「これは荷物」 on the row of screen_events `id`.
     func markAsParcel(id: String) async {
         guard markingID == nil else { return }
         markingID = id
+        discardMarkNote = false
         markNote = nil
         defer { markingID = nil }
         guard let token = await accessToken() else {
-            markNote = Note(text: LoginText.signedOut, isError: true, offersRegister: false)
+            setMarkNote(Note(text: LoginText.signedOut, isError: true, offersRegister: false))
             return
         }
         do {
             let outcome = try await api.markParcel(id: id, accessToken: token)
-            markNote = Note(text: SettingsMailText.note(for: outcome), isError: false, offersRegister: true)
+            setMarkNote(Note(text: SettingsMailText.note(for: outcome), isError: false, offersRegister: true))
         } catch {
-            markNote = Self.note(for: error)
+            setMarkNote(Self.note(for: error))
         }
         // Whatever came of it, the list is read again: a mark that was made shows as 荷物として記録済み.
+        // (No change is announced: a mark adds no parcel.)
         await reload()
     }
 
@@ -62,30 +77,47 @@ final class MailActionsModel {
     func readWaiting() async {
         guard !isReading else { return }
         isReading = true
+        discardReadNote = false
         readNote = nil
         defer { isReading = false }
         guard let token = await accessToken() else {
-            readNote = LoginText.signedOut
+            setReadNote(LoginText.signedOut)
             return
         }
         do {
             try await api.readWaiting(accessToken: token)
         } catch {
-            readNote = Self.readText(for: error)
+            setReadNote(Self.readText(for: error))
         }
+        // Parcels may have been added (also by a run that failed or whose result is not known): the other tabs read again.
+        announceChange()
         // The count is read again either way: some of the mails may have been read before it failed.
         await reload()
     }
 
-    /// The notes go when the page is left (the Web's note belongs to one page load).
+    /// The notes go when the page is left (the Web's note belongs to one page load). A request still running
+    /// leaves no note when it ends.
     func clearNotes() {
-        guard markingID == nil else { return }
+        if markingID != nil { discardMarkNote = true }
         markNote = nil
     }
 
     func clearReadNote() {
-        guard !isReading else { return }
+        if isReading { discardReadNote = true }
         readNote = nil
+    }
+
+    /// Shows a note and reads it aloud (VoiceOver); nothing when the page was left meanwhile.
+    private func setMarkNote(_ note: Note?) {
+        guard !discardMarkNote, let note else { return }
+        markNote = note
+        AccessibilityNotification.Announcement(note.text).post()
+    }
+
+    private func setReadNote(_ text: String?) {
+        guard !discardReadNote, let text else { return }
+        readNote = text
+        AccessibilityNotification.Announcement(text).post()
     }
 
     // MARK: the words of a failure

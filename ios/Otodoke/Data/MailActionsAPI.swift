@@ -75,6 +75,12 @@ struct MailActionsClient: MailActionsAPI {
         _ = try await post("read-waiting", [:], timeout: readTimeout, accessToken: accessToken)
     }
 
+    /// The connection broke after the request may have gone out: whether the server did the work is not known.
+    /// (notConnectedToInternet and cannotConnectToHost are not here: nothing was sent.)
+    private static let mayHaveBeenSent: Set<URLError.Code> = [
+        .networkConnectionLost, .secureConnectionFailed, .badServerResponse, .cannotParseResponse, .zeroByteResource,
+    ]
+
     /// `{ ok: true, ... }` on 200; the code of `{ ok: false, code }` otherwise (an unknown code, or an answer that is
     /// not the endpoint's JSON, is .network; a 200 without `ok: true` is .unknownResult).
     private func post(_ endpoint: String, _ body: [String: String], timeout: TimeInterval, accessToken: String) async throws(MailAPIFailure) -> [String: Any] {
@@ -94,12 +100,16 @@ struct MailActionsClient: MailActionsAPI {
             throw .unknownResult
         } catch is CancellationError {
             throw .unknownResult
+        } catch let error as URLError where Self.mayHaveBeenSent.contains(error.code) {
+            throw .unknownResult
         } catch {
             throw .network
         }
-        guard let http = reply.1 as? HTTPURLResponse,
-              let object = (try? JSONSerialization.jsonObject(with: reply.0)) as? [String: Any]
-        else { throw .network }
+        guard let http = reply.1 as? HTTPURLResponse else { throw .network }
+        guard let object = (try? JSONSerialization.jsonObject(with: reply.0)) as? [String: Any] else {
+            // A 5xx that is not JSON (a gateway: 502, 504): the request got there, so the work may be done.
+            throw http.statusCode >= 500 ? .unknownResult : .network
+        }
         if http.statusCode == 200, KeyAPIClient.isJSONTrue(object["ok"]) { return object }
         // The code is read whatever the status (read_failed may come with a 200 or an error status).
         switch object["code"] as? String {

@@ -7,6 +7,8 @@ struct StubRequest: Sendable {
     /// Header names lowercased.
     let headers: [String: String]
     let body: Data
+    /// The request's timeoutInterval as the client set it.
+    var timeoutInterval: TimeInterval = 0
 
     var path: String { url.path }
 
@@ -123,7 +125,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         for (name, value) in request.allHTTPHeaderFields ?? [:] {
             headers[name.lowercased()] = value
         }
-        let stub = StubRequest(method: request.httpMethod ?? "GET", url: url, headers: headers, body: Self.body(of: request))
+        let stub = StubRequest(method: request.httpMethod ?? "GET", url: url, headers: headers, body: Self.body(of: request), timeoutInterval: request.timeoutInterval)
         // URLProtocol and its client are not Sendable; URLSession expects the answer from any thread.
         nonisolated(unsafe) let client = self.client
         nonisolated(unsafe) let loader: URLProtocol = self
