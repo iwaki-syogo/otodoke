@@ -89,7 +89,6 @@ struct ParcelDetailModelTests {
         #expect(WebLink.base.absoluteString == "https://otodoke.app")
         #expect(WebLink.newParcel.absoluteString == "https://otodoke.app/app/parcels/new")
         #expect(WebLink.settingsDemo.absoluteString == "https://otodoke.app/app/settings/demo")
-        #expect(WebLink.parcelEdit(id: Rows.id(1)).absoluteString == "https://otodoke.app/app/parcels/\(Rows.id(1))/edit")
     }
 
     // MARK: fields and badges
@@ -189,7 +188,8 @@ struct ParcelDetailModelTests {
         #expect(model.timeline?.value?.count == 1)
         #expect(model.fields?.statusLabel == "届いた")
         #expect(model.showsNotDelivered == true)
-        #expect(model.editURL == nil)
+        #expect(model.canEdit == false)
+        #expect(model.makeEditForm() == nil)
         #expect(model.shownCategory == .food)
     }
 
@@ -233,12 +233,13 @@ struct ParcelDetailModelTests {
         #expect(model.parcel == .loaded(nil))
     }
 
-    @Test func aParcelTypedInByHandIsEditedOnTheWeb() async throws {
+    @Test func aParcelTypedInByHandIsEditedInTheApp() async throws {
         let fake = FakeSupabase.make()
         await fake.insert("parcels", [Rows.parcel(1, ["source": "manual"])])
         let model = try await model(fake)
         await model.load()
-        #expect(model.editURL == URL(string: "https://otodoke.app/app/parcels/\(Rows.id(1))/edit"))
+        #expect(model.canEdit == true)
+        #expect(model.makeEditForm()?.editing?.id == Rows.id(1))
         #expect(model.showsNotDelivered == false)
     }
 

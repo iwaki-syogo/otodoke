@@ -370,10 +370,15 @@ final class ParcelDetailModel {
         row?.status == "delivered"
     }
 
-    /// Only for a parcel typed in by hand (source = manual): the Web's edit page.
-    var editURL: URL? {
+    /// Only for a parcel typed in by hand (source = manual): 編集 opens the form inside the app.
+    var canEdit: Bool {
+        row?.source == "manual"
+    }
+
+    /// The edit form for this parcel; saving reads the parcel again.
+    func makeEditForm() -> ManualParcelModel? {
         guard let row, row.source == "manual" else { return nil }
-        return WebLink.parcelEdit(id: row.id)
+        return .live(editing: row, writer: writer, reader: reader, reload: { [weak self] in await self?.load() })
     }
 
     /// 「届いていない」: the spinner from the tap; on success everything is read again. While the last

@@ -16,9 +16,10 @@ final class ScreenshotUITests: XCTestCase {
         try XCTSkipIf(directory == nil, "screenshots only on request")
     }
 
-    private func launch(_ scenario: String) -> XCUIApplication {
+    private func launch(_ scenario: String, textSize: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-otodoke-ui-preview", scenario]
+        if let textSize { app.launchArguments += ["-UIPreferredContentSizeCategoryName", textSize] }
         app.launch()
         return app
     }
@@ -144,6 +145,45 @@ final class ScreenshotUITests: XCTestCase {
             app.terminate()
         }
         XCUIDevice.shared.appearance = .light
+    }
+
+    /// A typed-in parcel's detail with 編集, the edit form, and its delete box, light and dark; and the form at the largest text size.
+    func testTheManualEditForm() throws {
+        for style in ["Light", "Dark"] {
+            XCUIDevice.shared.appearance = style == "Dark" ? .dark : .light
+            let app = launch("detail")
+            let card = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "USB-C")).firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 10), style)
+            card.tap()
+            XCTAssertTrue(app.buttons["編集"].waitForExistence(timeout: 10), style)
+            try shoot("edit-detail-\(style)")
+            app.buttons["編集"].tap()
+            XCTAssertTrue(app.navigationBars["荷物を編集"].waitForExistence(timeout: 5), style)
+            try shoot("edit-form-\(style)")
+            for _ in 0..<3 where !app.buttons["この荷物を消す"].exists { app.swipeUp() }
+            app.buttons["この荷物を消す"].tap()
+            app.swipeUp()
+            try shoot("edit-delete-\(style)")
+            app.buttons["消す"].tap()
+            XCTAssertTrue(app.staticTexts["「本当に消す」にチェックを入れてください"].waitForExistence(timeout: 5), style)
+            try shoot("edit-delete-error-\(style)")
+            app.terminate()
+        }
+        XCUIDevice.shared.appearance = .light
+        let big = launch("detail", textSize: "UICTContentSizeCategoryAccessibilityXXXL")
+        let card = big.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "USB-C")).firstMatch
+        _ = card.waitForExistence(timeout: 10)
+        for _ in 0..<6 where !card.isHittable { big.swipeUp() }
+        XCTAssertTrue(card.isHittable)
+        card.tap()
+        XCTAssertTrue(big.buttons["編集"].waitForExistence(timeout: 10))
+        big.buttons["編集"].tap()
+        XCTAssertTrue(big.navigationBars["荷物を編集"].waitForExistence(timeout: 5))
+        try shoot("edit-form-biggest-text")
+        big.swipeUp()
+        big.swipeUp()
+        try shoot("edit-form-biggest-text-2")
+        big.terminate()
     }
 
     /// The two page links at the foot of the list (name and arrow, no number), and the two pages they open

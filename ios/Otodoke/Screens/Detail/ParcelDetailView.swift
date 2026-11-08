@@ -1,11 +1,13 @@
 // The parcel page (src/app/app/parcels/[id]/page.tsx): the header with the badges and 「届いていない」,
 // the fields, 内容 and メールの履歴. The three reads fail on their own with 「読み込めませんでした」.
-// A parcel typed in by hand is edited on the Web (編集 opens Safari).
+// A parcel typed in by hand is edited (and deleted) in the app: 編集 opens the form as a sheet.
 
 import SwiftUI
 
 struct ParcelDetailView: View {
     @State private var model: ParcelDetailModel
+    @State private var editForm: ManualParcelModel?
+    @Environment(\.dismiss) private var dismiss
     /// Mails shown open from the start (for the screen checks).
     private let initiallyOpen: Set<String>
     /// At the accessibility text sizes each label goes above its value.
@@ -27,13 +29,14 @@ struct ParcelDetailView: View {
             .background(Color(.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if let url = model.editURL {
+                if model.canEdit {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Link(destination: url) {
-                            Text("編集")
-                        }
+                        Button(ManualParcelText.edit) { editForm = model.makeEditForm() }
                     }
                 }
+            }
+            .sheet(item: $editForm) { form in
+                ManualParcelView(model: form, close: { editForm = nil }, deleted: { dismiss() })
             }
             .task { await model.onAppear() }
             .onChange(of: scenePhase, initial: true) { _, phase in

@@ -29,11 +29,6 @@ enum WebLink {
     /// https://otodoke.app/app/settings/delete (アカウントの削除)
     static let settingsDelete = page("/app/settings/delete")
 
-    /// https://otodoke.app/app/parcels/{id}/edit
-    static func parcelEdit(id: String) -> URL {
-        page("/app/parcels/\(segment(id))/edit")
-    }
-
     /// https://otodoke.app/app/parcels/{id} (a sealed mail, M1)
     static func parcel(id: String) -> URL {
         page("/app/parcels/\(segment(id))")

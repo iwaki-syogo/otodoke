@@ -6,7 +6,7 @@ import ObjectiveC
 /// It speaks the wire formats the app's client speaks, not the client's API:
 ///  - GoTrue: POST /auth/v1/otp, /auth/v1/verify, /auth/v1/token?grant_type=refresh_token, /auth/v1/logout,
 ///    GET /auth/v1/user. Errors in GoTrue's shape ({"code", "error_code", "msg"}).
-///  - PostgREST: GET / HEAD / PATCH / POST on /rest/v1/<table> with column filters (eq, neq, gt, gte,
+///  - PostgREST: GET / HEAD / PATCH / POST / DELETE on /rest/v1/<table> with column filters (eq, neq, gt, gte,
 ///    lt, lte, in, is; a column may be filtered more than once), order, limit, offset or a Range
 ///    header, `Prefer: count=exact` (Content-Range), `Prefer: return=representation`, and the
 ///    single-object Accept header (406 / PGRST116 unless exactly one row; a PATCH asked for one
@@ -100,7 +100,7 @@ actor FakeSupabase {
 
     private(set) var requests: [StubRequest] = []
     private var tables: [String: [Row]] = ["parcels": [], "parcel_items": [], "extractions": [], "emails": [], "inbox_addresses": []]
-    private let uniqueColumns: [String: [String]] = ["inbox_addresses": ["user_id", "local_part"]]
+    private let uniqueColumns: [String: [String]] = ["inbox_addresses": ["user_id", "local_part"], "parcels": ["id"]]
     private var tick = 0
     private var sessions = 0
     private var accessTokens: Set<String> = []
@@ -463,6 +463,7 @@ actor FakeSupabase {
         case "GET", "HEAD": return select(request, table)
         case "PATCH": return update(request, table)
         case "POST": return insertRows(request, table)
+        case "DELETE": return deleteRows(request, table)
         default: return .json(405, ["code": "PGRST117", "message": "method not allowed"])
         }
     }
@@ -529,6 +530,14 @@ actor FakeSupabase {
         guard prefers(request, "return=representation") else { return .empty(204) }
         if wantsObject(request) { return .json(200, changed[0].anyObject) }
         return .json(200, changed.map(\.anyObject))
+    }
+
+    private func deleteRows(_ request: StubRequest, _ table: String) -> StubReply {
+        let before = tables[table] ?? []
+        let removed = before.filter { matches($0, request) }
+        tables[table] = before.filter { !matches($0, request) }
+        guard prefers(request, "return=representation") else { return .empty(204) }
+        return .json(200, removed.map(\.anyObject))
     }
 
     private func insertRows(_ request: StubRequest, _ table: String) -> StubReply {

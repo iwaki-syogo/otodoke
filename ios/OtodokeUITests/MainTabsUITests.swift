@@ -141,4 +141,40 @@ final class MainTabsUITests: XCTestCase {
         // No session here: the page cannot read, so it shows its heading and the failure, no number.
         XCTAssertTrue(app.staticTexts["読み込めませんでした"].waitForExistence(timeout: 10))
     }
+
+    /// A parcel typed in by hand is edited inside the app: 編集 opens the form (not Safari) with the delete box
+    /// at its foot; a parcel from mail has no 編集.
+    func testATypedInParcelIsEditedInTheApp() {
+        let app = launch("detail")
+        let card = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "USB-C")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        card.tap()
+        let edit = app.buttons["編集"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        edit.tap()
+        XCTAssertTrue(app.navigationBars["荷物を編集"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.state, .runningForeground)
+        for _ in 0..<3 where !app.buttons["この荷物を消す"].exists { app.swipeUp() }
+        let summary = app.buttons["この荷物を消す"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        summary.tap()
+        XCTAssertTrue(app.staticTexts["消すと元に戻せません。"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        app.buttons["消す"].tap()
+        XCTAssertTrue(app.staticTexts["「本当に消す」にチェックを入れてください"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["荷物を編集"].exists)
+        app.swipeDown()
+        app.swipeDown()
+        app.buttons["閉じる"].tap()
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+    }
+
+    func testAParcelFromMailHasNoEditButton() {
+        let app = launch("detail")
+        let card = app.staticTexts["架空の本 上下巻セット"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        card.tap()
+        XCTAssertTrue(app.staticTexts["お届け予定"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["編集"].exists)
+    }
 }

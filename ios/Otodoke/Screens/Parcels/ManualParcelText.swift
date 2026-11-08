@@ -31,6 +31,19 @@ enum ManualParcelText {
     static let statusShipped = "発送済み"
     static let statusDelivered = "届いた"
 
+    // Edit (src/app/app/parcels/[id]/edit/page.tsx, [id]/page.tsx, manual-form.tsx, manual-actions.ts)
+    static let editHeading = "荷物を編集"
+    static let edit = "編集"
+    static let save = "保存"
+    static let deleteSummary = "この荷物を消す"
+    static let deleteWarning = "消すと元に戻せません。"
+    static let deleteConfirm = "本当に消す"
+    static let deleteButton = "消す"
+    static let deleting = "消しています…"
+    static let notFound = "見つかりません"
+    static let deleteFailed = "削除できませんでした"
+    static let deleteUnchecked = "「本当に消す」にチェックを入れてください"
+
     // Not on the Web (its date field has a browser's own clear): the way to leave a date empty.
     static let dateClear = "消す"
     static let dateNone = "指定なし"
@@ -57,12 +70,29 @@ enum ManualParcelText {
     /// The answer was lost: it is not sent again; the list is read again instead. (Not on the Web.)
     static let unknown = "保存できたか、確かめられませんでした。荷物の一覧を見て確かめてください。"
 
+    /// The parcel changed between the read and the write (the Web has no such check). The detail page's words.
+    static let changed = "更新できませんでした。開き直してください"
+    /// A delete whose answer was lost and whose parcel could not be read again. (Not on the Web.)
+    static let deleteUnknown = "削除できたか、確かめられませんでした。荷物の一覧を見て確かめてください。"
+
+    /// The label of a date's 「消す」 button, so VoiceOver says which date.
+    static func dateClearLabel(_ field: String) -> String { field + "を消す" }
+
     static func statusName(_ status: ManualStatus) -> String {
         switch status {
         case .ordered: statusOrdered
         case .shipped: statusShipped
         case .delivered: statusDelivered
         }
+    }
+
+    /// The status choices: the Web's three, and the one a mail set while the parcel is there (STATUS_LABEL's word).
+    static func statusChoices(keeping current: String) -> [(value: String, name: String)] {
+        var choices = ManualStatus.allCases.map { (value: $0.rawValue, name: statusName($0)) }
+        if ManualParcel.carriedStatuses.contains(current) || current == ManualParcel.cancelled {
+            choices.append((value: current, name: BadgeText.status(current)))
+        }
+        return choices
     }
 
     static func presenceName(_ presence: ManualPresence) -> String {

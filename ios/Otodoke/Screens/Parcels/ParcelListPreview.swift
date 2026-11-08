@@ -116,6 +116,8 @@ struct ListPreview {
             row.category = "hobby"
             row.expectedText = "お届け予定日: 当日 14時〜16時"
             row.presenceEvidence = "対面でお渡しします"
+            // One parcel is typed in by hand (it has 編集); the others came from mail (they do not).
+            if id == Self.id(2) { row.source = "manual" }
             let items = [
                 ParcelItemRow(id: Self.id(101), parcelId: id, name: "架空の本 上巻", quantity: 1, unitPrice: 2_490, createdAt: "2026-11-01T00:00:00+00:00"),
                 ParcelItemRow(id: Self.id(102), parcelId: id, name: "架空の本 下巻", quantity: 1, unitPrice: 2_490, createdAt: "2026-11-01T00:00:01+00:00"),

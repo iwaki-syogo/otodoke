@@ -191,7 +191,8 @@ struct ParcelWriter: Sendable {
 
     /// 「＋ 登録」: one insert of a typed-in parcel, as the signed-in user (user_id = me, whatever the
     /// row says), `.select("id")` for the answer. Exactly one row back is a success; an answer that is
-    /// lost or unreadable is unknown and is never sent again (the caller reads the list instead).
+    /// lost or unreadable is unknown. Nothing is retried here; a caller that sends the same row (the same
+    /// id) again after an unknown result gets a success if the first send had made it (23505).
     func createManual(_ row: ManualParcelRow) async -> WriteOutcome<String> {
         guard let me = await provider.currentUserID() else { return .notUpdated(.failed) }
         var mine = row
@@ -205,6 +206,10 @@ struct ParcelWriter: Sendable {
         do {
             response = try await provider.database.from("parcels").insert(mine).select("id").execute()
         } catch {
+            // The same id sent again after a lost answer: that parcel is already there, made by the first send.
+            if let id = mine.id, let failure = error as? PostgrestError, failure.code == "23505" {
+                return await announced(.success(id))
+            }
             return await announced(Self.outcome(of: error))
         }
         guard let rows = try? JSONDecoder().decode([Inserted].self, from: response.data), rows.count == 1, let created = rows.first else {
@@ -212,6 +217,106 @@ struct ParcelWriter: Sendable {
             return await announced(.unknown)
         }
         return await announced(.success(created.id))
+    }
+
+    // MARK: an edit and a delete of a typed-in parcel
+
+    enum ManualEditOutcome: Equatable, Sendable {
+        case saved
+        /// The form's check (manualParcelSchemaFor), made on what is stored.
+        case invalid(String)
+        /// No such typed-in parcel of mine (見つかりません).
+        case notFound
+        /// The parcel changed between the read and the write (the updated_at check found 0 rows).
+        case changed
+        case failed
+        case unknown
+    }
+
+    /// updateManualParcel: reads the parcel (id, user_id = me, source = manual), checks the form against
+    /// what is stored, then writes only the columns the form changes where id, user_id, source and the
+    /// updated_at just read all match, `.select("id")`. A lost answer is unknown and not sent again here.
+    func updateManual(id: String, input: ManualParcelInput) async -> ManualEditOutcome {
+        guard Self.isUUID(id) else { return .notFound }
+        guard let me = await provider.currentUserID() else { return .failed }
+        do {
+            _ = try await provider.auth.session
+        } catch {
+            return .failed
+        }
+        let saved: ManualParcel.Saved
+        do {
+            let response = try await provider.database.from("parcels")
+                .select("status,total_amount,category,ordered_at,expected_date,tracking_number,carrier,requires_presence,updated_at")
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+                .eq("source", value: "manual")
+                .execute()
+            let rows = try JSONDecoder().decode([ManualParcel.Saved].self, from: response.data)
+            guard rows.count <= 1 else { return .failed }
+            guard let found = rows.first else { return .notFound }
+            saved = found
+        } catch {
+            return .failed
+        }
+        let columns: [String: ManualParcel.Column]
+        switch ManualParcel.checkEdit(input, saved: saved) {
+        case let .invalid(message): return .invalid(message)
+        case let .valid(values): columns = values
+        }
+        let response: PostgrestResponse<Void>
+        do {
+            response = try await provider.database.from("parcels").update(columns)
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+                .eq("source", value: "manual")
+                .eq("updated_at", value: saved.updatedAt)
+                .select("id")
+                .execute()
+        } catch {
+            switch Self.outcome(of: error) as WriteOutcome<String> {
+            case .unknown: return await announcedEdit(.unknown)
+            default: return .failed
+            }
+        }
+        guard let rows = try? JSONDecoder().decode([Inserted].self, from: response.data) else {
+            return await announcedEdit(.unknown)
+        }
+        guard !rows.isEmpty else { return .changed }
+        guard rows.count == 1, let row = rows.first, row.id.lowercased() == id.lowercased() else { return await announcedEdit(.unknown) }
+        return await announcedEdit(.saved)
+    }
+
+    private func announcedEdit(_ outcome: ManualEditOutcome) async -> ManualEditOutcome {
+        if outcome == .saved || outcome == .unknown { await changes?.publish() }
+        return outcome
+    }
+
+    /// deleteManualParcel: delete where id, user_id = me and source = manual, `.select("id")`. One row back is
+    /// a success; 0 rows is conflict (no such typed-in parcel of mine); a lost answer is unknown.
+    func deleteManual(id: String) async -> WriteOutcome<String> {
+        guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
+        guard let me = await provider.currentUserID() else { return .notUpdated(.failed) }
+        do {
+            _ = try await provider.auth.session
+        } catch {
+            return .notUpdated(.failed)
+        }
+        let response: PostgrestResponse<Void>
+        do {
+            response = try await provider.database.from("parcels").delete()
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+                .eq("source", value: "manual")
+                .select("id")
+                .execute()
+        } catch {
+            return await announced(Self.outcome(of: error))
+        }
+        guard let rows = try? JSONDecoder().decode([Inserted].self, from: response.data) else { return await announced(.unknown) }
+        guard !rows.isEmpty else { return .notUpdated(.conflict) }
+        guard rows.count == 1, let row = rows.first, row.id.lowercased() == id.lowercased() else { return await announced(.unknown) }
+        return await announced(.success(row.id))
     }
 
     // MARK: 「古くなった」 (CX1)

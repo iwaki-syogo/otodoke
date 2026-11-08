@@ -288,4 +288,56 @@ struct ManualParcelTests {
         #expect(m.error == ManualParcelText.notSignedIn)
         #expect(sends.value == 0)
     }
+
+    // MARK: pressing again after a lost answer (the same id)
+
+    @Test func theFormSendsTheIdItMadeWhenItWasOpenedOnEverySend() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        await fake.fail("POST", "parcels", with: .applyThenDrop(.networkConnectionLost))
+        let reloads = Counter()
+        let m = model(save: { await writer.createManual($0) }, reloads: reloads)
+        await m.submit()
+        #expect(m.error == ManualParcelText.unknown && !m.isSaved)
+        #expect(await fake.rows("parcels").count == 1)
+        // Pressed again: the same id is sent, the server says it is there (23505), and that is a success.
+        await m.submit()
+        #expect(m.isSaved && m.error == nil)
+        let posts = await fake.requests("POST", "parcels")
+        #expect(posts.count == 2)
+        let ids = try posts.map { try #require(try JSONSerialization.jsonObject(with: $0.body) as? [String: Any])["id"] as? String }
+        #expect(ids[0] == m.newID && ids[1] == m.newID)
+        #expect(await fake.rows("parcels").count == 1)
+        #expect(await fake.row("parcels", id: m.newID) != nil)
+    }
+
+    @Test func aDifferentFormGetsADifferentId() {
+        let a = model(save: { _ in .success("x") })
+        let b = model(save: { _ in .success("x") })
+        #expect(a.newID != b.newID)
+        #expect(UUID(uuidString: a.newID) != nil)
+    }
+
+    @Test func aDuplicateIsASuccessOnlyForARowThatCarriesAnId() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        var mine = try row()
+        mine.id = Rows.id(7)
+        await fake.insert("parcels", [Rows.parcel(7)])
+        // The id exists already (this fake cannot tell whose it is): 23505 on a row that carried an id counts as made.
+        #expect(await writer.createManual(mine) == .success(Rows.id(7)))
+        // A row with no id has no such reading.
+        var anon = try row()
+        anon.id = nil
+        await fake.fail("POST", "parcels", nth: 2, with: .http(409))
+        #expect(await writer.createManual(anon) == .notUpdated(.failed))
+    }
+
+    @Test func theIdIsPartOfTheRowOnlyWhenGiven() throws {
+        var withID = try row()
+        withID.id = Rows.id(3)
+        let object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(withID)) as? [String: Any])
+        #expect(object["id"] as? String == Rows.id(3))
+        #expect(object.count == 22)
+    }
 }
