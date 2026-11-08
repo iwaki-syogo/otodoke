@@ -94,6 +94,12 @@ function swiftConstants(src: string): Map<string, string> {
   return out;
 }
 
+/**
+ * The Web's linkNote holds a paragraph for Android; the iPhone app draws only the paragraphs that fit an iPhone.
+ * The paragraphs are split at the blank line and the ones that start with 「Android」 are left out (the Web's text is not changed).
+ */
+const iosLinkNote = (note: string) => note.split("\n\n").filter((p) => !p.startsWith("Android")).join("\n\n");
+
 /** What the iOS text file must hold, in the order of its source: every sentence of the Web data except the chips. */
 function expectedGuideLiterals(): string[] {
   const out: string[] = [FORWARDING_TITLE, FORWARDING_LEAD, FORWARDING_LEAD_NOTE];
@@ -102,7 +108,7 @@ function expectedGuideLiterals(): string[] {
     if (g.time) out.push(g.time);
     if (g.video) out.push(g.video.src);
     if (g.link) out.push(g.link.label, g.link.href);
-    if (g.linkNote) out.push(g.linkNote);
+    if (g.linkNote) out.push(iosLinkNote(g.linkNote));
     for (const group of g.groups) {
       if (group.heading) out.push(group.heading);
       for (const s of group.steps) out.push(s.text);
