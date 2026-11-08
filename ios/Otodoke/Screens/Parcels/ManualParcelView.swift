@@ -56,18 +56,23 @@ struct ManualParcelView: View {
                         choice(ManualParcelText.statusLabel, $model.input.status, model.statusChoices.map { ($0.value, $0.name) })
                     }
                 }
-                Section {
-                    if let error = model.error {
+                if let error = model.error {
+                    Section {
                         Text(error)
                             .font(.subheadline)
                             .foregroundStyle(OtodokeColor.errorText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id(Self.errorRow)
                     }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
+                // The black button is the row's own background: the list clips a row's content to the row's shape,
+                // which cut the button's top and bottom flat when it was drawn as the content.
+                Section {
                     submitButton
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                .listRowBackground(RoundedRectangle(cornerRadius: 12).fill(Color.primary).opacity(model.isSending ? 0.7 : 1))
                 if model.isEditing { deleteSection }
             }
             .scrollDismissesKeyboard(.interactively)
@@ -166,9 +171,8 @@ struct ManualParcelView: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(Color(.systemBackground))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.primary, in: RoundedRectangle(cornerRadius: 12))
-            .opacity(model.isSending ? 0.7 : 1)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
