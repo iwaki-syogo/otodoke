@@ -79,6 +79,24 @@ describe("「サンプルで試す」 (iOS) says the Web's words", () => {
     expect(read("ios/Otodoke/Screens/MainTabView.swift")).toContain("DemoText.busyNote");
   });
 
+  it("the panel reads the result out, marks the running button and lets the check go after sending; the tab starts again after a clear", () => {
+    const panel = read("ios/Otodoke/Screens/Settings/SettingsDemoPanel.swift").replace(/\/\/.*$/gm, "");
+    const tabs = read("ios/Otodoke/Screens/MainTabView.swift").replace(/\/\/.*$/gm, "");
+    const check = (p: string, t: string) => ({
+      announces: /AccessibilityNotification\.Announcement\(/.test(p),
+      values: /accessibilityValue\(model\.phase == \.loading \? DemoText\.loadBusy/.test(p) && /accessibilityValue\(model\.phase == \.clearing \? DemoText\.clearBusy/.test(p),
+      letsGo: /confirmed = false\s*Task \{ _ = await model\.clear\(confirmed: sure\) \}/.test(p),
+      restarts: /\.id\(screens\.settings\.demo\?\.clearedCount \?\? 0\)/.test(t),
+      hint: /accessibilityHint\(DemoText\.busyHint\)/.test(t),
+    });
+    expect(check(panel, tabs)).toEqual({ announces: true, values: true, letsGo: true, restarts: true, hint: true });
+    expect(check(panel.replace("AccessibilityNotification.Announcement(", "Other("), tabs).announces).toBe(false);
+    expect(check(panel.replace(/confirmed = false\s*Task/, "Task"), tabs).letsGo).toBe(false);
+    expect(check(panel, tabs.replace(".id(screens.settings.demo?.clearedCount ?? 0)", "")).restarts).toBe(false);
+    expect(check(panel, tabs.replace(".accessibilityHint(DemoText.busyHint)", "")).hint).toBe(false);
+    expect(TEXT).toContain('static let busyHint = "サンプルの画面を開きます"');
+  });
+
   it("the load waits longer than the server runs, and a press while one runs sends nothing", () => {
     const client = read("ios/Otodoke/Data/DemoClient.swift");
     expect(client).toMatch(/loadTimeout: TimeInterval = 310/);

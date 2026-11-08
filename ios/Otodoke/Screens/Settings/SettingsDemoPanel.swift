@@ -31,6 +31,12 @@ struct SettingsDemoPanel: View {
                 clearBox
             }
         }
+        // What the last action said is read out when it appears or changes.
+        .onChange(of: model.notice) { _, notice in
+            let words = [notice.error, notice.partial, notice.cleared].compactMap { $0 }
+            guard !words.isEmpty else { return }
+            AccessibilityNotification.Announcement(words.joined(separator: " ")).post()
+        }
     }
 
     private var loadButton: some View {
@@ -55,6 +61,7 @@ struct SettingsDemoPanel: View {
             .background(Color.primary, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .accessibilityValue(model.phase == .loading ? DemoText.loadBusy : "")
         .accessibilityIdentifier("demo-load")
     }
 
@@ -81,9 +88,9 @@ struct SettingsDemoPanel: View {
             .accessibilityIdentifier("demo-clear-check")
             Button {
                 let sure = confirmed
-                Task {
-                    if await model.clear(confirmed: sure) { confirmed = false }
-                }
+                // The check is let go once it was sent, whatever came back.
+                confirmed = false
+                Task { _ = await model.clear(confirmed: sure) }
             } label: {
                 HStack(spacing: 8) {
                     if model.phase == .clearing {
@@ -101,6 +108,7 @@ struct SettingsDemoPanel: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityValue(model.phase == .clearing ? DemoText.clearBusy : "")
             .accessibilityIdentifier("demo-clear")
         }
     }

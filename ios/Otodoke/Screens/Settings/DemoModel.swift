@@ -28,8 +28,8 @@ final class DemoModel {
     private(set) var notice = Notice()
     /// Moves on at each load that went through (the tabs move to 荷物 when it does).
     private(set) var loadedCount = 0
-    /// The last load that went through: another load is running (the list says so in a note).
-    private(set) var lastLoadBusy = false
+    /// Moves on at each clear-all that went through (the 荷物 tab closes what it has open).
+    private(set) var clearedCount = 0
     /// The list's note for a busy load: shown on the 荷物 tab until it is closed.
     var showsBusyNote = false
 
@@ -59,26 +59,30 @@ final class DemoModel {
         switch await api.load(accessToken: token) {
         case let .success(loaded):
             changed()
-            lastLoadBusy = loaded.busy
             showsBusyNote = loaded.busy
             loadedCount += 1
         case let .failure(failure):
             switch failure {
             case let .answered(code, processed):
-                if code == .unauthorized {
+                switch code {
+                case .unauthorized:
                     notice.error = LoginText.signedOut
-                } else {
+                case .demoFailed:
                     notice.error = DemoText.loadFailed
                     notice.partial = processed.map(DemoText.partialLoaded)
                     // Some mails may be in: the parcels are read again.
                     if processed != nil { changed() }
+                case .unavailable, .invalidInput, .clearConfirm, .clearFailed:
+                    // Not the load failing part way: the words the app has for no answer from the server.
+                    notice.error = LoginText.network
                 }
+            case .notSent:
+                notice.error = LoginText.network
             case .unknown:
                 // Whether it went through is not known (timed out, connection lost, the app went to the background):
                 // the server reads on to the end whatever the app saw. No failure sentence: the tabs move to 荷物 and
                 // read again, as for a load that went through. Nothing is sent again.
                 changed()
-                lastLoadBusy = false
                 loadedCount += 1
             }
         }
@@ -104,6 +108,7 @@ final class DemoModel {
         switch await api.clear(accessToken: token) {
         case .success:
             changed()
+            clearedCount += 1
             notice.cleared = DemoText.cleared
             return true
         case let .failure(failure):
@@ -112,8 +117,11 @@ final class DemoModel {
                 switch code {
                 case .unauthorized: notice.error = LoginText.signedOut
                 case .clearConfirm: notice.error = DemoText.clearConfirm
-                default: notice.error = DemoText.clearFailed
+                case .clearFailed: notice.error = DemoText.clearFailed
+                case .unavailable, .invalidInput, .demoFailed: notice.error = LoginText.network
                 }
+            case .notSent:
+                notice.error = LoginText.network
             case .unknown:
                 // Not known whether it was cleared: the parcels are read again (what is left shows it), no failure
                 // sentence, and the page stays.

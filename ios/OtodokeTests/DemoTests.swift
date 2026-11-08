@@ -98,11 +98,25 @@ private final class DemoStub: @unchecked Sendable {
             .empty(502),
             .http(status: 200, headers: [:], body: Data("<html>".utf8)),
             .failure(.timedOut),
-            .failure(.notConnectedToInternet),
+            .failure(.networkConnectionLost),
+            .failure(.cancelled),
         ]
         for reply in cases {
             let stub = DemoStub(reply)
             #expect(await stub.client.load(accessToken: "t") == .failure(.unknown))
+        }
+    }
+
+    @Test func onlyAFailureThatCertainlyNeverSentItIsNotSent() async {
+        for code in [URLError.Code.notConnectedToInternet, .cannotConnectToHost] {
+            let stub = DemoStub(.failure(code))
+            #expect(await stub.client.load(accessToken: "t") == .failure(.notSent), "\(code)")
+            #expect(Self.failure(await stub.client.clear(accessToken: "t")) == .notSent, "\(code)")
+        }
+        // Negative control: the ones that may have reached the server stay unknown.
+        for code in [URLError.Code.timedOut, .networkConnectionLost, .cancelled, .cannotFindHost, .secureConnectionFailed] {
+            let stub = DemoStub(.failure(code))
+            #expect(await stub.client.load(accessToken: "t") == .failure(.unknown), "\(code)")
         }
     }
 
@@ -190,15 +204,37 @@ private actor FakeDemoAPI: DemoAPI {
         #expect(told == 1)
     }
 
-    @Test func everyOtherCodeOfALoadSaysTheLoadSentence() async {
-        for code in [DemoCode.invalidInput, .unavailable, .demoFailed] {
-            let api = FakeDemoAPI()
-            await api.set(load: .failure(.answered(code, processed: nil)))
-            let model = make(api)
+    @Test func onlyDemoFailedSaysTheLoadSentence() async {
+        let api = FakeDemoAPI()
+        await api.set(load: .failure(.answered(.demoFailed, processed: nil)))
+        let failed = make(api)
+        await failed.load()
+        #expect(failed.notice.error == DemoText.loadFailed)
+        // Every other code is not "the load failed part way": the app's words for no answer from the server.
+        for code in [DemoCode.unavailable, .invalidInput, .clearConfirm, .clearFailed] {
+            let other = FakeDemoAPI()
+            await other.set(load: .failure(.answered(code, processed: nil)))
+            var told = 0
+            let model = make(other, changed: { told += 1 })
             await model.load()
-            #expect(model.notice.error == DemoText.loadFailed, "\(code)")
+            #expect(model.notice.error == LoginText.network, "\(code)")
+            #expect(model.notice.error != DemoText.loadFailed, "\(code)")
             #expect(model.notice.partial == nil)
+            #expect(model.loadedCount == 0)
+            #expect(told == 0)
         }
+    }
+
+    @Test func aLoadThatCertainlyWasNotSentIsAFailureAndStaysOnThePage() async {
+        let api = FakeDemoAPI()
+        await api.set(load: .failure(.notSent))
+        var told = 0
+        let model = make(api, changed: { told += 1 })
+        await model.load()
+        #expect(model.notice.error == LoginText.network)
+        #expect(model.loadedCount == 0)
+        #expect(told == 0)
+        #expect(await api.loads == 1)
     }
 
     @Test func aLoadThatTimedOutMovesToTheParcelsReadsAgainSaysNoFailureAndIsSentOnce() async {
@@ -281,12 +317,17 @@ private actor FakeDemoAPI: DemoAPI {
         #expect(told == 1)
         #expect(model.notice.cleared == DemoText.cleared)
         #expect(model.notice.error == nil)
+        // The 荷物 tab starts again from its list: it watches this count.
+        #expect(model.clearedCount == 1)
     }
 
     @Test func aFailedClearSaysTheClearSentence() async {
         let table: [(DemoFailure, String)] = [
             (.answered(.clearFailed, processed: nil), DemoText.clearFailed),
-            (.answered(.unavailable, processed: nil), DemoText.clearFailed),
+            (.answered(.unavailable, processed: nil), LoginText.network),
+            (.answered(.invalidInput, processed: nil), LoginText.network),
+            (.answered(.demoFailed, processed: nil), LoginText.network),
+            (.notSent, LoginText.network),
             (.answered(.clearConfirm, processed: nil), DemoText.clearConfirm),
             (.answered(.unauthorized, processed: nil), LoginText.signedOut),
             (.unknown, ""),
@@ -300,6 +341,7 @@ private actor FakeDemoAPI: DemoAPI {
             #expect(model.notice.error == (sentence.isEmpty ? nil : sentence))
             #expect(model.notice.cleared == nil)
             #expect(model.loadedCount == 0)
+            #expect(model.clearedCount == 0)
             #expect(told == (failure == .unknown ? 1 : 0))
             #expect(await api.clears == 1)
         }

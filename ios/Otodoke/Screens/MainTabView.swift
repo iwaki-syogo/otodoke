@@ -279,6 +279,9 @@ struct MainTabView: View {
                 TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
             .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }
+            // Everything was cleared: what the 荷物 tab has open (a parcel's detail, the delivered page) is gone, so the
+            // tab starts again from its list.
+            .id(screens.settings.demo?.clearedCount ?? 0)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let demo = screens.settings.demo, demo.showsBusyNote {
                     DemoBusyNote { demo.showsBusyNote = false; route.showSample() }
@@ -390,6 +393,7 @@ struct DemoBusyNote: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.separator)))
             }
             .buttonStyle(.plain)
+            .accessibilityHint(DemoText.busyHint)
         }
         .padding(16)
         .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))

@@ -27,7 +27,11 @@ enum DemoCode: String, Equatable, Sendable, CaseIterable {
 enum DemoFailure: Error, Equatable, Sendable {
     /// The endpoint's own answer: its code, and (when it says) how many mails were taken in before it stopped.
     case answered(DemoCode, processed: Int?)
-    /// No answer, a redirect, or something that is not the endpoint's JSON: whether it went through is not known.
+    /// The request certainly never reached the server (no connection at all, the host cannot be connected to):
+    /// a failure, and nothing happened there.
+    case notSent
+    /// No answer, a redirect, or something that is not the endpoint's JSON (a timeout, a connection lost on the way,
+    /// cancelled): whether it went through is not known.
     case unknown
 }
 
@@ -41,6 +45,9 @@ struct DemoAPIClient: DemoAPI {
     /// (URLSession's own is 60 seconds, so it is set here). Even when it gives up first, the server reads on to the end.
     static let loadTimeout: TimeInterval = 310
     static let clearTimeout: TimeInterval = 60
+
+    /// The errors that say the request was never sent (nothing reached the server).
+    static let neverSent: Set<URLError.Code> = [.notConnectedToInternet, .cannotConnectToHost]
 
     let baseURL: URL
     let session: URLSession
@@ -90,6 +97,8 @@ struct DemoAPIClient: DemoAPI {
         let reply: (Data, URLResponse)
         do {
             reply = try await session.data(for: request, delegate: KeyAPIClient.NoRedirect())
+        } catch let error as URLError where Self.neverSent.contains(error.code) {
+            return .failure(.notSent)
         } catch {
             return .failure(.unknown)
         }

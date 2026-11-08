@@ -24,6 +24,9 @@ enum DemoText {
     /// The note the list carries when another load is running (the Web's ?demo=busy; PENDING_GRACE_MS is 3 minutes).
     static let busyNote = "ほかの人がサンプルを読み込んでいるかもしれません。3 分ほど待ってから、もう一度サンプルを読み込んでください。"
 
+    /// VoiceOver's hint on the busy note's button (the page it opens).
+    static let busyHint = "サンプルの画面を開きます"
+
     // MARK: clearing
 
     static let clearSummary = "すべての荷物を消す"
