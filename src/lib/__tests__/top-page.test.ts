@@ -67,6 +67,11 @@ describe("the top page", () => {
       expect.stringContaining("/screens/calendar.webp"),
       expect.stringContaining("/screens/detail.webp"),
     ]);
+    expect(imgs.slice(0, 3).map((i) => [i.attrs.width, i.attrs.height])).toEqual([
+      ["720", "1415"],
+      ["720", "1415"],
+      ["720", "492"],
+    ]);
     expect(imgs.length).toBe(4);
     for (const img of imgs) {
       expect(img.attrs.loading).toBe("lazy");
@@ -112,6 +117,14 @@ describe("share metadata", () => {
     expect(srcs.length).toBeGreaterThanOrEqual(4);
     for (const src of srcs) expect(existsSync(new URL(src, root))).toBe(true);
     expect(existsSync(new URL("src/app/twitter-image.png", root))).toBe(false);
+    for (const n of ["list", "calendar", "detail"]) {
+      expect(top).toMatch(new RegExp(`<img src="public/screens/${n}\\.webp"[^>]*\\salign="top"`));
+    }
+    // detail.webp is a lossy WebP ("VP8 " chunk): 14-bit little-endian width/height at bytes 26-29.
+    const w = readFileSync(new URL("public/screens/detail.webp", root));
+    expect(w.subarray(0, 4).toString()).toBe("RIFF");
+    expect(w.subarray(8, 16).toString()).toBe("WEBPVP8 ");
+    expect([w.readUInt16LE(26) & 0x3fff, w.readUInt16LE(28) & 0x3fff]).toEqual([720, 492]);
   });
 
   it("the video thumbnail has empty alt, and the strip is a focusable labelled region placed after the Feature cards", async () => {
@@ -123,6 +136,7 @@ describe("share metadata", () => {
     expect(strip.attrs["aria-label"]).toBeTruthy();
     expect(strip.attrs.tabindex).toBe("0");
     expect(findAll(strip, (n) => n.tag === "img")).toHaveLength(3);
+    expect(strip.attrs.class.split(/\s+/)).toContain("items-start");
     expect(html.indexOf("根拠が見える")).toBeGreaterThan(-1);
     expect(html.indexOf('role="region"')).toBeGreaterThan(html.indexOf("根拠が見える"));
     expect(html.indexOf("<footer")).toBeGreaterThan(html.indexOf("youtu.be"));

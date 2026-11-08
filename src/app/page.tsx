@@ -4,9 +4,9 @@ import { Wordmark } from "@/components/wordmark";
 import { getUser } from "@/lib/supabase/server";
 
 const SCREENS = [
-  { src: "/screens/list.webp", alt: "荷物の一覧。店も運送会社もまとめて、届く日と対面での受け取りが分かる" },
-  { src: "/screens/calendar.webp", alt: "カレンダー。家にいる必要のある日に赤い印" },
-  { src: "/screens/detail.webp", alt: "荷物の詳細。読み取った値の横に、元のメールの一文" },
+  { src: "/screens/list.webp", alt: "荷物の一覧。店も運送会社もまとめて、届く日と対面での受け取りが分かる", width: 720, height: 1415 },
+  { src: "/screens/calendar.webp", alt: "カレンダー。家にいる必要のある日に赤い印", width: 720, height: 1415 },
+  { src: "/screens/detail.webp", alt: "荷物の詳細。読み取った値の横に、元のメールの一文", width: 720, height: 492 },
 ];
 
 export default async function Home() {
@@ -55,14 +55,14 @@ export default async function Home() {
       </section>
 
       <div className="mt-14">
-        <div role="region" aria-label="アプリの画面" tabIndex={0} className="-mx-4 flex scroll-px-4 snap-x snap-mandatory gap-3 overflow-x-auto px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
+        <div role="region" aria-label="アプリの画面" tabIndex={0} className="-mx-4 flex items-start scroll-px-4 snap-x snap-mandatory gap-3 overflow-x-auto px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
           {SCREENS.map((s) => (
             <Image
               key={s.src}
               src={s.src}
               alt={s.alt}
-              width={720}
-              height={1415}
+              width={s.width}
+              height={s.height}
               sizes="(max-width: 448px) 62vw, 280px"
               className="h-auto w-[62%] shrink-0 snap-start rounded-2xl border border-neutral-200"
             />
