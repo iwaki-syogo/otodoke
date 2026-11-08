@@ -116,3 +116,12 @@ struct CancelledView<Detail: View>: View {
         .task { await model.onAppear() }
     }
 }
+
+#if DEBUG
+extension CancelledModel {
+    /// DEBUG only: shows the given parcels without reading, for checking the screen on the simulator.
+    func debugShow(parcels rows: [ParcelRow]) {
+        parcels = .loaded(rows)
+    }
+}
+#endif

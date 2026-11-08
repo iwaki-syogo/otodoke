@@ -115,4 +115,30 @@ final class MainTabsUITests: XCTestCase {
         app.buttons["閉じる"].tap()
         XCTAssertTrue(add.waitForExistence(timeout: 5))
     }
+
+    /// The two page links at the foot of the list are the name and an arrow: no number, no 「件」.
+    func testThePageLinksShowNoCount() {
+        let app = launch("list")
+        for link in ["届いた荷物", "キャンセルした荷物"] {
+            let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", link)).firstMatch
+            var tries = 0
+            while !row.exists && tries < 6 { app.swipeUp(); tries += 1 }
+            XCTAssertTrue(row.exists, link)
+            XCTAssertEqual(row.label, link, "\(link): the label is the name alone")
+            XCTAssertNil(row.label.wholeMatch(of: /.*[0-9].*/), link)
+            XCTAssertFalse(row.label.contains("件"), link)
+        }
+    }
+
+    /// The number is on the page the link opens, by the heading.
+    func testTheOpenedPagesShowTheirCount() {
+        let app = launch("list")
+        let delivered = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "届いた荷物")).firstMatch
+        var tries = 0
+        while !delivered.exists && tries < 6 { app.swipeUp(); tries += 1 }
+        delivered.tap()
+        XCTAssertTrue(app.navigationBars["届いた荷物"].waitForExistence(timeout: 5))
+        // No session here: the page cannot read, so it shows its heading and the failure, no number.
+        XCTAssertTrue(app.staticTexts["読み込めませんでした"].waitForExistence(timeout: 10))
+    }
 }

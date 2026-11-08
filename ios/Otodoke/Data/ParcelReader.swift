@@ -4,10 +4,9 @@
 import Foundation
 import PostgREST
 
-/// The three counts under the list. Each fails on its own; a failure is .failed, never 0.
+/// The count under the list: the unread mail. A failure is .failed, never 0. (The delivered and cancelled
+/// parcels are not counted here: their numbers show on their own pages.)
 struct ParcelCounts: Equatable, Sendable {
-    var delivered: LoadResult<Int>
-    var cancelled: LoadResult<Int>
     var unread: LoadResult<Int>
 }
 
@@ -48,19 +47,16 @@ struct ParcelReader: Sendable {
         }
     }
 
-    /// delivered / cancelled: `count=exact` (head) with user_id and status; unread: emails with the
-    /// `or` filter StatusRules.unreadFilter(now:).
+    /// unread: emails with the `or` filter StatusRules.unreadFilter(now:), `count=exact` (head).
     func counts(now: Date) async -> ParcelCounts {
         guard let me = await provider.currentUserID() else {
-            return ParcelCounts(delivered: .failed, cancelled: .failed, unread: .failed)
+            return ParcelCounts(unread: .failed)
         }
-        async let delivered = statusCount(me: me, status: "delivered")
-        async let cancelled = statusCount(me: me, status: "cancelled")
-        async let unread = Self.count(
+        let unread = await Self.count(
             provider.database.from("emails").select("id", head: true, count: .exact)
                 .eq("user_id", value: me).or(StatusRules.unreadFilter(now: now))
         )
-        return await ParcelCounts(delivered: delivered, cancelled: cancelled, unread: unread)
+        return ParcelCounts(unread: unread)
     }
 
     /// .loaded(nil) when there is no such parcel; .failed when the read failed. Like every read here
@@ -97,13 +93,6 @@ struct ParcelReader: Sendable {
     }
 
     // MARK: helpers
-
-    private func statusCount(me: String, status: String) async -> LoadResult<Int> {
-        await Self.count(
-            provider.database.from("parcels").select("id", head: true, count: .exact)
-                .eq("user_id", value: me).eq("status", value: status)
-        )
-    }
 
     /// The rows of a 2xx answer, decoded with a plain JSONDecoder (Models use explicit CodingKeys).
     /// nil for any failure: an error answer, no answer, a session that is missing, or a body that

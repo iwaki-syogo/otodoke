@@ -72,8 +72,6 @@ struct ParcelListModelTests {
         #expect(model.sections == ParcelRules.sections(ParcelRules.baseOrder(model.rows), today: Self.today))
         #expect(model.isEmpty == false)
         #expect(model.showsSwipeHint == true)
-        #expect(model.deliveredCount == 1)
-        #expect(model.cancelledCount == 1)
         #expect(model.waitingNotice == nil)
     }
 
@@ -107,15 +105,17 @@ struct ParcelListModelTests {
         #expect(model.loadState == .loaded)
     }
 
-    @Test func aFailedCountShowsTheLinkWithoutANumber() async throws {
+    @Test func theListReadsNoCountOfDeliveredOrCancelledParcels() async throws {
         let fake = FakeSupabase.make()
         await seed(fake)
-        await fake.fail(where: { $0.path == "/rest/v1/parcels" && $0.query("status") == ["eq.delivered"] }, with: .http(500))
         let (model, _) = try await make(fake)
         await model.load()
-        #expect(model.deliveredCount == nil)
-        #expect(model.cancelledCount == 1)
         #expect(model.loadState == .loaded)
+        // Only the unread mail is counted (count=exact on emails); no parcel is counted by status.
+        let counted = await fake.restRequests().filter { ($0.header("prefer") ?? "").contains("count=exact") }
+        #expect(counted.map(\.path) == ["/rest/v1/emails"])
+        let byStatus = await fake.restRequests().filter { $0.path == "/rest/v1/parcels" && !$0.query("status").isEmpty }
+        #expect(byStatus.isEmpty)
     }
 
     @Test func aFailedListSaysSoAndStillCounts() async throws {
@@ -126,8 +126,6 @@ struct ParcelListModelTests {
         await model.load()
         #expect(model.loadState == .failed)
         #expect(model.isEmpty == false)
-        #expect(model.deliveredCount == 1)
-        #expect(model.cancelledCount == 1)
     }
 
     @Test func noParcelsIsTheEmptyScreenWithItsLinks() async throws {
@@ -137,8 +135,6 @@ struct ParcelListModelTests {
         #expect(model.loadState == .loaded)
         #expect(model.isEmpty == true)
         #expect(model.showsSwipeHint == false)
-        #expect(model.deliveredCount == 0)
-        #expect(model.cancelledCount == 0)
     }
 
     @Test func onlyClosedParcelsIsNotEmptyButHasNoHint() async throws {
@@ -452,10 +448,5 @@ struct ParcelCardContentTests {
 
     @Test func tabsInTheWebsOrder() {
         #expect(MainTab.allCases.map(\.title) == ["荷物", "カレンダー", "支出", "設定"])
-    }
-
-    @Test func pageLinkCounts() {
-        #expect(PageLinkText.count(0) == "0 件")
-        #expect(PageLinkText.count(1234) == "1,234 件")
     }
 }

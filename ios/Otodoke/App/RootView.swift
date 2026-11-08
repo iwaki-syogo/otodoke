@@ -27,6 +27,10 @@ struct RootView: View {
                 WelcomeView(auth: preview.previewAuth())
             } else if let login = preview.makeLoginModel() {
                 LoginView(model: login)
+            } else if let page = preview.deliveredPageModel() {
+                NavigationStack { DeliveredView(model: page) { _ in EmptyView() } }
+            } else if let page = preview.cancelledPageModel() {
+                NavigationStack { CancelledView(model: page) { _ in EmptyView() } }
             } else {
                 MainTabView(listModel: preview.makeModel(), detailModel: preview.detailModelMaker())
             }

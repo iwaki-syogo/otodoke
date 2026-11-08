@@ -190,9 +190,6 @@ final class ParcelListModel {
         guard let n = counts?.unread.value, n > 0 else { return nil }
         return "まだ読んでいないメールが \(n) 通あります。この一覧は最新ではないかもしれません。"
     }
-    /// nil when the count could not be read (the link shows without a number).
-    var deliveredCount: Int? { counts?.delivered.value }
-    var cancelledCount: Int? { counts?.cancelled.value }
     /// 「すべて受取済にする」 can be pressed: something to check, and no more than ParcelWriter.maxAtOnce.
     var deliverAllEnabled: Bool {
         let n = sections.toCheck.count
@@ -357,7 +354,6 @@ final class ParcelListModel {
         switch result {
         case let .success(token):
             apply(token)
-            addToDelivered(1)
             showToast(ListToast(text: Self.savedText, canUndo: true), undo: [token])
         case .notUpdated(.conflict):
             // Changed since it was shown (a delivery mail, say): show what is there now, offer no undo.
@@ -421,7 +417,6 @@ final class ParcelListModel {
             }
         }
         tokens.forEach(apply)
-        addToDelivered(tokens.count)
         unconfirmed.formUnion(unsure)
 
         var confirmed = 0
@@ -498,7 +493,6 @@ final class ParcelListModel {
                 unsure.append(result.id)
             }
         }
-        addToDelivered(-restored)
         unconfirmed.formUnion(unsure)
 
         enum Outcome { case done, failed, unconfirmed }
@@ -556,12 +550,6 @@ final class ParcelListModel {
         rows[i].status = version.status
         rows[i].updatedAt = version.updatedAt
         rowsVersion &+= 1
-    }
-
-    /// Keeps 「届いた荷物 N 件」 in step with the rows written (a failed count stays failed).
-    private func addToDelivered(_ n: Int) {
-        guard n != 0, case let .loaded(count)? = counts?.delivered else { return }
-        counts?.delivered = .loaded(max(0, count + n))
     }
 
     private func showToast(_ next: ListToast, undo tokens: [UndoToken], note: String? = nil, keeps: Int = 0) {

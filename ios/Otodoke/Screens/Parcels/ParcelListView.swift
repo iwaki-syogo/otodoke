@@ -346,9 +346,9 @@ struct ParcelListView<Detail: View>: View {
 
     private var pageLinks: some View {
         Group {
-            PageLinkRow(label: "届いた荷物", count: model.deliveredCount) { path.append(.delivered) }
+            PageLinkRow(label: "届いた荷物") { path.append(.delivered) }
                 .listRowStyle(top: 20)
-            PageLinkRow(label: "キャンセルした荷物", count: model.cancelledCount) { path.append(.cancelled) }
+            PageLinkRow(label: "キャンセルした荷物") { path.append(.cancelled) }
                 .listRowStyle()
         }
     }

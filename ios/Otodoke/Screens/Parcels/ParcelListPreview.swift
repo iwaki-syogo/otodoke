@@ -9,6 +9,9 @@ import Foundation
 struct ListPreview {
     enum Scenario: String {
         case list, empty, failed, toast, saving, many, bottom
+        /// The delivered / cancelled page with made-up parcels (the number by the heading).
+        case deliveredPage = "delivered-page"
+        case cancelledPage = "cancelled-page"
         /// The empty list when mail has come in, and when only Gmail's confirmation has.
         case emptyReceived = "empty-received"
         case emptyApproval = "empty-approval"
@@ -47,6 +50,32 @@ struct ListPreview {
     private static func provider() -> SupabaseProvider {
         let config = AppConfig(supabaseURL: URL(string: "https://preview.invalid")!, anonKey: "preview", inboundDomain: "preview.invalid")
         return SupabaseProvider(config: config, storage: MemoryStorage())
+    }
+
+    /// The delivered page of the delivered-page scenario, with made-up parcels (nothing is read).
+    @MainActor
+    func deliveredPageModel() -> DeliveredModel? {
+        guard scenario == .deliveredPage else { return nil }
+        let today = Format.todayJst(now: Date())
+        let model = DeliveredModel(reader: StatusListReader(provider: Self.provider()), changes: nil)
+        let rows = (1...7).map { n in
+            Self.row(n, shop: n % 2 == 0 ? "見本ストア" : "サンプル書店", title: "架空の品物 \(n)", status: "delivered", date: CivilDate.addDays(today, -n * 9))
+        }
+        model.debugShow(parcels: rows)
+        return model
+    }
+
+    /// The cancelled page of the cancelled-page scenario, with made-up parcels (nothing is read).
+    @MainActor
+    func cancelledPageModel() -> CancelledModel? {
+        guard scenario == .cancelledPage else { return nil }
+        let today = Format.todayJst(now: Date())
+        let model = CancelledModel(reader: StatusListReader(provider: Self.provider()), changes: nil)
+        let rows = (1...2).map { n in
+            Self.row(n, shop: "テスト書房", title: "架空の雑誌 \(n)", status: "cancelled", date: CivilDate.addDays(today, -n * 5))
+        }
+        model.debugShow(parcels: rows)
+        return model
     }
 
     /// The login screen's model for the login scenarios, nil for the others.
@@ -113,17 +142,17 @@ struct ListPreview {
             now: { Date() },
             sleep: { try await Task.sleep(for: $0) }
         )
-        let counts = ParcelCounts(delivered: .loaded(1234), cancelled: .loaded(2), unread: .loaded(scenario == .list ? 3 : 0))
+        let counts = ParcelCounts(unread: .loaded(scenario == .list ? 3 : 0))
         switch scenario {
-        case .list, .detail, .login, .loginSignUp, .loginError, .loginSent, .loginWaiting, .welcome:
+        case .list, .detail, .deliveredPage, .cancelledPage, .login, .loginSignUp, .loginError, .loginSent, .loginWaiting, .welcome:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
         case .empty:
-            model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded)
+            model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
         case .emptyReceived, .emptyApproval:
-            model.debugShow(rows: [], counts: ParcelCounts(delivered: .loaded(0), cancelled: .loaded(0), unread: .loaded(0)), loadState: .loaded,
+            model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded,
                             mailSoFar: scenario == .emptyReceived ? .received : .approval)
         case .failed:
-            model.debugShow(rows: [], counts: ParcelCounts(delivered: .failed, cancelled: .loaded(2), unread: .loaded(0)), loadState: .failed)
+            model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .failed)
         case .toast:
             let rows = Self.rows(today: today).filter { $0.id != Self.id(7) }
             model.debugShow(
@@ -141,7 +170,7 @@ struct ListPreview {
             model.debugShow(rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded, saving: [Self.id(2)])
         case .bottom:
             let rows = Self.rows(today: today).filter { [5, 6, 8].map(Self.id).contains($0.id) }
-            model.debugShow(rows: rows, counts: ParcelCounts(delivered: .loaded(1234), cancelled: .failed, unread: .loaded(0)), loadState: .loaded,
+            model.debugShow(rows: rows, counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded,
                             rowMessages: [Self.id(5): ParcelListModel.saveFailedText])
         case .many:
             let check = (20..<28).map { n in

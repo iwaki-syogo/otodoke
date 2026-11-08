@@ -51,7 +51,7 @@ struct CalendarView<Detail: View>: View {
                         withAnimation { scroller.scrollTo(Self.anchor(day), anchor: .top) }
                     }
                     days
-                    PageLinkRow(label: "届いた荷物", count: nil) { path.append(.delivered) }
+                    PageLinkRow(label: "届いた荷物") { path.append(.delivered) }
                 }
                 .padding(16)
             }

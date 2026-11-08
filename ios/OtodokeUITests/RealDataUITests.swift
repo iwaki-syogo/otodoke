@@ -220,12 +220,11 @@ final class RealDataUITests: XCTestCase {
         // The order of the cards, top to bottom, against toCheck + delivering + soon + ordered.
         let order = ["toCheck", "delivering", "soon", "ordered"].flatMap { (expect[$0] as? [String]) ?? [] }
         try checkOrder(app, expected: order, label: label)
-        // The page links at the end.
-        for (link, key) in [("届いた荷物", "delivered"), ("キャンセルした荷物", "cancelled")] {
-            let n = counts[key] ?? -1
+        // The page links at the end: the name and the arrow, no number (the pages they open show it).
+        for link in ["届いた荷物", "キャンセルした荷物"] {
             let shown = pageLinkCount(app, link)
-            XCTAssertEqual(shown, n, "\(link) count")
-            record("count-\(label)-\(key)", "ui=\(shown.map(String.init) ?? "nil") db=\(n)")
+            XCTAssertNil(shown, "\(link) shows no count")
+            record("count-\(label)-\(link)", "ui=\(shown.map(String.init) ?? "nil")")
         }
         shoot("\(label)-list-end")
         scrollToTop(app)
@@ -552,7 +551,7 @@ final class RealDataUITests: XCTestCase {
         return nil
     }
 
-    /// 「1,050 件」 beside a page link, nil when the link has no count.
+    /// 「1,050 件」 beside a page link, nil when the link has no count (it has none now).
     private func pageLinkCount(_ app: XCUIApplication, _ link: String) -> Int? {
         guard scrollTo(app, app.staticTexts[link], max: 60) else { return nil }
         let all = texts(app)

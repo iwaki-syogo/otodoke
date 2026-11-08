@@ -163,3 +163,14 @@ final class DeliveredModel {
         await load()
     }
 }
+
+#if DEBUG
+extension DeliveredModel {
+    /// DEBUG only: shows the given parcels without reading, for checking the screen on the simulator.
+    func debugShow(parcels rows: [ParcelRow]) {
+        resultNumber &+= 1
+        parcels = .loaded(rows)
+        items = .loaded([])
+    }
+}
+#endif

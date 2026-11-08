@@ -86,21 +86,6 @@ struct ParcelListModelExtraTests {
         #expect(model.sections.soon.map(\.id) == [Rows.id(1)])
     }
 
-    @Test func theDeliveredCountFollowsTheSwipeAndTheUndo() async throws {
-        let fake = FakeSupabase.make()
-        await fake.insert("parcels", [
-            Rows.parcel(1, ["status": "shipped", "expected_date": "2026-11-05"]),
-            Rows.parcel(5, ["status": "delivered"]),
-        ])
-        let model = try await make(fake)
-        await model.load()
-        #expect(model.deliveredCount == 1)
-        await model.markDelivered(id: Rows.id(1))
-        #expect(model.deliveredCount == 2)
-        await model.undo()
-        #expect(model.deliveredCount == 1)
-    }
-
     @Test func backFromADetailReadsTheListAgain() async throws {
         // 「届いていない」 on the detail page put a delivered parcel back to shipped.
         let fake = FakeSupabase.make()

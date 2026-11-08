@@ -146,7 +146,7 @@ struct ParcelListConcurrencyTests {
         gate.open()
         await refresh.value
         #expect(await waitFor { await listReads(fake) == 3 })
-        #expect(await waitFor { await model.counts?.delivered == .loaded(1) })
+        #expect(await waitFor { await model.rows.contains { $0.id == Rows.id(1) && $0.status == "delivered" } })
         #expect(!isOpen(model, 1))
         #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
         #expect(model.refreshFailed == false)
@@ -167,7 +167,7 @@ struct ParcelListConcurrencyTests {
         await swipe.value
         // Read again once the write is done, and that read is shown.
         #expect(await waitFor { await listReads(fake) == 3 })
-        #expect(await waitFor { await model.counts?.delivered == .loaded(1) })
+        #expect(await waitFor { await model.rows.contains { $0.id == Rows.id(1) && $0.status == "delivered" } })
         #expect(!isOpen(model, 1))
     }
 

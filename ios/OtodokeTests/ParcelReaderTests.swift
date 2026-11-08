@@ -137,7 +137,7 @@ struct ParcelReaderTests {
 
     private let now = ISO.date("2026-11-04T03:00:00.250Z")!
 
-    @Test func countsDeliveredCancelledAndUnread() async throws {
+    @Test func countsOnlyTheUnreadMail() async throws {
         let fake = FakeSupabase.make()
         await fake.insert("parcels", [
             Rows.parcel(1, ["status": "delivered"]), Rows.parcel(2, ["status": "delivered"]), Rows.parcel(3, ["status": "delivered"]),
@@ -147,29 +147,19 @@ struct ParcelReaderTests {
         ])
         await fake.setUnreadEmails(2)
         let counts = try await reader(fake).counts(now: now)
-        #expect(counts == ParcelCounts(delivered: .loaded(3), cancelled: .loaded(1), unread: .loaded(2)))
+        #expect(counts == ParcelCounts(unread: .loaded(2)))
         let emails = try #require(await fake.requests().first { $0.path == "/rest/v1/emails" })
         #expect(emails.query("or") == ["(\(StatusRules.unreadFilter(now: now)))"])
         #expect((emails.header("prefer") ?? "").contains("count=exact"))
-        let parcelCounts = await fake.restRequests().filter { $0.path == "/rest/v1/parcels" }
-        #expect(parcelCounts.count == 2)
-        for r in parcelCounts {
-            #expect(r.query("user_id") == ["eq.\(FakeSupabase.me)"])
-            #expect((r.header("prefer") ?? "").contains("count=exact"))
-        }
+        // The parcels are not counted at all (the delivered and cancelled pages show their own numbers).
+        let parcelReads = await fake.restRequests().filter { $0.path == "/rest/v1/parcels" }
+        #expect(parcelReads.isEmpty)
     }
 
     @Test func zeroIsZeroAndAFailureIsAFailure() async throws {
         let fake = FakeSupabase.make()
         let reader = try await reader(fake)
-        await fake.fail("HEAD", "parcels", nth: 1, with: .http(500))
-        await fake.fail("GET", "parcels", nth: 1, with: .http(500))
-        let counts = await reader.counts(now: now)
-        // Exactly one of the two parcel counts failed (the first one sent); the other and unread are real zeros.
-        let values = [counts.delivered, counts.cancelled]
-        #expect(values.filter { $0 == .failed }.count == 1)
-        #expect(values.filter { $0 == .loaded(0) }.count == 1)
-        #expect(counts.unread == .loaded(0))
+        #expect(await reader.counts(now: now) == ParcelCounts(unread: .loaded(0)))
     }
 
     @Test func unreadFailsOnItsOwn() async throws {
@@ -180,8 +170,6 @@ struct ParcelReaderTests {
         await fake.fail("GET", "emails", with: .transport(.notConnectedToInternet))
         let counts = await reader.counts(now: now)
         #expect(counts.unread == .failed)
-        #expect(counts.delivered == .loaded(1))
-        #expect(counts.cancelled == .loaded(0))
     }
 
     // MARK: detail

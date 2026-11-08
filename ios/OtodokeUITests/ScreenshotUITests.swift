@@ -145,4 +145,29 @@ final class ScreenshotUITests: XCTestCase {
         }
         XCUIDevice.shared.appearance = .light
     }
+
+    /// The two page links at the foot of the list (name and arrow, no number), and the two pages they open
+    /// with the number by the heading, light and dark.
+    func testThePageLinksAndTheirPages() throws {
+        for style in ["Light", "Dark"] {
+            XCUIDevice.shared.appearance = style == "Dark" ? .dark : .light
+            var app = launch("bottom")
+            let delivered = app.buttons["届いた荷物"]
+            XCTAssertTrue(delivered.waitForExistence(timeout: 10), style)
+            XCTAssertTrue(app.buttons["キャンセルした荷物"].exists, style)
+            try shoot("links-\(style)")
+            app.terminate()
+
+            app = launch("delivered-page")
+            XCTAssertTrue(app.staticTexts["7"].waitForExistence(timeout: 10), "the delivered page shows its number (\(style))")
+            try shoot("delivered-page-\(style)")
+            app.terminate()
+
+            app = launch("cancelled-page")
+            XCTAssertTrue(app.staticTexts["2"].waitForExistence(timeout: 10), "the cancelled page shows its number (\(style))")
+            try shoot("cancelled-page-\(style)")
+            app.terminate()
+        }
+        XCUIDevice.shared.appearance = .light
+    }
 }
