@@ -62,14 +62,15 @@ describe("the demo fixtures are traced for the page that renders the DemoLoader"
     expect(includes["/app/settings/demo"]).toContain("./fixtures/demo/**/*.json");
     // The made-up order history the sample loads with them (src/lib/demo.ts).
     expect(includes["/app/settings/demo"]).toContain("./fixtures/demo-history/**/*.json");
-    // The list page does not read fixtures: only the demo page holds them.
-    expect(Object.keys(includes)).toEqual(["/app/settings/demo"]);
+    // The list page does not read fixtures: only the demo page and the iOS load endpoint hold them.
+    expect(Object.keys(includes)).toEqual(["/app/settings/demo", "/api/demo/load"]);
+    expect(includes["/api/demo/load"]).toEqual(includes["/app/settings/demo"]);
   });
 
   it("every key names a route that exists", () => {
     for (const key of Object.keys(nextConfig.outputFileTracingIncludes ?? {})) {
       const dir = path.join(settingsDir, "../..", key);
-      expect(existsSync(path.join(dir, "page.tsx")) || existsSync(path.join(dir, "(list)/page.tsx")), key).toBe(true);
+      expect(existsSync(path.join(dir, "page.tsx")) || existsSync(path.join(dir, "(list)/page.tsx")) || existsSync(path.join(dir, "route.ts")), key).toBe(true);
     }
   });
 });
