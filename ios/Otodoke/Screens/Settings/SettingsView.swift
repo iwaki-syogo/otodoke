@@ -3,8 +3,9 @@
 // signing out. What needs an answer now (the mail waiting to be read, the Gmail approval, a key that could
 // not be read) is drawn at the top; the key row carries a small badge while there is no key or mail is
 // still unencrypted. The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
-// Making or changing the passphrase, 「読み取る」 and 「これは荷物」 open the Web (SettingsModel.webLink); the
-// samples load and clear everything in the app (DemoModel). Only https pages are opened.
+// 「読み取る」, 「これは荷物」 (and 「荷物を登録する」 under it) and the samples finish in the app (MailActionsModel,
+// DemoModel); making the key is signing in again. Only changing the password, deleting the account, the privacy
+// policy and 「Web で開く」 open the Web (SettingsModel.webLink). Only https pages are opened.
 
 import SwiftUI
 
@@ -20,21 +21,25 @@ struct SettingsView: View {
     /// The stack held by the caller (the tabs open 「メールの転送」 from the empty list); nil: this view's own.
     private let outerPath: Binding<[SettingsPage]>?
     private let expands: Bool
+    /// 「荷物を登録する」 (under 「これは荷物」): opens the form of a parcel typed in by hand.
+    private let register: () -> Void
 
     private var path: Binding<[SettingsPage]> { outerPath ?? $ownPath }
 
     /// `expanded`: the closed cards (the guide, the mail that was not read) start open.
     /// `page`: opens that page at once (the screen check).
-    init(model: SettingsModel, expanded: Bool = false, page: SettingsPage? = nil) {
+    init(model: SettingsModel, expanded: Bool = false, page: SettingsPage? = nil, register: @escaping () -> Void = {}) {
         self.model = model
+        self.register = register
         expands = expanded
         outerPath = nil
         _ownPath = State(initialValue: page.map { [$0] } ?? [])
     }
 
     /// With the stack held by the caller.
-    init(model: SettingsModel, path: Binding<[SettingsPage]>) {
+    init(model: SettingsModel, path: Binding<[SettingsPage]>, register: @escaping () -> Void) {
         self.model = model
+        self.register = register
         expands = false
         outerPath = path
         _ownPath = State(initialValue: [])
@@ -55,7 +60,7 @@ struct SettingsView: View {
         switch page {
         case .forward: SettingsForwardPage(model: model, expandsGuide: expands)
         case .key: SettingsKeyPage(model: model)
-        case .dropped: SettingsDroppedPage(model: model, expanded: expands)
+        case .dropped: SettingsDroppedPage(model: model, expanded: expands, register: register)
         case .handling: SettingsHandlingPage()
         case .delivery: SettingsDeliveryHelpPage()
         case .sample: SettingsSamplePage(model: model)

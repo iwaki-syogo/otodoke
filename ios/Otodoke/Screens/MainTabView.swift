@@ -143,6 +143,8 @@ final class MainScreens {
 
 struct MainTabView: View {
     @State private var route: TabRoute
+    /// 「荷物を登録する」 under 「これは荷物」: the form of a parcel typed in by hand, as a sheet.
+    @State private var manualForm: ManualParcelModel?
     @State private var screens: MainScreens
     /// The first guide was closed (it is shown once per signed-in generation).
     @State private var guideClosed = false
@@ -301,7 +303,10 @@ struct MainTabView: View {
             .shownScreen(.spend, in: .spend, screens.refresher) { await spend.sceneBecameActive() }
         case .settings:
             let settings = screens.settings
-            SettingsView(model: settings, path: $route.settingsPath)
+            SettingsView(model: settings, path: $route.settingsPath, register: { manualForm = ManualParcelModel.live(list: screens.list) })
+                .sheet(item: $manualForm) { form in
+                    ManualParcelView(model: form) { manualForm = nil }
+                }
                 .shownScreen(.settings, in: .settings, screens.refresher) { await settings.sceneBecameActive() }
         }
     }

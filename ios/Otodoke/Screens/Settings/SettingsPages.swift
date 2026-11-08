@@ -89,13 +89,12 @@ struct SettingsForwardPage: View {
 
 struct SettingsDroppedPage: View {
     let model: SettingsModel
-    /// 「荷物を登録する」 under a note that says the parcel can be registered by hand; nil: the Web's page for it.
-    var register: (() -> Void)?
-    @Environment(\.openURL) private var openURL
+    /// 「荷物を登録する」 under a note that says the parcel can be registered by hand: opens the form in the app.
+    let register: () -> Void
     @State private var showsDropped: Bool
 
     /// `expanded`: the closed list starts open (the screen check).
-    init(model: SettingsModel, expanded: Bool = false, register: (() -> Void)? = nil) {
+    init(model: SettingsModel, expanded: Bool = false, register: @escaping () -> Void) {
         self.model = model
         self.register = register
         _showsDropped = State(initialValue: expanded)
@@ -143,7 +142,7 @@ struct SettingsDroppedPage: View {
                 .fixedSize(horizontal: false, vertical: true)
             if note.offersRegister {
                 Button {
-                    if let register { register() } else { SettingsWeb.openPage(WebLink.newParcel, openURL) }
+                    register()
                 } label: {
                     Text(SettingsMailText.register)
                         .font(.subheadline.weight(.medium))
