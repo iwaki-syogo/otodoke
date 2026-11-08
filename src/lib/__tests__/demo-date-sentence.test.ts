@@ -14,7 +14,7 @@ const NEW = "匿名化した実際の注文・発送メールと、見本とし�
 /** The sentence from before the made-up history was loaded too. */
 const BEFORE_HISTORY = "匿名化した実際の注文・発送メールを読み込みます。";
 const OLD = "今日に合わせてずらしてあります";
-const FILES = ["src/app/app/settings/demo/page.tsx", "ios/Otodoke/Screens/Settings/SettingsPages.swift"];
+const FILES = ["src/app/app/settings/demo/page.tsx", "ios/Otodoke/Screens/Settings/DemoText.swift"];
 
 const contains = (text: string, phrase: string) => text.includes(phrase);
 
