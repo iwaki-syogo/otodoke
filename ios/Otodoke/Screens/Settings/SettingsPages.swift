@@ -216,10 +216,13 @@ struct SettingsHandlingPage: View {
 // MARK: 「うまく届かないとき」
 
 struct SettingsDeliveryHelpPage: View {
+    let model: SettingsModel
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         SettingsParts.page(spacing: 16) {
+            // The Web's order (trouble/page.tsx): the mail that waits to be read, then the pitfalls.
+            SettingsStatusRows(model: model)
             VStack(alignment: .leading, spacing: 8) {
                 SettingsParts.heading(DeliveryHelpText.heading)
                 SettingsParts.secondaryText(DeliveryHelpText.lead)
@@ -228,6 +231,8 @@ struct SettingsDeliveryHelpPage: View {
                 card(number: index + 1, pitfall)
             }
         }
+        .refreshableToTheEnd { await model.load() }
+        .task { await model.pageShown() }
         .navigationTitle(SettingsMenuText.deliveryTitle)
         .navigationBarTitleDisplayMode(.inline)
     }

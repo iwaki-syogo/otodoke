@@ -19,6 +19,9 @@ enum SettingsMenuText {
     /// The badge on the 「メールの転送」 row while a Gmail confirmation waits for its approval ((list)/page.tsx).
     static let approvalBadge = "承認待ち"
 
+    /// The badge on the 「うまく届かないとき」 row while mail waits to be read ((list)/page.tsx: `未読 ${waiting}`).
+    static func unreadBadge(_ n: Int) -> String { "未読 \(n)" }
+
     /// The badge on the key row while there is no key.
     static let keyNoneBadge = "未設定"
 

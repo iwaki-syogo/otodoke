@@ -1,6 +1,7 @@
-// What needs an answer now, drawn as cards at the top of the settings list: the mail waiting to be read and
-// the Gmail approval (the same cards, buttons and words as before). The approval card is also drawn at the
-// top of 「メールの転送」, where the guide's third step points to it.
+// What needs an answer now, drawn as cards inside the page it belongs to (never above the settings list, as on
+// the Web, where the list shows badges only): the mail waiting to be read at the top of 「うまく届かないとき」
+// (trouble/page.tsx) and the Gmail approval under the address of 「メールの転送」, where the guide's third step
+// points to it.
 
 import SwiftUI
 
@@ -8,13 +9,11 @@ struct SettingsStatusRows: View {
     let model: SettingsModel
     @Environment(\.openURL) private var openURL
 
+    /// The view of 「うまく届かないとき」; the approval card is drawn through `approvalSection` by 「メールの転送」.
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            unreadSection
-            approvalSection
-        }
-        // Leaving the settings takes the red line of 「読み取る」 with it.
-        .onDisappear { model.mailActions.clearReadNote() }
+        unreadSection
+            // Leaving the page takes the red line of 「読み取る」 with it.
+            .onDisappear { model.mailActions.clearReadNote() }
     }
 
     // MARK: unread, approval
@@ -45,7 +44,10 @@ struct SettingsStatusRows: View {
         case .failed?:
             // iOS-9: not the look of 0 mails.
             SettingsParts.errorBox(model.unreadHeading ?? SettingsWebText.unreadCountFailed)
-        default:
+        case .loaded?:
+            // trouble/page.tsx: nothing waiting is said, not left blank.
+            SettingsParts.secondaryText(SettingsWebText.unreadNone)
+        case nil:
             EmptyView()
         }
     }

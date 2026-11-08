@@ -1,8 +1,8 @@
 // The 設定 tab: a list of items, each opening its own page (メールの転送 / パスワードとメールの鍵 / 読まなかった
 // メール / あなたのメールの扱い / うまく届かないとき / サンプルで試す), then 「Web で開く」, who is signed in and
-// signing out. What needs an answer now (the mail waiting to be read, the Gmail approval, a key that could
-// not be read) is drawn at the top; the key row carries a small badge while there is no key or mail is
-// still unencrypted. The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
+// signing out. As on the Web the list draws no cards: what needs an answer shows as a badge on its row
+// (承認待ち, 未設定, 未読 N, a count that could not be read) and the card itself is inside the page it belongs to.
+// The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
 // 「読み取る」, 「これは荷物」 (and 「荷物を登録する」 under it) and the samples finish in the app (MailActionsModel,
 // DemoModel); making the key is signing in again. Only changing the password, deleting the account, the privacy
 // policy and 「Web で開く」 open the Web (SettingsModel.webLink). Only https pages are opened.
@@ -62,7 +62,7 @@ struct SettingsView: View {
         case .key: SettingsKeyPage(model: model)
         case .dropped: SettingsDroppedPage(model: model, expanded: expands, register: register)
         case .handling: SettingsHandlingPage()
-        case .delivery: SettingsDeliveryHelpPage()
+        case .delivery: SettingsDeliveryHelpPage(model: model)
         case .sample: SettingsSamplePage(model: model)
         }
     }
@@ -78,7 +78,6 @@ struct SettingsView: View {
                     if case .failed? = model.keyPanel {
                         SettingsParts.errorBox(SettingsModel.failedText)
                     }
-                    SettingsStatusRows(model: model)
                     section(SettingsWebText.mailGroup) {
                         group([.forward, .key, .dropped, .handling, .delivery, .sample])
                     }
@@ -175,6 +174,8 @@ struct SettingsView: View {
         switch page {
         case .key: Self.keyBadge(for: model)
         case .forward: Self.forwardBadge(for: model)
+        case .dropped: Self.droppedBadge(for: model)
+        case .delivery: Self.deliveryBadge(for: model)
         default: nil
         }
     }
@@ -185,6 +186,24 @@ struct SettingsView: View {
         if model.approvalBadgeFailed { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
         if model.approvalWaiting { return .init(text: SettingsMenuText.approvalBadge, kind: .amber) }
         return nil
+    }
+
+    /// The 「読まなかったメール」 row: the count (neutral), 確認できません when it could not be read (never drawn as 0).
+    static func droppedBadge(for model: SettingsModel) -> SettingsRow.Badge? {
+        switch model.dropped {
+        case let .loaded(rows)?: .init(text: rows.count.formatted(.number.locale(Locale(identifier: "ja_JP"))), kind: .neutral)
+        case .failed?: .init(text: SettingsMenuText.keyUnknownBadge, kind: .red)
+        case nil: nil
+        }
+    }
+
+    /// The 「うまく届かないとき」 row: 未読 N while mail waits to be read, 確認できません when the count could not be read.
+    static func deliveryBadge(for model: SettingsModel) -> SettingsRow.Badge? {
+        switch model.unread {
+        case let .loaded(n)? where n > 0: .init(text: SettingsMenuText.unreadBadge(n), kind: .amber)
+        case .failed?: .init(text: SettingsMenuText.keyUnknownBadge, kind: .red)
+        default: nil
+        }
     }
 
     /// The key row's badge: 未設定 while there is no key (鍵を作れませんでした when the key step failed), 確認できません
@@ -248,7 +267,7 @@ struct SettingsCard: ViewModifier {
 /// One row of the list: a gray rounded square with the symbol, a title, an optional subtitle and badge.
 struct SettingsRow: View {
     struct Badge: Equatable {
-        enum Kind { case sky, amber, red }
+        enum Kind { case sky, amber, red, neutral }
         let text: String
         let kind: Kind
     }
@@ -318,6 +337,7 @@ struct SettingsRow: View {
         case .sky: OtodokeColor.link
         case .amber: Palette.amberText
         case .red: OtodokeColor.errorText
+        case .neutral: Color.secondary
         }
     }
 
@@ -326,6 +346,7 @@ struct SettingsRow: View {
         case .sky: SettingsPalette.skyBackground
         case .amber: Palette.amberBackground
         case .red: Palette.errorBackground
+        case .neutral: Color(.systemGray5)
         }
     }
 
@@ -334,6 +355,7 @@ struct SettingsRow: View {
         case .sky: SettingsPalette.skyBorder
         case .amber: Palette.amberBorder
         case .red: Palette.errorBorder
+        case .neutral: Color.clear
         }
     }
 }

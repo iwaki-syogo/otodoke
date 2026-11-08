@@ -36,6 +36,7 @@ const WEB_SOURCES: { name: string; file: string; around?: [string, string] }[] =
   { name: "passwordKeyReadFailed", file: `${WEB}/password/page.tsx` },
   { name: "oldKeyCountFailed", file: `${WEB}/password/page.tsx` },
   { name: "unreadCountFailed", file: `${WEB}/trouble/page.tsx` },
+  { name: "unreadNone", file: `${WEB}/trouble/page.tsx` },
   { name: "droppedLead", file: `${WEB}/dropped/page.tsx` },
   // The Web moved it to NO_SUBJECT_TEXT of src/lib/mail-notices.ts (dev bbea688).
   { name: "noSubject", file: "src/lib/mail-notices.ts" },

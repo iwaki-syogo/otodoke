@@ -39,6 +39,8 @@ enum SettingsWebText {
 
     /// trouble/page.tsx: the count of unread mail could not be read
     static let unreadCountFailed = "未読のメールの数を読み込めませんでした"
+    /// trouble/page.tsx: no unread mail
+    static let unreadNone = "未読のメールはありません。"
 
     // MARK: 「読まなかったメール」 (dropped/page.tsx)
 
