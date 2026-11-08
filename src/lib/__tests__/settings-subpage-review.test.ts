@@ -62,9 +62,11 @@ describe("the demo fixtures are traced for the page that renders the DemoLoader"
     expect(includes["/app/settings/demo"]).toContain("./fixtures/demo/**/*.json");
     // The made-up order history the sample loads with them (src/lib/demo.ts).
     expect(includes["/app/settings/demo"]).toContain("./fixtures/demo-history/**/*.json");
-    // The list page does not read fixtures: only the demo page and the iOS load endpoint hold them.
-    expect(Object.keys(includes)).toEqual(["/app/settings/demo", "/api/demo/load"]);
+    // The list page does not read fixtures: only the demo page and the iOS load / read-waiting endpoints hold them.
+    expect(Object.keys(includes)).toEqual(["/app/settings/demo", "/app/settings/trouble", "/api/demo/load", "/api/mail/read-waiting"]);
     expect(includes["/api/demo/load"]).toEqual(includes["/app/settings/demo"]);
+    expect(includes["/api/mail/read-waiting"]).toEqual(includes["/app/settings/demo"]);
+    expect(includes["/app/settings/trouble"]).toEqual(includes["/app/settings/demo"]);
   });
 
   it("every key names a route that exists", () => {
@@ -79,6 +81,7 @@ describe("long actions", () => {
   it("trouble (readWaitingMail reads up to 20 mails with Claude) has a long maxDuration, like demo", () => {
     expect(read("trouble/page.tsx")).toMatch(/export const maxDuration = 300;/);
     expect(read("demo/page.tsx")).toMatch(/export const maxDuration = 300;/);
+    expect(readFileSync("src/app/api/mail/read-waiting/route.ts", "utf8")).toMatch(/export const maxDuration = 300;/);
   });
 
   it("dropped posts only quick database writes: no long limit is needed", () => {

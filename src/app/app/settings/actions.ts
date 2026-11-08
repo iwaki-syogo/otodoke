@@ -2,15 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { demoInput, loadDemoEntries, type DemoEntry } from "@/lib/demo";
-import { sampleFileOf } from "@/lib/mail-keys";
 import { runClearAllParcels, runLoadDemo } from "@/lib/demo-run";
-import { processInboundEmail } from "@/lib/pipeline";
-import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
+import { isScreenEventId, runMarkWronglyDropped, runReadWaitingMail } from "@/lib/mail-run";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUser } from "@/lib/supabase/server";
 import { settingsErrorPath } from "@/lib/settings-errors";
-import { UNREAD_FILTER } from "@/lib/unread";
 
 /**
  * Feed the anonymized demo mails through the real pipeline for the signed-in user.
@@ -37,70 +33,19 @@ export async function readWaitingMail(): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
 
-  const db = createAdminClient();
-  const { data, error } = await db
-    .from("emails")
-    .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
-    .eq("user_id", user.id)
-    .eq("body_state", "plain")
-    .or(UNREAD_FILTER())
-    .order("sent_at", { ascending: true })
-    .limit(20);
-  if (error) {
-    console.error("readWaitingMail (lookup):", error.message);
+  const done = await runReadWaitingMail(createAdminClient(), user.id);
+  if (!done.ok && done.stage === "lookup") {
+    console.error("readWaitingMail (lookup):", done.message);
     redirect(settingsErrorPath("read_failed"));
   }
 
-  let failure: string | null = null;
-  // A sample mail left pending by an interrupted loadDemo is read the way loadDemo reads it
-  // (precomputed, never Claude); the entries are loaded once, only if one is waiting.
-  let samples: Map<string, DemoEntry> | null = null;
-  for (const m of data) {
-    try {
-      const file = sampleFileOf(m.provider_email_id);
-      let outcome;
-      if (file !== null) {
-        samples ??= new Map((await loadDemoEntries()).map((e) => [e.mail.file, e]));
-        const entry = samples.get(file);
-        // No sample of that name any more: unreadable, and never a reason to call Claude.
-        if (!entry) throw new Error(`sample mail ${file} not found`);
-        const input = demoInput(entry, user.id);
-        outcome = await processInboundEmail(db, input.mail, { ...input.options, replacesEmailId: m.id });
-      } else {
-        outcome = await processInboundEmail(
-          db,
-          {
-            userId: user.id,
-            providerEmailId: m.provider_email_id,
-            messageId: m.message_id,
-            from: m.from_address ?? "",
-            fromName: m.from_name,
-            subject: m.subject ?? "",
-            sentAt: m.sent_at,
-            text: m.text_body,
-            html: m.html_body,
-          },
-          // Without a Message-ID the pipeline cannot find this row again, so it is named: the mail is
-          // read again in this row, in place (never removed and stored anew, so it cannot be lost).
-          m.message_id ? {} : { replacesEmailId: m.id },
-        );
-      }
-      if (outcome.kind === "over_limit") break;
-    } catch (err) {
-      // One unreadable mail must not hold back the ones after it.
-      failure = err instanceof Error ? err.message : String(err);
-    }
-  }
-
   revalidatePath("/app", "layout");
-  if (failure) {
-    console.error("readWaitingMail:", failure);
+  if (!done.ok) {
+    console.error("readWaitingMail:", done.message);
     redirect(settingsErrorPath("read_failed"));
   }
   redirect("/app/settings/trouble");
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The user says a dropped mail was a parcel notice. Later mail from the same sender's domain is
@@ -114,19 +59,11 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
   if (!user) redirect("/login");
   const id = String(formData.get("id") ?? "");
   let outcome: "remembered" | "shared" | "forwarded" | "own" | "failed" = "failed";
-  if (UUID.test(id)) {
-    const db = createAdminClient();
-    const { data: row, error: readError } = await db.from("screen_events").select("from_domain, subject").eq("id", id).eq("user_id", user.id).eq("decision", "dropped").maybeSingle();
-    // Told by why: a forwarded copy may come from the family, not from the person.
-    const personal = row ? personalMailReason(row, user.email) : null;
-    if (readError) console.error("markWronglyDropped (lookup):", readError.message);
-    else if (personal) outcome = personal;
-    else if (row && !isRememberableDomain(row.from_domain)) outcome = "shared";
-    else if (row) {
-      const { error } = await db.from("screen_events").update({ flagged_at: new Date().toISOString() }).eq("id", id).eq("user_id", user.id);
-      if (error) console.error("markWronglyDropped:", error.message);
-      else outcome = "remembered";
-    }
+  if (isScreenEventId(id)) {
+    const marked = await runMarkWronglyDropped(createAdminClient(), user.id, user.email, id);
+    if (marked.ok) outcome = marked.outcome;
+    else if (marked.code === "lookup_failed") console.error("markWronglyDropped (lookup):", marked.message);
+    else if (marked.code === "mark_failed") console.error("markWronglyDropped:", marked.message);
   }
   revalidatePath("/app/settings");
   revalidatePath("/app/settings/dropped");
