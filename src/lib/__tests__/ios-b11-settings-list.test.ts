@@ -71,10 +71,17 @@ describe("the list draws no cards, the pages hold them", () => {
 
   it("negative control: a card put back on the list, or the card gone from the page, is caught", () => {
     const back = LIST.replace("section(SettingsWebText.mailGroup) {", "SettingsStatusRows(model: model)\n section(SettingsWebText.mailGroup) {");
+    expect(back).not.toBe(LIST);
     expect(cardProblems(back)).toEqual(["a card is drawn on the list"]);
-    expect(cardProblems(LIST.replace("section(SettingsWebText.mailGroup) {", "unreadSection\n section(SettingsWebText.mailGroup) {"))).toEqual(["a card is drawn on the list"]);
-    expect(deliveryPage(PAGES).replace("SettingsStatusRows(model: model)", "")).not.toMatch(/SettingsStatusRows\(model: model\)/);
-    expect(LIST.replace("Self.deliveryBadge(for: model)", "nil")).not.toMatch(/case \.delivery: Self\.deliveryBadge/);
+    const unread = LIST.replace("section(SettingsWebText.mailGroup) {", "unreadSection\n section(SettingsWebText.mailGroup) {");
+    expect(unread).not.toBe(LIST);
+    expect(cardProblems(unread)).toEqual(["a card is drawn on the list"]);
+    const gone = deliveryPage(PAGES).replace("SettingsStatusRows(model: model)", "");
+    expect(gone).not.toBe(deliveryPage(PAGES));
+    expect(gone).not.toMatch(/SettingsStatusRows\(model: model\)/);
+    const nobadge = LIST.replace("Self.deliveryBadge(for: model)", "nil");
+    expect(nobadge).not.toBe(LIST);
+    expect(nobadge).not.toMatch(/case \.delivery: Self\.deliveryBadge/);
   });
 });
 
@@ -110,9 +117,65 @@ describe("the account card is the Web's, in the Web's order", () => {
 
   it("negative control: the old order (the exits first, logout outside), or an unreadable block, is caught", () => {
     const swapped = LIST.replace("loginRow\n                            Divider().padding(.leading, 58)\n                            logoutRow", "logoutRow\n                            Divider().padding(.leading, 58)\n                            loginRow");
+    expect(swapped).not.toBe(LIST);
     expect(iosOrder(swapped)).not.toEqual(iosOrder(LIST));
     expect(iosOrder(swapped)).toEqual(["logout", "login", "privacy", "delete", "openWeb"]);
+    expect(LIST.replace("accountGroup", "other")).not.toBe(LIST);
     expect(iosOrder(LIST.replace("accountGroup", "other"))).toEqual([]);
+    expect(WEB_LIST.replace("const accountRows", "const rows")).not.toBe(WEB_LIST);
     expect(webOrder(WEB_LIST.replace("const accountRows", "const rows"))).toEqual([]);
+  });
+});
+
+describe("the badges of the 「メールの転送」 and key rows: each branch, in the Web's words and tones", () => {
+  const fn = (name: string) => LIST.match(new RegExp(`static func ${name}\\(for model: SettingsModel\\) -> SettingsRow\\.Badge\\? \\{[\\s\\S]*?\\n    \\}\\n`))?.[0] ?? "";
+  const forward = () => fn("forwardBadge");
+  const key = () => fn("keyBadge");
+  const FAILED = "if model.approvalBadgeFailed { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }";
+  const WAITING = "if model.approvalWaiting { return .init(text: SettingsMenuText.approvalBadge, kind: .amber) }";
+
+  it("the Web's two forwarding badges: 確認できません in red, 承認待ち in amber", () => {
+    expect(WEB_LIST).toContain('const UNKNOWN: Badge = { text: "確認できません", tone: "red" }');
+    expect(WEB_LIST).toContain('confirmation.failed ? UNKNOWN : confirmation.waiting ? { text: "承認待ち", tone: "amber" } : null');
+    expect(MENU).toContain('static let keyUnknownBadge = "確認できません"');
+    expect(MENU).toContain('static let approvalBadge = "承認待ち"');
+  });
+
+  it("forwardBadge: a failed read first (red), then waiting (amber), else none, in the Web's order", () => {
+    const body = forward();
+    expect(body).not.toBe("");
+    expect(body).toContain(FAILED);
+    expect(body).toContain(WAITING);
+    expect(body.indexOf(FAILED)).toBeLessThan(body.indexOf(WAITING));
+    expect(body).toMatch(/return nil\n    \}\n$/);
+  });
+
+  it("keyBadge: no key is amber 未設定, a count that could not be read is red, a key that is fine has none", () => {
+    expect(WEB_LIST).toContain('keyFailed ? UNKNOWN : !key ? { text: "未設定", tone: "amber" } : null');
+    const body = key();
+    expect(body).not.toBe("");
+    expect(body).toContain("return .init(text: SettingsMenuText.keyNoneBadge, kind: .amber)");
+    expect(body).toContain("if case .failed = oldKeyCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }");
+    expect(body).toMatch(/case \.failed\?, nil:\n\s+return nil/);
+    expect(MENU).toContain('static let keyNoneBadge = "未設定"');
+  });
+
+  it("negative control: a swapped tone, a swapped order, a lost branch and an unreadable function are caught", () => {
+    const body = forward();
+    const tone = body.replace(FAILED, FAILED.replace("kind: .red", "kind: .amber"));
+    expect(tone).not.toBe(body);
+    expect(tone).not.toContain(FAILED);
+    const swapped = body.replace(FAILED, "@@").replace(WAITING, FAILED).replace("@@", WAITING);
+    expect(swapped).not.toBe(body);
+    expect(swapped.indexOf(FAILED)).toBeGreaterThan(swapped.indexOf(WAITING));
+    const lost = body.replace(WAITING, "");
+    expect(lost).not.toBe(body);
+    expect(lost).not.toContain(WAITING);
+    const none = key().replace("kind: .amber", "kind: .red");
+    expect(none).not.toBe(key());
+    expect(none).not.toContain("keyNoneBadge, kind: .amber");
+    const renamed = LIST.replace("static func forwardBadge", "static func forwardBadgeX");
+    expect(renamed).not.toBe(LIST);
+    expect(renamed.match(/static func forwardBadge\(/)).toBeNull();
   });
 });
