@@ -57,10 +57,6 @@ enum SettingsWebText {
     static let makeKeyHeading = "メールの鍵を作る"
     /// password-panel.tsx:63
     static let makeKeyLead = "読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。"
-    /// password-panel.tsx, the paragraph under makeKeyLead: PLAINTEXT_DROP_NOTICE alone (no count on the Web any more)
-    static func plainMailNote(_ n: Int) -> String {
-        plainDropNotice
-    }
     /// src/lib/mail-notices.ts:35 (PLAINTEXT_DROP_NOTICE)
     static let plainDropNotice = "パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。"
 

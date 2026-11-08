@@ -83,8 +83,9 @@ describe("the settings words copied from the Web's dev branch", () => {
     const summary = src.match(/droppedSummary[\s\S]*?\{\s*"([^"]+)"/)?.[1] ?? "";
     expect(pieces(summary).length).toBe(2);
     expect(hasInOrder(stripTsx(read(`${WEB}/dropped/page.tsx`)), pieces(summary))).toBe(true);
-    // plainMailNote is the notice and nothing else: the Web paragraph is `{PLAINTEXT_DROP_NOTICE}` alone.
-    expect(src).toMatch(/static func plainMailNote\(_ n: Int\) -> String \{\s*plainDropNotice\s*\}/);
+    // The iOS encrypt card is gone, so the per-count wrapper must not come back; plainDropNotice itself is checked against the Web above.
+    expect(src).not.toContain("plainMailNote");
+    expect(src).toContain("static let plainDropNotice");
     expect(stripTsx(read(`${WEB}/password-panel.tsx`))).toContain("{PLAINTEXT_DROP_NOTICE}");
   });
 
