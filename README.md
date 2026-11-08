@@ -44,7 +44,7 @@
 
 実際のメールは要りません。
 
-提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルを読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。複数の方で使うため、パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。iPhone でも試せます。フォームの審査員用リンクの欄にある TestFlight の招待リンクから入れて、同じ審査用アカウントでログインします（TestFlight のアプリが要ります）。
+提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルを読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。複数の方で使うため、パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。iPhone でも試せます。フォームの審査員用リンクの欄にある TestFlight の招待リンクから入れて、同じ審査用アカウントでログインします（TestFlight のアプリが要ります）。ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。
 
 1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。画面が「確認のメールを送りました」に変わります。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを別のタブで開いて「確認する」を押すと、元のタブが自動でログインし、最初の案内（/app/welcome）に着きます。そこで「あとで」を押します
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
@@ -234,7 +234,9 @@ Otodoke reads the order and shipping emails you already get from any Japanese on
 
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
 
-For judges: the judge link field (「審査員用リンク」) of the submission form has the login for a shared judge account with the sample already loaded, so you can log in and go straight to “What to look at” below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. To try it with your own mail, create your own account as follows. You can also try it on an iPhone: install the app from the TestFlight invite link in the same judge link field and log in with the same judge account (the TestFlight app is needed).
+Gmail users will later connect with Google instead (「Google でつなぐ」, read-only access with the gmail.readonly scope), so no forwarding or filter setup will be needed. Google's restricted-scope verification and CASA assessment will be requested after the submission.
+
+For judges: the judge link field (「審査員用リンク」) of the submission form has the login for a shared judge account with the sample already loaded, so you can log in and go straight to “What to look at” below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. You can also try it on an iPhone: install the app from the TestFlight invite link in the same judge link field and log in with the same judge account (the TestFlight app is needed). To try it with your own mail, create your own account as follows.
 
 Try it with your own account:
 
@@ -245,8 +247,6 @@ Try it with your own account:
 The sample is anonymized real order and shipping mails plus a made-up year of delivered orders (made-up items, amounts and order numbers; the made-up orders’ senders and links are on sample.otodoke.app; sender names and subjects use real store names as labels). What to look at: the real mails fold into parcels from order to delivery (the made-up orders are all delivered, so they stay out of what is on its way); a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category, and its 「全期間」 view shows a year of monthly bars from the made-up history, colored by category.
 
 If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
-
-Gmail users will later connect with Google instead (「Google でつなぐ」, read-only access with the gmail.readonly scope), so no forwarding or filter setup will be needed. Google's restricted-scope verification and CASA assessment will be requested after the submission.
 
 Claude only makes judgments: it classifies each email and extracts fields, each with the source line as evidence and a confidence score. Unsure values are flagged, never asserted. Carrier detection and parcel matching are plain code.
 
