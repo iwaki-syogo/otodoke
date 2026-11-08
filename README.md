@@ -44,7 +44,14 @@
 
 実際のメールは要りません。
 
-提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルを読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。複数の方で使うため、パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。iPhone でも試せます。フォームの審査員用リンクの欄にある TestFlight の招待リンクから入れて、同じ審査用アカウントでログインします（TestFlight のアプリが要ります）。ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。
+提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルを読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。
+
+複数の方で使うアカウントなので、次のことをお願いします。
+
+- パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。
+- このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。
+- iPhone では、Web 版のトップにある「iPhone アプリ（ベータ版）」から TestFlight で入れて、同じアカウントでログインします（TestFlight のアプリが要ります）。
+- ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。
 
 1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。画面が「確認のメールを送りました」に変わります。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを別のタブで開いて「確認する」を押すと、元のタブが自動でログインし、最初の案内（/app/welcome）に着きます。そこで「あとで」を押します
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
@@ -77,6 +84,8 @@
 - 出力は zod のスキーマで固定し、値ごとに `evidence`（原文の行）と `confidence` を持たせます。根拠のない値は確信度を低くし、画面で断定しません
 - 使う API の機能は、目的ごとに選びました。読み取りは構造化出力（`messages.parse` と zod）で形を固定し、毎回同じ長い指示はプロンプトキャッシュに載せます。ふるいの 2 段目の Haiku には「この人の買い物の連絡か」の真偽 1 つだけを答えさせ、API が失敗したときは荷物を落とさないよう、読む側に倒します。モデルが辞退したメールは、値を作らず、捨てもせずに、読み取れなかったメールとして残します
 - 運送会社の判定と荷物の名寄せはコードとルールで書き、Claude には任せません。作り話が入る場所を減らすためです
+
+コードの場所: 読み取りは `src/lib/extract/extract.ts`（messages.parse・プロンプトキャッシュ・辞退の扱い）、指示文は `prompt.ts`、出力の形は `schema.ts`、2 段目のふるいは `triage.ts`、全体の流れは `src/lib/pipeline.ts`。
 
 **費用で続かなくならないように。** 届くメールを全部読ませると、使う人が増えるほど赤字になります。1 段目は無料のルール（店の許可リストは使わず、文面だけで判定。迷ったら通す）。迷うものだけ 2 段目で Haiku に聞き、残ったものを読みます。
 
@@ -232,11 +241,20 @@ Demo video: https://youtu.be/BLPMP_bYJ8c (3 min)
 
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home because the parcel cannot be left at the door (置き配), and how much you spent this month.
 
+Why: Japan handles about 5.0 billion parcels a year, and about 7.6% (some 380 million) need redelivery (MLIT). Not knowing when to be home is one reason, and every shop and carrier has its own app.
+
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
 
 Gmail users will later connect with Google instead (「Google でつなぐ」, read-only access with the gmail.readonly scope), so no forwarding or filter setup will be needed. Google's restricted-scope verification and CASA assessment will be requested after the submission.
 
-For judges: the judge link field (「審査員用リンク」) of the submission form has the login for a shared judge account with the sample already loaded, so you can log in and go straight to “What to look at” below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. You can also try it on an iPhone: install the app from the TestFlight invite link in the same judge link field and log in with the same judge account (the TestFlight app is needed). To try it with your own mail, create your own account as follows.
+For judges: the judge link field (「審査員用リンク」) of the submission form has the login for a shared judge account with the sample already loaded, so you can log in and go straight to “What to look at” below.
+
+It is shared, so please:
+
+- do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」;
+- do not forward your own mail to this account's receiving address (other judges can see it);
+- on an iPhone, install the app with TestFlight from 「iPhone アプリ（ベータ版）」 on the web top page and log in with the same account (the TestFlight app is needed);
+- to try it with your own mail, create your own account as follows.
 
 Try it with your own account:
 
