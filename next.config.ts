@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
   // runtime. The key is the page that renders it: a function only holds the files of its own route.
   outputFileTracingIncludes: {
     "/app/settings/demo": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
+    "/app/settings/trouble": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
     "/api/demo/load": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
     "/api/mail/read-waiting": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
   },

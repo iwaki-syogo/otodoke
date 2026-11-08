@@ -1,6 +1,6 @@
 import { demoInput, loadDemoEntries, type DemoEntry } from "@/lib/demo";
 import { sampleFileOf } from "@/lib/mail-keys";
-import { processInboundEmail } from "@/lib/pipeline";
+import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { UNREAD_FILTER } from "@/lib/unread";
@@ -45,9 +45,10 @@ export async function runMarkWronglyDropped(db: AdminClient, userId: string, use
 
 export type ReadWaitingResult =
   | { ok: true; read: number; overLimit: boolean }
-  | { ok: false; stage: "lookup" | "read"; message: string; read: number; overLimit: boolean };
+  // onlyBusy: every failure was another read taking the same mail (MailBeingReadError), none was a real one.
+  | { ok: false; stage: "lookup" | "read"; message: string; read: number; overLimit: boolean; onlyBusy: boolean };
 
-/** Read up to 20 waiting mails; stops when today's allowance runs out. `read` counts the mails taken in. */
+/** Read up to 20 waiting mails; stops when today's allowance runs out. `read` counts the mails processed (every outcome but over_limit). */
 export async function runReadWaitingMail(db: AdminClient, userId: string): Promise<ReadWaitingResult> {
   const { data, error } = await db
     .from("emails")
@@ -57,9 +58,10 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
     .or(UNREAD_FILTER())
     .order("sent_at", { ascending: true })
     .limit(20);
-  if (error) return { ok: false, stage: "lookup", message: error.message, read: 0, overLimit: false };
+  if (error) return { ok: false, stage: "lookup", message: error.message, read: 0, overLimit: false, onlyBusy: false };
 
   let failure: string | null = null;
+  let realFailure = false;
   let read = 0;
   let overLimit = false;
   // A sample mail left pending by an interrupted loadDemo is read the way loadDemo reads it
@@ -103,8 +105,9 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
     } catch (err) {
       // One unreadable mail must not hold back the ones after it.
       failure = err instanceof Error ? err.message : String(err);
+      if (!(err instanceof MailBeingReadError)) realFailure = true;
     }
   }
-  if (failure) return { ok: false, stage: "read", message: failure, read, overLimit };
+  if (failure) return { ok: false, stage: "read", message: failure, read, overLimit, onlyBusy: !realFailure };
   return { ok: true, read, overLimit };
 }

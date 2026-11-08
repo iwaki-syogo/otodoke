@@ -85,8 +85,12 @@ export async function readWaitingStep(request: Request): Promise<Response> {
     return failure("read_failed");
   }
   if (!done.ok) {
+    // Only another read holding the same mail: not a failure, the other read finishes it.
+    if (done.stage === "read" && done.onlyBusy) {
+      return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy: true }, { status: 200, headers: NO_STORE });
+    }
     console.error("[mail-api] read-waiting failed at:", done.stage);
-    return failure("read_failed");
+    return Response.json({ ok: false, code: "read_failed", read: done.read }, { status: STATUS.read_failed, headers: NO_STORE });
   }
-  return Response.json({ ok: true, read: done.read, over_limit: done.overLimit }, { status: 200, headers: NO_STORE });
+  return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy: false }, { status: 200, headers: NO_STORE });
 }

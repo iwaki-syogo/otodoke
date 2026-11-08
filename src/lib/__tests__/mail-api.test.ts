@@ -12,7 +12,7 @@ const ID = "123e4567-e89b-12d3-a456-426614174000";
 const mocks = vi.hoisted(() => ({ getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), process: vi.fn(), rows: { current: [] as unknown[] } }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
-vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeingReadError: class extends Error {} }));
+vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeingReadError: class MailBeingReadError extends Error {} }));
 // A chainable stand-in for the emails query of the waiting mail.
 vi.mock("@/lib/supabase/admin", () => {
   const chain: Record<string, unknown> = {};
@@ -124,10 +124,10 @@ describe("mark-parcel", () => {
 
 describe("read-waiting", () => {
   it("reads for the token's user and answers the counts", async () => {
-    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 3, over_limit: false }, cache: "no-store" });
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 3, over_limit: false, busy: false }, cache: "no-store" });
     expect(mocks.read.mock.calls[0][1]).toBe("user-1");
     mocks.read.mockResolvedValue({ ok: true, read: 1, overLimit: true });
-    expect(await call("read-waiting")).toMatchObject({ status: 200, json: { ok: true, read: 1, over_limit: true } });
+    expect(await call("read-waiting")).toMatchObject({ status: 200, json: { ok: true, read: 1, over_limit: true, busy: false } });
   });
 
   it("accepts an empty body; 400 invalid_input for a field or non-JSON", async () => {
@@ -138,8 +138,8 @@ describe("read-waiting", () => {
   });
 
   it("500 read_failed when reading fails or throws, with no mail text in the log", async () => {
-    mocks.read.mockResolvedValue({ ok: false, stage: "read", message: "secret subject text", read: 1, overLimit: false });
-    expect(await call("read-waiting")).toEqual({ status: 500, json: { ok: false, code: "read_failed" }, cache: "no-store" });
+    mocks.read.mockResolvedValue({ ok: false, stage: "read", message: "secret subject text", read: 1, overLimit: false, onlyBusy: false });
+    expect(await call("read-waiting")).toEqual({ status: 500, json: { ok: false, code: "read_failed", read: 1 }, cache: "no-store" });
     mocks.read.mockRejectedValue(new Error("secret subject text"));
     expect(await call("read-waiting")).toMatchObject({ status: 500, json: { code: "read_failed" } });
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("secret");
@@ -151,9 +151,43 @@ describe("read-waiting", () => {
     const mail = (n: number) => ({ id: `e${n}`, provider_email_id: `p${n}`, message_id: `<m${n}>`, from_address: "a@b.c", from_name: null, subject: "s", sent_at: "2026-11-01T00:00:00Z", text_body: "t", html_body: null });
     mocks.rows.current = [mail(1), mail(2), mail(3)];
     mocks.process.mockResolvedValueOnce({ kind: "processed" }).mockResolvedValueOnce({ kind: "over_limit", emailId: "e2", limit: "user" }).mockResolvedValue({ kind: "processed" });
-    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: true }, cache: "no-store" });
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: true, busy: false }, cache: "no-store" });
     expect(mocks.process).toHaveBeenCalledTimes(2);
     expect(mocks.process.mock.calls[0][1]).toMatchObject({ userId: "user-1" });
+  });
+});
+
+describe("concurrent read and user scoping (real shared functions, FakeDb)", () => {
+  const mail = (n: number, user: string, status = "over_limit") => ({ id: `e${n}`, user_id: user, body_state: "plain", processing_status: status, provider_email_id: `p${n}`, message_id: `<m${n}>`, from_address: "a@b.c", from_name: null, subject: "s", sent_at: `2026-11-0${n}T00:00:00Z`, text_body: "t", html_body: null, created_at: "2026-11-01T00:00:00Z" });
+
+  it("another read holding a mail is busy:true, not a failure; a real failure beside it is read_failed", async () => {
+    const { runReadWaitingMail } = await vi.importActual<typeof import("@/lib/mail-run")>("@/lib/mail-run");
+    const { MailBeingReadError } = await import("@/lib/pipeline");
+    mocks.read.mockImplementation((db: never, userId: string) => runReadWaitingMail(db, userId));
+    mocks.rows.current = [mail(1, "user-1"), mail(2, "user-1")];
+    mocks.process.mockResolvedValueOnce({ kind: "processed" }).mockRejectedValueOnce(new MailBeingReadError("busy"));
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: false, busy: true }, cache: "no-store" });
+    mocks.process.mockResolvedValueOnce({ kind: "processed" }).mockRejectedValueOnce(new Error("boom"));
+    expect(await call("read-waiting")).toEqual({ status: 500, json: { ok: false, code: "read_failed", read: 1 }, cache: "no-store" });
+  });
+
+  it("runReadWaitingMail never hands another user's waiting mail to the pipeline", async () => {
+    const { runReadWaitingMail } = await vi.importActual<typeof import("@/lib/mail-run")>("@/lib/mail-run");
+    const { FakeDb } = await import("./fake-db");
+    const db = new FakeDb({ emails: [mail(1, "user-1"), mail(2, "user-2"), mail(3, "user-2", "failed")] }, Date.now());
+    mocks.process.mockResolvedValue({ kind: "processed" });
+    expect(await runReadWaitingMail(db as never, "user-1")).toMatchObject({ ok: true, read: 1 });
+    expect(mocks.process).toHaveBeenCalledTimes(1);
+    expect(mocks.process.mock.calls[0][1]).toMatchObject({ userId: "user-1", providerEmailId: "p1" });
+  });
+
+  it("runMarkWronglyDropped does not touch another user's dropped mail", async () => {
+    const { runMarkWronglyDropped } = await vi.importActual<typeof import("@/lib/mail-run")>("@/lib/mail-run");
+    const { FakeDb } = await import("./fake-db");
+    const db = new FakeDb({ screen_events: [{ id: ID, user_id: "user-2", decision: "dropped", from_domain: "shop.example", subject: "s", flagged_at: null }] });
+    expect(await runMarkWronglyDropped(db as never, "user-1", "me@example.com", ID)).toEqual({ ok: false, code: "not_found" });
+    expect(db.rows("screen_events")[0].flagged_at).toBeNull();
+    expect(await runMarkWronglyDropped(db as never, "user-2", "other@example.com", ID)).toEqual({ ok: true, outcome: "remembered" });
   });
 });
 

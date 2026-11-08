@@ -43,7 +43,14 @@ Request: `{}` (an empty body is accepted too).
 
 **Timeout**: the answer comes only at the end (up to 300 s), so the client's request timeout must be at least
 300 seconds. If the client times out anyway, the server still finishes: reload the list instead of showing a
-failure.
+failure. **Do not retry automatically** on a timeout or on `read_failed` (every attempt can spend Claude calls);
+reload the list and let the user press again.
 
-Answer: `200 { "ok": true, "read": 3, "over_limit": false }`. `read` is the number of mails taken in;
-`over_limit: true` means the allowance ran out and the rest keep waiting.
+Answer: `200 { "ok": true, "read": 3, "over_limit": false, "busy": false }`.
+- `read`: the number of mails processed (every outcome except `over_limit`).
+- `over_limit: true`: the allowance ran out and the rest keep waiting.
+- `busy: true`: another read of the same account is holding some of the mails (not a failure; that read
+  finishes them). Reload the list later.
+
+A real failure answers `500 { "ok": false, "code": "read_failed", "read": 1 }`; `read` is how many were processed
+before and around it (a failing mail does not stop the ones after it).
