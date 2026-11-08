@@ -264,27 +264,12 @@ struct ParcelWriter: Sendable {
         case let .invalid(message): return .invalid(message)
         case let .valid(values): columns = values
         }
-        let response: PostgrestResponse<Void>
-        do {
-            response = try await provider.database.from("parcels").update(columns)
-                .eq("id", value: id)
-                .eq("user_id", value: me)
-                .eq("source", value: "manual")
-                .eq("updated_at", value: saved.updatedAt)
-                .select("id")
-                .execute()
-        } catch {
-            switch Self.outcome(of: error) as WriteOutcome<String> {
-            case .unknown: return await announcedEdit(.unknown)
-            default: return .failed
-            }
+        // The one write (below): on the version just read, as the signed-in user's typed-in parcel.
+        switch await write(id: id, .manualEdit(columns, updatedAt: saved.updatedAt)) {
+        case .success: return await announcedEdit(.saved)
+        case let .notUpdated(reason): return reason == .conflict ? .changed : .failed
+        case .unknown: return await announcedEdit(.unknown)
         }
-        guard let rows = try? JSONDecoder().decode([Inserted].self, from: response.data) else {
-            return await announcedEdit(.unknown)
-        }
-        guard !rows.isEmpty else { return .changed }
-        guard rows.count == 1, let row = rows.first, row.id.lowercased() == id.lowercased() else { return await announcedEdit(.unknown) }
-        return await announcedEdit(.saved)
     }
 
     private func announcedEdit(_ outcome: ManualEditOutcome) async -> ManualEditOutcome {
@@ -349,6 +334,8 @@ struct ParcelWriter: Sendable {
         case restore(to: String, deliveredUpdatedAt: String)
         /// category → one of the seven, as the user's choice, only at the updated_at given.
         case category(ParcelCategory, updatedAt: String)
+        /// The columns a typed-in parcel's edit form changes (source = manual), only at the updated_at given.
+        case manualEdit([String: ManualParcel.Column], updatedAt: String)
     }
 
     /// The columns asked back from a write.
@@ -388,18 +375,21 @@ struct ParcelWriter: Sendable {
 
     private func write(id: String, _ change: Change) async -> WriteOutcome<ParcelVersion> {
         guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
-        let values: [String: String]
+        let values: any Encodable
         switch change {
         case let .deliver(shown):
             // Only from a status 「元に戻す」 can return to: never cancelled, never delivered again.
             guard StatusRules.restorable.contains(shown.status), !shown.updatedAt.isEmpty else { return .notUpdated(.invalidInput) }
-            values = ["status": "delivered"]
+            values = ["status": "delivered"] as [String: String]
         case let .restore(to, deliveredUpdatedAt):
             guard StatusRules.restorable.contains(to), !deliveredUpdatedAt.isEmpty else { return .notUpdated(.invalidInput) }
-            values = ["status": to]
+            values = ["status": to] as [String: String]
         case let .category(category, updatedAt):
             guard ParcelCategory.allCases.contains(category), !updatedAt.isEmpty else { return .notUpdated(.invalidInput) }
-            values = ["category": category.rawValue, "category_source": "user"]
+            values = ["category": category.rawValue, "category_source": "user"] as [String: String]
+        case let .manualEdit(columns, updatedAt):
+            guard !columns.isEmpty, !updatedAt.isEmpty else { return .notUpdated(.invalidInput) }
+            values = columns
         }
 
         // Signed out, or the token could not be refreshed: nothing is sent.
@@ -427,6 +417,10 @@ struct ParcelWriter: Sendable {
                     .eq("updated_at", value: deliveredUpdatedAt)
             case let .category(_, updatedAt):
                 query = query.eq("updated_at", value: updatedAt)
+            case let .manualEdit(_, updatedAt):
+                query = query
+                    .eq("source", value: "manual")
+                    .eq("updated_at", value: updatedAt)
             }
             response = try await query.select("id,status,updated_at").execute()
         } catch {

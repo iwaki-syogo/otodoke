@@ -294,9 +294,10 @@ describe("the edit and the delete", () => {
   it("an edit is read, then written as the signed-in user's typed-in parcel on the version read; a delete likewise", () => {
     expect(ACTIONS).toMatch(/\.eq\("source", "manual"\)/);
     expect(writer.match(/\.eq\("source", value: "manual"\)/g)?.length).toBe(3);
-    expect(writer).toContain('.eq("updated_at", value: saved.updatedAt)');
+    // The update goes through the one write function, on the updated_at read, with source = manual added to its filters.
+    expect(writer).toContain("write(id: id, .manualEdit(columns, updatedAt: saved.updatedAt))");
+    expect(writer).toMatch(/case let \.manualEdit\(_, updatedAt\):\s*query = query\s*\.eq\("source", value: "manual"\)\s*\.eq\("updated_at", value: updatedAt\)/);
     expect(writer).toMatch(/\.delete\(\)\s*\.eq\("id", value: id\)\s*\.eq\("user_id", value: me\)\s*\.eq\("source", value: "manual"\)\s*\.select\("id"\)/);
-    expect(writer).toMatch(/\.update\(columns\)[\s\S]*?\.select\("id"\)/);
   });
 
   it("the detail page edits in the app and no longer opens the Web's edit page", () => {
