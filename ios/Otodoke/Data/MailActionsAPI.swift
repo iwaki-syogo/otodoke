@@ -1,6 +1,7 @@
 // The Web's two mail endpoints, so 「これは荷物」 and 「読み取る」 finish inside the app (no Safari):
 //   POST /api/mail/mark-parcel   { "id": "<screen_events.id>" }  -> 200 { ok: true, outcome }
-//   POST /api/mail/read-waiting  { }                             -> 200 { ok: true }
+//   POST /api/mail/read-waiting  { }                             -> 200 { ok: true, read, over_limit, busy }
+// (docs/api/mail.md; over_limit and busy are not failures and the Web says nothing for them: the app only reads again)
 // The same shape as the sample endpoints (docs/api/demo.md): POST, JSON, `Authorization: Bearer <access token>`
 // with no freshness rule, `Cache-Control: no-store`; a failure is `{ ok: false, code }`. A request is never sent
 // again by the client: a second press is a second request the person made.
@@ -25,6 +26,10 @@ enum MailAPIFailure: Error, Equatable, Sendable {
     case unauthorized
     /// 400
     case invalidInput
+    /// 404 (mark-parcel): no dropped mail of this user with that id.
+    case notFound
+    /// 500 (mark-parcel): the database failed.
+    case markFailed
     /// 503: Supabase Auth could not be asked.
     case unavailable
     /// read-waiting: some mail could not be read (`read_failed`).
@@ -100,6 +105,8 @@ struct MailActionsClient: MailActionsAPI {
         switch object["code"] as? String {
         case "unauthorized": throw .unauthorized
         case "invalid_input": throw .invalidInput
+        case "not_found": throw .notFound
+        case "mark_failed": throw .markFailed
         case "unavailable": throw .unavailable
         case "read_failed": throw .readFailed
         default: throw http.statusCode == 200 ? .unknownResult : .network

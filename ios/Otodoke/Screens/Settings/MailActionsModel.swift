@@ -100,7 +100,7 @@ final class MailActionsModel {
         switch failure {
         case .unauthorized: LoginText.signedOut
         case .unknownResult: nil
-        case .invalidInput, .unavailable, .readFailed, .network: SettingsMailText.markFailed
+        case .invalidInput, .notFound, .markFailed, .unavailable, .readFailed, .network: SettingsMailText.markFailed
         }
     }
 
@@ -110,7 +110,7 @@ final class MailActionsModel {
         case .readFailed: return SettingsMailText.readFailed
         case .unauthorized: return LoginText.signedOut
         case .unknownResult: return nil
-        case .invalidInput, .unavailable, .network: return SettingsMailText.unknownFailure
+        case .invalidInput, .notFound, .markFailed, .unavailable, .network: return SettingsMailText.unknownFailure
         }
     }
 }

@@ -13,7 +13,7 @@ actor FakeMailServer {
     let supabase: FakeSupabase
 
     enum Forced: Sendable {
-        case answer(status: Int, ok: Bool, code: String?)
+        case answer(status: Int, ok: Bool, code: String?, extra: [String: Bool] = [:])
         case transport(URLError.Code)
     }
 
@@ -60,9 +60,10 @@ actor FakeMailServer {
         if let gate = gates[endpoint] { await gate.wait() }
         if let f = forced[endpoint]?[nth] {
             switch f {
-            case let .answer(status, ok, code):
+            case let .answer(status, ok, code, extra):
                 var body: [String: Any] = ["ok": ok]
                 if let code { body["code"] = code }
+                for (k, v) in extra { body[k] = v }
                 return .json(status, body, headers: ["Cache-Control": "no-store"])
             case let .transport(code): return .failure(code)
             }
@@ -77,7 +78,7 @@ actor FakeMailServer {
         case "mark-parcel":
             guard Set(body.keys) == ["id"], let id = body["id"] as? String else { return Self.failure(400, "invalid_input") }
             let known = await supabase.rows("screen_events").contains { $0["id"] == .string(id) && $0["decision"] == "dropped" }
-            guard known else { return Self.failure(400, "invalid_input") }
+            guard known else { return Self.failure(404, "not_found") }
             if outcome == .remembered {
                 await supabase.mutate { tables in
                     for i in (tables["screen_events"] ?? []).indices where tables["screen_events"]?[i]["id"] == .string(id) {
@@ -89,7 +90,7 @@ actor FakeMailServer {
         case "read-waiting":
             guard body.isEmpty else { return Self.failure(400, "invalid_input") }
             await supabase.setUnreadEmails(0)
-            return .json(200, ["ok": true], headers: ["Cache-Control": "no-store"])
+            return .json(200, ["ok": true, "read": 3, "over_limit": false, "busy": false], headers: ["Cache-Control": "no-store"])
         default:
             return .json(404, ["ok": false])
         }

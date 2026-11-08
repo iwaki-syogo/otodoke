@@ -137,6 +137,8 @@ describe("the calls follow the shape of the sample endpoints (docs/api/demo.md)"
     expect(client).toMatch(/static let readTimeout: TimeInterval = 310/);
     expect(client).toMatch(/case "unauthorized": throw \.unauthorized/);
     expect(client).toMatch(/case "invalid_input": throw \.invalidInput/);
+    expect(client).toMatch(/case "not_found": throw \.notFound/);
+    expect(client).toMatch(/case "mark_failed": throw \.markFailed/);
     expect(client).toMatch(/case "unavailable": throw \.unavailable/);
     expect(client).toMatch(/case "read_failed": throw \.readFailed/);
   });
@@ -148,5 +150,53 @@ describe("the calls follow the shape of the sample endpoints (docs/api/demo.md)"
   it("negative control: another path or a changed timeout is caught", () => {
     expect(client.replace("read-waiting", "read_waiting")).not.toContain('post("read-waiting", [:]');
     expect(client.replace("= 310", "= 60")).not.toMatch(/readTimeout: TimeInterval = 310/);
+  });
+});
+
+describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/api/mail/**)", () => {
+  const client = stripComments(read("ios/Otodoke/Data/MailActionsAPI.swift"));
+  const doc = read("docs/api/mail.md");
+  const handler = read("src/app/api/mail/handler.ts");
+  const codes = (src: string) => [...src.matchAll(/case "(\w+)": throw \./g)].map((m) => m[1]).sort();
+
+  it("the Web has both routes and the doc names both paths", () => {
+    expect(existsSync(path.join(ROOT, "src/app/api/mail/mark-parcel/route.ts"))).toBe(true);
+    expect(existsSync(path.join(ROOT, "src/app/api/mail/read-waiting/route.ts"))).toBe(true);
+    expect(doc).toContain("POST /api/mail/mark-parcel");
+    expect(doc).toContain("POST /api/mail/read-waiting");
+  });
+
+  it("the codes iOS maps are exactly the codes the Web answers with", () => {
+    const web = [...doc.matchAll(/^\| \d{3} \| `(\w+)` \|/gm)].map((m) => m[1]).sort();
+    expect(web).toEqual(["invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"]);
+    expect(codes(client)).toEqual(web);
+    for (const c of web) expect(handler, c).toContain(c);
+  });
+
+  it("the outcomes iOS knows are the Web's four", () => {
+    const web = doc.match(/`outcome` is one of:([\s\S]*?)\nThe web shows/)?.[1] ?? "";
+    const names = [...web.matchAll(/^- `(\w+)`/gm)].map((m) => m[1]).sort();
+    expect(names).toEqual(["forwarded", "own", "remembered", "shared"]);
+    for (const n of names) expect(client, n).toContain(`case ${n}`);
+  });
+
+  it("the 200 of read-waiting carries read, over_limit and busy, which iOS treats as no failure", () => {
+    expect(doc).toContain('"read": 3, "over_limit": false, "busy": false');
+    // The answer of a 200 is not read: nothing in the client names over_limit or busy, so neither can become a failure.
+    expect(client).toContain('_ = try await post("read-waiting"');
+    expect(client).not.toMatch(/over_limit|busy/);
+  });
+
+  it("the wait is longer than the Web's 300 seconds, and a timeout is not retried", () => {
+    expect(doc).toContain("at least\n300 seconds");
+    const secs = Number(client.match(/static let readTimeout: TimeInterval = (\d+)/)?.[1]);
+    expect(secs).toBeGreaterThan(300);
+    expect(doc).toContain("Do not retry automatically");
+  });
+
+  it("negative control: a missing code, a shorter wait or an unknown outcome is caught", () => {
+    expect(codes(client.replace('case "not_found": throw .notFound', ""))).not.toEqual(codes(client));
+    expect(Number(client.replace("= 310", "= 300").match(/readTimeout: TimeInterval = (\d+)/)?.[1])).not.toBeGreaterThan(300);
+    expect(client.replace("case forwarded", "case forward")).not.toContain("case forwarded");
   });
 });

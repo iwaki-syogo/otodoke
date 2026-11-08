@@ -101,6 +101,8 @@ struct MailActionsTests {
     @Test(arguments: [
         (401, "unauthorized", LoginText.signedOut),
         (400, "invalid_input", "記録できませんでした。もう一度お試しください。"),
+        (404, "not_found", "記録できませんでした。もう一度お試しください。"),
+        (500, "mark_failed", "記録できませんでした。もう一度お試しください。"),
         (503, "unavailable", "記録できませんでした。もう一度お試しください。"),
         (500, "something_new", "記録できませんでした。もう一度お試しください。"),
     ])
@@ -197,7 +199,19 @@ struct MailActionsTests {
         #expect(request.jsonDictionary?.isEmpty == true)
     }
 
+    @Test func overLimitAndBusyAreNotFailuresAndSayNothing() async throws {
+        for (over, busy) in [(true, false), (false, true)] {
+            let s = try await setUp()
+            await s.server.force("read-waiting", .answer(status: 200, ok: true, code: nil, extra: ["over_limit": over, "busy": busy]))
+            await s.actions.readWaiting()
+            #expect(s.actions.readNote == nil)
+            #expect(s.counter.reloads == 1)
+            #expect(await s.server.count("read-waiting") == 1)
+        }
+    }
+
     @Test func theTimesAreTheDocumentedOnes() {
+        #expect(MailActionsClient.readTimeout > 300)
         #expect(MailActionsClient.readTimeout == 310)
         #expect(MailActionsClient.markTimeout == 30)
     }
