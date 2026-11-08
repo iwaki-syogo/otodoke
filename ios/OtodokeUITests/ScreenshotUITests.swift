@@ -181,7 +181,7 @@ final class ScreenshotUITests: XCTestCase {
             app.buttons["この荷物を消す"].tap()
             app.swipeUp()
             try shoot("edit-delete-\(style)")
-            let check = app.descendants(matching: .any)["manual-delete-check"].firstMatch
+            let check = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "本当に消す")).firstMatch
             XCTAssertTrue(check.waitForExistence(timeout: 5), style)
             check.tap()
             try shoot("edit-delete-checked-\(style)")

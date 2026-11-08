@@ -182,8 +182,8 @@ final class MainTabsUITests: XCTestCase {
         for _ in 0..<3 where !app.buttons["この荷物を消す"].exists { app.swipeUp() }
         app.buttons["この荷物を消す"].tap()
         app.swipeUp()
-        // A toggle-trait element is a switch or a button depending on the OS, so it is found by its identifier alone.
-        let check = app.descendants(matching: .any)["manual-delete-check"].firstMatch
+        // A toggle-trait element is a switch or a button depending on the OS, so it is found by its label alone.
+        let check = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "本当に消す")).firstMatch
         XCTAssertTrue(check.waitForExistence(timeout: 5))
         XCTAssertEqual(check.value as? String, "オフ")
         check.tap()
