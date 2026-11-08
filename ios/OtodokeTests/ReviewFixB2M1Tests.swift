@@ -204,7 +204,7 @@ struct ReviewFix1CancelledReadTests {
 
         // Shown again: read again (hasRead does not hold it back).
         await model.onAppear()
-        let expected = SettingsModel.KeyPanel.present(plainCount: .loaded(0), oldKeyCount: .loaded(0))
+        let expected = SettingsModel.KeyPanel.present(oldKeyCount: .loaded(0))
         #expect(await waitFor { await model.keyPanel == expected }, "\(String(describing: model.keyPanel))")
         #expect(model.unread == .loaded(0))
     }
@@ -270,7 +270,7 @@ struct ReviewFix1QuietFailureTests {
 
     @Test func aFailedOldKeyCountSaysSo() async throws {
         let m = try await model(faults: { await $0.fail(where: { !$0.query("body_envelope->>kid").isEmpty }, with: .http(500)) })
-        guard case .present(_, .failed)? = m.keyPanel else {
+        guard case .present(.failed)? = m.keyPanel else {
             Issue.record("expected a key in use with a failed old-key count, got \(String(describing: m.keyPanel))")
             return
         }
@@ -280,7 +280,7 @@ struct ReviewFix1QuietFailureTests {
     @Test func noOldKeyMailShowsNothing() async throws {
         // Positive control: 0 is not the failure.
         let m = try await model()
-        #expect(m.keyPanel == .present(plainCount: .loaded(0), oldKeyCount: .loaded(0)))
+        #expect(m.keyPanel == .present(oldKeyCount: .loaded(0)))
         #expect(m.oldKeyNote == nil)
     }
 
@@ -296,7 +296,7 @@ struct ReviewFix1QuietFailureTests {
         let fake = FakeSupabase.make()
         let m = try await World.settings(fake)
         await m.load()
-        #expect(m.keyPanel == .none(plainCount: .loaded(0)))
+        #expect(m.keyPanel == SettingsModel.KeyPanel.none)
         #expect(m.oldKeyNote == nil)
     }
 
@@ -308,7 +308,7 @@ struct ReviewFix1QuietFailureTests {
         #expect(m.confirmURL == nil)
         #expect(m.approvalNote == SettingsWebText.approvalReadFailed)
         // The other reads are not dragged down with it (the confirmation mail is a plain one).
-        #expect(m.keyPanel == .present(plainCount: .loaded(1), oldKeyCount: .loaded(0)))
+        #expect(m.keyPanel == .present(oldKeyCount: .loaded(0)))
         #expect(m.unread == .loaded(0))
     }
 

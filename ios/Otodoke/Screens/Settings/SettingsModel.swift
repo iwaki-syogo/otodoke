@@ -7,17 +7,11 @@ import Observation
 
 /// What the settings screen opens on the Web (task.md's 「Web で開く」 list).
 enum SettingsWebAction: CaseIterable, Equatable, Sendable {
-    /// 「鍵を作る」 (no key row)
-    case createPassphrase
     case changePassphrase
     /// 未読の「読み取る」
     case readWaiting
     /// 読まなかったメールの「これは荷物」
     case markAsParcel
-    /// サンプル
-    case sample
-    /// すべて消す
-    case clearAll
     /// 「Web で開く」
     case openWeb
     /// 「プライバシーポリシー」
@@ -32,15 +26,13 @@ final class SettingsModel {
     /// The passphrase card: could not be read / no key in use / a key in use.
     enum KeyPanel: Equatable, Sendable {
         case failed
-        case none(plainCount: LoadResult<Int>)
-        case present(plainCount: LoadResult<Int>, oldKeyCount: LoadResult<Int>)
+        case none
+        case present(oldKeyCount: LoadResult<Int>)
     }
 
     static let failedText = "読み込めませんでした"
     /// GMAIL_FILTER of src/lib/forwarding-guide.ts.
     static let gmailFilter = "{注文 発送 出荷 配達 お届け 配送 到着 荷物}"
-    /// 「暗号化されていないメールの数を読み込めませんでした」
-    static let plainCountFailedText = "暗号化されていないメールの数を読み込めませんでした"
 
     /// S4: the Web's password-panel.tsx (integrate/password-v1): 「前の鍵で暗号化したメールが N 通あります。開けませんが、
     /// 荷物は残っています。」 (password-v1 opens no older key: no promise that it opens).
@@ -51,10 +43,9 @@ final class SettingsModel {
     /// The page each action opens: https://otodoke.app/… as task.md lists it.
     static func webLink(_ action: SettingsWebAction) -> URL {
         switch action {
-        case .createPassphrase, .changePassphrase: WebLink.settingsPassword
+        case .changePassphrase: WebLink.settingsPassword
         case .readWaiting: WebLink.settingsTrouble
         case .markAsParcel: WebLink.settingsDropped
-        case .sample, .clearAll: WebLink.settingsDemo
         case .openWeb: WebLink.app
         case .privacy: WebLink.privacy
         case .deleteAccount: WebLink.settingsDelete
@@ -113,7 +104,7 @@ final class SettingsModel {
 
     /// The app's model: the signed-in session's provider, the device clock.
     static func live(auth: AuthService, changes: DataChanges?) -> SettingsModel {
-        SettingsModel(
+        let model = SettingsModel(
             reader: SettingsReader(provider: auth.provider),
             inbox: InboxAddressService(provider: auth.provider),
             auth: auth,
@@ -121,7 +112,17 @@ final class SettingsModel {
             changes: changes,
             now: { Date() }
         )
+        let provider = auth.provider
+        model.demo = DemoModel(
+            api: DemoAPIClient(session: provider.urlSession),
+            accessToken: { try? await provider.auth.session.accessToken },
+            changed: { ParcelWriter.announceOutsideChange(changes) }
+        )
+        return model
     }
+
+    /// 「サンプルで試す」 (set by live()): the sample load and clear-everything, through the Web's endpoints.
+    @ObservationIgnored var demo: DemoModel?
 
     /// The 「この端末で Face ID を使う」 switch (set by MainScreens).
     @ObservationIgnored var faceID: FaceIDSwitch?
@@ -207,7 +208,6 @@ final class SettingsModel {
         KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>
     ) {
         async let key = reader.currentKey()
-        async let plain = reader.plainCount()
         async let confirmation = reader.forwardingConfirmations()
         async let waiting = reader.unreadCount(now: at)
         async let droppedRows = reader.dropped()
@@ -219,11 +219,11 @@ final class SettingsModel {
         case .failed:
             panel = .failed
         case .loaded(nil):
-            panel = .none(plainCount: await plain)
+            panel = .none
         case let .loaded(row?):
             async let old = reader.oldKeyCount(currentKeyID: row.keyId)
             readAddress = await readAddressOfKey()
-            panel = .present(plainCount: await plain, oldKeyCount: await old)
+            panel = .present(oldKeyCount: await old)
         }
         // What arrived after the confirmation the card shows (the badge's time rule).
         let confirmationRows = await confirmation
@@ -366,7 +366,7 @@ extension SettingsModel {
     /// [S2] The line under the passphrase card about mail sealed with an earlier key:
     /// oldKeyText(n) for n > 0, oldKeyCountFailed when the count could not be read, nil for 0 or no key row.
     var oldKeyNote: String? {
-        guard case let .present(_, oldKeyCount)? = keyPanel else { return nil }
+        guard case let .present(oldKeyCount)? = keyPanel else { return nil }
         switch oldKeyCount {
         case let .loaded(n): return n > 0 ? Self.oldKeyText(n) : nil
         case .failed: return SettingsWebText.oldKeyCountFailed

@@ -37,9 +37,4 @@ enum SettingsMenuText {
     /// The value of an opening and closing card (VoiceOver).
     static let disclosureOpen = "開いています"
     static let disclosureClosed = "閉じています"
-
-    /// The badge on the key row while mail from before the encryption is still readable by the operator.
-    static func plainBadge(_ n: Int) -> String {
-        "未暗号化 \(n) 通"
-    }
 }

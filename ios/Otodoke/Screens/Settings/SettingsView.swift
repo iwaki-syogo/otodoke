@@ -3,8 +3,8 @@
 // signing out. What needs an answer now (the mail waiting to be read, the Gmail approval, a key that could
 // not be read) is drawn at the top; the key row carries a small badge while there is no key or mail is
 // still unencrypted. The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
-// Making or changing the passphrase, 「暗号化する」, 「読み取る」, 「これは荷物」, the samples and clearing
-// everything open the Web (SettingsModel.webLink). Only https pages are opened.
+// Making or changing the passphrase, 「読み取る」 and 「これは荷物」 open the Web (SettingsModel.webLink); the
+// samples load and clear everything in the app (DemoModel). Only https pages are opened.
 
 import SwiftUI
 
@@ -58,7 +58,7 @@ struct SettingsView: View {
         case .dropped: SettingsDroppedPage(model: model, expanded: expands)
         case .handling: SettingsHandlingPage()
         case .delivery: SettingsDeliveryHelpPage()
-        case .sample: SettingsSamplePage()
+        case .sample: SettingsSamplePage(model: model)
         }
     }
 
@@ -182,10 +182,8 @@ struct SettingsView: View {
         return nil
     }
 
-    /// The key row's badge. Mail still readable by the operator (未暗号化 n 通) is the most important
-    /// warning, so it wins over a count that could not be read; otherwise a count that failed shows as
-    /// unknown (never drawn as 0). With no key the badge stays 未設定 even if the unencrypted count failed:
-    /// that is true (there is no key yet), and the key page says the rest.
+    /// The key row's badge: 未設定 while there is no key (鍵を作れませんでした when the key step failed), 確認できません
+    /// while the count of mail sealed with an earlier key could not be read (never drawn as 0).
     static func keyBadge(for model: SettingsModel) -> SettingsRow.Badge? {
         switch model.keyPanel {
         case .none?:
@@ -193,11 +191,7 @@ struct SettingsView: View {
                 return .init(text: SettingsMenuText.keyStepFailedBadge, kind: .red)
             }
             return .init(text: SettingsMenuText.keyNoneBadge, kind: .amber)
-        case let .present(plainCount, oldKeyCount)?:
-            if case let .loaded(n) = plainCount, n > 0 {
-                return .init(text: SettingsMenuText.plainBadge(n), kind: .amber)
-            }
-            if case .failed = plainCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
+        case let .present(oldKeyCount)?:
             if case .failed = oldKeyCount { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
             return nil
         case .failed?, nil:

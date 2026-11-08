@@ -3,18 +3,16 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * 「サンプルで試す」: both buttons open the Web version in the browser (SettingsWeb.open), so the page says so, above the
- * buttons. This line is iOS-only (the Web has no such sentence). A body that cannot be cut out is a failure, not a pass.
+ * 「サンプルで試す」 stays in the app: the page no longer says that it opens the browser, and neither button opens a Web
+ * page (the sample load and clear-everything go through DemoModel). A body that cannot be cut out is a failure, not a pass.
+ * (The file keeps its first name; it used to check the opposite.)
  */
 const ROOT = path.resolve(__dirname, "../../..");
 const read = (p: string) => (existsSync(path.join(ROOT, p)) ? readFileSync(path.join(ROOT, p), "utf8") : "");
 const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"])\/\/.*$/gm, "$1");
 
-const SENTENCE = "どちらもブラウザで Web 版を開きます。";
-// The previous wording, built in pieces so that no source line carries the old phrase.
-const OLD_SENTENCE = `どちらも ${"Safari"} の Web 版で開きます。`;
-const LOAD = "サンプルのメールを読み込む";
-const CLEAR = "すべての荷物を消す";
+const OLD_SENTENCE = "どちらもブラウザで Web 版を開きます。";
+const OLD_SAFARI = `どちらも ${"Safari"} の Web 版で開きます。`;
 
 function sampleBody(src: string): string {
   const at = src.indexOf("struct SettingsSamplePage");
@@ -30,38 +28,41 @@ function sampleBody(src: string): string {
 }
 
 /** Names the failures; empty means the page is as intended. */
-function problems(src: string): string[] {
+function problems(src: string, panel: string): string[] {
   const body = sampleBody(stripComments(src));
   if (!body) return ["body not found"];
   const out: string[] = [];
-  const s = body.indexOf(`secondaryText("${SENTENCE}")`);
-  const load = body.indexOf(LOAD);
-  const clear = body.indexOf(CLEAR);
-  if (s < 0) out.push("sentence missing");
-  if (load < 0 || clear < 0) out.push("button missing");
-  if (s >= 0 && load >= 0 && clear >= 0 && !(s < load && s < clear)) out.push("sentence after a button");
-  if (/Safari/.test(body)) out.push("mentions Safari");
-  if (!/primaryButton\("サンプルのメールを読み込む"[^\n]*SettingsWeb\.open\(\.sample\b/.test(body)) out.push("load button does not open the browser");
-  if (!/Button \{ SettingsWeb\.open\(\.clearAll\b[\s\S]*?すべての荷物を消す/.test(body)) out.push("clear button does not open the browser");
+  if (body.includes(OLD_SENTENCE) || body.includes(OLD_SAFARI)) out.push("says it opens the browser");
+  if (/Safari|openURL|SettingsWeb|WebLink/.test(body)) out.push("opens the Web");
+  if (!/SettingsDemoPanel\(model: demo/.test(body)) out.push("panel missing");
+  if (!/secondaryText\(DemoText\.lead\)/.test(body)) out.push("lead missing");
+  const ui = stripComments(panel);
+  if (!ui) out.push("panel file not found");
+  if (/openURL|SettingsWeb|WebLink|Safari/.test(ui)) out.push("panel opens the Web");
+  if (!/model\.load\(\)/.test(ui) || !/model\.clear\(confirmed:/.test(ui)) out.push("buttons do not call the model");
   return out;
 }
 
-describe("「サンプルで試す」: says that the buttons open the browser", () => {
+describe("「サンプルで試す」: stays in the app", () => {
   const IOS = read("ios/Otodoke/Screens/Settings/SettingsPages.swift");
+  const PANEL = read("ios/Otodoke/Screens/Settings/SettingsDemoPanel.swift");
 
-  it("the sentence is there, above both buttons, and the buttons open the browser", () => {
-    expect(problems(IOS)).toEqual([]);
+  it("no sentence about the browser, no Web link, and the buttons call the model", () => {
+    expect(problems(IOS, PANEL)).toEqual([]);
   });
 
-  it("negative control: no sentence, a sentence after the buttons, a button that no longer opens the browser, or no body, is caught", () => {
-    expect(problems(IOS.replace(`SettingsParts.secondaryText("${SENTENCE}")`, ""))).toContain("sentence missing");
-    const line = `            SettingsParts.secondaryText("${SENTENCE}")\n`;
-    const moved = IOS.replace(line, "").replace("        }\n        .navigationTitle(SettingsMenuText.sampleTitle)", `${line}        }\n        .navigationTitle(SettingsMenuText.sampleTitle)`);
-    expect(problems(moved)).toContain("sentence after a button");
-    expect(problems(IOS.replace("SettingsWeb.open(.sample, openURL)", "doSomething()"))).toContain("load button does not open the browser");
-    expect(problems(IOS.replace("SettingsWeb.open(.clearAll, openURL)", "doSomething()"))).toContain("clear button does not open the browser");
-    expect(problems(IOS.replace(SENTENCE, OLD_SENTENCE))).toContain("sentence missing");
-    expect(problems(IOS.replace(SENTENCE, OLD_SENTENCE))).toContain("mentions Safari");
-    expect(problems(IOS.replace("struct SettingsSamplePage", "struct Other"))).toEqual(["body not found"]);
+  it("negative control: the old sentence, a Web link, a missing panel or no body is caught", () => {
+    expect(problems(IOS.replace("SettingsParts.secondaryText(DemoText.lead)", `SettingsParts.secondaryText("${OLD_SENTENCE}")`), PANEL)).toContain("says it opens the browser");
+    expect(problems(IOS.replace("SettingsParts.secondaryText(DemoText.lead)", "SettingsParts.secondaryText(DemoText.lead)\n            let u = WebLink.settingsDemo"), PANEL)).toContain("opens the Web");
+    expect(problems(IOS.replace("SettingsDemoPanel(model: demo", "Other(model: demo"), PANEL)).toContain("panel missing");
+    expect(problems(IOS, PANEL.replace("model.load()", "openURL(WebLink.settingsDemo)"))).toEqual(expect.arrayContaining(["panel opens the Web", "buttons do not call the model"]));
+    expect(problems(IOS, "")).toContain("panel file not found");
+    expect(problems(IOS.replace("struct SettingsSamplePage", "struct Other"), PANEL)).toEqual(["body not found"]);
+  });
+
+  it("the settings model no longer lists the two Web actions", () => {
+    const model = read("ios/Otodoke/Screens/Settings/SettingsModel.swift");
+    expect(model).not.toMatch(/case sample\b|case clearAll\b/);
+    expect(model).toMatch(/var demo: DemoModel\?/);
   });
 });
