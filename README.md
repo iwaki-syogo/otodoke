@@ -149,7 +149,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - Claude API（Haiku 5.5 が既定。判定と構造化抽出）
 - Vercel
 - テスト: Vitest（API を呼ばない）
-- iOS アプリ（`ios/`、SwiftUI、iOS 17 以降）: 同じアカウントで、パスワードでログインします。荷物・カレンダー・支出・設定の 4 つのタブがあり、荷物の詳細や、届いた荷物・キャンセルした荷物も見られます。暗号化したメールは端末で開き、文字だけを表示します。パスワードの変更や再設定、アカウントの削除などは、Safari で Web を開いて行います。TestFlight の内部テストで配っているので、審査員の方は入れられません
+- iOS アプリ（`ios/`、SwiftUI、iOS 17 以降）: 同じアカウントで、パスワードでログインします。荷物・カレンダー・支出・設定の 4 つのタブがあり、荷物の詳細や、届いた荷物・キャンセルした荷物も見られます。暗号化したメールは端末で開き、文字だけを表示します。パスワードの変更や再設定、アカウントの削除などは、ブラウザで Web 版を開いて行います。審査員の方は、提出フォームの「審査員用リンク」の欄にある TestFlight の招待リンクから入れられます。iPhone に TestFlight のアプリが要ります。ログインには、Web と同じ審査用アカウントを使えます。iOS 版では、一部の操作はブラウザで Web 版を開きます
 
 ## 動かし方
 
@@ -254,7 +254,7 @@ The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the th
 
 The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks and more) is published separately at https://github.com/iwaki-syogo/claude-code-setup; it is not part of the Otodoke code.
 
-Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is in internal TestFlight testing only.
+Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is on TestFlight: judges can install it from the TestFlight invite link in the submission form's judge link field (the TestFlight app is needed) and log in with the same judge account; some actions in the iOS app open the web version in the browser.
 
 For judges: the submission form's judge link field gives a judge account that already has the sample loaded, so you can log in and go straight to what to look at below. Several people share it, so please do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」. Please do not forward your own mail to this account's receiving address; other judges can see it. To try it with your own mail, create your own account as follows.
 
