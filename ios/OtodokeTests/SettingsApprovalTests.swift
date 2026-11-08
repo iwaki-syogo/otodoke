@@ -169,8 +169,6 @@ struct SettingsApprovalTests {
         let base = "https://otodoke.app"
         let expected: [(SettingsWebAction, String)] = [
             (.changePassphrase, "/app/settings/password"),
-            (.readWaiting, "/app/settings/trouble"),
-            (.markAsParcel, "/app/settings/dropped"),
             (.deleteAccount, "/app/settings/delete"),
             (.openWeb, "/app"),
             (.privacy, "/privacy"),

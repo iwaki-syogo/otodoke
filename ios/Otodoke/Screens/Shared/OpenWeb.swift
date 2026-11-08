@@ -14,12 +14,6 @@ enum WebLink {
     /// https://otodoke.app/app/settings/password (鍵を作る・パスワードを変える・暗号化する)
     static let settingsPassword = page("/app/settings/password")
 
-    /// https://otodoke.app/app/settings/trouble (未読の「読み取る」)
-    static let settingsTrouble = page("/app/settings/trouble")
-
-    /// https://otodoke.app/app/settings/dropped (「これは荷物」)
-    static let settingsDropped = page("/app/settings/dropped")
-
     /// https://otodoke.app/app/settings/delete (アカウントの削除)
     static let settingsDelete = page("/app/settings/delete")
 

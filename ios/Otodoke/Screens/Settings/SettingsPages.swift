@@ -89,18 +89,24 @@ struct SettingsForwardPage: View {
 
 struct SettingsDroppedPage: View {
     let model: SettingsModel
+    /// 「荷物を登録する」 under a note that says the parcel can be registered by hand; nil: the Web's page for it.
+    var register: (() -> Void)?
     @Environment(\.openURL) private var openURL
     @State private var showsDropped: Bool
 
     /// `expanded`: the closed list starts open (the screen check).
-    init(model: SettingsModel, expanded: Bool = false) {
+    init(model: SettingsModel, expanded: Bool = false, register: (() -> Void)? = nil) {
         self.model = model
+        self.register = register
         _showsDropped = State(initialValue: expanded)
     }
 
     var body: some View {
         SettingsParts.page(spacing: 8) {
             SettingsParts.secondaryText(SettingsWebText.droppedLead)
+            if let note = model.mailActions.markNote {
+                markNote(note)
+            }
             switch model.dropped {
             case let .loaded(rows)? where !rows.isEmpty:
                 SettingsDisclosure(title: SettingsWebText.droppedSummary(rows.count), isExpanded: $showsDropped) {
@@ -122,8 +128,35 @@ struct SettingsDroppedPage: View {
         }
         .refreshableToTheEnd { await model.load() }
         .task { await model.pageShown() }
+        .onDisappear { model.mailActions.clearNotes() }
         .navigationTitle(SettingsMenuText.droppedTitle)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// What 「これは荷物」 came to (the Web's SENDER_NOTES): green or red, with 「荷物を登録する」 when the parcel can be registered by hand.
+    private func markNote(_ note: MailActionsModel.Note) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(note.text)
+                .font(.subheadline)
+                .lineSpacing(3)
+                .foregroundStyle(note.isError ? OtodokeColor.errorText : Palette.emeraldText)
+                .fixedSize(horizontal: false, vertical: true)
+            if note.offersRegister {
+                Button {
+                    if let register { register() } else { SettingsWeb.openPage(WebLink.newParcel, openURL) }
+                } label: {
+                    Text(SettingsMailText.register)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func droppedRow(_ row: DroppedMailRow) -> some View {
@@ -140,20 +173,11 @@ struct SettingsDroppedPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if row.flaggedAt != nil {
-                Text("荷物として記録済み")
+                Text(SettingsMailText.marked)
                     .font(.caption)
                     .foregroundStyle(Palette.emeraldText)
             } else {
-                Button { SettingsWeb.open(.markAsParcel, openURL) } label: {
-                    Text("これは荷物")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
+                MarkParcelButton(model: model.mailActions, id: row.id)
             }
         }
         .padding(.vertical, 12)

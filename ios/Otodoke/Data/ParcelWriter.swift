@@ -16,7 +16,7 @@
 // updated_at is sent exactly as it was read (a String; supabase-swift percent-encodes its "+").
 // No automatic retries (PostgREST's retryEnabled is false), and a result that is unknown is never
 // sent again: the caller reads the row again instead.
-// announceOutsideChange only publishes; it writes nothing.
+// The helper for changes made outside this writer (below, in the 「古くなった」 part) only publishes; it writes nothing.
 
 import Foundation
 import PostgREST

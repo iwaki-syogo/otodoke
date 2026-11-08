@@ -8,10 +8,6 @@ import Observation
 /// What the settings screen opens on the Web (task.md's 「Web で開く」 list).
 enum SettingsWebAction: CaseIterable, Equatable, Sendable {
     case changePassphrase
-    /// 未読の「読み取る」
-    case readWaiting
-    /// 読まなかったメールの「これは荷物」
-    case markAsParcel
     /// 「Web で開く」
     case openWeb
     /// 「プライバシーポリシー」
@@ -44,8 +40,6 @@ final class SettingsModel {
     static func webLink(_ action: SettingsWebAction) -> URL {
         switch action {
         case .changePassphrase: WebLink.settingsPassword
-        case .readWaiting: WebLink.settingsTrouble
-        case .markAsParcel: WebLink.settingsDropped
         case .openWeb: WebLink.app
         case .privacy: WebLink.privacy
         case .deleteAccount: WebLink.settingsDelete
@@ -128,6 +122,18 @@ final class SettingsModel {
     @ObservationIgnored var faceID: FaceIDSwitch?
     /// The key step after the sign-in (set by MainScreens): its failure shows on the card without a key (S3).
     @ObservationIgnored var keySetup: KeySetup?
+
+    /// 「これは荷物」 and 「読み取る」, done in the app through the Web's mail endpoints (MailActionsModel). Made on first use
+    /// with the signed-in session; a test sets its own.
+    @ObservationIgnored lazy var mailActions: MailActionsModel = {
+        let provider = auth.provider
+        return MailActionsModel(
+            api: MailActionsClient(session: provider.urlSession),
+            accessToken: { try? await provider.auth.session.accessToken },
+            reload: { [weak self] in await self?.load() },
+            announceChange: { [changes = mark.changes] in ParcelWriter.announceOutsideChange(changes) }
+        )
+    }()
 
     /// S3: on the card without a key row, why the key step after the sign-in did not make one, and whether
     /// 「ログインし直す」 is offered (it makes the key again). N4: the address mismatch is shown without it.
