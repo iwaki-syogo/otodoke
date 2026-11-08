@@ -28,15 +28,13 @@ final class SettingsModel {
     /// The passphrase card: could not be read / no key in use / a key in use.
     enum KeyPanel: Equatable, Sendable {
         case failed
-        case none(plainCount: LoadResult<Int>)
-        case present(plainCount: LoadResult<Int>, oldKeyCount: LoadResult<Int>)
+        case none
+        case present(oldKeyCount: LoadResult<Int>)
     }
 
     static let failedText = "読み込めませんでした"
     /// GMAIL_FILTER of src/lib/forwarding-guide.ts.
     static let gmailFilter = "{注文 発送 出荷 配達 お届け 配送 到着 荷物}"
-    /// 「暗号化されていないメールの数を読み込めませんでした」
-    static let plainCountFailedText = "暗号化されていないメールの数を読み込めませんでした"
 
     /// S4: the Web's password-panel.tsx (integrate/password-v1): 「前の鍵で暗号化したメールが N 通あります。開けませんが、
     /// 荷物は残っています。」 (password-v1 opens no older key: no promise that it opens).
@@ -212,7 +210,6 @@ final class SettingsModel {
         KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>
     ) {
         async let key = reader.currentKey()
-        async let plain = reader.plainCount()
         async let confirmation = reader.forwardingConfirmations()
         async let waiting = reader.unreadCount(now: at)
         async let droppedRows = reader.dropped()
@@ -224,11 +221,11 @@ final class SettingsModel {
         case .failed:
             panel = .failed
         case .loaded(nil):
-            panel = .none(plainCount: await plain)
+            panel = .none
         case let .loaded(row?):
             async let old = reader.oldKeyCount(currentKeyID: row.keyId)
             readAddress = await readAddressOfKey()
-            panel = .present(plainCount: await plain, oldKeyCount: await old)
+            panel = .present(oldKeyCount: await old)
         }
         // What arrived after the confirmation the card shows (the badge's time rule).
         let confirmationRows = await confirmation
@@ -371,7 +368,7 @@ extension SettingsModel {
     /// [S2] The line under the passphrase card about mail sealed with an earlier key:
     /// oldKeyText(n) for n > 0, oldKeyCountFailed when the count could not be read, nil for 0 or no key row.
     var oldKeyNote: String? {
-        guard case let .present(_, oldKeyCount)? = keyPanel else { return nil }
+        guard case let .present(oldKeyCount)? = keyPanel else { return nil }
         switch oldKeyCount {
         case let .loaded(n): return n > 0 ? Self.oldKeyText(n) : nil
         case .failed: return SettingsWebText.oldKeyCountFailed

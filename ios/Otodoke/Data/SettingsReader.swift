@@ -80,21 +80,6 @@ struct SettingsReader: Sendable {
         return .loaded(rows.first)
     }
 
-    /// countPlainRead: processed plain mails minus the samples (provider_email_id like "demo:%").
-    func plainCount() async -> LoadResult<Int> {
-        guard let me = await provider.currentUserID() else { return .failed }
-        func query() -> PostgrestFilterBuilder {
-            provider.database.from("emails").select("id", head: true, count: .exact)
-                .eq("user_id", value: me)
-                .eq("processing_status", value: "processed")
-                .eq("body_state", value: "plain")
-        }
-        guard case let .loaded(all) = await Self.count(query()),
-              case let .loaded(samples) = await Self.count(query().like("provider_email_id", pattern: Self.sampleProviderID))
-        else { return .failed }
-        return .loaded(all - samples)
-    }
-
     /// Sealed mails whose body_envelope->>kid is not `currentKeyID`.
     func oldKeyCount(currentKeyID: String) async -> LoadResult<Int> {
         guard let me = await provider.currentUserID() else { return .failed }

@@ -35,7 +35,7 @@ private enum Round2 {
         )
     }
 
-    static let shownKey = SettingsModel.KeyPanel.present(plainCount: .loaded(0), oldKeyCount: .loaded(0))
+    static let shownKey = SettingsModel.KeyPanel.present(oldKeyCount: .loaded(0))
 }
 
 // MARK: - [S-new1] no category save while a spend move is on the way

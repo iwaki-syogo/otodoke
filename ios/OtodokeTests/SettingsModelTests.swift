@@ -108,36 +108,6 @@ struct SettingsReaderTests {
 
     // MARK: counts
 
-    @Test func plainCountLeavesOutTheSamples() async throws {
-        let fake = FakeSupabase.make()
-        await fake.insert("emails", [
-            SettingsRows.mail(1),
-            SettingsRows.mail(2),
-            SettingsRows.mail(3, ["provider_email_id": "demo:amazon-1"]), // a public sample
-            SettingsRows.mail(4, ["processing_status": "pending"]),
-            SettingsRows.mail(5, ["body_state": "sealed"]),
-            SettingsRows.mail(6, ["user_id": .string(FakeSupabase.other)]),
-        ])
-        let r = try await reader(fake)
-        #expect(await r.plainCount() == .loaded(2))
-        await onlyMine(fake, "emails")
-    }
-
-    @Test func aFailedSampleCountFailsThePlainCount() async throws {
-        let fake = FakeSupabase.make()
-        await fake.insert("emails", [SettingsRows.mail(1)])
-        await fake.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500))
-        let r = try await reader(fake)
-        #expect(await r.plainCount() == .failed)
-    }
-
-    @Test func aFailedPlainCountIsNotZero() async throws {
-        let fake = FakeSupabase.make()
-        await fake.fail(where: { $0.url.lastPathComponent == "emails" && $0.query("provider_email_id").isEmpty }, with: .transport(.networkConnectionLost))
-        let r = try await reader(fake)
-        #expect(await r.plainCount() == .failed)
-    }
-
     @Test func oldKeyCountIsSealedMailOfAnotherKid() async throws {
         let fake = FakeSupabase.make()
         await fake.insert("emails", [
@@ -279,7 +249,6 @@ struct SettingsModelTests {
     @Test func theWords() {
         #expect(SettingsModel.failedText == "読み込めませんでした")
         #expect(SettingsModel.gmailFilter == "{注文 発送 出荷 配達 お届け 配送 到着 荷物}")
-        #expect(SettingsModel.plainCountFailedText == "暗号化されていないメールの数を読み込めませんでした")
         #expect(SettingsModel.oldKeyText(3) == "前の鍵で暗号化したメールが 3 通あります。開けませんが、荷物は残っています。")
     }
 
@@ -294,7 +263,7 @@ struct SettingsModelTests {
 
     @Test func noKeyAsksToChooseAPassphrase() async throws {
         let s = try await setUp(keys: [], mails: [SettingsRows.mail(1), SettingsRows.mail(2)])
-        #expect(s.model.keyPanel == .none(plainCount: .loaded(2)))
+        #expect(s.model.keyPanel == .none)
         #expect(s.model.showsAddress == false)
         #expect(s.model.address == nil)
     }
@@ -304,7 +273,7 @@ struct SettingsModelTests {
             SettingsRows.mail(1),
             SettingsRows.mail(2, ["body_state": "sealed", "body_envelope": ["kid": "k0"]]),
         ])
-        #expect(s.model.keyPanel == .present(plainCount: .loaded(1), oldKeyCount: .loaded(1)))
+        #expect(s.model.keyPanel == .present(oldKeyCount: .loaded(1)))
         // Positive control of the two tests above: with a key row the address is there.
         #expect(s.model.showsAddress == true)
         guard case let .loaded(address)? = s.model.address else {
@@ -317,22 +286,23 @@ struct SettingsModelTests {
     @Test func theAddressFollowsTheKeyRowNotTheDevice() async throws {
         // A retired key only: no key in use, so no address, whatever this device holds.
         let s = try await setUp(keys: [SettingsRows.key(1, keyID: "k0", retired: true)])
-        #expect(s.model.keyPanel == .none(plainCount: .loaded(0)))
+        #expect(s.model.keyPanel == .none)
         #expect(s.model.showsAddress == false)
     }
 
-    @Test func aFailedPlainCountIsToldApart() async throws {
-        let s = try await setUp(faults: { await $0.fail(where: { $0.url.lastPathComponent == "emails" && $0.query("processing_status") == ["eq.processed"] }, with: .http(500)) })
-        guard case let .present(plain, _)? = s.model.keyPanel else {
-            Issue.record("expected a key in use, got \(String(describing: s.model.keyPanel))")
-            return
-        }
-        #expect(plain == .failed)
+    @Test func plainMailIsNeverCountedOrShown() async throws {
+        // Mail saved before encryption is sealed by the server now: the app reads no count of it and the key row
+        // carries no mention of it, whatever the table holds, and a failing read of it changes nothing.
+        let s = try await setUp(mails: (1...5).map { SettingsRows.mail($0) }, faults: { await $0.fail(where: { $0.query("body_state") == ["eq.plain"] }, with: .http(500)) })
+        #expect(s.model.keyPanel == .present(oldKeyCount: .loaded(0)))
+        #expect(SettingsView.keyBadge(for: s.model) == nil)
+        // The read of plain mail is not made at all.
+        #expect(await s.fake.requests.contains { $0.query("body_state") == ["eq.plain"] } == false)
     }
 
     @Test func aFailedOldKeyCountIsNotZero() async throws {
         let s = try await setUp(faults: { await $0.fail(where: { !$0.query("body_envelope->>kid").isEmpty }, with: .http(500)) })
-        guard case let .present(_, old)? = s.model.keyPanel else {
+        guard case let .present(old)? = s.model.keyPanel else {
             Issue.record("expected a key in use")
             return
         }
@@ -366,7 +336,7 @@ struct SettingsModelTests {
         let s = try await setUp(dropped: [SettingsRows.dropped(1)], unread: 2, faults: { await $0.fail("GET", "screen_events", with: .http(500)) })
         #expect(s.model.dropped == .failed)
         #expect(s.model.unread == .loaded(2))
-        #expect(s.model.keyPanel == .present(plainCount: .loaded(0), oldKeyCount: .loaded(0)))
+        #expect(s.model.keyPanel == .present(oldKeyCount: .loaded(0)))
     }
 
     @Test func theDroppedListLoads() async throws {
@@ -561,29 +531,26 @@ struct SettingsModelTests {
 
     // MARK: the key row's badge (a failed count is never drawn as no badge)
 
-    @Test func theKeyBadgeForTheCountsThatCouldNotBeRead() async throws {
+    @Test func theKeyBadgeForTheCountThatCouldNotBeRead() async throws {
+        // A failing read of the samples no longer reaches the key row (nothing counts plain mail now).
         let sampleFails = try await setUp(faults: { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) })
-        #expect(SettingsView.keyBadge(for: sampleFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        #expect(SettingsView.keyBadge(for: sampleFails.model) == nil)
         let oldKeyFails = try await setUp(faults: { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) })
         #expect(SettingsView.keyBadge(for: oldKeyFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
         #expect(SettingsMenuText.keyUnknownBadge == "確認できません")
     }
 
-    @Test func theAmberWarningIsNotHiddenByAFailedCount() async throws {
+    @Test func unencryptedMailShowsNoBadgeAndNoOtherBadgeIsHiddenByIt() async throws {
         let sealedFails: (FakeSupabase) async -> Void = { await $0.fail(where: { $0.query("body_state") == ["eq.sealed"] }, with: .http(503)) }
-        let plainFails: (FakeSupabase) async -> Void = { await $0.fail(where: { !$0.query("provider_email_id").isEmpty }, with: .http(500)) }
-        // Unencrypted mail (loaded 5) with the old-key count failed: the amber warning stays.
-        let amberAndOldFails = try await setUp(mails: (1...5).map { SettingsRows.mail($0) }, faults: sealedFails)
-        #expect(SettingsView.keyBadge(for: amberAndOldFails.model) == .init(text: SettingsMenuText.plainBadge(5), kind: .amber))
-        // The unencrypted count failed, the old-key count loaded as 0: unknown.
-        let plainFailsOnly = try await setUp(faults: plainFails)
-        #expect(SettingsView.keyBadge(for: plainFailsOnly.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
-        // Both failed: unknown.
-        let bothFail = try await setUp(faults: { await plainFails($0); await sealedFails($0) })
-        #expect(SettingsView.keyBadge(for: bothFail.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
-        // No key and the unencrypted count failed: still 未設定 (that is true; there is no key to be unsure about).
-        let noKeyPlainFails = try await setUp(keys: [], faults: plainFails)
-        #expect(SettingsView.keyBadge(for: noKeyPlainFails.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .amber))
+        // Plain mail only: no badge (it used to be 未暗号化 n 通).
+        let plainOnly = try await setUp(mails: (1...5).map { SettingsRows.mail($0) })
+        #expect(SettingsView.keyBadge(for: plainOnly.model) == nil)
+        // Plain mail and the old-key count failed: the failure still shows.
+        let plainAndOldFails = try await setUp(mails: (1...5).map { SettingsRows.mail($0) }, faults: sealedFails)
+        #expect(SettingsView.keyBadge(for: plainAndOldFails.model) == .init(text: SettingsMenuText.keyUnknownBadge, kind: .red))
+        // No key: 未設定 whatever the mail table holds.
+        let noKey = try await setUp(keys: [], mails: (1...5).map { SettingsRows.mail($0) })
+        #expect(SettingsView.keyBadge(for: noKey.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .amber))
     }
 
     @Test func theApprovalBadgeIsTheWebs() {
@@ -593,8 +560,6 @@ struct SettingsModelTests {
     @Test func theKeyBadgeKeepsItsOtherStates() async throws {
         let clean = try await setUp()
         #expect(SettingsView.keyBadge(for: clean.model) == nil)
-        let plain = try await setUp(mails: [SettingsRows.mail(1), SettingsRows.mail(2)])
-        #expect(SettingsView.keyBadge(for: plain.model) == .init(text: SettingsMenuText.plainBadge(2), kind: .amber))
         let noKey = try await setUp(keys: [])
         #expect(SettingsView.keyBadge(for: noKey.model) == .init(text: SettingsMenuText.keyNoneBadge, kind: .amber))
     }
