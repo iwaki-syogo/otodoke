@@ -26,6 +26,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/app/settings/demo": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
     "/api/demo/load": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
+    "/api/mail/read-waiting": ["./fixtures/demo/**/*.json", "./fixtures/demo-history/**/*.json"],
   },
   // Every route, including the landing page and API responses. Not "/:path*": that skips "/".
   async headers() {
