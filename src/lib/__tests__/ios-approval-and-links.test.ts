@@ -100,7 +100,6 @@ describe("the pages the app opens in the browser", () => {
     expect(model).toMatch(/case \.createPassphrase, \.changePassphrase: WebLink\.settingsPassword/);
     expect(model).toMatch(/case \.readWaiting: WebLink\.settingsTrouble/);
     expect(model).toMatch(/case \.markAsParcel: WebLink\.settingsDropped/);
-    expect(model).toMatch(/case \.sample, \.clearAll: WebLink\.settingsDemo/);
     expect(model).toMatch(/case \.deleteAccount: WebLink\.settingsDelete/);
   });
 

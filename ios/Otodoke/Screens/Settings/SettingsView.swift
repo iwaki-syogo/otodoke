@@ -3,8 +3,8 @@
 // signing out. What needs an answer now (the mail waiting to be read, the Gmail approval, a key that could
 // not be read) is drawn at the top; the key row carries a small badge while there is no key or mail is
 // still unencrypted. The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
-// Making or changing the passphrase, 「暗号化する」, 「読み取る」, 「これは荷物」, the samples and clearing
-// everything open the Web (SettingsModel.webLink). Only https pages are opened.
+// Making or changing the passphrase, 「暗号化する」, 「読み取る」 and 「これは荷物」 open the Web (SettingsModel.webLink); the
+// samples load and clear everything in the app (DemoModel). Only https pages are opened.
 
 import SwiftUI
 
@@ -58,7 +58,7 @@ struct SettingsView: View {
         case .dropped: SettingsDroppedPage(model: model, expanded: expands)
         case .handling: SettingsHandlingPage()
         case .delivery: SettingsDeliveryHelpPage()
-        case .sample: SettingsSamplePage()
+        case .sample: SettingsSamplePage(model: model)
         }
     }
 

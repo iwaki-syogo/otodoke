@@ -172,8 +172,6 @@ struct SettingsApprovalTests {
             (.changePassphrase, "/app/settings/password"),
             (.readWaiting, "/app/settings/trouble"),
             (.markAsParcel, "/app/settings/dropped"),
-            (.sample, "/app/settings/demo"),
-            (.clearAll, "/app/settings/demo"),
             (.deleteAccount, "/app/settings/delete"),
             (.openWeb, "/app"),
             (.privacy, "/privacy"),

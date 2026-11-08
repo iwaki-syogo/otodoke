@@ -51,6 +51,12 @@ struct TabRoute: Equatable {
         tab = .settings
     }
 
+    /// The 設定 tab with 「サンプルで試す」 pushed (the list's busy note).
+    mutating func showSample() {
+        settingsPath = [.sample]
+        tab = .settings
+    }
+
     /// The 設定 tab with 「うまく届かないとき」 pushed (replacing what was open there).
     mutating func showTrouble() {
         settingsPath = [.delivery]
@@ -188,6 +194,14 @@ struct MainTabView: View {
         .onChange(of: selection, initial: true) { _, tab in
             screens.refresher.select(tab)
         }
+        // A sample load went through: the 荷物 tab shows it (with the note while another load is running).
+        .onChange(of: screens.settings.demo?.loadedCount) { _, count in
+            if count != nil { route.tab = .parcels }
+        }
+        // The busy note belongs to the 荷物 tab it was shown on.
+        .onChange(of: selection) { _, tab in
+            if tab != .parcels { screens.settings.demo?.showsBusyNote = false }
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background:
@@ -265,6 +279,11 @@ struct MainTabView: View {
                 TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
             .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let demo = screens.settings.demo, demo.showsBusyNote {
+                    DemoBusyNote { demo.showsBusyNote = false; route.showSample() }
+                }
+            }
         case .calendar:
             let calendar = screens.calendar
             CalendarView(model: calendar) { id in
@@ -348,5 +367,34 @@ extension EnvironmentValues {
     var detailDepth: Int {
         get { self[DetailDepthKey.self] }
         set { self[DetailDepthKey.self] = newValue }
+    }
+}
+
+/// The list's one-line note while another sample load is running (the Web's ?demo=busy note on the list), with the
+/// load button's words linking to the sample page.
+struct DemoBusyNote: View {
+    let open: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(DemoText.busyNote)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: open) {
+                Text(DemoText.loadLabel)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.separator)))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 }

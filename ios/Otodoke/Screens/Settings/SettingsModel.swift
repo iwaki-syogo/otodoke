@@ -14,10 +14,6 @@ enum SettingsWebAction: CaseIterable, Equatable, Sendable {
     case readWaiting
     /// 読まなかったメールの「これは荷物」
     case markAsParcel
-    /// サンプル
-    case sample
-    /// すべて消す
-    case clearAll
     /// 「Web で開く」
     case openWeb
     /// 「プライバシーポリシー」
@@ -54,7 +50,6 @@ final class SettingsModel {
         case .createPassphrase, .changePassphrase: WebLink.settingsPassword
         case .readWaiting: WebLink.settingsTrouble
         case .markAsParcel: WebLink.settingsDropped
-        case .sample, .clearAll: WebLink.settingsDemo
         case .openWeb: WebLink.app
         case .privacy: WebLink.privacy
         case .deleteAccount: WebLink.settingsDelete
@@ -113,7 +108,7 @@ final class SettingsModel {
 
     /// The app's model: the signed-in session's provider, the device clock.
     static func live(auth: AuthService, changes: DataChanges?) -> SettingsModel {
-        SettingsModel(
+        let model = SettingsModel(
             reader: SettingsReader(provider: auth.provider),
             inbox: InboxAddressService(provider: auth.provider),
             auth: auth,
@@ -121,7 +116,17 @@ final class SettingsModel {
             changes: changes,
             now: { Date() }
         )
+        let provider = auth.provider
+        model.demo = DemoModel(
+            api: DemoAPIClient(session: provider.urlSession),
+            accessToken: { try? await provider.auth.session.accessToken },
+            changed: { ParcelWriter.announceOutsideChange(changes) }
+        )
+        return model
     }
+
+    /// 「サンプルで試す」 (set by live()): the sample load and clear-everything, through the Web's endpoints.
+    @ObservationIgnored var demo: DemoModel?
 
     /// The 「この端末で Face ID を使う」 switch (set by MainScreens).
     @ObservationIgnored var faceID: FaceIDSwitch?

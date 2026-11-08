@@ -427,8 +427,6 @@ struct SettingsModelTests {
         #expect(SettingsModel.webLink(.changePassphrase).absoluteString == "https://otodoke.app/app/settings/password")
         #expect(SettingsModel.webLink(.readWaiting).absoluteString == "https://otodoke.app/app/settings/trouble")
         #expect(SettingsModel.webLink(.markAsParcel).absoluteString == "https://otodoke.app/app/settings/dropped")
-        #expect(SettingsModel.webLink(.clearAll).absoluteString == "https://otodoke.app/app/settings/demo")
-        #expect(SettingsModel.webLink(.sample).absoluteString == "https://otodoke.app/app/settings/demo")
         #expect(SettingsModel.webLink(.openWeb).absoluteString == "https://otodoke.app/app")
         for action in SettingsWebAction.allCases {
             #expect(SettingsModel.webLink(action).scheme == "https", "\(action)")

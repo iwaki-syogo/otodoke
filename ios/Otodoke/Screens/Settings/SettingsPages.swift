@@ -265,21 +265,16 @@ struct SettingsDeliveryHelpPage: View {
 // MARK: 「サンプルで試す」
 
 struct SettingsSamplePage: View {
-    @Environment(\.openURL) private var openURL
+    let model: SettingsModel
+    /// The clear-everything box starts open (the screen check).
+    var clearOpen = false
 
     var body: some View {
-        SettingsParts.page(spacing: 8) {
-            SettingsParts.secondaryText("匿名化した実際の注文・発送メールと、見本として作った 1 年分の注文を読み込みます。日付は、読み込んだ日に合わせてずらします。")
-            SettingsParts.secondaryText("どちらもブラウザで Web 版を開きます。")
-            SettingsParts.primaryButton("サンプルのメールを読み込む", fullWidth: true) { SettingsWeb.open(.sample, openURL) }
-                .padding(.top, 4)
-            Button { SettingsWeb.open(.clearAll, openURL) } label: {
-                Text("すべての荷物を消す")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        SettingsParts.page(spacing: 12) {
+            SettingsParts.secondaryText(DemoText.lead)
+            if let demo = model.demo {
+                SettingsDemoPanel(model: demo, clearOpen: clearOpen)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
         }
         .navigationTitle(SettingsMenuText.sampleTitle)
         .navigationBarTitleDisplayMode(.inline)
