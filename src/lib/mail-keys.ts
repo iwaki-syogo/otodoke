@@ -456,3 +456,53 @@ export async function sealPlainBatch(db: AdminClient, userId: string, input: unk
     return fail(err);
   }
 }
+
+/** Batches one automatic run goes through at most: 8 x SEAL_BATCH_SIZE = 400 rows. */
+export const AUTO_SEAL_MAX_BATCHES = 8;
+
+export interface SealRemainingResult {
+  sealed: number;
+  failed: number;
+  batches: number;
+  /** Still plaintext when the run stopped (0 when it finished or there was nothing to do). */
+  remaining: number;
+  /** Why it stopped before looking at everything: no key in use, or a database error. */
+  stopped: "done" | "limit" | "no_key" | "error";
+}
+
+/**
+ * Seal this user's remaining plaintext read mail with the key in use, a bounded number of batches
+ * of sealPlainBatch. It needs only the public key, so it runs on the server with no user step.
+ * A no-op without a key (nothing is read or written beyond the key lookup) and when nothing is
+ * plain. Never throws and never logs a mail: it is called in the background and must not fail
+ * or block whoever scheduled it. The next call goes on where this one stopped.
+ */
+export async function sealRemainingPlain(db: AdminClient, userId: string, options: { maxBatches?: number } = {}): Promise<SealRemainingResult> {
+  const maxBatches = Math.max(1, options.maxBatches ?? AUTO_SEAL_MAX_BATCHES);
+  const result: SealRemainingResult = { sealed: 0, failed: 0, batches: 0, remaining: 0, stopped: "done" };
+  try {
+    let after: string | null = null;
+    while (result.batches < maxBatches) {
+      const batch: SealBatchResult = await sealPlainBatch(db, userId, { after });
+      result.batches += 1;
+      if (!batch.ok) {
+        result.stopped = batch.error === "no key in use" ? "no_key" : "error";
+        if (result.stopped === "error") console.error("seal: automatic run stopped:", batch.error);
+        return result;
+      }
+      result.sealed += batch.sealed;
+      result.failed += batch.failed.length;
+      result.remaining = batch.remaining;
+      if (batch.remaining === 0) return result;
+      // The cursor did not move: stop instead of looping.
+      if (batch.next === after) return result;
+      after = batch.next;
+    }
+    result.stopped = "limit";
+    return result;
+  } catch (err) {
+    console.error("seal: automatic run failed:", err instanceof Error ? err.message : "unknown error");
+    result.stopped = "error";
+    return result;
+  }
+}

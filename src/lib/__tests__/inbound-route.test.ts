@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   fetchError: null as unknown,
   gets: [] as string[],
   adminMade: 0,
+  scheduleSeal: vi.fn(),
   processInboundEmail: vi.fn<(...args: unknown[]) => Promise<{ kind: string }>>(async () => ({ kind: "processed" })),
 }));
 
@@ -59,6 +60,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.processInboundEmail }));
+vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: mocks.scheduleSeal }));
 
 const { POST } = await import("@/app/api/inbound/route");
 
@@ -98,6 +100,7 @@ beforeEach(() => {
   mocks.fetchError = null;
   mocks.gets = [];
   mocks.adminMade = 0;
+  mocks.scheduleSeal.mockReset();
   mocks.processInboundEmail.mockReset();
   mocks.processInboundEmail.mockImplementation(async () => ({ kind: "processed" }));
   warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -253,5 +256,23 @@ describe("the event's recipients are checked before the mail is fetched", () => 
     expect((await post()).status).toBe(200);
     expect(mocks.gets).toEqual(["re_test_1"]);
     expect(mocks.processInboundEmail).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sealing the user's older plaintext mail (automatic, once per request)", () => {
+  it("a processed mail schedules one bounded sealing for its owner, with the same client", async () => {
+    expect((await post()).status).toBe(200);
+    expect(mocks.scheduleSeal).toHaveBeenCalledTimes(1);
+    expect(mocks.scheduleSeal).toHaveBeenCalledWith(USER, db);
+  });
+
+  it("negative controls: a mail that is not processed, or for nobody, schedules nothing", async () => {
+    mocks.processInboundEmail.mockRejectedValue(new Error("down"));
+    expect((await post()).status).toBe(500);
+    mocks.processInboundEmail.mockImplementation(async () => ({ kind: "processed" }));
+    mocks.fetched = mail({ to: [`${UNKNOWN}@${DOMAIN}`], received_for: [`${UNKNOWN}@${DOMAIN}`] });
+    mocks.verify = received({ received_for: [`${UNKNOWN}@${DOMAIN}`] });
+    expect((await post()).status).toBe(200);
+    expect(mocks.scheduleSeal).not.toHaveBeenCalled();
   });
 });

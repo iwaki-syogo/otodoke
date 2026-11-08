@@ -88,7 +88,6 @@ describe("the pages the app opens in the browser", () => {
   it("each button's page is the page that holds the button (read from the Web's own files)", () => {
     const has = (file: string, text: string) => expect(read(`src/app/app/settings/${file}`), `${file} has ${text}`).toContain(text);
     has("password-panel.tsx", "鍵を作る");
-    has("password-panel.tsx", "暗号化する");
     has("password-panel.tsx", "パスワードを変える");
     has("trouble/page.tsx", "読み取る");
     has("dropped/page.tsx", "これは荷物");

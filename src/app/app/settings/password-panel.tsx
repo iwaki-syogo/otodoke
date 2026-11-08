@@ -15,9 +15,8 @@ import { readSignedInAddress } from "@/app/login/session-actions";
 import { OtherPasswordForm } from "@/app/login/other-password-form";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 import { UnlockForm } from "../unlock-form";
-import { activateMailKey, readMailKey, registerMailKey, rewrapMailKey, sealStoredMail } from "./key-actions";
+import { activateMailKey, readMailKey, registerMailKey, rewrapMailKey } from "./key-actions";
 import { changeLoginSecret } from "./password-actions";
-import { BUSY, pressLabel } from "./press";
 
 export interface PasswordPanelState {
   userId: string;
@@ -25,21 +24,15 @@ export interface PasswordPanelState {
   email: string;
   /** When the key in use was made, or null when there is none. */
   keyCreatedAt: string | null;
-  /** Read mail still stored in plaintext (from before encryption; public samples not counted). null: could not count. */
-  plainCount: number | null;
   /** Mail sealed to a key that is no longer in use (a reset, or a key from before password-v1). */
   oldKeyCount: number;
 }
-
-/** Not knowing how many mails are in plaintext is said as such, with or without a key: never as "none". */
-const PLAIN_COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
 
 /** Codes after which this page cannot go on: the way on is to log in again. */
 const LOG_IN_AGAIN: ReadonlySet<FlowCode> = new Set(["stale_session", "signed_out"]);
 
 const input = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base";
 const primary = "inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white";
-const busyClass = (busy: boolean) => (busy ? ` ${BUSY}` : "");
 
 /**
  * 設定's パスワード (password-v1): the key that opens the stored mail, opened with the login password.
@@ -53,7 +46,7 @@ const busyClass = (busy: boolean) => (busy ? ` ${BUSY}` : "");
  * Every form that takes a password has no named field and posts nothing (password-forms.test.ts).
  */
 export function PasswordPanel({ state }: { state: PasswordPanelState }) {
-  const { userId, email, keyCreatedAt, plainCount, oldKeyCount } = state;
+  const { userId, email, keyCreatedAt, oldKeyCount } = state;
   const opened = useTabKey(userId);
 
   if (!keyCreatedAt) {
@@ -61,12 +54,7 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
       <section className="rounded-2xl border border-sky-300 bg-sky-50 p-4">
         <h2 className="text-base font-bold">メールの鍵を作る</h2>
         <p className="mt-1 text-sm leading-6">読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。</p>
-        {plainCount ? (
-          <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold leading-6">
-            暗号化されていない保存済みのメール {plainCount} 通も、鍵を作ったあとに暗号化できます。それまでは運営者が読める形です。{PLAINTEXT_DROP_NOTICE}
-          </p>
-        ) : null}
-        {plainCount === null ? <p className="mt-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{PLAIN_COUNT_FAILED}</p> : null}
+        <p className="mt-2 text-sm leading-6">{PLAINTEXT_DROP_NOTICE}</p>
         <MakeKeyForm email={email} />
         <p className="mt-3 text-sm leading-6 text-neutral-700">
           パスワードをまだ決めていない場合は、
@@ -82,8 +70,6 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-base font-bold">パスワード</h2>
-      {plainCount ? <SealBanner count={plainCount} /> : null}
-      {plainCount === null ? <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{PLAIN_COUNT_FAILED}</p> : null}
       {oldKeyCount > 0 ? <p className="text-sm leading-6 text-neutral-600">前の鍵で暗号化したメールが {oldKeyCount} 通あります。開けませんが、荷物は残っています。</p> : null}
       <div className="rounded-2xl border border-neutral-200 bg-white p-4">
         {opened ? (
@@ -292,63 +278,5 @@ export function ChangeForm({ userId, email, withCheck }: { userId: string; email
         </div>
       ) : null}
     </form>
-  );
-}
-
-/** 「暗号化する」: batches of 50 until none is left, showing what remains (public samples are not counted). */
-export function SealBanner({ count }: { count: number }) {
-  const router = useRouter();
-  const [remaining, setRemaining] = useState(count);
-  const [busy, setBusy] = useState(false);
-  const running = useRef(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const [unsealable, setUnsealable] = useState(0);
-
-  async function run() {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError(null);
-    // Where this run is (the server's cursor), and how many rows could not be sealed on the way.
-    // Every row a batch looks at ends up behind the cursor, so failed rows never hold the run back.
-    let after: string | null = null;
-    let failedCount = 0;
-    try {
-      for (;;) {
-        const res = await sealStoredMail({ after });
-        if (!res.ok) throw new Error(res.error);
-        failedCount += res.failed.length;
-        setUnsealable(failedCount);
-        // Still in plaintext: what is left after the cursor plus what could not be sealed.
-        setRemaining(res.remaining + failedCount);
-        if (res.remaining === 0) {
-          if (failedCount === 0) setDone(true);
-          break;
-        }
-        // The cursor did not move: stop instead of looping.
-        if (res.next === after) throw new Error("stalled");
-        after = res.next;
-      }
-      router.refresh();
-    } catch {
-      setError("途中で止まりました。もう一度押すと続きから暗号化します");
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  }
-
-  if (done) return <p className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm">すべて暗号化しました。</p>;
-  return (
-    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
-      <p className="text-sm font-bold">暗号化されていないメールが {remaining} 通あります</p>
-      <p className="mt-1 text-sm leading-6">暗号化を始める前に読み取ったメールなどです。押すまでは、運営者が読める形で残ります。</p>
-      <button type="button" onClick={run} aria-disabled={busy || undefined} aria-busy={busy || undefined} className={`mt-3 ${primary}${busyClass(busy)}`}>
-        {pressLabel(busy, "暗号化する", `暗号化しています…あと ${remaining} 通`)}
-      </button>
-      {error ? <p className="mt-2 text-sm text-red-800">{error}</p> : null}
-      {unsealable > 0 && !busy ? <p className="mt-2 text-sm text-red-800">暗号化できなかったメールが {unsealable} 通ありました。もう一度押すと試し直します</p> : null}
-    </div>
   );
 }

@@ -29,6 +29,7 @@ import {
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
 import { ChangeSecretInputSchema, FinishResetInputSchema, MailRequestInputSchema, SignInInputSchema, SignUpInputSchema } from "@/lib/login-input";
 import { claimLoginAttempt, claimLoginMail, claimLoginTry, clientIp, releaseLoginAttempt, releaseLoginMail } from "@/lib/login-mail-limit";
+import { scheduleSealRemaining } from "@/lib/seal-later";
 import { activateKey, readStoredKey, rewrapKey, type KeyRestore, type KeyResult } from "@/lib/mail-keys";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -301,6 +302,7 @@ export async function finishReset(input: unknown): Promise<FinishResetResult> {
     console.warn("[login] reset: the new key was not put in use:", code);
     return { ok: false, code };
   }
+  scheduleSealRemaining(read.session.userId);
   return { ok: true, keyId: activated.keyId };
 }
 

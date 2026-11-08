@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { requireEnv } from "@/lib/env";
 import { processInboundEmail } from "@/lib/pipeline";
+import { scheduleSealRemaining } from "@/lib/seal-later";
 
 /**
  * Resend `email.received` webhook. The event carries metadata only, so the body is
@@ -103,6 +104,8 @@ export async function POST(request: Request) {
       text: mail.text?.slice(0, MAX_BODY_CHARS) ?? null,
       html: mail.html?.slice(0, MAX_BODY_CHARS) ?? null,
     });
+    // Once per inbound request: the rest of this user's plaintext mail is sealed after the answer.
+    scheduleSealRemaining(userId, admin());
     return NextResponse.json({ ok: true, outcome: outcome.kind });
   } catch (err) {
     // The message and code only: an error object can carry the request or the mail with it.

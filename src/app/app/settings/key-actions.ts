@@ -8,14 +8,11 @@ import {
   readStoredKey,
   registerKey,
   rewrapKey,
-  sealPlainBatch,
   type KeyActivation,
   type KeyRead,
   type KeyRegistration,
   type KeyResult,
   type KeyRewrap,
-  type SealBatch,
-  type SealBatchResult,
   type SealedMailRead,
   type StoredKeyColumns,
 } from "@/lib/mail-keys";
@@ -23,6 +20,7 @@ import { freshCookieSession, type FreshCheck } from "@/lib/auth-session";
 import type { EnvelopeV1 } from "@/lib/crypto/envelope";
 import type { Json } from "@/lib/db/database.types";
 import { KEY_SESSION_STALE } from "@/lib/login-errors";
+import { scheduleSealRemaining } from "@/lib/seal-later";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
 
@@ -62,6 +60,8 @@ export async function activateMailKey(input: KeyActivation): Promise<KeyResult<{
   const check = await freshCookieSession("login");
   if (!check.ok) return refusal(check);
   const result = await activateKey(createAdminClient(), check.session.userId, input);
+  // The mail stored before the key is sealed in the background, with no step for the user.
+  if (result.ok) scheduleSealRemaining(check.session.userId);
   revalidatePath("/app", "layout");
   return result;
 }
@@ -91,16 +91,4 @@ export async function readSealedMail(input: SealedMailRead): Promise<KeyResult<{
   const user = await getUser();
   if (!user) return signedOut;
   return readSealedEnvelope(await createClient(), user.id, input);
-}
-
-/**
- * One batch of 「暗号化する」. The browser calls it again until nothing remains, passing back the
- * cursor each batch answers so the next one moves on past the rows that could not be sealed.
- */
-export async function sealStoredMail(input: SealBatch): Promise<SealBatchResult> {
-  const user = await getUser();
-  if (!user) return signedOut;
-  const result = await sealPlainBatch(createAdminClient(), user.id, input);
-  revalidatePath("/app", "layout");
-  return result;
 }

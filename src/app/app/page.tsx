@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { readAll } from "@/lib/supabase/read-all";
 import { createClient, getUser } from "@/lib/supabase/server";
+import { scheduleSealRemaining } from "@/lib/seal-later";
 import { todayJst } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
@@ -21,6 +22,8 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   const sampleBusy = (await searchParams)?.demo === "busy";
   const user = await getUser();
   if (!user) redirect("/login");
+  // Old plaintext mail is sealed in the background, bounded; nothing to do without a key or plaintext.
+  scheduleSealRemaining(user.id);
   const supabase = await createClient();
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
   // and never stands in for the list. The links to the delivered and cancelled pages carry no

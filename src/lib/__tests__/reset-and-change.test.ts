@@ -32,6 +32,8 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ auth: { getSession: mocks.getSession, getUser: mocks.getUser, signInWithPassword: mocks.signIn, updateUser: mocks.updateUser } }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ admin: true }) }));
+const scheduleSeal = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: scheduleSeal }));
 vi.mock("@/lib/login-mail-limit", () => ({
   clientIp: () => "203.0.113.7",
   claimLoginTry: async () => "ok",
@@ -96,6 +98,19 @@ describe("finishReset", () => {
     expect(order).toEqual(["updateUser", "activate"]);
     expect(mocks.updateUser).toHaveBeenCalledWith({ password: NEW });
     expect(mocks.activate).toHaveBeenCalledWith({ admin: true }, "user-1", { keyId: KEY_ID, challenge: RESET.challenge, expectedCurrentKeyId: RESET.expectedCurrentKeyId });
+  });
+
+  it("seals the older plaintext mail in the background once the new key is in use, and not when it is not", async () => {
+    scheduleSeal.mockReset();
+    session("otp");
+    expect(await finishReset(RESET)).toEqual({ ok: true, keyId: KEY_ID });
+    expect(scheduleSeal).toHaveBeenCalledTimes(1);
+    expect(scheduleSeal.mock.calls[0][0]).toBe("user-1");
+    scheduleSeal.mockReset();
+    mocks.activate.mockResolvedValue({ ok: false, error: "no key is waiting to be activated" });
+    session("otp");
+    expect((await finishReset(RESET)).ok).toBe(false);
+    expect(scheduleSeal).not.toHaveBeenCalled();
   });
 
   it.each([

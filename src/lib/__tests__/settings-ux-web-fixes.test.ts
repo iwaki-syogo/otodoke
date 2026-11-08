@@ -140,21 +140,23 @@ describe("[B-M1] the approval card is shown whenever Gmail's confirmation exists
   });
 });
 
-describe("[B-M2] the key row shows the mail not encrypted yet, and goes first", () => {
+describe("[B-M2] the key row no longer shows mail not encrypted yet (it is sealed by itself), and the row with something to do goes first", () => {
   const plain = (n: number) => {
     for (let i = 0; i < n; i++) ordinaryMail({ body_state: "plain" });
   };
 
-  it("with a key and plaintext mail: 「未暗号化 N 通」 on the key row, which is first even before 未読", async () => {
+  it("with a key and plaintext mail: no badge on the key row, and no count is read", async () => {
     activeKey();
     plain(2);
     unread = 3;
     const rows = mailRows(await list());
-    expect(rows[0]).toEqual(["パスワードとメールの鍵", "未暗号化 2 通"]);
-    expect(rows[1]).toEqual(["うまく届かないとき", "未読 3"]);
+    expect(rows.find((r) => r[0] === "パスワードとメールの鍵")).toEqual(["パスワードとメールの鍵", null]);
+    // Only the row with something to do goes first.
+    expect(rows[0]).toEqual(["うまく届かないとき", "未読 3"]);
+    expect(JSON.stringify(rows)).not.toContain("未暗号化");
   });
 
-  it("negative controls: no plaintext mail, or only the public samples, shows no badge", async () => {
+  it("with a key and nothing in plaintext: no badge either", async () => {
     activeKey();
     expect(badgeOf(await list(), "パスワードとメールの鍵")).toBeNull();
     ordinaryMail({ body_state: "plain", provider_email_id: "demo:1" });
@@ -164,17 +166,6 @@ describe("[B-M2] the key row shows the mail not encrypted yet, and goes first", 
   it("without a key the badge stays 未設定", async () => {
     plain(2);
     expect(badgeOf(await list(), "パスワードとメールの鍵")).toBe("未設定");
-  });
-
-  it("a failed count shows no number, only the marker", async () => {
-    activeKey();
-    plain(2);
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    db.hooks.unshift((q) => (q.table === "emails" && q.head && q.filters.some((f) => f.args[0] === "body_state") ? FAIL : undefined));
-    const badge = badgeOf(await list(), "パスワードとメールの鍵");
-    expect(badge).toBe("確認できません");
-    expect(badge).not.toMatch(/\d/);
-    log.mockRestore();
   });
 });
 

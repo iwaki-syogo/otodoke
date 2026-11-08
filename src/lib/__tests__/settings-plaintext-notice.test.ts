@@ -4,19 +4,19 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PLAINTEXT_DROP_NOTICE } from "@/lib/mail-notices";
-import { findAll, parseHtml, textOf } from "./html-tree";
+import { parseHtml, textOf, findAll } from "./html-tree";
 
 /**
- * 設定, after the review of 2026-11-06 (R1-1, R1-5), in the password panel of password-v1:
+ * 設定, in the password panel of password-v1:
  *  - Decision 7 removes, on 2026-11-14, the plaintext subject, sender and body of read mail of users
- *    with no key (supabase/pending/20261114090000). The screen says so, with the date, where it
- *    used to say the mail stays until 「暗号化する」 is pressed.
- *  - Without a key, a failed count of plaintext mail is said as such; the warning used to vanish,
- *    as if there were none (the panel with a key already said so).
+ *    with no key (supabase/pending/20261114090000). The screen says so, with the date, and says
+ *    that logging in with the password seals the older mail by itself.
+ *  - Nothing is counted or pressed any more: mail read before encryption is sealed automatically
+ *    (sealRemainingPlain), so the panel carries no count, no card and no button for it.
  */
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
-vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readMailKey: vi.fn(), readRetiredMailKeys: vi.fn(), readSealedMail: vi.fn() }));
+vi.mock("@/app/app/settings/key-actions", () => ({ registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), readMailKey: vi.fn(), readRetiredMailKeys: vi.fn(), readSealedMail: vi.fn() }));
 vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
 
 const { PasswordPanel } = await import("@/app/app/settings/password-panel");
@@ -24,33 +24,30 @@ const { MailHandling } = await import("@/app/app/settings/mail-handling");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 const NOTICE = "Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです";
-const COUNT_FAILED = "暗号化されていないメールの数を読み込めませんでした";
 
-const panel = (over: { keyCreatedAt?: string | null; plainCount: number | null }) =>
-  parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt: over.keyCreatedAt ?? null, plainCount: over.plainCount, oldKeyCount: 0 } })));
-
-const redBoxes = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "p" && textOf(n) === COUNT_FAILED && (n.attrs.class ?? "").includes("bg-red-50"));
+const panel = (keyCreatedAt: string | null = null) =>
+  parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt, oldKeyCount: 0 } })));
 
 describe("decision 7 is announced with its date", () => {
-  it("without a key: the plaintext warning says the mail goes on 11/14 unless one is made, in mail-notices' words", () => {
-    const text = textOf(panel({ plainCount: 3 }));
-    expect(text).toContain(`暗号化されていない保存済みのメール 3 通も、鍵を作ったあとに暗号化できます。それまでは運営者が読める形です。${PLAINTEXT_DROP_NOTICE}`);
+  it("without a key: says the older mail is sealed at the password login, and goes on 11/14 otherwise, in mail-notices' words", () => {
+    const text = textOf(panel());
+    expect(text).toContain(PLAINTEXT_DROP_NOTICE);
     expect(PLAINTEXT_DROP_NOTICE).toContain(NOTICE);
+    expect(PLAINTEXT_DROP_NOTICE.startsWith("パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。")).toBe(true);
     expect(text).not.toContain("合言葉");
   });
 
-  it("with a key: no date (decision 7 leaves these to 「暗号化する」)", () => {
-    const text = textOf(panel({ keyCreatedAt: "2026-11-06T00:00:00Z", plainCount: 2 }));
-    expect(text).toContain("押すまでは、運営者が読める形で残ります");
+  it("with a key: no date, no warning, no count (the older mail is sealed by itself)", () => {
+    const text = textOf(panel("2026-11-06T00:00:00Z"));
     expect(text).not.toContain("11 月 14 日");
+    expect(text).not.toContain("運営者が読める形");
+    expect(text).not.toContain("暗号化されていないメール");
   });
 
-  it("「あなたのメールの扱い」 says the same, next to the mail read before encryption", () => {
-    const item = findAll(parseHtml(renderToStaticMarkup(createElement(MailHandling))), (n) => n.tag === "li" && textOf(n).includes("暗号化を始める前に読み取ったメールは、暗号化していません"));
+  it("「あなたのメールの扱い」 says the same, as one item of its own", () => {
+    const item = findAll(parseHtml(renderToStaticMarkup(createElement(MailHandling))), (n) => n.tag === "li" && textOf(n) === PLAINTEXT_DROP_NOTICE);
     expect(item).toHaveLength(1);
-    // password-v1: the key is made at the password sign-in, so "no key" is said in those words.
-    expect(textOf(item[0])).toContain(`「暗号化する」を押すまで、運営者が読める形で残ります。${PLAINTEXT_DROP_NOTICE}`);
-    expect(PLAINTEXT_DROP_NOTICE).toBe(`パスワードでログインしていない場合、${NOTICE}。`);
+    expect(PLAINTEXT_DROP_NOTICE.endsWith(`${NOTICE}。`)).toBe(true);
     expect(textOf(item[0])).not.toContain("合言葉");
   });
 
@@ -65,21 +62,5 @@ describe("decision 7 is announced with its date", () => {
     for (const told of ["mail-handling.tsx", "src/app/privacy/page.tsx", "README.md"]) expect(sql).toContain(told);
     // Decision 8's retire makes those users keyless until they sign in with a password.
     expect(sql).toContain("supabase/pending/20261107090000_retire_passphrase_keys.sql");
-  });
-});
-
-describe("a failed count of plaintext mail", () => {
-  it("without a key: says the count could not be read, instead of no warning", () => {
-    expect(redBoxes(panel({ plainCount: null }))).toHaveLength(1);
-  });
-
-  it("with a key: the same words (as before)", () => {
-    expect(redBoxes(panel({ keyCreatedAt: "2026-11-06T00:00:00Z", plainCount: null }))).toHaveLength(1);
-  });
-
-  it("control: a count of 0 shows neither the warning nor the failure", () => {
-    const root = panel({ plainCount: 0 });
-    expect(redBoxes(root)).toHaveLength(0);
-    expect(textOf(root)).not.toContain("運営者が読める形");
   });
 });
