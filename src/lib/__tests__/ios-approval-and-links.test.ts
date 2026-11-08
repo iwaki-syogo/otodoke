@@ -60,7 +60,7 @@ describe("the pages the app opens in the browser", () => {
 
   it("every /app/settings/<page> path exists as src/app/app/settings/<page>/page.tsx", () => {
     const settingsPaths = paths.filter((p) => p.startsWith("/app/settings"));
-    expect(settingsPaths.sort()).toEqual(["/app/settings/delete", "/app/settings/demo", "/app/settings/dropped", "/app/settings/password", "/app/settings/trouble"]);
+    expect(settingsPaths.sort()).toEqual(["/app/settings/delete", "/app/settings/dropped", "/app/settings/password", "/app/settings/trouble"]);
     const existing = pages();
     for (const p of settingsPaths) expect(existing, p).toContain(p.replace("/app/settings/", ""));
   });

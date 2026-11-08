@@ -275,7 +275,7 @@ struct MainTabView: View {
         switch tab {
         case .parcels:
             let list = screens.list
-            ParcelListView(model: list, openSettings: { route.showSettings() }, openForwarding: { route.showForwarding() }, openTrouble: { route.showTrouble() }) { id in
+            ParcelListView(model: list, openSettings: { route.showSettings() }, openForwarding: { route.showForwarding() }, openTrouble: { route.showTrouble() }, openSample: { route.showSample() }) { id in
                 TrackedDetail(screens: screens, id: id, tab: .parcels)
             }
             .shownScreen(.parcels, in: .parcels, screens.refresher) { await list.load() }

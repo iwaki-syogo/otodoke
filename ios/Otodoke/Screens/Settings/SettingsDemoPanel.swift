@@ -69,23 +69,7 @@ struct SettingsDemoPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(DemoText.clearWarning)
                 .fixedSize(horizontal: false, vertical: true)
-            Button {
-                confirmed.toggle()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: confirmed ? "checkmark.square.fill" : "square")
-                        .font(.body)
-                        .foregroundStyle(confirmed ? Color.primary : Color.secondary)
-                    Text(DemoText.clearCheck)
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 0)
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(confirmed ? .isSelected : [])
-            .accessibilityIdentifier("demo-clear-check")
+            ConfirmCheck(title: DemoText.clearCheck, isOn: $confirmed, identifier: "demo-clear-check")
             Button {
                 let sure = confirmed
                 // The check is let go once it was sent, whatever came back.

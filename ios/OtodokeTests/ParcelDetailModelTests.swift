@@ -87,8 +87,6 @@ struct ParcelDetailModelTests {
 
     @Test func theWebLinks() {
         #expect(WebLink.base.absoluteString == "https://otodoke.app")
-        #expect(WebLink.newParcel.absoluteString == "https://otodoke.app/app/parcels/new")
-        #expect(WebLink.settingsDemo.absoluteString == "https://otodoke.app/app/settings/demo")
     }
 
     // MARK: fields and badges

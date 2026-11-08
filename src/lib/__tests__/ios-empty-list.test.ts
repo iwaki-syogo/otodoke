@@ -93,9 +93,11 @@ describe("the empty list's three guides", () => {
     expect(view).toMatch(/Text\(guide\.button\)/);
   });
 
-  it("the sample button is as it was, and still opens the Web's sample page", () => {
+  it("the sample button is as it was, and opens the in-app 「サンプルで試す」 page", () => {
     expect(view).toMatch(/Text\("サンプルで試す"\)/);
-    expect(view).toMatch(/openDemo: \{ openURL\(WebLink\.settingsDemo\) \}/);
+    expect(view).toMatch(/openDemo: \{ \(openSample \?\? openSettings\)\(\) \}/);
+    expect(view).not.toContain("WebLink.settingsDemo");
+    expect(stripComments(read("ios/Otodoke/Screens/MainTabView.swift"))).toMatch(/openSample:\s*\{\s*route\.showSample\(\)\s*\}/);
     expect(page).toContain("サンプルで試す");
   });
 

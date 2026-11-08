@@ -179,7 +179,6 @@ struct SettingsApprovalTests {
         for (action, path) in expected {
             #expect(SettingsModel.webLink(action).absoluteString == base + path, "\(action)")
         }
-        #expect(WebLink.settingsDemo.absoluteString == base + "/app/settings/demo")
         #expect(WebLink.settingsPassword.absoluteString == base + "/app/settings/password")
         // No old section hash anywhere.
         for action in SettingsWebAction.allCases { #expect(SettingsModel.webLink(action).fragment == nil, "\(action)") }

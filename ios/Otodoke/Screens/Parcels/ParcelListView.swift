@@ -24,6 +24,8 @@ struct ParcelListView<Detail: View>: View {
     var openForwarding: (() -> Void)?
     /// The empty list's first button for "received": opens 「うまく届かないとき」 (the settings list when nil).
     var openTrouble: (() -> Void)?
+    /// The empty list's 「サンプルで試す」: opens the 設定 tab's 「サンプルで試す」 page (the settings list when nil).
+    var openSample: (() -> Void)?
     /// The detail screen of a parcel.
     @ViewBuilder let detail: (String) -> Detail
 
@@ -32,7 +34,6 @@ struct ParcelListView<Detail: View>: View {
     @State private var confirmingDeliverAll = false
     /// 「＋ 登録」: the form of a parcel typed in by hand, as a sheet (made when it opens).
     @State private var manualForm: ManualParcelModel?
-    @Environment(\.openURL) private var openURL
     /// The delivered and cancelled pages (MainTabView hands them down).
     @Environment(\.statusPages) private var pages
 
@@ -101,7 +102,7 @@ struct ParcelListView<Detail: View>: View {
             if model.loadState == .failed {
                 pageLinks
             } else if model.isEmpty {
-                EmptyParcels(guide: ParcelEmptyText.guide(model.mailSoFar), open: openEmptyGuide, openDemo: { openURL(WebLink.settingsDemo) })
+                EmptyParcels(guide: ParcelEmptyText.guide(model.mailSoFar), open: openEmptyGuide, openDemo: { (openSample ?? openSettings)() })
                     .listRowStyle()
                 pageLinks
             } else {

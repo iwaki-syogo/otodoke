@@ -7,15 +7,9 @@ enum WebLink {
     /// https://otodoke.app (the same as AppConfig.webBase).
     static let base = AppConfig.webBase
 
-    /// https://otodoke.app/app/parcels/new
-    static let newParcel = page("/app/parcels/new")
-
     // The Web's settings are one page per item (origin/dev 84255fc, src/app/app/settings/): each button opens the page
     // that holds it. The old section hashes (#demo, #gmail-approval) are not used. A vitest checks each path against
     // the page that exists in src/app/app/settings/.
-
-    /// https://otodoke.app/app/settings/demo (the samples and 「すべての荷物を消す」)
-    static let settingsDemo = page("/app/settings/demo")
 
     /// https://otodoke.app/app/settings/password (鍵を作る・パスワードを変える・暗号化する)
     static let settingsPassword = page("/app/settings/password")

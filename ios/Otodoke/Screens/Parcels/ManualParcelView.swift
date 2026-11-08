@@ -123,9 +123,8 @@ struct ManualParcelView: View {
             DisclosureGroup(ManualParcelText.deleteSummary) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(ManualParcelText.deleteWarning).font(.subheadline)
-                    Toggle(ManualParcelText.deleteConfirm, isOn: $model.deleteConfirmed)
+                    ConfirmCheck(title: ManualParcelText.deleteConfirm, isOn: $model.deleteConfirmed, identifier: "manual-delete-check")
                         .font(.subheadline)
-                        .tint(.primary)
                     if let message = model.deleteError {
                         Text(message)
                             .font(.subheadline)
