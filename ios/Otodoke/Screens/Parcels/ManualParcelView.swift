@@ -73,6 +73,7 @@ struct ManualParcelView: View {
                     submitButton
                 }
                 .listRowBackground(RoundedRectangle(cornerRadius: 12).fill(Color.primary).opacity(model.isSending ? 0.7 : 1))
+                .listRowInsets(EdgeInsets())
                 if model.isEditing { deleteSection }
             }
             .scrollDismissesKeyboard(.interactively)
@@ -171,7 +172,8 @@ struct ManualParcelView: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(Color(.systemBackground))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            // The row has no insets, so the whole black band is the button; the height is what the default insets and 10 pt gave.
+            .padding(.vertical, 24)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

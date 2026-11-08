@@ -19,6 +19,8 @@ const problems = (src: string) => {
   if (!button) out.push("unreadable");
   if (/\.background\(Color\.primary/.test(button)) out.push("the button draws its own black");
   if (!/\.listRowBackground\(RoundedRectangle\(cornerRadius: 12\)\.fill\(Color\.primary\)/.test(src)) out.push("the row has no black background");
+  if (!/\.listRowBackground\(RoundedRectangle[^\n]*\n\s*\.listRowInsets\(EdgeInsets\(\)\)/.test(src)) out.push("the row keeps its insets, so the ends of the band do not press");
+  if (!/\.frame\(maxWidth: \.infinity\)[\s\S]*?\.contentShape\(Rectangle\(\)\)/.test(button)) out.push("the label does not fill the row");
   return out;
 };
 
@@ -28,9 +30,18 @@ describe("the black button of the manual form is not cut flat by its list row", 
   });
 
   it("negative control: the old shape, a different row background and an unreadable file are caught", () => {
-    const old = FORM.replace(".padding(.vertical, 10)\n            .contentShape(Rectangle())", ".background(Color.primary, in: RoundedRectangle(cornerRadius: 12))");
+    const old = FORM.replace(".padding(.vertical, 24)\n            .contentShape(Rectangle())", ".background(Color.primary, in: RoundedRectangle(cornerRadius: 12))");
+    expect(old).not.toBe(FORM);
     expect(problems(old)).toContain("the button draws its own black");
-    expect(problems(FORM.replace(".listRowBackground(RoundedRectangle", ".listRowBackground(Capsule"))).toContain("the row has no black background");
-    expect(problems("")).toEqual(["unreadable", "the row has no black background"]);
+    const capsule = FORM.replace(".listRowBackground(RoundedRectangle", ".listRowBackground(Capsule");
+    expect(capsule).not.toBe(FORM);
+    expect(problems(capsule)).toContain("the row has no black background");
+    const noInset = FORM.replace(/(\.listRowBackground\(RoundedRectangle[^\n]*)\n\s*\.listRowInsets\(EdgeInsets\(\)\)/, "$1");
+    expect(noInset).not.toBe(FORM);
+    expect(problems(noInset)).toContain("the row keeps its insets, so the ends of the band do not press");
+    const narrow = FORM.replace(/\.frame\(maxWidth: \.infinity\)(?=\s*\.padding\(\.vertical, 24\))/, "");
+    expect(narrow).not.toBe(FORM);
+    expect(problems(narrow)).toContain("the label does not fill the row");
+    expect(problems("")).toContain("unreadable");
   });
 });
