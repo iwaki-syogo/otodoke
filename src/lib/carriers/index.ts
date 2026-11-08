@@ -127,14 +127,14 @@ export function trackingLinkFor(trackingRaw: string | null | undefined, hint?: s
 }
 
 /**
- * Amazon's own tracking for an order (Amazon parcels rarely carry a carrier number). This
- * address sends a signed-out user to sign-in and then on to the order's package tracking page.
+ * Amazon's own order-details page for an order (Amazon parcels rarely carry a carrier number).
+ * A signed-out user is sent to sign-in and then on to the order's details page.
  * Only a Japanese Amazon order number (250-1234567-1234567) is turned into a link.
  */
 export function amazonOrderTrackingUrl(orderNumber: string | null | undefined): string | null {
   const n = orderNumber?.trim() ?? "";
   if (!/^\d{3}-\d{7}-\d{7}$/.test(n)) return null;
-  return `https://www.amazon.co.jp/gp/your-account/ship-track?orderId=${encodeURIComponent(n)}`;
+  return `https://www.amazon.co.jp/gp/your-account/order-details?orderID=${encodeURIComponent(n)}`;
 }
 
 /** The carrier page for a number, or null when the carrier has no public lookup. */

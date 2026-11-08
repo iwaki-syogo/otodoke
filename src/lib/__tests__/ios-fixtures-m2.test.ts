@@ -347,7 +347,10 @@ describe("task 13: the delivered cases the plan asks for are there", () => {
 
 describe("task 13: the sections from before M2 come out as they did at the end of M1", () => {
   it(`every key of web-expected.json at ${M1_COMMIT} is unchanged`, () => {
-    const before = JSON.parse(execFileSync("git", ["show", `${M1_COMMIT}:ios/OtodokeTests/Fixtures/web-expected.json`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+    // The Amazon link was later changed on purpose from the ship-track page to the order-details page;
+    // read the M1 file with that one URL shape rewritten, so nothing else may drift.
+    const beforeText = execFileSync("git", ["show", `${M1_COMMIT}:ios/OtodokeTests/Fixtures/web-expected.json`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const before = JSON.parse(beforeText.replaceAll("your-account/ship-track?orderId=", "your-account/order-details?orderID="));
     for (const key of Object.keys(before)) {
       if (key === "carriers") continue;
       expect(fx[key], key).toEqual(before[key]);

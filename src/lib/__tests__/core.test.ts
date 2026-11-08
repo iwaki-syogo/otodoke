@@ -90,7 +90,7 @@ describe("carriers", () => {
     expect(trackingLinkFor("---", "ヤマト運輸")).toBeNull();
   });
   it("links an Amazon order number to Amazon's own tracking", () => {
-    expect(amazonOrderTrackingUrl(" 250-1234567-1234567 ")).toBe("https://www.amazon.co.jp/gp/your-account/ship-track?orderId=250-1234567-1234567");
+    expect(amazonOrderTrackingUrl(" 250-1234567-1234567 ")).toBe("https://www.amazon.co.jp/gp/your-account/order-details?orderID=250-1234567-1234567");
     expect(amazonOrderTrackingUrl("250-1234567-123456")).toBeNull();
     expect(amazonOrderTrackingUrl("D01-1234567-1234567")).toBeNull();
     expect(amazonOrderTrackingUrl("250-1234567-1234567&x=1")).toBeNull();

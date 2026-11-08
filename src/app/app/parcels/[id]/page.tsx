@@ -144,7 +144,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
             ) : null}
             {amazonUrl ? (
               <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className={`${parcel.carrier || parcel.tracking_number ? "mt-1 " : ""}block text-xs font-medium text-sky-700 underline underline-offset-4`}>
-                Amazonで配送状況を見る
+                注文の詳細を見る
               </a>
             ) : null}
           </dd>

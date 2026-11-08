@@ -2903,11 +2903,11 @@
     "amazonOrderTrackingUrl": [
       {
         "in": "250-1234567-1234567",
-        "out": "https://www.amazon.co.jp/gp/your-account/ship-track?orderId=250-1234567-1234567"
+        "out": "https://www.amazon.co.jp/gp/your-account/order-details?orderID=250-1234567-1234567"
       },
       {
         "in": " 250-1234567-1234567 ",
-        "out": "https://www.amazon.co.jp/gp/your-account/ship-track?orderId=250-1234567-1234567"
+        "out": "https://www.amazon.co.jp/gp/your-account/order-details?orderID=250-1234567-1234567"
       },
       {
         "in": "D01-1234567-1234567",
