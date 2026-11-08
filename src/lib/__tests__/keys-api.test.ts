@@ -13,10 +13,11 @@ const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const jwt = (method: string, agoMs: number, sub = "user-1") =>
   `${b64url({ alg: "ES256" })}.${b64url({ sub, amr: [{ method, timestamp: Math.floor((NOW - agoMs) / 1000) }] })}.c2ln`;
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), register: vi.fn(), activate: vi.fn(), rewrap: vi.fn(), restore: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), register: vi.fn(), activate: vi.fn(), rewrap: vi.fn(), restore: vi.fn(), scheduleSeal: vi.fn() }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ admin: true }) }));
+vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: mocks.scheduleSeal }));
 vi.mock("@/lib/mail-keys", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/mail-keys")>()),
   registerKey: mocks.register,
@@ -171,5 +172,19 @@ describe("what it does", () => {
 
   it("answers POST only: no other method is exported (Next.js answers 405)", () => {
     for (const step of STEPS) expect(Object.keys(routes[step]).sort()).toEqual(["POST"]);
+  });
+});
+
+describe("the iOS activate step seals the older plaintext mail by itself", () => {
+  it("schedules it for the token's user after a successful activation, and only then", async () => {
+    mocks.scheduleSeal.mockReset();
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mocks.activate.mockResolvedValue({ ok: false, error: KEY_INPUT_INVALID });
+    await call("activate");
+    expect(mocks.scheduleSeal).not.toHaveBeenCalled();
+    mocks.activate.mockResolvedValue({ ok: true, keyId: KEY_ID });
+    expect((await call("activate")).status).toBe(200);
+    expect(mocks.scheduleSeal).toHaveBeenCalledTimes(1);
+    expect(mocks.scheduleSeal.mock.calls[0][0]).toBe("user-1");
   });
 });

@@ -32,7 +32,7 @@
 --
 -- Gmail's forwarding confirmation stored before 20261106120000 has its approval link only in the
 -- body (forwarding_confirm_url was added then). It is moved into that column in the same update,
--- as 「暗号化する」 does (src/lib/mail-keys.ts sealPlainBatch), so 設定's 「承認ページを開く」 stays.
+-- as the automatic sealing does (src/lib/mail-keys.ts sealPlainBatch), so 設定's 「承認ページを開く」 stays.
 -- The pattern matches Google's page only; the settings page checks the link again
 -- (src/lib/forwarding.ts) before it shows the button.
 --

@@ -135,13 +135,13 @@ describe("/app/settings: a failed key read", () => {
   });
 });
 
-describe("/app/settings: the sample mails are not counted as readable by the operator", () => {
-  it("counts the user's own plaintext mail only", async () => {
+describe("/app/settings: plaintext mail, samples or not, raises no warning (it is sealed by itself)", () => {
+  it("shows neither a count nor the operator reading it, for the user's own plaintext mail and for the samples", async () => {
     for (let i = 0; i < 3; i++) db.rows("emails").push({ id: `e${i}`, user_id: USER, provider_email_id: `re_${i}`, processing_status: "processed", body_state: "plain", subject: `件名${i}` });
     for (let i = 0; i < 17; i++) db.rows("emails").push({ id: `d${i}`, user_id: USER, provider_email_id: `demo:sample-${i}.eml`, message_id: `demo:sample-${i}.eml`, processing_status: "processed", body_state: "plain", subject: `サンプル${i}` });
-    const root = await render("password");
-    const text = textOf(sectionTitled(root, "メールの鍵を作る")[0]);
-    expect(text).toContain("保存済みのメール 3 通も");
+    const text = textOf(sectionTitled(await render("password"), "メールの鍵を作る")[0]);
+    expect(text).not.toContain("運営者が読める形");
+    expect(text).not.toMatch(/\d+ 通/);
   });
 
   it("with only samples, there is no warning at all", async () => {
