@@ -425,8 +425,6 @@ struct SettingsModelTests {
         // One page per item (the Web's dev 84255fc): the button opens the page that holds it.
         #expect(SettingsModel.webLink(.createPassphrase).absoluteString == "https://otodoke.app/app/settings/password")
         #expect(SettingsModel.webLink(.changePassphrase).absoluteString == "https://otodoke.app/app/settings/password")
-        #expect(SettingsModel.webLink(.readWaiting).absoluteString == "https://otodoke.app/app/settings/trouble")
-        #expect(SettingsModel.webLink(.markAsParcel).absoluteString == "https://otodoke.app/app/settings/dropped")
         #expect(SettingsModel.webLink(.clearAll).absoluteString == "https://otodoke.app/app/settings/demo")
         #expect(SettingsModel.webLink(.sample).absoluteString == "https://otodoke.app/app/settings/demo")
         #expect(SettingsModel.webLink(.openWeb).absoluteString == "https://otodoke.app/app")

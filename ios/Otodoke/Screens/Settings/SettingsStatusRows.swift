@@ -26,8 +26,15 @@ struct SettingsStatusRows: View {
                 Text("1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。")
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
-                SettingsParts.primaryButton("読み取る") { SettingsWeb.open(.readWaiting, openURL) }
+                ReadWaitingButton(model: model.mailActions)
                     .padding(.top, 8)
+                if let note = model.mailActions.readNote {
+                    Text(note)
+                        .font(.subheadline)
+                        .foregroundStyle(OtodokeColor.errorText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
