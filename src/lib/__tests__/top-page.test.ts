@@ -65,7 +65,7 @@ describe("the top page", () => {
     expect(imgs.slice(0, 3).map((i) => decodeURIComponent(i.attrs.src))).toEqual([
       expect.stringContaining("/screens/list.webp"),
       expect.stringContaining("/screens/calendar.webp"),
-      expect.stringContaining("/screens/detail.webp"),
+      expect.stringContaining("/screens/detail-evidence.webp"),
     ]);
     expect(imgs.slice(0, 3).map((i) => [i.attrs.width, i.attrs.height])).toEqual([
       ["720", "1415"],
@@ -109,7 +109,7 @@ describe("share metadata", () => {
 
   it("every image the top page and README name exists in the repo", () => {
     const root = new URL("../../../", import.meta.url);
-    for (const f of ["list.webp", "calendar.webp", "detail.webp", "video-thumb.jpg"]) {
+    for (const f of ["list.webp", "calendar.webp", "detail-evidence.webp", "video-thumb.jpg"]) {
       expect(existsSync(new URL(`public/screens/${f}`, root))).toBe(true);
     }
     const top = readFileSync(new URL("README.md", root), "utf8").split("\n").slice(0, 30).join("\n");
@@ -117,11 +117,11 @@ describe("share metadata", () => {
     expect(srcs.length).toBeGreaterThanOrEqual(4);
     for (const src of srcs) expect(existsSync(new URL(src, root))).toBe(true);
     expect(existsSync(new URL("src/app/twitter-image.png", root))).toBe(false);
-    for (const n of ["list", "calendar", "detail"]) {
+    for (const n of ["list", "calendar", "detail-evidence"]) {
       expect(top).toMatch(new RegExp(`<img src="public/screens/${n}\\.webp"[^>]*\\salign="top"`));
     }
-    // detail.webp is a lossy WebP ("VP8 " chunk): 14-bit little-endian width/height at bytes 26-29.
-    const w = readFileSync(new URL("public/screens/detail.webp", root));
+    // detail-evidence.webp is a lossy WebP ("VP8 " chunk): 14-bit little-endian width/height at bytes 26-29.
+    const w = readFileSync(new URL("public/screens/detail-evidence.webp", root));
     expect(w.subarray(0, 4).toString()).toBe("RIFF");
     expect(w.subarray(8, 16).toString()).toBe("WEBPVP8 ");
     expect([w.readUInt16LE(26) & 0x3fff, w.readUInt16LE(28) & 0x3fff]).toEqual([720, 492]);

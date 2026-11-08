@@ -8,7 +8,7 @@
 <p>
   <img src="public/screens/list.webp" alt="荷物の一覧" width="240" align="top">
   <img src="public/screens/calendar.webp" alt="カレンダー" width="240" align="top">
-  <img src="public/screens/detail.webp" alt="荷物の詳細と根拠の一文" width="240" align="top">
+  <img src="public/screens/detail-evidence.webp" alt="荷物の詳細と根拠の一文" width="240" align="top">
 </p>
 
 どの店で買った荷物も、何がいつ届くか、いつ家にいればいいか、今月いくら使ったかが 1 つの画面で分かる荷物カレンダーです。最初にメールの自動転送を 1 回設定すれば、あとは何もしなくていい。届いた注文・発送のメールを Claude が読み取り、コードのルールで荷物ごとにまとめます。

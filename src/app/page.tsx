@@ -6,7 +6,7 @@ import { getUser } from "@/lib/supabase/server";
 const SCREENS = [
   { src: "/screens/list.webp", alt: "荷物の一覧。店も運送会社もまとめて、届く日と対面での受け取りが分かる", width: 720, height: 1415 },
   { src: "/screens/calendar.webp", alt: "カレンダー。家にいる必要のある日に赤い印", width: 720, height: 1415 },
-  { src: "/screens/detail.webp", alt: "荷物の詳細。読み取った値の横に、元のメールの一文", width: 720, height: 492 },
+  { src: "/screens/detail-evidence.webp", alt: "荷物の詳細。読み取った値の横に、元のメールの一文", width: 720, height: 492 },
 ];
 
 export default async function Home() {
