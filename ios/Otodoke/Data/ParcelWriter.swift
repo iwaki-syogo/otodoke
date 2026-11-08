@@ -1,16 +1,22 @@
-// Every write to parcels goes through ONE private function, `write(id:_:)`: the id validated as a
-// UUID, `user_id = me` always, select("id,status,updated_at"), and exactly one row back or it is not
-// a success. The conditions of each kind of change are built inside that function from the change
-// itself, so a caller cannot leave one out:
-//  1. user_id = me on every write
-//  2. 「届いた」 never from cancelled (status != cancelled), and only on the version the screen showed
-//  3. back only to a RESTORABLE status, and only from delivered (status = delivered, updated_at as read)
-//  4. a category is one of the seven, recorded as the user's (category_source = "user"), and only on
-//     the version the screen showed (updated_at as read): a choice whose answer was lost and that
-//     reaches the server late never overwrites a later choice (CF1)
+// Parcels are written in ParcelWriter only, in three places, each with its conditions fixed inside it:
+//  - UPDATE: ONE private function, `write(id:_:)`: the id validated as a UUID, `user_id = me` always,
+//    select("id,status,updated_at"), and exactly one row back or it is not a success. The conditions of
+//    each kind of change are built inside that function from the change itself, so a caller cannot
+//    leave one out:
+//     1. user_id = me on every write
+//     2. 「届いた」 never from cancelled (status != cancelled), and only on the version the screen showed
+//     3. back only to a RESTORABLE status, and only from delivered (status = delivered, updated_at as read)
+//     4. a category is one of the seven, recorded as the user's (category_source = "user"), and only on
+//        the version the screen showed (updated_at as read): a choice whose answer was lost and that
+//        reaches the server late never overwrites a later choice (CF1)
+//     5. a typed-in parcel's edit (manualEdit): source = manual and the updated_at just read
+//  - INSERT (createManual): one typed-in parcel as the signed-in user (user_id = me, source = manual).
+//    A duplicate id (23505) is settled by reading the row and writing over it through `write` (manualEdit).
+//  - DELETE (deleteManual): id, user_id = me and source = manual, always.
 // updated_at is sent exactly as it was read (a String; supabase-swift percent-encodes its "+").
 // No automatic retries (PostgREST's retryEnabled is false), and a result that is unknown is never
 // sent again: the caller reads the row again instead.
+// announceOutsideChange only publishes; it writes nothing.
 
 import Foundation
 import PostgREST
@@ -207,8 +213,10 @@ struct ParcelWriter: Sendable {
             response = try await provider.database.from("parcels").insert(mine).select("id").execute()
         } catch {
             // The same id sent again after a lost answer: that parcel is already there, made by the first send.
+            // What is typed now may differ from what the first send stored, so the stored row is read and,
+            // when it differs, written over with what is typed now (never dropped as "saved").
             if let id = mine.id, let failure = error as? PostgrestError, failure.code == "23505" {
-                return await announced(.success(id))
+                return await announced(await settleDuplicate(of: mine, id: id, me: me))
             }
             return await announced(Self.outcome(of: error))
         }
@@ -217,6 +225,82 @@ struct ParcelWriter: Sendable {
             return await announced(.unknown)
         }
         return await announced(.success(created.id))
+    }
+
+    /// The columns of a new typed-in parcel that its form sets (read back to compare, and written over on a difference).
+    private struct StoredNew: Decodable {
+        let title: String
+        let shop: String
+        let orderedAt: String?
+        let expectedDate: String?
+        let totalAmount: Int?
+        let category: String?
+        let categorySource: String?
+        let trackingNumber: String?
+        let carrier: String?
+        let requiresPresence: Bool?
+        let status: String
+        let updatedAt: String
+
+        enum CodingKeys: String, CodingKey {
+            case title, shop, category, carrier, status
+            case orderedAt = "ordered_at"
+            case expectedDate = "expected_date"
+            case totalAmount = "total_amount"
+            case categorySource = "category_source"
+            case trackingNumber = "tracking_number"
+            case requiresPresence = "requires_presence"
+            case updatedAt = "updated_at"
+        }
+    }
+
+    /// 23505 on an insert that carried an id: the row with that id (mine, typed in) is read as the signed-in
+    /// user. The same as what is typed now: a success. Different: written over with what is typed now, on the
+    /// updated_at just read (the same conditions as an edit). Not readable: unknown, so the form says it could
+    /// not be confirmed and the list is read again.
+    private func settleDuplicate(of row: ManualParcelRow, id: String, me: String) async -> WriteOutcome<String> {
+        guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
+        let stored: StoredNew
+        do {
+            let response = try await provider.database.from("parcels")
+                .select("title,shop,ordered_at,expected_date,total_amount,category,category_source,tracking_number,carrier,requires_presence,status,updated_at")
+                .eq("id", value: id)
+                .eq("user_id", value: me)
+                .eq("source", value: "manual")
+                .execute()
+            let rows = try JSONDecoder().decode([StoredNew].self, from: response.data)
+            // Not there for me although the id is taken: it is not mine, so this is not a success.
+            guard rows.count <= 1 else { return .unknown }
+            guard let found = rows.first else { return .notUpdated(.failed) }
+            stored = found
+        } catch {
+            return .unknown
+        }
+        let same = stored.title == row.title && stored.shop == row.shop && stored.orderedAt == row.orderedAt
+            && stored.expectedDate == row.expectedDate && stored.totalAmount == row.totalAmount
+            && stored.category == row.category && stored.categorySource == row.categorySource
+            && stored.trackingNumber == row.trackingNumber && stored.carrier == row.carrier
+            && stored.requiresPresence == row.requiresPresence && stored.status == row.status
+        if same { return .success(id) }
+        let columns: [String: ManualParcel.Column] = [
+            "title": .text(row.title),
+            "shop": .text(row.shop),
+            "shop_key": .text(row.shopKey),
+            "ordered_at": .text(row.orderedAt),
+            "expected_date": ManualParcel.Column(row.expectedDate),
+            "total_amount": ManualParcel.Column(row.totalAmount),
+            "category": ManualParcel.Column(row.category),
+            "category_source": ManualParcel.Column(row.categorySource),
+            "tracking_number": ManualParcel.Column(row.trackingNumber),
+            "carrier": ManualParcel.Column(row.carrier),
+            "requires_presence": ManualParcel.Column(row.requiresPresence),
+            "status": .text(row.status),
+        ]
+        switch await write(id: id, .manualEdit(columns, updatedAt: stored.updatedAt)) {
+        case .success: return .success(id)
+        case let .notUpdated(reason): return .notUpdated(reason)
+        case .unknown: return .unknown
+        }
     }
 
     // MARK: an edit and a delete of a typed-in parcel

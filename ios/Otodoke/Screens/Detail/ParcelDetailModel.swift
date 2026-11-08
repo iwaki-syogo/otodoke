@@ -375,9 +375,17 @@ final class ParcelDetailModel {
         row?.source == "manual"
     }
 
+    #if DEBUG
+    /// DEBUG only: the edit form of the screen checks, which answers without a server.
+    @ObservationIgnored var debugEditForm: ((ParcelRow) -> ManualParcelModel)?
+    #endif
+
     /// The edit form for this parcel; saving reads the parcel again.
     func makeEditForm() -> ManualParcelModel? {
         guard let row, row.source == "manual" else { return nil }
+        #if DEBUG
+        if let debugEditForm { return debugEditForm(row) }
+        #endif
         return .live(editing: row, writer: writer, reader: reader, reload: { [weak self] in await self?.load() })
     }
 

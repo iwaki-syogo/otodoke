@@ -464,9 +464,44 @@ struct ManualParcelEditTests {
         unread.deleteConfirmed = true
         await unread.deleteParcel()
         #expect(!unread.isDeleted && unread.deleteError == ManualParcelText.deleteUnknown)
+        // The check is let go after a result that is not a delete, so it is checked again for the second press.
+        #expect(!unread.deleteConfirmed)
+        unread.deleteConfirmed = true
         await unread.deleteParcel()
         #expect(unread.isDeleted)
         #expect(sends.value == 1)
+    }
+
+    @Test func theCheckIsLetGoAfterAFailedUnknownOrConflictingDelete() async throws {
+        let results: [WriteOutcome<String>] = [.notUpdated(.failed), .unknown, .notUpdated(.conflict)]
+        for result in results {
+            let m = try model(delete: { _ in result }, stillThere: { true })
+            m.deleteConfirmed = true
+            await m.deleteParcel()
+            #expect(!m.isDeleted && !m.deleteConfirmed, "\(result)")
+            // Pressed again without the check: refused before anything is sent.
+            await m.deleteParcel()
+            #expect(m.deleteError == ManualParcelText.deleteUnchecked, "\(result)")
+        }
+    }
+
+    @Test func aDeleteThatFindsNoRowChecksTheParcelAndReadsAgainWhenItIsThere() async throws {
+        // Gone: counts as deleted.
+        let gone = try model(delete: { _ in .notUpdated(.conflict) }, stillThere: { false })
+        gone.deleteConfirmed = true
+        await gone.deleteParcel()
+        #expect(gone.isDeleted)
+        // Still there (the row changed under us): the detail and the list are read again.
+        let reloads = Counter()
+        let there = try model(delete: { _ in .notUpdated(.conflict) }, stillThere: { true }, reloads: reloads)
+        there.deleteConfirmed = true
+        await there.deleteParcel()
+        #expect(!there.isDeleted && there.deleteError == ManualParcelText.notFound && reloads.value == 1)
+        // Not readable: it says it could not be confirmed.
+        let unread = try model(delete: { _ in .notUpdated(.conflict) }, stillThere: { nil })
+        unread.deleteConfirmed = true
+        await unread.deleteParcel()
+        #expect(!unread.isDeleted && unread.deleteError == ManualParcelText.deleteUnknown)
     }
 
     @Test func aSecondPressOfDeleteWhileOneIsOnItsWayIsIgnored() async throws {

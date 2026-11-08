@@ -291,15 +291,31 @@ describe("task 4: the logic never reads the device's calendar, time zone or loca
   });
 });
 
+/** How many writes to parcels a source holds: .insert / .update / .upsert / .delete straight on from("parcels"), and "PATCH". */
+function parcelWrites(src: string): number {
+  return (src.match(/from\("parcels"\)\s*\.(insert|update|upsert|delete)\(/g) ?? []).length + (src.match(/"PATCH"/g) ?? []).length;
+}
+
 describe("task 7: one write path", () => {
   it("parcels are written by exactly one function, in ios/Otodoke/Data/ParcelWriter.swift", () => {
     const writes: string[] = [];
     for (const f of swiftFiles(APP)) {
       const src = stripComments(readFileSync(f, "utf8"));
-      const n = (src.match(/\.update\(/g) ?? []).length + (src.match(/"PATCH"/g) ?? []).length;
+      const n = parcelWrites(src);
       for (let i = 0; i < n; i++) writes.push(rel(f));
     }
-    expect(writes).toEqual(["ios/Otodoke/Data/ParcelWriter.swift"]);
+    // update (the one write function), insert (createManual) and delete (deleteManual): all three in ParcelWriter only.
+    expect(writes).toEqual(Array(3).fill("ios/Otodoke/Data/ParcelWriter.swift"));
+  });
+
+  it("negative control: an insert, a delete, an upsert, an update or a PATCH on parcels elsewhere is counted", () => {
+    expect(parcelWrites('try await db.from("parcels").insert(row)')).toBe(1);
+    expect(parcelWrites('try await db.from("parcels")\n  .delete().eq("id", value: id)')).toBe(1);
+    expect(parcelWrites('db.from("parcels").upsert(row)')).toBe(1);
+    expect(parcelWrites('db.from("parcels").update(v)')).toBe(1);
+    expect(parcelWrites('request.httpMethod = "PATCH"')).toBe(1);
+    expect(parcelWrites('db.from("parcels").select("id")')).toBe(0);
+    expect(parcelWrites('choices.insert((a, b), at: 1)')).toBe(0);
   });
 });
 

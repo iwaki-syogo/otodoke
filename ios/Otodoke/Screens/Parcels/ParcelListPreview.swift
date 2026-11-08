@@ -129,6 +129,17 @@ struct ListPreview {
                               fromText: "shop@example.com", confidenceText: "確信度 88%", body: "伝票番号 1234-5678-9012", notes: "お届け日は発送メールから"),
             ]
             model.debugShow(parcel: row, items: items, timeline: timeline)
+            // A delete here goes through (nothing is sent), so the screen check can see the sheet close and the page go back.
+            model.debugEditForm = { parcel in
+                ManualParcelModel(
+                    editing: parcel,
+                    update: { _, _ in .saved },
+                    delete: { .success($0) },
+                    stillThere: { false },
+                    userID: { "preview" },
+                    reload: {}
+                )
+            }
             return model
         }
     }

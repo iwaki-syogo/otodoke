@@ -6,7 +6,8 @@
 //  - the result is unknown (the answer was lost): the screen is read again and the form says it could
 //    not be confirmed. The form stays open, and pressing again is safe by how each write is made:
 //    a new parcel is sent with the id the form made when it was opened (the first send having made it
-//    answers 23505, which counts as saved), an edit is conditioned on the updated_at it read (after
+//    answers 23505: the stored row is read and, when what is typed now differs, written over with it),
+//    an edit is conditioned on the updated_at it read (after
 //    the first send went through, the form's values are the stored ones and the second save is no
 //    change), a delete of a parcel that is gone answers 0 rows and the parcel is read to see.
 // A second press while one is on its way is ignored (the button shows the spinner, it is not disabled).
@@ -219,6 +220,8 @@ final class ManualParcelModel: Identifiable {
             return
         }
         deleteCount += 1
+        // Whatever came back, a parcel that is still there needs 「本当に消す」 checked again for the next press.
+        defer { if !isDeleted { deleteConfirmed = false } }
         switch await delete(parcel.id) {
         case .success:
             isDeleted = true
@@ -229,11 +232,17 @@ final class ManualParcelModel: Identifiable {
             case .invalidInput:
                 deleteError = ManualParcelText.notFound
             case .conflict:
-                // 0 rows. After a lost answer that is the first send having gone through.
-                if deleteUnconfirmed, await stillThere() == false {
+                // 0 rows: the parcel is gone (after a lost answer, the first send went through) or the row was
+                // changed under us. The parcel tells which; the detail and the list are read again when it is there.
+                switch await stillThere() {
+                case false?:
                     isDeleted = true
-                } else {
+                case true?:
                     deleteError = ManualParcelText.notFound
+                    await reload()
+                case nil:
+                    deleteUnconfirmed = true
+                    deleteError = ManualParcelText.deleteUnknown
                 }
             }
         case .unknown:

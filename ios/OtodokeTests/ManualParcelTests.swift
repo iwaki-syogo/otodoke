@@ -311,6 +311,40 @@ struct ManualParcelTests {
         #expect(await fake.row("parcels", id: m.newID) != nil)
     }
 
+    @Test func aChangedFormPressedAgainAfterALostAnswerWritesTheChangedContent() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        await fake.fail("POST", "parcels", with: .applyThenDrop(.networkConnectionLost))
+        let m = model(save: { await writer.createManual($0) })
+        m.input.title = "最初の品名"
+        await m.submit()
+        #expect(m.error == ManualParcelText.unknown && !m.isSaved)
+        // The first send had made the parcel. Changed, and pressed again: the changed content is what is kept.
+        m.input.title = "変えた品名"
+        await m.submit()
+        #expect(m.isSaved && m.error == nil)
+        let rows = await fake.rows("parcels")
+        #expect(rows.count == 1)
+        #expect(await fake.row("parcels", id: m.newID)?["title"]?.string == "変えた品名")
+        // Unchanged and pressed again is a success that writes nothing.
+        let before = await fake.requests("PATCH", "parcels").count
+        #expect(before == 1)
+        var same = try row { $0.title = "変えた品名" }
+        same.id = m.newID
+        #expect(await writer.createManual(same) == .success(m.newID))
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
+    }
+
+    @Test func aDuplicateThatCannotBeReadIsUnknown() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        var mine = try row()
+        mine.id = Rows.id(8)
+        #expect(await writer.createManual(mine) == .success(Rows.id(8)))
+        await fake.fail("GET", "parcels", with: .http(500))
+        #expect(await writer.createManual(mine) == .unknown)
+    }
+
     @Test func aDifferentFormGetsADifferentId() {
         let a = model(save: { _ in .success("x") })
         let b = model(save: { _ in .success("x") })
@@ -323,13 +357,14 @@ struct ManualParcelTests {
         let (writer, _) = try await writer(fake)
         var mine = try row()
         mine.id = Rows.id(7)
-        await fake.insert("parcels", [Rows.parcel(7)])
-        // The id exists already (this fake cannot tell whose it is): 23505 on a row that carried an id counts as made.
         #expect(await writer.createManual(mine) == .success(Rows.id(7)))
+        // The same row sent again: 23505, the stored row is the same as what is sent, and that counts as made.
+        #expect(await writer.createManual(mine) == .success(Rows.id(7)))
+        #expect(await fake.rows("parcels").count == 1)
         // A row with no id has no such reading.
         var anon = try row()
         anon.id = nil
-        await fake.fail("POST", "parcels", nth: 2, with: .http(409))
+        await fake.fail("POST", "parcels", nth: 3, with: .http(409))
         #expect(await writer.createManual(anon) == .notUpdated(.failed))
     }
 

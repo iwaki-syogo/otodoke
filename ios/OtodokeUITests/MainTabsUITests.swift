@@ -169,6 +169,31 @@ final class MainTabsUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
     }
 
+    /// Deleting a typed-in parcel: 「本当に消す」 is a square check, the sheet closes, and then the page goes back to the list.
+    func testDeletingATypedInParcelClosesTheSheetThenTheDetail() {
+        let app = launch("detail")
+        let card = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "USB-C")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        card.tap()
+        let edit = app.buttons["編集"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        edit.tap()
+        XCTAssertTrue(app.navigationBars["荷物を編集"].waitForExistence(timeout: 5))
+        for _ in 0..<3 where !app.buttons["この荷物を消す"].exists { app.swipeUp() }
+        app.buttons["この荷物を消す"].tap()
+        app.swipeUp()
+        let check = app.buttons["manual-delete-check"]
+        XCTAssertTrue(check.waitForExistence(timeout: 5))
+        XCTAssertEqual(check.value as? String, "オフ")
+        check.tap()
+        XCTAssertEqual(check.value as? String, "オン")
+        app.buttons["消す"].tap()
+        // The sheet is gone, the detail behind it is gone too: the list is shown again.
+        XCTAssertTrue(app.navigationBars["荷物を編集"].waitForNonExistence(timeout: 10))
+        XCTAssertTrue(edit.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+    }
+
     func testAParcelFromMailHasNoEditButton() {
         let app = launch("detail")
         let card = app.staticTexts["架空の本 上下巻セット"]

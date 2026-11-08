@@ -7,6 +7,8 @@ import SwiftUI
 struct ParcelDetailView: View {
     @State private var model: ParcelDetailModel
     @State private var editForm: ManualParcelModel?
+    /// The typed-in parcel was deleted in the sheet: this page goes back once the sheet has gone.
+    @State private var deletedInSheet = false
     @Environment(\.dismiss) private var dismiss
     /// Mails shown open from the start (for the screen checks).
     private let initiallyOpen: Set<String>
@@ -35,8 +37,13 @@ struct ParcelDetailView: View {
                     }
                 }
             }
-            .sheet(item: $editForm) { form in
-                ManualParcelView(model: form, close: { editForm = nil }, deleted: { dismiss() })
+            .sheet(item: $editForm, onDismiss: {
+                if deletedInSheet {
+                    deletedInSheet = false
+                    dismiss()
+                }
+            }) { form in
+                ManualParcelView(model: form, close: { editForm = nil }, deleted: { deletedInSheet = true; editForm = nil })
             }
             .task { await model.onAppear() }
             .onChange(of: scenePhase, initial: true) { _, phase in

@@ -159,6 +159,14 @@ describe("the words", () => {
     // answer; changed = the parcel changed between the read and the write (the detail page's existing words).
     expect(names.filter((n) => !onWeb.has(n)).sort()).toEqual(["changed", "close", "dateClear", "dateNone", "deleteUnknown", "unknown"]);
   });
+
+  it("`changed` is the detail page's existing sentence (ParcelDetailModel.notDeliveredFailed and the Web's NOT_UPDATED)", () => {
+    const detailText = (readFile("ios/Otodoke/Screens/Detail/ParcelDetailModel.swift").match(/static let notDeliveredFailed = "([^"]+)"/) ?? [])[1];
+    const changed = (TEXT.match(/static let changed = "([^"]+)"/) ?? [])[1];
+    expect(detailText).toBeTruthy();
+    expect(changed).toBe(detailText);
+    expect(readFile("src/app/app/parcel-actions.ts")).toContain(`const NOT_UPDATED = "${changed}"`);
+  });
 });
 
 describe("the columns written", () => {
@@ -293,7 +301,18 @@ describe("the edit and the delete", () => {
 
   it("an edit is read, then written as the signed-in user's typed-in parcel on the version read; a delete likewise", () => {
     expect(ACTIONS).toMatch(/\.eq\("source", "manual"\)/);
-    expect(writer.match(/\.eq\("source", value: "manual"\)/g)?.length).toBe(3);
+    // Per function (not a count): the read of an edit, the manualEdit conditions of the one write, and the delete.
+    const body = (start: string, end: string) => {
+      const from = writer.indexOf(start);
+      const to = writer.indexOf(end, from + start.length);
+      expect(from, start).toBeGreaterThan(-1);
+      expect(to, end).toBeGreaterThan(from);
+      return writer.slice(from, to);
+    };
+    const manualOnly = /\.eq\("source", value: "manual"\)/;
+    expect(body("func updateManual(", "private func announcedEdit(")).toMatch(manualOnly);
+    expect(body("case let .manualEdit(_, updatedAt):\n                query", "response = try await query")).toMatch(manualOnly);
+    expect(body("func deleteManual(", "private func announce<T>(")).toMatch(manualOnly);
     // The update goes through the one write function, on the updated_at read, with source = manual added to its filters.
     expect(writer).toContain("write(id: id, .manualEdit(columns, updatedAt: saved.updatedAt))");
     expect(writer).toMatch(/case let \.manualEdit\(_, updatedAt\):\s*query = query\s*\.eq\("source", value: "manual"\)\s*\.eq\("updated_at", value: updatedAt\)/);
@@ -302,7 +321,11 @@ describe("the edit and the delete", () => {
 
   it("the detail page edits in the app and no longer opens the Web's edit page", () => {
     expect(detail).toContain("model.makeEditForm()");
-    expect(detail).toMatch(/\.sheet\(item: \$editForm\)/);
+    expect(detail).toMatch(/\.sheet\(item: \$editForm, onDismiss: \{/);
+    // The page goes back only once the sheet has closed, never in the same moment.
+    expect(detail).toMatch(/onDismiss: \{\s*if deletedInSheet \{\s*deletedInSheet = false\s*dismiss\(\)/);
+    expect(detail).toContain("deleted: { deletedInSheet = true; editForm = nil }");
+    expect(detail).not.toMatch(/deleted: \{ dismiss\(\) \}/);
     expect(detail).not.toContain("model.editURL");
     expect(detail).toContain("Button(ManualParcelText.edit)");
     expect(detailModel).not.toContain("parcelEdit");

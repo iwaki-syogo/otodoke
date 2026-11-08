@@ -548,6 +548,8 @@ actor FakeSupabase {
             var row = object.mapValues(JSONValue.init(any:))
             if row["id"] == nil { row["id"] = .string(UUID().uuidString.lowercased()) }
             if row["created_at"] == nil { row["created_at"] = .string(nextTimestamp()) }
+            // The database default (now()): the version a later conditioned write is read at.
+            if row["updated_at"] == nil { row["updated_at"] = .string(nextTimestamp()) }
             for column in uniqueColumns[table] ?? [] {
                 if let value = row[column], rows.contains(where: { $0[column] == value }) {
                     return .json(409, [

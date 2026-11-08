@@ -62,7 +62,6 @@ struct ManualParcelView: View {
                             .font(.subheadline)
                             .foregroundStyle(OtodokeColor.errorText)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityAddTraits(.isStaticText)
                             .id(Self.errorRow)
                     }
                     submitButton
