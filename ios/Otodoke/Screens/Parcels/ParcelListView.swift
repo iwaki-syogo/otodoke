@@ -30,6 +30,8 @@ struct ParcelListView<Detail: View>: View {
     @State private var path: [ParcelRoute] = []
     @State private var showsRest = false
     @State private var confirmingDeliverAll = false
+    /// 「＋ 登録」: the form of a parcel typed in by hand, as a sheet (made when it opens).
+    @State private var manualForm: ManualParcelModel?
     @Environment(\.openURL) private var openURL
     /// The delivered and cancelled pages (MainTabView hands them down).
     @Environment(\.statusPages) private var pages
@@ -64,6 +66,9 @@ struct ParcelListView<Detail: View>: View {
                 }
         }
         .task { await model.onAppear() }
+        .sheet(item: $manualForm) { form in
+            ManualParcelView(model: form) { manualForm = nil }
+        }
     }
 
     @ViewBuilder
@@ -136,7 +141,7 @@ struct ParcelListView<Detail: View>: View {
         HStack {
             Spacer()
             Button {
-                openURL(WebLink.newParcel)
+                manualForm = ManualParcelModel.live(list: model)
             } label: {
                 Text("＋ 登録")
                     .font(.subheadline.weight(.medium))

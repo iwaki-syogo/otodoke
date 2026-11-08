@@ -182,6 +182,38 @@ struct ParcelWriter: Sendable {
         return await announced(write(id: id, .category(category, updatedAt: row.updatedAt)))
     }
 
+    // MARK: a new typed-in parcel
+
+    /// The id column asked back from an insert.
+    private struct Inserted: Decodable {
+        let id: String
+    }
+
+    /// 「＋ 登録」: one insert of a typed-in parcel, as the signed-in user (user_id = me, whatever the
+    /// row says), `.select("id")` for the answer. Exactly one row back is a success; an answer that is
+    /// lost or unreadable is unknown and is never sent again (the caller reads the list instead).
+    func createManual(_ row: ManualParcelRow) async -> WriteOutcome<String> {
+        guard let me = await provider.currentUserID() else { return .notUpdated(.failed) }
+        var mine = row
+        mine.userId = me
+        do {
+            _ = try await provider.auth.session
+        } catch {
+            return .notUpdated(.failed)
+        }
+        let response: PostgrestResponse<Void>
+        do {
+            response = try await provider.database.from("parcels").insert(mine).select("id").execute()
+        } catch {
+            return await announced(Self.outcome(of: error))
+        }
+        guard let rows = try? JSONDecoder().decode([Inserted].self, from: response.data), rows.count == 1, let created = rows.first else {
+            // The server said yes but the body is not one row: whether a parcel was made is not known.
+            return await announced(.unknown)
+        }
+        return await announced(.success(created.id))
+    }
+
     // MARK: 「古くなった」 (CX1)
 
     /// Publishes once when any of the outcomes may have changed a row (a success or an unknown result).

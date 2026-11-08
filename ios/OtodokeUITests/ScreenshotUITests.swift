@@ -121,4 +121,28 @@ final class ScreenshotUITests: XCTestCase {
             app.terminate()
         }
     }
+
+    /// 「＋ 登録」: the empty form, a form being filled in, and the form with an error, light and dark.
+    func testTheManualForm() throws {
+        for style in ["Light", "Dark"] {
+            XCUIDevice.shared.appearance = style == "Dark" ? .dark : .light
+            let app = launch("list")
+            let add = app.buttons["＋ 登録"]
+            XCTAssertTrue(add.waitForExistence(timeout: 10), style)
+            add.tap()
+            XCTAssertTrue(app.navigationBars["荷物を登録"].waitForExistence(timeout: 5), style)
+            try shoot("manual-empty-\(style)")
+            app.textFields["品名"].tap()
+            app.textFields["品名"].typeText("架空の本 上下巻セット")
+            try shoot("manual-typing-\(style)")
+            app.swipeUp()
+            app.swipeUp()
+            try shoot("manual-bottom-\(style)")
+            app.buttons["登録"].tap()
+            XCTAssertTrue(app.staticTexts["店を入れてください"].waitForExistence(timeout: 5), style)
+            try shoot("manual-error-\(style)")
+            app.terminate()
+        }
+        XCUIDevice.shared.appearance = .light
+    }
 }

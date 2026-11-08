@@ -82,4 +82,37 @@ final class MainTabsUITests: XCTestCase {
         app.buttons["やめる"].tap()
         XCTAssertTrue(app.buttons["すべて受取済にする"].waitForExistence(timeout: 5))
     }
+
+    /// 「＋ 登録」 opens the form inside the app (not Safari): the fields in the Web's order, the Web's words for a
+    /// wrong form, and 閉じる to leave.
+    func testTheRegisterButtonOpensTheFormInTheApp() {
+        let app = launch("list")
+        let add = app.buttons["＋ 登録"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.tap()
+        XCTAssertTrue(app.navigationBars["荷物を登録"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.state, .runningForeground)
+        // The rows are made as they scroll in: the first screen, then the rest.
+        for label in ["品名", "店", "注文日", "お届け予定日", "金額"] {
+            XCTAssertTrue(app.staticTexts[label].firstMatch.exists, label)
+        }
+        app.swipeUp()
+        app.swipeUp()
+        for label in ["分類", "追跡番号", "運送会社", "受け取り", "状態"] {
+            XCTAssertTrue(app.staticTexts[label].firstMatch.exists, label)
+        }
+        app.buttons["登録"].tap()
+        XCTAssertTrue(app.staticTexts["品名を入れてください"].waitForExistence(timeout: 5))
+        app.swipeDown()
+        app.swipeDown()
+        app.textFields["品名"].tap()
+        app.textFields["品名"].typeText("本")
+        app.swipeUp()
+        app.swipeUp()
+        app.buttons["登録"].tap()
+        XCTAssertTrue(app.staticTexts["店を入れてください"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.state, .runningForeground)
+        app.buttons["閉じる"].tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+    }
 }
