@@ -137,7 +137,8 @@ describe("the settings words copied from the Web's dev branch", () => {
 
   it("the list: メール holds the samples, アカウント holds privacy, deletion and the Web, and the footer has no bracketed note", () => {
     const view = stripComments(read(`${SETTINGS}/SettingsView.swift`));
-    expect(view).toMatch(/section\(SettingsWebText\.mailGroup\)[\s\S]*?\.delivery, \.sample\]/);
+    expect(view).toMatch(/section\(SettingsWebText\.mailGroup\)[\s\S]*?group\(Self\.mailPages\(for: model\)\)/);
+    expect(view).toMatch(/static let mailOrder: \[SettingsPage\] = \[\.forward, \.key, \.dropped, \.handling, \.delivery, \.sample\]/);
     expect(view).toMatch(/section\(SettingsWebText\.accountGroup\)[\s\S]*?\.privacy[\s\S]*?\.deleteAccount[\s\S]*?\.openWeb/);
     expect(view).not.toContain("ログアウトしてください");
   });

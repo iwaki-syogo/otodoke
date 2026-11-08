@@ -79,7 +79,7 @@ struct SettingsView: View {
                         SettingsParts.errorBox(SettingsModel.failedText)
                     }
                     section(SettingsWebText.mailGroup) {
-                        group([.forward, .key, .dropped, .handling, .delivery, .sample])
+                        group(Self.mailPages(for: model))
                     }
                     section(SettingsWebText.accountGroup) {
                         VStack(alignment: .leading, spacing: 0) {
@@ -189,6 +189,32 @@ struct SettingsView: View {
         if model.approvalBadgeFailed { return .init(text: SettingsMenuText.keyUnknownBadge, kind: .red) }
         if model.approvalWaiting { return .init(text: SettingsMenuText.approvalBadge, kind: .amber) }
         return nil
+    }
+
+    /// The mail group as the Web draws it (settings-row.tsx orderRows): the rows in this order when nothing needs doing.
+    static let mailOrder: [SettingsPage] = [.forward, .key, .dropped, .handling, .delivery, .sample]
+
+    /// The rows that need something done come first, in this order (the Web's ACTION_ORDER: password, trouble, forwarding).
+    private static let actionOrder: [SettingsPage] = [.key, .delivery, .forward]
+
+    /// Action rows first (in `actionOrder`), then the rest in `mailOrder` (the Web's orderRows).
+    static func orderedMailPages(actions: Set<SettingsPage>) -> [SettingsPage] {
+        let urgent = actionOrder.filter { actions.contains($0) }
+        return urgent + mailOrder.filter { !urgent.contains($0) }
+    }
+
+    /// The rows that need something done, by the Web's `action` of each row ((list)/page.tsx): a confirmation that waits for
+    /// its approval, no key (a key or a count that could not be read is not an action), mail waiting to be read.
+    static func actionPages(for model: SettingsModel) -> Set<SettingsPage> {
+        var out = Set<SettingsPage>()
+        if model.approvalWaiting, !model.approvalBadgeFailed { out.insert(.forward) }
+        if case .none? = model.keyPanel { out.insert(.key) }
+        if case let .loaded(n)? = model.unread, n > 0 { out.insert(.delivery) }
+        return out
+    }
+
+    static func mailPages(for model: SettingsModel) -> [SettingsPage] {
+        orderedMailPages(actions: actionPages(for: model))
     }
 
     /// The 「読まなかったメール」 row: the count (neutral), 確認できません when it could not be read (never drawn as 0).
