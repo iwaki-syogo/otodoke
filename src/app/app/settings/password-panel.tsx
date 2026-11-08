@@ -26,6 +26,8 @@ export interface PasswordPanelState {
   keyCreatedAt: string | null;
   /** Mail sealed to a key that is no longer in use (a reset, or a key from before password-v1). */
   oldKeyCount: number;
+  /** With no key: whether the user may have plaintext mail (true also when it could not be counted). Only then is the 11/14 notice shown. */
+  hasPlain: boolean;
 }
 
 /** Codes after which this page cannot go on: the way on is to log in again. */
@@ -46,7 +48,7 @@ const primary = "inline-flex items-center justify-center gap-2 rounded-xl bg-neu
  * Every form that takes a password has no named field and posts nothing (password-forms.test.ts).
  */
 export function PasswordPanel({ state }: { state: PasswordPanelState }) {
-  const { userId, email, keyCreatedAt, oldKeyCount } = state;
+  const { userId, email, keyCreatedAt, oldKeyCount, hasPlain } = state;
   const opened = useTabKey(userId);
 
   if (!keyCreatedAt) {
@@ -54,7 +56,7 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
       <section className="rounded-2xl border border-sky-300 bg-sky-50 p-4">
         <h2 className="text-base font-bold">メールの鍵を作る</h2>
         <p className="mt-1 text-sm leading-6">読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。</p>
-        <p className="mt-2 text-sm leading-6">{PLAINTEXT_DROP_NOTICE}</p>
+        {hasPlain ? <p className="mt-2 text-sm leading-6">{PLAINTEXT_DROP_NOTICE}</p> : null}
         <MakeKeyForm email={email} />
         <p className="mt-3 text-sm leading-6 text-neutral-700">
           パスワードをまだ決めていない場合は、

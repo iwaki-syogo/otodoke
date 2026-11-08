@@ -25,8 +25,8 @@ const { MailHandling } = await import("@/app/app/settings/mail-handling");
 const USER = "00000000-0000-4000-8000-00000000000a";
 const NOTICE = "Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです";
 
-const panel = (keyCreatedAt: string | null = null) =>
-  parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt, oldKeyCount: 0 } })));
+const panel = (keyCreatedAt: string | null = null, hasPlain = true) =>
+  parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt, oldKeyCount: 0, hasPlain } })));
 
 describe("decision 7 is announced with its date", () => {
   it("without a key: says the older mail is sealed at the password login, and goes on 11/14 otherwise, in mail-notices' words", () => {
@@ -35,6 +35,13 @@ describe("decision 7 is announced with its date", () => {
     expect(PLAINTEXT_DROP_NOTICE).toContain(NOTICE);
     expect(PLAINTEXT_DROP_NOTICE.startsWith("パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。")).toBe(true);
     expect(text).not.toContain("合言葉");
+  });
+
+  it("without a key and without plaintext mail: no notice", () => {
+    const text = textOf(panel(null, false));
+    expect(text).not.toContain(PLAINTEXT_DROP_NOTICE);
+    expect(text).not.toContain("11 月 14 日");
+    expect(text).toContain("メールの鍵を作る");
   });
 
   it("with a key: no date, no warning, no count (the older mail is sealed by itself)", () => {

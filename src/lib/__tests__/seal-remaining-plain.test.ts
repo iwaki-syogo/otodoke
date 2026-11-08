@@ -106,6 +106,56 @@ describe("sealRemainingPlain", () => {
     expect(db.callsOn("emails", "update").length).toBe(before);
   });
 
+  it("leaves rows the automatic path must not touch (other statuses, another user) unchanged", async () => {
+    const db = new FakeDb();
+    await withKey(db);
+    seedPlain(db, 3);
+    const OTHER = "00000000-0000-4000-8000-0000000000ff";
+    const extra = (id: string, user_id: string, processing_status: string) => ({
+      ...db.rows("emails")[0],
+      id,
+      user_id,
+      message_id: `<${id}@example.test>`,
+      processing_status,
+      body_state: "plain",
+    });
+    const untouched = [
+      extra("x-pending", USER, "pending"),
+      extra("x-over", USER, "over_limit"),
+      extra("x-failed", USER, "failed"),
+      extra("y-other-1", OTHER, "processed"),
+      extra("y-other-2", OTHER, "processed"),
+    ];
+    for (const r of untouched) db.rows("emails").push(r);
+    const snapshot = JSON.stringify(untouched.map((r) => db.rows("emails").find((x) => x.id === r.id)));
+    const res = await sealRemainingPlain(asAdmin(db), USER);
+    expect(res).toMatchObject({ sealed: 3, failed: 0, stopped: "done" });
+    expect(db.rows("emails").filter((e) => e.user_id === USER && e.processing_status === "processed" && e.body_state === "sealed")).toHaveLength(3);
+    expect(JSON.stringify(untouched.map((r) => db.rows("emails").find((x) => x.id === r.id)))).toBe(snapshot);
+    expect(untouched.every((r) => db.rows("emails").find((x) => x.id === r.id)?.body_state === "plain")).toBe(true);
+  });
+
+  it("nothing to seal costs one batch: the key lookup and one read, no count queries", async () => {
+    const db = new FakeDb();
+    await withKey(db);
+    db.calls.length = 0;
+    expect(await sealRemainingPlain(asAdmin(db), USER)).toMatchObject({ sealed: 0, remaining: 0, stopped: "done", batches: 1 });
+    expect(db.calls).toHaveLength(2);
+    expect(db.calls.filter((q) => q.head)).toHaveLength(0);
+  });
+
+  it("keeps going past trailing demo rows (sealed by the batch, left out of the count)", async () => {
+    const db = new FakeDb();
+    await withKey(db);
+    seedPlain(db, SEAL_BATCH_SIZE);
+    seedPlain(db, 1);
+    db.rows("emails")[db.rows("emails").length - 1].id = "z-demo";
+    db.rows("emails")[db.rows("emails").length - 1].provider_email_id = "demo:sample.eml";
+    const res = await sealRemainingPlain(asAdmin(db), USER);
+    expect(res).toMatchObject({ sealed: SEAL_BATCH_SIZE + 1, stopped: "done" });
+    expect(plainLeft(db)).toBe(0);
+  });
+
   it("respects maxBatches and goes on where it stopped on the next call", async () => {
     const db = new FakeDb();
     await withKey(db);
@@ -200,6 +250,24 @@ describe("each trigger schedules it", () => {
     await mocks.afterCallbacks[0]();
     expect(plainLeft(db)).toBe(0);
     expect(current(db)).toHaveLength(1);
+  });
+
+  it("the settings password page: no key + no plaintext shows no notice; plaintext or a failed count shows it", async () => {
+    const { PLAINTEXT_DROP_NOTICE } = await import("@/lib/mail-notices");
+    const Page = (await import("@/app/app/settings/password/page")).default;
+    const render = async (db: FakeDb) => {
+      mocks.db = db;
+      return textOf(parseHtml(renderToStaticMarkup(await Page())));
+    };
+    expect(await render(new FakeDb())).not.toContain(PLAINTEXT_DROP_NOTICE);
+
+    const withPlain = new FakeDb();
+    seedPlain(withPlain, 2);
+    expect(await render(withPlain)).toContain(PLAINTEXT_DROP_NOTICE);
+
+    const failing = new FakeDb();
+    failing.hooks.push((q) => (q.table === "emails" && q.head ? { data: null, error: { message: "boom" } } : undefined));
+    expect(await render(failing)).toContain(PLAINTEXT_DROP_NOTICE);
   });
 
   it("activateMailKey schedules it after a successful activation only", async () => {

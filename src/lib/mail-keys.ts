@@ -372,7 +372,7 @@ export function sampleFileOf(providerEmailId: string | null): string | null {
 /**
  * This user's read mail still in plaintext, counted by the database. The public sample mails are
  * left out: they are anonymized fixtures from the repository, not the user's mail. `after`: only
- * rows whose id sorts after it (the 「暗号化する」 cursor).
+ * rows whose id sorts after it (the cursor of sealPlainBatch).
  *
  * Counted as all minus samples, so a row with no provider id (null) is never left out.
  */
@@ -389,7 +389,7 @@ export async function countPlainRead(db: AdminClient, userId: string, after: str
 }
 
 /**
- * Where a run of 「暗号化する」 is: the id of the last row the previous batch looked at (null to
+ * Where a sealing run is: the id of the last row the previous batch looked at (null to
  * start). Every row a batch looks at, sealed or not, is behind the cursor afterwards, so rows that
  * cannot be sealed never hold the run back, however many there are.
  */
@@ -405,8 +405,9 @@ export type SealBatchResult = KeyResult<{ sealed: number; failed: string[]; next
  * while it is still plaintext.
  *
  * A row that cannot be sealed does not stop the run: it is answered in `failed` and left behind
- * the cursor (`next`), which the browser passes back. `remaining` counts what is still plaintext
- * after `next`, samples left out (0: this run is done).
+ * the cursor (`next`), which the caller (sealRemainingPlain) passes back. `remaining` counts what is
+ * still plaintext after `next`, samples left out (0: this run is done). A batch shorter than
+ * SEAL_BATCH_SIZE has nothing after it, so it is not counted (no extra reads).
  */
 export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { after: null }): Promise<SealBatchResult> {
   try {
@@ -451,7 +452,9 @@ export async function sealPlainBatch(db: AdminClient, userId: string, input: unk
       }
     }
     const next = rows.length > 0 ? rows[rows.length - 1].id : after;
-    return { ok: true, sealed, failed, next, remaining: await countPlainRead(db, userId, next) };
+    // A short (or empty) batch reached the end of the plaintext rows: nothing is left to count.
+    const remaining = rows.length < SEAL_BATCH_SIZE ? 0 : await countPlainRead(db, userId, next);
+    return { ok: true, sealed, failed, next, remaining };
   } catch (err) {
     return fail(err);
   }
@@ -493,9 +496,10 @@ export async function sealRemainingPlain(db: AdminClient, userId: string, option
       result.sealed += batch.sealed;
       result.failed += batch.failed.length;
       result.remaining = batch.remaining;
-      if (batch.remaining === 0) return result;
-      // The cursor did not move: stop instead of looping.
-      if (batch.next === after) return result;
+      // Done is decided by what the batch looked at, not by countPlainRead (which leaves the demo
+      // rows out although the batch seals them): a short batch reached the end, and a cursor that
+      // did not move means nothing was selected.
+      if (batch.next === after || batch.sealed + batch.failed.length < SEAL_BATCH_SIZE) return result;
       after = batch.next;
     }
     result.stopped = "limit";
