@@ -83,7 +83,11 @@ struct SettingsView: View {
                     }
                     section(SettingsWebText.accountGroup) {
                         VStack(alignment: .leading, spacing: 0) {
-                            webRow(.privacy, symbol: "hand.raised", title: SettingsWebText.privacyTitle)
+                            loginRow
+                            Divider().padding(.leading, 58)
+                            logoutRow
+                            Divider().padding(.leading, 58)
+                            webRow(.privacy, symbol: "doc.text", title: SettingsWebText.privacyTitle)
                             Divider().padding(.leading, 58)
                             webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle)
                             Divider().padding(.leading, 58)
@@ -91,7 +95,6 @@ struct SettingsView: View {
                         }
                         .modifier(SettingsCard())
                     }
-                    footer
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 20)
@@ -225,32 +228,20 @@ struct SettingsView: View {
 
     // MARK: who is signed in, signing out
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let email = model.signedInEmail {
-                Text("ログイン中: \(Text(verbatim: email).fontWeight(.medium).foregroundStyle(.primary))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button {
-                Task { await model.signOut() }
-            } label: {
-                HStack(spacing: 8) {
-                    if model.isSigningOut {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text("ログアウト")
-                }
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
-            }
-            .buttonStyle(.plain)
-            .disabled(model.isSigningOut)
+    /// 「ログイン中」 with the address, as the Web's info row of the account card.
+    private var loginRow: some View {
+        SettingsInfoRow(symbol: "person", title: SettingsWebText.loginTitle, value: model.signedInEmail ?? "")
+    }
+
+    /// 「ログアウト」, a row of the account card (the press, the key forgotten and the wait are the model's, unchanged).
+    private var logoutRow: some View {
+        Button {
+            Task { await model.signOut() }
+        } label: {
+            SettingsRow(symbol: "rectangle.portrait.and.arrow.right", title: SettingsWebText.logoutTitle, subtitle: nil, badge: nil, trailing: model.isSigningOut ? "ellipsis" : nil)
         }
+        .buttonStyle(.plain)
+        .disabled(model.isSigningOut)
     }
 }
 
@@ -261,6 +252,57 @@ struct SettingsCard: ViewModifier {
             .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator)))
             .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+/// The gray rounded square with the symbol, at the start of every row.
+struct SettingsRowIcon: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(.primary)
+            .frame(width: 30, height: 30)
+            .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A row that opens nothing (the Web's RowInfo): the title and its value, which wraps under the title when long.
+struct SettingsInfoRow: View {
+    let symbol: String
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsRowIcon(symbol: symbol)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { titleText; valueText(alignment: .trailing) }
+                VStack(alignment: .leading, spacing: 2) { titleText; valueText(alignment: .leading) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(minHeight: 56)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.primary)
+            .fixedSize()
+    }
+
+    private func valueText(alignment: Alignment) -> some View {
+        Text(verbatim: value)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: alignment)
     }
 }
 
@@ -276,18 +318,13 @@ struct SettingsRow: View {
     let title: String
     let subtitle: String?
     let badge: Badge?
-    let trailing: String
+    let trailing: String?
     var hint: String?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(width: 30, height: 30)
-                .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityHidden(true)
+            SettingsRowIcon(symbol: symbol)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
@@ -308,10 +345,12 @@ struct SettingsRow: View {
             if let badge, !typeSize.isAccessibilitySize {
                 badgeView(badge)
             }
-            Image(systemName: trailing)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
+            if let trailing {
+                Image(systemName: trailing)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

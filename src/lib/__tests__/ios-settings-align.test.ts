@@ -28,6 +28,8 @@ const WEB_SOURCES: { name: string; file: string; around?: [string, string] }[] =
   { name: "accountGroup", file: `${WEB}/(list)/page.tsx`, around: ['label: "', '", rows: accountRows'] },
   { name: "privacyTitle", file: `${WEB}/(list)/page.tsx`, around: ['id: "privacy", href: "/privacy", icon: "privacy", title: "', '"'] },
   { name: "deleteTitle", file: `${WEB}/(list)/page.tsx`, around: ['id: "delete", href: "/app/settings/delete", icon: "delete", title: "', '"'] },
+  { name: "loginTitle", file: `${WEB}/(list)/page.tsx`, around: ['id: "login", icon: "login", title: "', '"'] },
+  { name: "logoutTitle", file: `${WEB}/logout-form.tsx`, around: ['<span className="min-w-0 flex-1">', "</span>"] },
   { name: "keyReadFailed", file: `${WEB}/forwarding/page.tsx` },
   { name: "keyNotMade", file: `${WEB}/forwarding/page.tsx` },
   { name: "noInboundDomain", file: `${WEB}/forwarding/page.tsx` },

@@ -16,6 +16,10 @@ enum SettingsWebText {
     static let privacyTitle = "プライバシーポリシー"
     /// (list)/page.tsx:69
     static let deleteTitle = "アカウントの削除"
+    /// (list)/page.tsx: the account card's first row
+    static let loginTitle = "ログイン中"
+    /// logout-form.tsx: the account card's second row
+    static let logoutTitle = "ログアウト"
 
     // MARK: 「メールの転送」 (forwarding/page.tsx)
 

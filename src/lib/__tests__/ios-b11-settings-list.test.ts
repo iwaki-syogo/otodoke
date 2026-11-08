@@ -77,3 +77,42 @@ describe("the list draws no cards, the pages hold them", () => {
     expect(LIST.replace("Self.deliveryBadge(for: model)", "nil")).not.toMatch(/case \.delivery: Self\.deliveryBadge/);
   });
 });
+
+describe("the account card is the Web's, in the Web's order", () => {
+  /** The ids of the Web's accountRows, in the order they are written. */
+  const webOrder = (src: string) => {
+    const block = src.match(/const accountRows: Row\[\] = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
+    return [...block.matchAll(/id: "([a-z]+)"/g)].map((m) => m[1]);
+  };
+  /** What the iOS account section draws, in order (the rows that the Web has, then the Web-only exit). */
+  const iosOrder = (src: string) => {
+    const block = src.match(/section\(SettingsWebText\.accountGroup\) \{([\s\S]*?)\n                    \}\n/)?.[1] ?? "";
+    const names: Record<string, string> = { loginRow: "login", logoutRow: "logout", "webRow(.privacy": "privacy", "webRow(.deleteAccount": "delete", "webRow(.openWeb": "openWeb" };
+    return [...block.matchAll(/loginRow|logoutRow|webRow\(\.(?:privacy|deleteAccount|openWeb)/g)].map((m) => names[m[0]]);
+  };
+
+  it("the Web's order is read: ログイン中, ログアウト, プライバシーポリシー, アカウントの削除", () => {
+    expect(webOrder(WEB_LIST)).toEqual(["login", "logout", "privacy", "delete"]);
+  });
+
+  it("iOS draws the same four, in one card, and keeps 「Web で開く」 after them", () => {
+    expect(iosOrder(LIST)).toEqual([...webOrder(WEB_LIST), "openWeb"]);
+    // One card: the section holds a single SettingsCard, and the old footer outside of it is gone.
+    const block = LIST.match(/section\(SettingsWebText\.accountGroup\) \{([\s\S]*?)\n                    \}\n/)?.[1] ?? "";
+    expect(block.match(/SettingsCard\(\)/g)?.length).toBe(1);
+    expect(LIST).not.toMatch(/private var footer/);
+    expect(LIST).not.toContain("Text(\"ログイン中:");
+    expect(LIST).toContain("SettingsWebText.loginTitle");
+    expect(LIST).toContain("SettingsWebText.logoutTitle");
+    // The press is unchanged.
+    expect(LIST).toMatch(/Task \{ await model\.signOut\(\) \}/);
+  });
+
+  it("negative control: the old order (the exits first, logout outside), or an unreadable block, is caught", () => {
+    const swapped = LIST.replace("loginRow\n                            Divider().padding(.leading, 58)\n                            logoutRow", "logoutRow\n                            Divider().padding(.leading, 58)\n                            loginRow");
+    expect(iosOrder(swapped)).not.toEqual(iosOrder(LIST));
+    expect(iosOrder(swapped)).toEqual(["logout", "login", "privacy", "delete", "openWeb"]);
+    expect(iosOrder(LIST.replace("accountGroup", "other"))).toEqual([]);
+    expect(webOrder(WEB_LIST.replace("const accountRows", "const rows"))).toEqual([]);
+  });
+});
