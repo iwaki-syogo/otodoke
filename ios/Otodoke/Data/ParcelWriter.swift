@@ -277,6 +277,7 @@ struct ParcelWriter: Sendable {
             return .unknown
         }
         // A status the mail already moved on (配達中・不在) is not the form's to set back: it is neither compared nor written.
+        // A stored cancelled is not in carriedStatuses: it is compared and written over as before.
         let keepsStatus = ManualParcel.carriedStatuses.contains(stored.status)
         let same = stored.title == row.title && stored.shop == row.shop && stored.orderedAt == row.orderedAt
             && stored.expectedDate == row.expectedDate && stored.totalAmount == row.totalAmount

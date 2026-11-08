@@ -134,6 +134,26 @@ struct ScreenRefresherTests {
         r.disappeared(calendar)
     }
 
+    @Test func aPublishReadsTheSettingsTabInFrontWhenItIsStale() async {
+        let changes = DataChanges()
+        let r = ScreenRefresher()
+        r.select(.settings)
+        var reads = 0
+        let mark = ChangeMark(changes)
+        mark.markRead()
+        let token = r.appeared(.settings, in: .settings, refresh: {}, refreshIfStale: {
+            guard mark.isStale else { return }
+            reads += 1
+            mark.markRead()
+        })
+        await r.dataChanged()
+        #expect(reads == 0)
+        changes.publish()
+        await r.dataChanged()
+        #expect(reads == 1)
+        r.disappeared(token)
+    }
+
     @Test func aPublishWithNothingInFrontOrNoStaleCheckReadsNothing() async {
         let changes = DataChanges()
         let r = ScreenRefresher()
@@ -144,7 +164,7 @@ struct ScreenRefresherTests {
         changes.publish()
         await r.dataChanged()
         #expect(reads == 0)
-        // The front screen has no stale check (the settings tab): nothing is read either.
+        // The front screen has no stale check: nothing is read either.
         r.select(.settings)
         let settings = r.appeared(.settings, in: .settings, refresh: { reads += 1 })
         await r.dataChanged()

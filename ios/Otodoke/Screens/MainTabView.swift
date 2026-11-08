@@ -197,10 +197,17 @@ struct MainTabView: View {
             screens.refresher.select(tab)
         }
         // S-1: a long load or write finished (the version moved) while another screen was in front: the screen in
-        // front reads again if it is stale (the others do so when shown).
+        // front reads again if it is stale (the others do so when shown). Only while the app is in front: from the
+        // background the coming back (sceneBecameActive) reads again. The 設定 tab reads through its own model, so a
+        // page pushed on it (転送・サンプル・鍵) is covered too.
         .onChange(of: screens.changes.version) {
+            guard scenePhase == .active else { return }
             let refresher = screens.refresher
-            Task { await refresher.dataChanged() }
+            let settings = screens.settings
+            let onSettings = selection == .settings
+            Task {
+                if onSettings { await settings.onAppear() } else { await refresher.dataChanged() }
+            }
         }
         // A sample load went through: the 荷物 tab shows it (with the note while another load is running).
         .onChange(of: screens.settings.demo?.loadedCount) { _, count in
@@ -313,7 +320,7 @@ struct MainTabView: View {
                 .sheet(item: $manualForm) { form in
                     ManualParcelView(model: form) { manualForm = nil }
                 }
-                .shownScreen(.settings, in: .settings, screens.refresher) { await settings.sceneBecameActive() }
+                .shownScreen(.settings, in: .settings, screens.refresher, refresh: { await settings.sceneBecameActive() }, ifStale: { await settings.onAppear() })
         }
     }
 }
