@@ -49,7 +49,7 @@ export default async function Home() {
       </section>
 
       <div className="mt-10">
-        <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4">
+        <div className="-mx-4 flex scroll-px-4 snap-x snap-mandatory gap-3 overflow-x-auto px-4">
           {SCREENS.map((s) => (
             <Image
               key={s.src}
