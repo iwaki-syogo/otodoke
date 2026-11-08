@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -51,5 +52,50 @@ describe("the top page", () => {
     ]);
     expect(all.map(([href]) => href)).not.toContain("/signup");
     expect(all.map(([href]) => href)).not.toContain("/login");
+  });
+
+  it("shows the three screenshots in order with their alt texts, all lazy", async () => {
+    const root = parseHtml(renderToStaticMarkup(await Home()));
+    const imgs = findAll(root, (n) => n.tag === "img");
+    expect(imgs.slice(0, 3).map((i) => i.attrs.alt)).toEqual([
+      "荷物の一覧。店も運送会社もまとめて、届く日と対面での受け取りが分かる",
+      "カレンダー。家にいる必要のある日に赤い印",
+      "荷物の詳細。読み取った値の横に、元のメールの一文",
+    ]);
+    expect(imgs.slice(0, 3).map((i) => decodeURIComponent(i.attrs.src))).toEqual([
+      expect.stringContaining("/screens/list.webp"),
+      expect.stringContaining("/screens/calendar.webp"),
+      expect.stringContaining("/screens/detail.webp"),
+    ]);
+    expect(imgs.length).toBe(4);
+    for (const img of imgs) {
+      expect(img.attrs.loading).toBe("lazy");
+      expect(img.attrs.fetchpriority).toBeUndefined();
+    }
+    expect(renderToStaticMarkup(await Home())).not.toContain("rel=\"preload\"");
+  });
+
+  it("the demo video link opens YouTube in a new tab safely", async () => {
+    const root = parseHtml(renderToStaticMarkup(await Home()));
+    const a = findAll(root, (n) => n.tag === "a" && n.attrs.href === "https://youtu.be/BLPMP_bYJ8c")[0];
+    expect(a.attrs.target).toBe("_blank");
+    expect(a.attrs.rel).toContain("noopener");
+    expect(textOf(a).trim()).toBe("デモ動画（3 分）");
+    expect(findAll(a, (n) => n.tag === "img")).toHaveLength(1);
+  });
+});
+
+describe("share metadata", () => {
+  it("layout sets metadataBase and a large Twitter card", async () => {
+    const { metadata } = await import("@/app/layout");
+    expect(String(metadata.metadataBase)).toBe("https://otodoke.app/");
+    expect((metadata.twitter as { card: string }).card).toBe("summary_large_image");
+    expect(metadata.openGraph).toMatchObject({ siteName: "Otodoke", type: "website", locale: "ja_JP" });
+  });
+
+  it("opengraph-image.png is 1200x630", () => {
+    const b = readFileSync(new URL("../../app/opengraph-image.png", import.meta.url));
+    expect(b.subarray(1, 4).toString()).toBe("PNG");
+    expect([b.readUInt32BE(16), b.readUInt32BE(20)]).toEqual([1200, 630]);
   });
 });
