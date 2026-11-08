@@ -48,8 +48,14 @@ export default async function Home() {
         )}
       </section>
 
-      <div className="mt-10">
-        <div className="-mx-4 flex scroll-px-4 snap-x snap-mandatory gap-3 overflow-x-auto px-4">
+      <section className="mt-14 grid gap-4">
+        <Feature title="置き配できない荷物が分かる" body="対面受け取り・代引き・クール便など、家にいないと受け取れない荷物をメールの文面から見つけて、その日を強調します。" />
+        <Feature title="どの店でも同じ画面" body="店ごとのアプリを開かなくても、注文中・発送済み・届いた、が 1 つの一覧とカレンダーに。" />
+        <Feature title="根拠が見える" body="読み取った値には元メールの該当行を添えます。迷ったものは断定せず「要確認」と表示します。" />
+      </section>
+
+      <div className="mt-14">
+        <div role="region" aria-label="アプリの画面" tabIndex={0} className="-mx-4 flex scroll-px-4 snap-x snap-mandatory gap-3 overflow-x-auto px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400">
           {SCREENS.map((s) => (
             <Image
               key={s.src}
@@ -67,12 +73,6 @@ export default async function Home() {
           <span className="mt-2 block text-sm text-neutral-600">デモ動画（3 分）</span>
         </a>
       </div>
-
-      <section className="mt-14 grid gap-4">
-        <Feature title="置き配できない荷物が分かる" body="対面受け取り・代引き・クール便など、家にいないと受け取れない荷物をメールの文面から見つけて、その日を強調します。" />
-        <Feature title="どの店でも同じ画面" body="店ごとのアプリを開かなくても、注文中・発送済み・届いた、が 1 つの一覧とカレンダーに。" />
-        <Feature title="根拠が見える" body="読み取った値には元メールの該当行を添えます。迷ったものは断定せず「要確認」と表示します。" />
-      </section>
 
       <footer className="mt-auto pt-16 text-xs leading-5 text-neutral-500">
         Built with Claude: Japan 2026 の作品。メールの判定・読み取りに Claude を使っています。

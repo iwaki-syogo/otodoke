@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -91,11 +91,40 @@ describe("share metadata", () => {
     expect(String(metadata.metadataBase)).toBe("https://otodoke.app/");
     expect((metadata.twitter as { card: string }).card).toBe("summary_large_image");
     expect(metadata.openGraph).toMatchObject({ siteName: "Otodoke", type: "website", locale: "ja_JP" });
+    // Child routes inherit openGraph, so a title or description here would override every page's own.
+    expect(metadata.openGraph).not.toHaveProperty("title");
+    expect(metadata.openGraph).not.toHaveProperty("description");
   });
 
   it("opengraph-image.png is 1200x630", () => {
     const b = readFileSync(new URL("../../app/opengraph-image.png", import.meta.url));
     expect(b.subarray(1, 4).toString()).toBe("PNG");
     expect([b.readUInt32BE(16), b.readUInt32BE(20)]).toEqual([1200, 630]);
+  });
+
+  it("every image the top page and README name exists in the repo", () => {
+    const root = new URL("../../../", import.meta.url);
+    for (const f of ["list.webp", "calendar.webp", "detail.webp", "video-thumb.jpg"]) {
+      expect(existsSync(new URL(`public/screens/${f}`, root))).toBe(true);
+    }
+    const top = readFileSync(new URL("README.md", root), "utf8").split("\n").slice(0, 30).join("\n");
+    const srcs = [...top.matchAll(/<img[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]);
+    expect(srcs.length).toBeGreaterThanOrEqual(4);
+    for (const src of srcs) expect(existsSync(new URL(src, root))).toBe(true);
+    expect(existsSync(new URL("src/app/twitter-image.png", root))).toBe(false);
+  });
+
+  it("the video thumbnail has empty alt, and the strip is a focusable labelled region placed after the Feature cards", async () => {
+    const html = renderToStaticMarkup(await Home());
+    const root = parseHtml(html);
+    const link = findAll(root, (n) => n.tag === "a" && n.attrs.href === "https://youtu.be/BLPMP_bYJ8c")[0];
+    expect(findAll(link, (n) => n.tag === "img")[0].attrs.alt).toBe("");
+    const strip = findAll(root, (n) => n.attrs.role === "region")[0];
+    expect(strip.attrs["aria-label"]).toBeTruthy();
+    expect(strip.attrs.tabindex).toBe("0");
+    expect(findAll(strip, (n) => n.tag === "img")).toHaveLength(3);
+    expect(html.indexOf("根拠が見える")).toBeGreaterThan(-1);
+    expect(html.indexOf('role="region"')).toBeGreaterThan(html.indexOf("根拠が見える"));
+    expect(html.indexOf("<footer")).toBeGreaterThan(html.indexOf("youtu.be"));
   });
 });

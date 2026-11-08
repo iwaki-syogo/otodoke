@@ -9,9 +9,6 @@ export const metadata: Metadata = {
     siteName: "Otodoke",
     type: "website",
     locale: "ja_JP",
-    title: "Otodoke",
-    description:
-      "荷物に、予定を合わせない。どの店で買った荷物も、いつ届くか・いつ家にいればいいか・今月いくら使ったかが分かる荷物カレンダー。設定は最初の 1 回だけ。",
   },
   twitter: { card: "summary_large_image" },
 };
