@@ -263,7 +263,7 @@ struct SettingsModelTests {
 
     @Test func noKeyAsksToChooseAPassphrase() async throws {
         let s = try await setUp(keys: [], mails: [SettingsRows.mail(1), SettingsRows.mail(2)])
-        #expect(s.model.keyPanel == .none)
+        #expect(s.model.keyPanel == SettingsModel.KeyPanel.none)
         #expect(s.model.showsAddress == false)
         #expect(s.model.address == nil)
     }
@@ -286,7 +286,7 @@ struct SettingsModelTests {
     @Test func theAddressFollowsTheKeyRowNotTheDevice() async throws {
         // A retired key only: no key in use, so no address, whatever this device holds.
         let s = try await setUp(keys: [SettingsRows.key(1, keyID: "k0", retired: true)])
-        #expect(s.model.keyPanel == .none)
+        #expect(s.model.keyPanel == SettingsModel.KeyPanel.none)
         #expect(s.model.showsAddress == false)
     }
 
@@ -444,7 +444,7 @@ struct SettingsModelTests {
 
     @Test func noKeyOffersSigningInAgainAndItSignsOutOnceWithoutOpeningTheWeb() async throws {
         let s = try await setUp(keys: [])
-        #expect(s.model.keyPanel == .none)
+        #expect(s.model.keyPanel == SettingsModel.KeyPanel.none)
         #expect(SettingsKeyPage.offersSignInAgain(s.model))
         #expect(LoginText.signInAgain == "ログインし直す")
         #expect(LoginText.noKeyYet == "メールの鍵がまだできていません。ログインし直すと作れます。")

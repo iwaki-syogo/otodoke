@@ -296,7 +296,7 @@ struct ReviewFix1QuietFailureTests {
         let fake = FakeSupabase.make()
         let m = try await World.settings(fake)
         await m.load()
-        #expect(m.keyPanel == .none)
+        #expect(m.keyPanel == SettingsModel.KeyPanel.none)
         #expect(m.oldKeyNote == nil)
     }
 
