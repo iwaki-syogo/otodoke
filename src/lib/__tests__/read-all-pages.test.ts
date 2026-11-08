@@ -98,20 +98,21 @@ describe("/app reads every parcel", () => {
     expect(failureBoxes(root)).toHaveLength(1);
     expect(parcelLinks(root)).toHaveLength(0);
     expect(textOf(root)).not.toContain("もうすぐ届く");
-    // The counts are separate reads and still show.
-    expect(textOf(linksTo(root, "/app/delivered")[0])).toMatch(/1\s*件/);
+    // The links stay, with no count.
+    expect(textOf(linksTo(root, "/app/delivered")[0])).not.toMatch(/\d/);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });
 
-  it("shows 「読み込めませんでした」 with the counts when the first page fails", async () => {
+  it("shows 「読み込めませんでした」 with the links when the first page fails", async () => {
     seed(3);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     db.hooks.push((q) => (q.table === "parcels" && !q.head ? fail : undefined));
     const root = await render();
     expect(failureBoxes(root)).toHaveLength(1);
     expect(textOf(root)).not.toContain("まだ荷物がありません");
-    expect(textOf(linksTo(root, "/app/delivered")[0])).toMatch(/1\s*件/);
+    expect(textOf(linksTo(root, "/app/delivered")[0])).toContain("届いた荷物");
+    expect(textOf(linksTo(root, "/app/delivered")[0])).not.toMatch(/\d/);
     log.mockRestore();
   });
 
