@@ -113,6 +113,23 @@ final class ScreenshotUITests: XCTestCase {
         }
     }
 
+    /// The empty list's 「サンプルで試す」 opens the settings tab's own page (not Safari), light and dark. The form that
+    /// 「荷物を登録する」 (under 「これは荷物」) opens is the one the list's 「＋ 登録」 opens (shot in testTheManualForm).
+    func testTheEmptyListSampleOpensTheSettingsPage() throws {
+        for style in ["Light", "Dark"] {
+            XCUIDevice.shared.appearance = style == "Dark" ? .dark : .light
+            let app = launch("empty")
+            let sample = app.buttons["サンプルで試す"].firstMatch
+            XCTAssertTrue(sample.waitForExistence(timeout: 10), style)
+            sample.tap()
+            XCTAssertTrue(app.navigationBars["サンプルで試す"].waitForExistence(timeout: 10), style)
+            XCTAssertEqual(app.state, .runningForeground)
+            try shoot("empty-sample-page-\(style)")
+            app.terminate()
+        }
+        XCUIDevice.shared.appearance = .light
+    }
+
     func testTheLoginScreens() throws {
         for scenario in ["login", "login-signup", "login-error", "login-sent"] {
             let app = launch(scenario)
@@ -164,6 +181,11 @@ final class ScreenshotUITests: XCTestCase {
             app.buttons["この荷物を消す"].tap()
             app.swipeUp()
             try shoot("edit-delete-\(style)")
+            let check = app.descendants(matching: .any)["manual-delete-check"].firstMatch
+            XCTAssertTrue(check.waitForExistence(timeout: 5), style)
+            check.tap()
+            try shoot("edit-delete-checked-\(style)")
+            check.tap()
             app.buttons["消す"].tap()
             XCTAssertTrue(app.staticTexts["「本当に消す」にチェックを入れてください"].waitForExistence(timeout: 5), style)
             try shoot("edit-delete-error-\(style)")
