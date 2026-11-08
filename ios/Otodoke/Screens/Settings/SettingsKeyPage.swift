@@ -17,6 +17,11 @@ struct SettingsKeyPage: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    /// The key step's failure says signing in again would not help (invalid_input, the address mismatch): no button.
+    static func offersSignInAgain(_ model: SettingsModel) -> Bool {
+        model.keyStepFailure?.signInAgain ?? true
+    }
+
     @ViewBuilder
     private var keyPanel: some View {
         switch model.keyPanel {
@@ -28,22 +33,20 @@ struct SettingsKeyPage: View {
         case .none?:
             VStack(alignment: .leading, spacing: 8) {
                 SettingsParts.heading(SettingsWebText.makeKeyHeading)
-                Text(SettingsWebText.makeKeyLead)
+                Text(LoginText.noKeyYet)
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
                 if let failure = model.keyStepFailure {
                     // S3: the key step after the sign-in did not make the key.
                     SettingsParts.errorBox(failure.message)
-                    if failure.signInAgain {
-                        Button {
-                            Task { await model.signOut() }
-                        } label: {
-                            Text(LoginText.signInAgain).font(.subheadline.weight(.medium))
-                        }
-                    }
                 }
-                SettingsParts.primaryButton("鍵を作る") { SettingsWeb.open(.createPassphrase, openURL) }
-                    .padding(.top, 4)
+                // 「ログインし直す」 as the unlock's: signs out, the login screen follows, and the next password
+                // sign-in makes the key. Not offered when signing in again would not help (N-6, N4).
+                if Self.offersSignInAgain(model) {
+                    SettingsParts.primaryButton(LoginText.signInAgain) { Task { await model.signOut() } }
+                        .accessibilityIdentifier("key-sign-in-again")
+                        .padding(.top, 4)
+                }
             }
             .padding(16)
             .background(SettingsPalette.skyBackground, in: RoundedRectangle(cornerRadius: 16))

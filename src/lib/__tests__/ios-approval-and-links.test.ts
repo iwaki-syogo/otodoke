@@ -96,7 +96,7 @@ describe("the pages the app opens in the browser", () => {
     has("demo-labels.ts", "サンプル");
     expect(read("src/app/app/settings/(list)/page.tsx")).toContain('href: "/app/settings/delete"');
     const model = stripComments(read("ios/Otodoke/Screens/Settings/SettingsModel.swift"));
-    expect(model).toMatch(/case \.createPassphrase, \.changePassphrase: WebLink\.settingsPassword/);
+    expect(model).toMatch(/case \.changePassphrase: WebLink\.settingsPassword/);
     expect(model).toMatch(/case \.readWaiting: WebLink\.settingsTrouble/);
     expect(model).toMatch(/case \.markAsParcel: WebLink\.settingsDropped/);
     expect(model).toMatch(/case \.deleteAccount: WebLink\.settingsDelete/);

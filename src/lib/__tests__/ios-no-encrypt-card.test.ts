@@ -36,7 +36,7 @@ describe("iOS settings: no encryption card, button, badge or count of plain mail
 
   it("the key page keeps its other cards: make the key, change the password, the earlier-key line, Face ID", () => {
     const key = stripComments(sources[`${S}/SettingsKeyPage.swift`]);
-    expect(key).toContain('"鍵を作る"');
+    expect(key).toContain("LoginText.signInAgain");
     expect(key).toContain('"パスワードを変える"');
     expect(key).toContain("model.oldKeyNote");
     expect(key).toContain("FaceIDToggleRow(model: model)");

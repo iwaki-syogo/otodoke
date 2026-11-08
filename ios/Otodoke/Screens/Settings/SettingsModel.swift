@@ -7,8 +7,6 @@ import Observation
 
 /// What the settings screen opens on the Web (task.md's 「Web で開く」 list).
 enum SettingsWebAction: CaseIterable, Equatable, Sendable {
-    /// 「鍵を作る」 (no key row)
-    case createPassphrase
     case changePassphrase
     /// 未読の「読み取る」
     case readWaiting
@@ -45,7 +43,7 @@ final class SettingsModel {
     /// The page each action opens: https://otodoke.app/… as task.md lists it.
     static func webLink(_ action: SettingsWebAction) -> URL {
         switch action {
-        case .createPassphrase, .changePassphrase: WebLink.settingsPassword
+        case .changePassphrase: WebLink.settingsPassword
         case .readWaiting: WebLink.settingsTrouble
         case .markAsParcel: WebLink.settingsDropped
         case .openWeb: WebLink.app

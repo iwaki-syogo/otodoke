@@ -168,7 +168,6 @@ struct SettingsApprovalTests {
     @Test func eachWebButtonOpensThePageThatHoldsIt() {
         let base = "https://otodoke.app"
         let expected: [(SettingsWebAction, String)] = [
-            (.createPassphrase, "/app/settings/password"),
             (.changePassphrase, "/app/settings/password"),
             (.readWaiting, "/app/settings/trouble"),
             (.markAsParcel, "/app/settings/dropped"),

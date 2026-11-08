@@ -125,7 +125,7 @@ describe("the settings words copied from the Web's dev branch", () => {
     const pages = stripComments(read(`${SETTINGS}/SettingsPages.swift`));
     for (const n of ["keyReadFailed", "keyNotMade", "droppedLead", "droppedSummary", "noSubject", "privacyTitle"]) expect(pages, n).toContain(`SettingsWebText.${n}`);
     const key = stripComments(read(`${SETTINGS}/SettingsKeyPage.swift`));
-    for (const n of ["makeKeyHeading", "makeKeyLead"]) expect(key, n).toContain(`SettingsWebText.${n}`);
+    for (const n of ["makeKeyHeading"]) expect(key, n).toContain(`SettingsWebText.${n}`);
     expect(stripComments(read(`${SETTINGS}/SettingsModel.swift`))).toContain("SettingsWebText.noInboundDomain");
     const view = stripComments(read(`${SETTINGS}/SettingsView.swift`));
     for (const n of ["mailGroup", "accountGroup", "privacyTitle", "deleteTitle"]) expect(view, n).toContain(`SettingsWebText.${n}`);

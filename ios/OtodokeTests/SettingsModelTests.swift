@@ -393,7 +393,6 @@ struct SettingsModelTests {
 
     @Test func theWebPagesAreTheListOfTaskMd() {
         // One page per item (the Web's dev 84255fc): the button opens the page that holds it.
-        #expect(SettingsModel.webLink(.createPassphrase).absoluteString == "https://otodoke.app/app/settings/password")
         #expect(SettingsModel.webLink(.changePassphrase).absoluteString == "https://otodoke.app/app/settings/password")
         #expect(SettingsModel.webLink(.readWaiting).absoluteString == "https://otodoke.app/app/settings/trouble")
         #expect(SettingsModel.webLink(.markAsParcel).absoluteString == "https://otodoke.app/app/settings/dropped")
@@ -439,6 +438,35 @@ struct SettingsModelTests {
         await out.value
         #expect(s.model.isSigningOut == false)
         #expect(s.auth.state == .signedOut)
+    }
+
+    // MARK: 「鍵を作る」 is the in-app sign-in-again
+
+    @Test func noKeyOffersSigningInAgainAndItSignsOutOnceWithoutOpeningTheWeb() async throws {
+        let s = try await setUp(keys: [])
+        #expect(s.model.keyPanel == .none)
+        #expect(SettingsKeyPage.offersSignInAgain(s.model))
+        #expect(LoginText.signInAgain == "ログインし直す")
+        #expect(LoginText.noKeyYet == "メールの鍵がまだできていません。ログインし直すと作れます。")
+        // The button's action is model.signOut(): pressed twice quickly, the session is ended once.
+        let gate = Gate()
+        await s.fake.fail("POST", "logout", with: .hold(gate))
+        let first = Task { await s.model.signOut() }
+        #expect(await waitFor { await s.fake.count("POST", "logout") == 1 })
+        await s.model.signOut()
+        gate.open()
+        await first.value
+        #expect(await s.fake.count("POST", "logout") == 1)
+        #expect(s.auth.state == .signedOut)
+        // Nothing of the Web is a way to make the key any more.
+        #expect(SettingsWebAction.allCases.map { "\($0)" }.contains("createPassphrase") == false)
+    }
+
+    @Test func aFailureThatSigningInAgainCannotFixOffersNoButton() async throws {
+        let s = try await setUp(keys: [])
+        #expect(SettingsKeyPage.offersSignInAgain(s.model) == true)
+        #expect(KeySetupOutcome.failed(message: LoginText.invalidInput).offersSignInAgain == false)
+        #expect(KeySetupOutcome.failed(message: LoginText.network).offersSignInAgain == true)
     }
 
     // MARK: 「古くなった」 and the front
