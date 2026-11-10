@@ -29,7 +29,7 @@ struct LogicJSSemanticsTests {
         #expect(HtmlText.htmlToText("a\u{000B}\u{000B}b") == "a b")
         #expect(HtmlText.htmlToText("a\r\n\r\n\r\n\r\nb") == "a\n\nb")
         #expect(Carriers.amazonOrderTrackingUrl("\u{3000}250-1234567-1234567\u{3000}")
-            == "https://www.amazon.co.jp/gp/your-account/ship-track?orderId=250-1234567-1234567")
+            == "https://www.amazon.co.jp/gp/your-account/order-details?orderID=250-1234567-1234567")
     }
 
     @Test func textIsSearchedByCodeUnitNotByCharacter() {

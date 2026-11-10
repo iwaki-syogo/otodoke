@@ -113,14 +113,17 @@ enum Carriers {
         }
     }
 
-    /// Amazon's own tracking page for a Japanese Amazon order number (250-1234567-1234567), else nil.
+    /// Label of the link to the Amazon order details page.
+    static let amazonOrderLinkLabel = "注文の詳細を見る"
+
+    /// Amazon's order details page for a Japanese Amazon order number (250-1234567-1234567), else nil.
     static func amazonOrderTrackingUrl(_ orderNumber: String?) -> String? {
         let n = JSText.trim(orderNumber ?? "")
         let u = Array(n.utf16)
         guard u.count == 19, u[3] == 0x2D, u[11] == 0x2D,
               allDigits(u[0..<3]), allDigits(u[4..<11]), allDigits(u[12..<19]) else { return nil }
         // Digits and hyphens only, so encodeURIComponent leaves the number as it is.
-        return "https://www.amazon.co.jp/gp/your-account/ship-track?orderId=\(n)"
+        return "https://www.amazon.co.jp/gp/your-account/order-details?orderID=\(n)"
     }
 
     // MARK: - Private

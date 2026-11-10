@@ -67,6 +67,21 @@ enum TrackingPage {
             .joined(separator: "&")
     }
 
+    enum NavigationDecision: Equatable { case allow, cancel, loadHere }
+
+    /// What to do with a navigation. The main frame follows https only. A sub-frame (the carrier's
+    /// page has empty iframes that load about:blank) may also load about:blank and about:srcdoc;
+    /// everything else is cancelled. A link to a new window (no target frame) is loaded here.
+    static func decision(for url: URL?, isMainFrame: Bool, hasTargetFrame: Bool) -> NavigationDecision {
+        guard let url else { return .cancel }
+        if isHttps(url) { return hasTargetFrame ? .allow : .loadHere }
+        if hasTargetFrame, !isMainFrame {
+            let text = url.absoluteString.lowercased()
+            if text == "about:blank" || text == "about:srcdoc" { return .allow }
+        }
+        return .cancel
+    }
+
     /// The sheet's title: the host of the page shown now (the web view has no address bar, so a page
     /// that moved to another site is never shown under the carrier's name).
     static func title(for url: URL?) -> String {
@@ -177,18 +192,17 @@ private struct PostedWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-            guard let url = action.request.url, TrackingPage.isHttps(url) else {
-                // about:, javascript:, data:, tel: and http: pages are not opened.
-                decisionHandler(.cancel)
-                return
-            }
-            if action.targetFrame == nil {
+            switch TrackingPage.decision(for: action.request.url, isMainFrame: action.targetFrame?.isMainFrame == true, hasTargetFrame: action.targetFrame != nil) {
+            case .allow:
+                decisionHandler(.allow)
+            case .loadHere:
                 // A link to a new window opens here instead.
                 webView.load(action.request)
                 decisionHandler(.cancel)
-                return
+            case .cancel:
+                // Main frame: about:, javascript:, data:, tel: and http: pages are not opened.
+                decisionHandler(.cancel)
             }
-            decisionHandler(.allow)
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {

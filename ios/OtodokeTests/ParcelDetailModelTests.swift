@@ -80,7 +80,7 @@ struct ParcelDetailModelTests {
 
     @Test func amazonsOwnPageForAnAmazonOrder() throws {
         let amazon = try row(["shop_key": "amazon", "order_number": "250-1234567-1234567"])
-        #expect(ParcelDetailModel.amazonURL(for: amazon) == URL(string: "https://www.amazon.co.jp/gp/your-account/ship-track?orderId=250-1234567-1234567"))
+        #expect(ParcelDetailModel.amazonURL(for: amazon) == URL(string: "https://www.amazon.co.jp/gp/your-account/order-details?orderID=250-1234567-1234567"))
         #expect(ParcelDetailModel.amazonURL(for: try row(["shop_key": "amazon", "order_number": "D01-1234567-1234567"])) == nil)
         #expect(ParcelDetailModel.amazonURL(for: try row(["shop_key": nil, "order_number": "250-1234567-1234567"])) == nil)
     }

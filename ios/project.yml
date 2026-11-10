@@ -53,6 +53,17 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # FaceIDText.usageDescription, word for word (a vitest compares them).
         NSFaceIDUsageDescription: "メールを開く鍵を Face ID で守って、この端末だけに保存します。"
+        # Yamato's tracking pages toi.kuronekoyamato.co.jp and track.kuronekoyamato.co.jp (the "EN" link on the
+        # toi page moves to track) offer only TLS 1.2 with AES128-GCM-SHA256 (no forward secrecy), which ATS
+        # rejects with NSURLErrorDomain -1200. Relaxed for these two hosts only, no subdomains. www, faq, zip
+        # and business are on TLS 1.3 and need no exception. The host the result page loads after the POST is
+        # not confirmed yet; check it on a real device.
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            toi.kuronekoyamato.co.jp:
+              NSExceptionRequiresForwardSecrecy: false
+            track.kuronekoyamato.co.jp:
+              NSExceptionRequiresForwardSecrecy: false
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:

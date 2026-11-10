@@ -244,7 +244,7 @@ struct ParcelDetailView: View {
             }
             if let amazon {
                 Link(destination: amazon) {
-                    Text("Amazonで配送状況を見る")
+                    Text(Carriers.amazonOrderLinkLabel)
                         .font(.caption.weight(.medium))
                         .underline()
                         .foregroundStyle(OtodokeColor.link)
