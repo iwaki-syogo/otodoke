@@ -21,7 +21,13 @@ Now waiting:
   owner's YES on the day; nothing it removes comes back. Its verify files each return one verdict
   row: `supabase/verify/20261114090000_drop_unsealed_plaintext.before.sql` and `.count-control.sql`
   first, `.after.sql` right after.
-- `20261107090000_retire_passphrase_keys.sql` — decision 8: once, right after the password sign-in
+- `20261107090000_retire_passphrase_keys.sql` — **WARNING (2026-11-08, restated 2026-11-10): do NOT
+  run this.** password-v1 is already in production, and its key rows look the same as passphrase
+  rows, so running it as written retires EVERY key in use and every user who signed in with a
+  password (the judge account's too) loses theirs. It may be run only after it has been rewritten
+  to target the passphrase key ids only AND that rewrite has passed review by someone other than
+  its author; a date passing is not a condition. The steps below are the original plan, kept for
+  reference only. Decision 8: once, right after the password sign-in
   (password-v1) reaches production and before anyone signs in with a password there, retire every
   mail key in use (they were made with a passphrase, which no screen asks for any more) and delete
   the keys never put in use (one data change, no schema). Only with the owner's YES on the day. A
