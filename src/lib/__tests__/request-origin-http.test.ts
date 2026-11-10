@@ -35,12 +35,12 @@ const PASSES: Array<[string, Headers]> = [
   ["https://localhost:3015", ownPage("https://localhost:3015")],
   ["http://127.0.0.1:3015", ownPage("http://127.0.0.1:3015")],
   ["http://[::1]:3015", ownPage("http://[::1]:3015")],
-  ["a phone on the tailnet, http://100.111.61.12:3015", ownPage("http://100.111.61.12:3015")],
+  ["a phone on the tailnet, http://100.101.102.103:3015", ownPage("http://100.101.102.103:3015")],
   ["the first Tailscale address", ownPage("http://100.64.0.0:3015")],
   ["the last Tailscale address", ownPage("http://100.127.255.255:3015")],
   ["a Host in capitals", h({ host: "LOCALHOST:3015", origin: "http://localhost:3015", "sec-fetch-site": "same-origin" })],
   ["no Origin", h({ host: "otodoke.app", "sec-fetch-site": "same-origin" })],
-  ["Sec-Fetch-Site only, over http on the tailnet", h({ host: "100.111.61.12:3015", "sec-fetch-site": "same-origin" })],
+  ["Sec-Fetch-Site only, over http on the tailnet", h({ host: "100.101.102.103:3015", "sec-fetch-site": "same-origin" })],
   ["neither header", h({ host: "otodoke.app" })],
   ["Origin null from a no-referrer page, with Sec-Fetch-Site same-origin", h({ host: "otodoke.app", origin: "null", "sec-fetch-site": "same-origin" })],
 ];
@@ -57,7 +57,7 @@ const REFUSED: Array<[string, Headers]> = [
   ["a name that only starts with localhost", ownPage("http://localhost.evil.example:3015")],
   ["a name that only ends like localhost", ownPage("http://evillocalhost:3015")],
   ["a name that only starts with a loopback address", ownPage("http://127.0.0.1.nip.io:3015")],
-  ["a name that only starts with a Tailscale address", ownPage("http://100.111.61.12.nip.io:3015")],
+  ["a name that only starts with a Tailscale address", ownPage("http://100.101.102.103.nip.io:3015")],
 ];
 
 beforeEach(() => {
@@ -101,7 +101,7 @@ describe("POST /auth/confirm", () => {
 });
 
 describe("servedOverHttp", () => {
-  it.each(["localhost", "localhost:3015", "otodoke.localhost:3015", "a.b.localhost", "127.0.0.1:3015", "127.8.9.10", "[::1]:3015", "[::1]", "100.64.0.1:3015", "100.111.61.12:3015", "100.127.255.255"])(
+  it.each(["localhost", "localhost:3015", "otodoke.localhost:3015", "a.b.localhost", "127.0.0.1:3015", "127.8.9.10", "[::1]:3015", "[::1]", "100.64.0.1:3015", "100.101.102.103:3015", "100.127.255.255"])(
     "is true for %s",
     (host) => {
       expect(servedOverHttp(host)).toBe(true);

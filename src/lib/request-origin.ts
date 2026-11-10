@@ -27,7 +27,7 @@ export function fromThisSite(headers: Headers): boolean {
 /**
  * Whether a Host (with or without its port) is one the app is served from over plain http: the
  * developer's own machine (localhost, *.localhost, 127.0.0.0/8, [::1]) or a phone on the
- * developer's tailnet (Tailscale's 100.64.0.0/10, e.g. 100.111.61.12:3015). Everything else,
+ * developer's tailnet (Tailscale's 100.64.0.0/10, e.g. 100.101.102.103:3015). Everything else,
  * otodoke.app and every Vercel URL included, is https.
  */
 export function servedOverHttp(host: string): boolean {

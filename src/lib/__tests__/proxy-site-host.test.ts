@@ -109,7 +109,7 @@ describe("what is not sent", () => {
     "xotodoke-app.vercel.app",
     "localhost:3015",
     "otodoke.localhost:3015",
-    "100.111.61.12:3015",
+    "100.101.102.103:3015",
   ])("leaves %s where it is", async (host) => {
     auth.user = { id: "u1" };
     for (const path of ["/", "/app", "/auth/continue?token_hash=t&type=email", "/auth/turnstile-app"]) {
