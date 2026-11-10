@@ -13,12 +13,12 @@
 
 どの店で買った荷物も、何がいつ届くか、いつ家にいればいいか、今月いくら使ったかが 1 つの画面で分かる荷物カレンダーです。最初にメールの自動転送を 1 回設定すれば、あとは何もしなくていい。届いた注文・発送のメールを Claude が読み取り、コードのルールで荷物ごとにまとめます。
 
-テーマは「あなたにしかない深さを。」です。作者が自分の 1 年分の注文・配送メール 341 通を読んで分かった、店や運送会社ごとの書き方の癖を、読み取りの規則の土台にしました（`docs/email-field-map.md`）。
+作者が自分の 1 年分の注文・配送メール 341 通を読んで分かった、店や運送会社ごとの書き方の癖を、読み取りの規則の土台にしました（`docs/email-field-map.md`）。
 
 - 本番: https://otodoke.app
 - デモ動画: https://youtu.be/BLPMP_bYJ8c （3 分）
 
-> Built with Claude: Japan 2026（2026-11-02 〜 11-08）の提出作品です。コードはすべて期間中に新しく書きました。最初のコミットは 2026-11-02 17:19（日本時間）です。
+> Built with Claude: Japan 2026（2026-11-02 〜 11-08）の提出作品として作りました。コードはすべてこの期間に新しく書きました。最初のコミットは 2026-11-02 17:19（日本時間）です。
 
 ## 課題
 
@@ -40,18 +40,9 @@
 - **使ったお金が分かる。** 今月の合計を、店ごと・分類ごと（食費・日用品など 7 種類）に出します
 - **AI の言うことを確かめられる。** 読み取った値には、元メールの根拠の行が付きます。自信のない値は断定せず「要確認」にします
 
-## 審査員の方へ：試し方（1 分）
+## 試し方（1 分）
 
-実際のメールは要りません。
-
-提出フォームの「審査員用リンク」に、審査用のアカウントを書いています。審査用のアカウントにはサンプルを読み込んであるので、手順 1 と 2 は要りません。ログインして、手順 3 から見てください。
-
-複数の方で使うアカウントなので、次のことをお願いします。
-
-- パスワードの変更、アカウントの削除、荷物の削除、「すべての荷物を消す」は、しないでください。
-- このアカウントの受信アドレスには、ご自分のメールを転送しないでください。ほかの審査員にも見えます。
-- iPhone では、Web 版のトップにある「iPhone アプリ（ベータ版）」から TestFlight で入れて、同じアカウントでログインします（TestFlight のアプリが要ります）。
-- ご自分のメールで試すときは、ご自分のアカウントを作って、手順 1 から進めてください。
+実際のメールは要りません。まず自分のアカウントを作り、サンプルで中身を見てから、使いたくなったら自動転送を設定します。
 
 1. https://otodoke.app を開き、ログインの画面の「アカウントを作る」で、メールアドレスとパスワードを決めます。画面が「確認のメールを送りました」に変わります。届いた確認のメール（件名「Otodoke のメールアドレスの確認」）のリンクを別のタブで開いて「確認する」を押すと、元のタブが自動でログインし、最初の案内（/app/welcome）に着きます。そこで「あとで」を押します
    - 確認のメールは noreply@otodoke.app から送ります。届くまで 1〜2 分かかることがあります。見当たらないときは迷惑メールのフォルダも見てください
@@ -62,17 +53,19 @@
      - 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」と出たら、少し待ってからやり直してください
      - それでも届かないときは support@otodoke.app へ書いてください
 2. 「設定」タブの「サンプルで試す」で「サンプルのメールを読み込む」を押します。匿名化した実際の注文・発送メールと、作り物の 1 年分の注文履歴が、今日の日付に合わせて入ります（中身は下の「持ち込んだデータ」。保存済みの読み取り結果を使うので、Claude API は呼びません）
-3. 見てほしいところ
+3. 見どころ
    - 「荷物」: 実際のメールが、注文から配達まで荷物ごとにまとまります。作り物の履歴はすべて「配達済み」なので、これから届く荷物には並びません。赤い 🤝 の印が、家にいる必要のある荷物です（サンプルでは 4 つ）。メールに対面での受け取りが書いてあったものは「対面受け取り」と出ます。「念のため対面」は、メールに受け取り方法が書いていないので、念のため家にいる必要がある扱いにした荷物です（サンプルの 4 つのうち 3 つ。Amazon はふだん置き配なので、この扱いにしません）
    - 荷物の詳細: 根拠の行が出るのは、メールに書いてあった荷物だけです。サンプルでは、状態が「不在・再配達」の荷物（ヤマト運輸から届いた 1 つ。店名は「送り主不明」と出ます）を開くと、受け取りの欄に「根拠: 「■受取ご希望場所：対面での配達を希望」」が出ます。「念のため対面」の荷物では、根拠の代わりに「メールに記載なし」と出ます。どの荷物も「元メールを見る」で、読み取りメモと元のメールを開けます（暗号化して保存したメールは、パスワードで開きます）
    - 「カレンダー」: 家にいる必要のある日が赤く出ます
    - 「支出」: 店・分類ごとの内訳と、月ごとの棒グラフ。「全期間」では、作り物の履歴の 1 年分の棒が分類ごとに色分けされて出ます
+4. 自分のメールで使うときは、「設定」の「メールの転送」を開き、画面に出ている自分専用の受信アドレスへの自動転送を、使っているメール（Gmail / iCloud / Outlook など）で 1 回だけ設定します。（やり方は[転送設定ガイド](https://otodoke.app/guide/forwarding)にもあります）。設定は最初の 1 回だけで、あとは何もしなくても、届いた注文・発送のメールが荷物にまとまります。サンプルの荷物を消したいときは、「サンプルで試す」の「すべての荷物を消す」を使います
+5. iPhone では、Web 版のトップにある「iPhone アプリ（ベータ版）」から TestFlight で入れて、同じアカウントでログインします（TestFlight のアプリが要ります）。TestFlight の公開ベータで、参加できる人数に上限があります。上限に達しているときは、参加できないことがあります
 
 ## 仕組み
 
 1. アカウントを作ってパスワードでログインすると、あなた専用の受信アドレスが出ます（パスワードは、保存するメールの暗号化にも使います。下の「あなたのメールの扱い」）
 2. 自分のメール（Gmail / iCloud / Outlook など）で、そのアドレスへの自動転送を最初に 1 回だけ設定します。店ごとの設定はありません。やり方は[転送設定ガイド](https://otodoke.app/guide/forwarding)にあります
-   - Gmail は今後、「Google でつなぐ」（gmail.readonly での読み取り）に切り替える予定です。転送とフィルタの設定が要らなくなります。Google の審査（restricted スコープの確認と CASA の評価）は、提出後に申請します
+   - Gmail は今後、「Google でつなぐ」（gmail.readonly での読み取り）に切り替える予定です。転送とフィルタの設定が要らなくなります。Google の審査（restricted スコープの確認と CASA の評価）は、これから申請します
 3. 届いたメールは Resend の webhook（署名を検証）で受け取り、広告を落としてから Claude が読みます。荷物へのまとめと運送会社の判定はコードです
 4. 一覧・カレンダー・支出として表示します。画面からはいつでも元メールに戻れます（パスワードで開きます）
 
@@ -158,11 +151,11 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - Claude API（Haiku 5.5 が既定。判定と構造化抽出）
 - Vercel
 - テスト: Vitest（API を呼ばない）
-- iOS アプリ（`ios/`、SwiftUI、iOS 17 以降）: 同じアカウントで、パスワードでログインします。荷物・カレンダー・支出・設定の 4 つのタブがあり、荷物の詳細や、届いた荷物・キャンセルした荷物も見られます。暗号化したメールは端末で開き、文字だけを表示します。パスワードの変更や再設定、アカウントの削除などは、ブラウザで Web 版を開いて行います。審査員の方は、提出フォームの「審査員用リンク」の欄にある TestFlight の招待リンクから入れられます。iPhone に TestFlight のアプリが要ります。ログインには、Web と同じ審査用アカウントを使えます。iOS 版では、一部の操作はブラウザで Web 版を開きます
+- iOS アプリ（`ios/`、SwiftUI、iOS 17 以降）: 同じアカウントで、パスワードでログインします。荷物・カレンダー・支出・設定の 4 つのタブがあり、荷物の詳細や、届いた荷物・キャンセルした荷物も見られます。暗号化したメールは端末で開き、文字だけを表示します。パスワードの変更や再設定、アカウントの削除などは、ブラウザで Web 版を開いて行います。TestFlight の公開ベータで、Web 版のトップの「iPhone アプリ（ベータ版）」から入れます。iPhone に TestFlight のアプリが要ります。参加できる人数に上限があり、上限に達しているときは参加できないことがあります。ログインには、Web と同じアカウントを使えます。iOS 版では、一部の操作はブラウザで Web 版を開きます
 
 ## 動かし方
 
-審査は本番（https://otodoke.app）でどうぞ。上の「審査員の方へ」のとおりに進めてください。手元で動かすのは開発者向けです。
+使うだけなら本番（https://otodoke.app）をどうぞ。上の「試し方」のとおりに進めてください。手元で動かすのは開発者向けです。
 
 **手元で動かす。** 上から順に打てば動きます。自分の Supabase のプロジェクトが要ります。
 
@@ -245,24 +238,17 @@ Why: Japan handles about 5.0 billion parcels a year, and about 7.6% (some 380 mi
 
 Set up mail forwarding once ([guide](https://otodoke.app/guide/forwarding)); nothing else is needed, even for shops you have never used.
 
-Gmail users will later connect with Google instead (「Google でつなぐ」, read-only access with the gmail.readonly scope), so no forwarding or filter setup will be needed. Google's restricted-scope verification and CASA assessment will be requested after the submission.
+Gmail users will later connect with Google instead (「Google でつなぐ」, read-only access with the gmail.readonly scope), so no forwarding or filter setup will be needed. Google's restricted-scope verification and CASA assessment are yet to be requested.
 
-For judges: the judge link field (「審査員用リンク」) of the submission form has the login for a shared judge account with the sample already loaded, so you can log in and go straight to “What to look at” below.
-
-It is shared, so please:
-
-- do not change the password, delete the account, delete parcels, or use 「すべての荷物を消す」;
-- do not forward your own mail to this account's receiving address (other judges can see it);
-- on an iPhone, install the app with TestFlight from 「iPhone アプリ（ベータ版）」 on the web top page and log in with the same account (the TestFlight app is needed);
-- to try it with your own mail, create your own account as follows.
-
-Try it with your own account:
+Try it with your own account (no real mail needed):
 
 1. At https://otodoke.app, press 「アカウントを作る」 and choose an email address and a password. The page changes to 「確認のメールを送りました」.
 2. Open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」. The first tab logs in by itself and lands on the first-run guide (/app/welcome). Press 「あとで」.
 3. Open 設定 › 「サンプルで試す」 and press 「サンプルのメールを読み込む」 (no real mail or API call needed).
+4. To use your own mail, open 設定 › 「メールの転送」, set up automatic forwarding to the receiving address shown there (once, in Gmail, iCloud, Outlook or similar). That is the only setup; after it, your order and shipping mails fold into parcels by themselves. To remove the sample parcels, use 「すべての荷物を消す」 under 「サンプルで試す」.
+5. On an iPhone, install the app with TestFlight from 「iPhone アプリ（ベータ版）」 on the web top page and log in with the same account (the TestFlight app is needed). It is a public TestFlight beta with a limit on how many people can join, so joining may not be possible when the limit is reached.
 
-The sample is anonymized real order and shipping mails plus a made-up year of delivered orders (made-up items, amounts and order numbers; the made-up orders’ senders and links are on sample.otodoke.app; sender names and subjects use real store names as labels). What to look at: the real mails fold into parcels from order to delivery (the made-up orders are all delivered, so they stay out of what is on its way); a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category, and its 「全期間」 view shows a year of monthly bars from the made-up history, colored by category.
+The sample is anonymized real order and shipping mails plus a made-up year of delivered orders (made-up items, amounts and order numbers; the made-up orders’ senders and links are on sample.otodoke.app; sender names and subjects use real store names as labels). What to look at in the sample: the real mails fold into parcels from order to delivery (the made-up orders are all delivered, so they stay out of what is on its way); a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category, and its 「全期間」 view shows a year of monthly bars from the made-up history, colored by category.
 
 If you get stuck: the password needs 10+ characters (no repeats, sequences like 1234, or common words); sign-up and login show a Cloudflare Turnstile check (tick it when the button asks; it then goes on by itself); 「メールを送り直す」 on the sign-up screen resends the confirmation; if you see 「回数が多いため、しばらく時間をおいてから、もう一度お試しください。」 wait a little and retry; and if the mail still does not arrive, write to support@otodoke.app.
 
@@ -284,4 +270,4 @@ The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the th
 
 The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks and more) is published separately at https://github.com/iwaki-syogo/claude-code-setup; it is not part of the Otodoke code.
 
-Theme: 「あなたにしかない深さを。」 (the reading rules come from the author's own 341 order and shipping emails). First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is on TestFlight: judges can install it from the TestFlight invite link in the submission form's judge link field (the TestFlight app is needed) and log in with the same judge account; some actions in the iOS app open the web version in the browser.
+Built as an entry to Built with Claude: Japan 2026 (2026-11-02 to 11-08); the reading rules come from the author's own 341 order and shipping emails. First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is on TestFlight as a public beta with a limit on how many people can join (joining may not be possible when the limit is reached); log in with the same account. Some actions in the iOS app open the web version in the browser.
