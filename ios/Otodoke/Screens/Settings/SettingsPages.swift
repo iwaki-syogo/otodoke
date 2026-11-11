@@ -17,7 +17,8 @@ struct SettingsForwardPage: View {
         SettingsParts.page(spacing: 32) {
             addressSection
             // The Web's order: the address, the approval card (and its failure), then the guides.
-            SettingsStatusRows(model: model).approvalSection
+            // The approval card does not offer registering a parcel by hand.
+            SettingsStatusRows(model: model, register: {}).approvalSection
             ForwardingGuideView(expanded: expandsGuide)
         }
         .refreshableToTheEnd { await model.load() }
@@ -218,7 +219,7 @@ struct SettingsHandlingPage: View {
 struct SettingsDeliveryHelpPage: View {
     let model: SettingsModel
     /// 「荷物を登録」 under the stopped reason: opens the form of a parcel typed in by hand.
-    var register: () -> Void = {}
+    let register: () -> Void
     @Environment(\.openURL) private var openURL
 
     var body: some View {

@@ -173,12 +173,9 @@ struct SettingsReader: Sendable {
     }
 
     /// The or() of the Web's NOT_SAMPLE_NOR_CONFIRMATION (settings-reads.ts): (not a sample) and (not a forwarding
-    /// confirmation), written out as the four pairs. Compared by text in the tests.
-    static let notSampleNorConfirmation: String = {
-        let notSample = ["provider_email_id.is.null", "provider_email_id.not.like.\(sampleProviderID)"]
-        let notConfirmation = ["classification.is.null", "classification.neq.forwarding_confirmation"]
-        return notSample.flatMap { a in notConfirmation.map { c in "and(\(a),\(c))" } }.joined(separator: ",")
-    }()
+    /// confirmation), written out as the four pairs. One literal on purpose: src/lib/__tests__/unread-reasons-table.test.ts
+    /// reads this line and compares it with the Web's exported constant.
+    static let notSampleNorConfirmation = "and(provider_email_id.is.null,classification.is.null),and(provider_email_id.is.null,classification.neq.forwarding_confirmation),and(provider_email_id.not.like.demo:%,classification.is.null),and(provider_email_id.not.like.demo:%,classification.neq.forwarding_confirmation)"
 
     /// readUnreadReasons of the Web: the unread rows (all pages, by id) and the newest processed mail that is not a
     /// sample nor a forwarding confirmation. .failed when either read failed: the reason is then not stated.

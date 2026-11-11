@@ -9,9 +9,9 @@
 //     4. a category is one of the seven, recorded as the user's (category_source = "user"), and only on
 //        the version the screen showed (updated_at as read): a choice whose answer was lost and that
 //        reaches the server late never overwrites a later choice (CF1)
-//     5. a typed-in parcel's edit (manualEdit): source = manual and the updated_at just read
+//     5. a typed-in parcel's edit (manualEdit): source = manual and the updated_at the form was opened with
 //  - INSERT (createManual): one typed-in parcel as the signed-in user (user_id = me, source = manual).
-//    A duplicate id (23505) is settled by reading the row and writing over it through `write` (manualEdit).
+//    A duplicate id (23505) is settled by reading the row: it is mine and made by an earlier send, so it is a success and nothing is written.
 //  - DELETE (deleteManual): id, user_id = me and source = manual, always.
 // updated_at is sent exactly as it was read (a String; supabase-swift percent-encodes its "+").
 // No automatic retries (PostgREST's retryEnabled is false), and a result that is unknown is never
@@ -213,10 +213,9 @@ struct ParcelWriter: Sendable {
             response = try await provider.database.from("parcels").insert(mine).select("id").execute()
         } catch {
             // The same id sent again after a lost answer: that parcel is already there, made by the first send.
-            // What is typed now may differ from what the first send stored, so the stored row is read and,
-            // when it differs, written over with what is typed now (never dropped as "saved").
+            // The stored row is read and, being mine, counted as made; it is not written over (a mail may have joined it).
             if let id = mine.id, let failure = error as? PostgrestError, failure.code == "23505" {
-                return await announced(await settleDuplicate(of: mine, id: id, me: me))
+                return await announced(await settleDuplicate(id: id, me: me))
             }
             return await announced(Self.outcome(of: error))
         }
@@ -227,87 +226,37 @@ struct ParcelWriter: Sendable {
         return await announced(.success(created.id))
     }
 
-    /// The columns of a new typed-in parcel that its form sets (read back to compare, and written over on a difference).
-    private struct StoredNew: Decodable {
-        let title: String
-        let shop: String
-        let orderedAt: String?
-        let expectedDate: String?
-        let totalAmount: Int?
-        let category: String?
-        let categorySource: String?
-        let trackingNumber: String?
-        let carrier: String?
-        let requiresPresence: Bool?
-        let status: String
-        let updatedAt: String
-
-        enum CodingKeys: String, CodingKey {
-            case title, shop, category, carrier, status
-            case orderedAt = "ordered_at"
-            case expectedDate = "expected_date"
-            case totalAmount = "total_amount"
-            case categorySource = "category_source"
-            case trackingNumber = "tracking_number"
-            case requiresPresence = "requires_presence"
-            case updatedAt = "updated_at"
-        }
-    }
-
-    /// 23505 on an insert that carried an id: the row with that id (mine, typed in) is read as the signed-in
-    /// user. The same as what is typed now: a success. Different: written over with what is typed now, on the
-    /// updated_at just read (the same conditions as an edit). Not readable: unknown, so the form says it could
-    /// not be confirmed and the list is read again.
-    private func settleDuplicate(of row: ManualParcelRow, id: String, me: String) async -> WriteOutcome<String> {
+    /// 23505 on an insert that carried an id: the row with that id (mine, typed in) is read as the signed-in user.
+    /// It is there because an earlier send of this form made it (its answer was lost), and since then a mail may have
+    /// joined it (a tracking number, a later status). It is a success and NOTHING is written: writing the form over it
+    /// would set those back. (What was typed after the lost answer is not written either.) Not readable: unknown, so the
+    /// form says it could not be confirmed and the list is read again.
+    private func settleDuplicate(id: String, me: String) async -> WriteOutcome<String> {
         guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
-        let stored: StoredNew
         do {
             let response = try await provider.database.from("parcels")
-                .select("title,shop,ordered_at,expected_date,total_amount,category,category_source,tracking_number,carrier,requires_presence,status,updated_at")
+                .select("id")
                 .eq("id", value: id)
                 .eq("user_id", value: me)
                 .eq("source", value: "manual")
                 .execute()
-            let rows = try JSONDecoder().decode([StoredNew].self, from: response.data)
+            let rows = try JSONDecoder().decode([Inserted].self, from: response.data)
             // Not there for me although the id is taken: it is not mine, so this is not a success.
             guard rows.count <= 1 else { return .unknown }
-            guard let found = rows.first else { return .notUpdated(.failed) }
-            stored = found
+            guard rows.first != nil else { return .notUpdated(.failed) }
+            return .success(id)
         } catch {
             return .unknown
-        }
-        // A status the mail already moved on (配達中・不在) is not the form's to set back: it is neither compared nor written.
-        // A stored cancelled is not in carriedStatuses: it is compared and written over as before.
-        let keepsStatus = ManualParcel.carriedStatuses.contains(stored.status)
-        let same = stored.title == row.title && stored.shop == row.shop && stored.orderedAt == row.orderedAt
-            && stored.expectedDate == row.expectedDate && stored.totalAmount == row.totalAmount
-            && stored.category == row.category && stored.categorySource == row.categorySource
-            && stored.trackingNumber == row.trackingNumber && stored.carrier == row.carrier
-            && stored.requiresPresence == row.requiresPresence && (keepsStatus || stored.status == row.status)
-        if same { return .success(id) }
-        var columns: [String: ManualParcel.Column] = [
-            "title": .text(row.title),
-            "shop": .text(row.shop),
-            "shop_key": .text(row.shopKey),
-            "ordered_at": .text(row.orderedAt),
-            "expected_date": ManualParcel.Column(row.expectedDate),
-            "total_amount": ManualParcel.Column(row.totalAmount),
-            "category": ManualParcel.Column(row.category),
-            "category_source": ManualParcel.Column(row.categorySource),
-            "tracking_number": ManualParcel.Column(row.trackingNumber),
-            "carrier": ManualParcel.Column(row.carrier),
-            "requires_presence": ManualParcel.Column(row.requiresPresence),
-            "status": .text(row.status),
-        ]
-        if keepsStatus { columns["status"] = nil }
-        switch await write(id: id, .manualEdit(columns, updatedAt: stored.updatedAt)) {
-        case .success: return .success(id)
-        case let .notUpdated(reason): return .notUpdated(reason)
-        case .unknown: return .unknown
         }
     }
 
     // MARK: an edit and a delete of a typed-in parcel
+
+    /// The two text columns the edit compares with the form (ManualParcel.Saved does not carry them).
+    private struct StoredNames: Decodable {
+        let title: String
+        let shop: String
+    }
 
     enum ManualEditOutcome: Equatable, Sendable {
         case saved
@@ -324,8 +273,10 @@ struct ParcelWriter: Sendable {
     /// updateManualParcel: reads the parcel (id, user_id = me, source = manual), checks the form against
     /// what is stored, then writes only the columns the form changes where id, user_id, source and
     /// `openedUpdatedAt` all match, `.select("id")`. `openedUpdatedAt` is the updated_at the form was opened
-    /// with (as the Web's hidden field carries it): a parcel a mail updated since then is not overwritten
-    /// (nothing is written, `.changed`). A lost answer is unknown and not sent again here.
+    /// with (as the Web's hidden field carries it): a parcel updated since then is not overwritten (nothing is
+    /// written, `.changed`) ... unless the form already says exactly what is stored (an earlier press of this form
+    /// went through and its answer was lost): that is `.saved` and nothing is written. A lost answer is unknown and
+    /// not sent again here.
     func updateManual(id: String, input: ManualParcelInput, openedUpdatedAt: String) async -> ManualEditOutcome {
         guard Self.isUUID(id) else { return .notFound }
         guard let me = await provider.currentUserID() else { return .failed }
@@ -335,26 +286,39 @@ struct ParcelWriter: Sendable {
             return .failed
         }
         let saved: ManualParcel.Saved
+        let storedNames: StoredNames
         do {
             let response = try await provider.database.from("parcels")
-                .select("status,total_amount,category,ordered_at,expected_date,tracking_number,carrier,requires_presence,updated_at")
+                .select("title,shop,status,total_amount,category,ordered_at,expected_date,tracking_number,carrier,requires_presence,updated_at")
                 .eq("id", value: id)
                 .eq("user_id", value: me)
                 .eq("source", value: "manual")
                 .execute()
             let rows = try JSONDecoder().decode([ManualParcel.Saved].self, from: response.data)
-            guard rows.count <= 1 else { return .failed }
-            guard let found = rows.first else { return .notFound }
+            let names = try JSONDecoder().decode([StoredNames].self, from: response.data)
+            guard rows.count <= 1, names.count == rows.count else { return .failed }
+            guard let found = rows.first, let foundNames = names.first else { return .notFound }
             saved = found
+            storedNames = foundNames
         } catch {
             return .failed
         }
-        // Changed since the form was opened (or no version to compare): nothing is written.
-        guard !openedUpdatedAt.isEmpty, openedUpdatedAt == saved.updatedAt else { return .changed }
+        // No version to compare: nothing is written.
+        guard !openedUpdatedAt.isEmpty else { return .changed }
+        let stale = openedUpdatedAt != saved.updatedAt
         let columns: [String: ManualParcel.Column]
         switch ManualParcel.checkEdit(input, saved: saved) {
-        case let .invalid(message): return .invalid(message)
-        case let .valid(values): columns = values
+        case let .invalid(message):
+            // Stale first, as the Web checks the version before the form.
+            return stale ? .changed : .invalid(message)
+        case let .valid(values):
+            if stale {
+                // Changed since the form was opened. When the form says exactly what is stored, an earlier press went
+                // through (its answer was lost): nothing is left to write, so it is saved. Otherwise a mail or the Web
+                // changed something the form would set back: nothing is written.
+                return ManualParcel.writesNothing(values, saved: saved, title: storedNames.title, shop: storedNames.shop) ? .saved : .changed
+            }
+            columns = values
         }
         // The one write (below): on the version the form was opened with, as the signed-in user's typed-in parcel.
         switch await write(id: id, .manualEdit(columns, updatedAt: openedUpdatedAt)) {

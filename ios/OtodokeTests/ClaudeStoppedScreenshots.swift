@@ -37,7 +37,11 @@ struct ClaudeStoppedScreenshots {
         // "read" sentence when it goes, so one model drawn twice (light, then dark) shows neither the same state nor the sentence.
         for style in [UIUserInterfaceStyle.light, .dark] {
             let model = try await Self.makeModel(scenario)
+            Self.expectState(scenario, model)
             let image = try await Self.render(SettingsView(model: model, page: .delivery, register: {}), style: style, height: 760)
+            // The page reads again when it appears: the reasons are still the scenario's. (The "read" sentence goes when the
+            // window is hidden after the picture, so it is checked before the picture only.)
+            Self.expectState(scenario, model, note: false)
             try Self.write(image, "\(scenario.rawValue)-\(style == .dark ? "dark" : "light").png")
         }
     }
@@ -58,10 +62,8 @@ struct ClaudeStoppedScreenshots {
         await fake.setUnreadEmails(rows.count)
         let (provider, auth) = try await TestSession.signedIn(fake)
         if scenario == .reasonsUnknown {
-            // Every read of the unread rows fails (the load, and the reads the page makes when it appears).
-            for nth in 1...6 {
-                await fake.fail(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, nth: nth, with: .http(500))
-            }
+            // Every read of the unread rows fails, however many the load and the page make.
+            await fake.failAlways(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, with: .http(500))
         }
         let model = SettingsModel(
             reader: SettingsReader(provider: provider),
@@ -89,9 +91,30 @@ struct ClaudeStoppedScreenshots {
         default:
             break
         }
+        Self.expectState(scenario, model)
         // The fake servers live as long as the model's provider and mail client hold them.
         keepAlive.append((fake, server))
         return model
+    }
+
+    /// What the model holds must be what the scenario's name says (a picture of another state is not a picture of this one).
+    private static func expectState(_ scenario: Scenario, _ model: SettingsModel, note: Bool = true) {
+        let reasons = model.unreadReasons
+        switch scenario {
+        case .reasonsAll: #expect(reasons == .loaded(UnreadReasons(stopped: 1, overLimit: 1, failed: 1)), "\(scenario)")
+        case .reasonsStopped: #expect(reasons == .loaded(UnreadReasons(stopped: 1, overLimit: 0, failed: 0)), "\(scenario)")
+        case .reasonsOverLimit: #expect(reasons == .loaded(UnreadReasons(stopped: 0, overLimit: 1, failed: 0)), "\(scenario)")
+        case .reasonsFailed: #expect(reasons == .loaded(UnreadReasons(stopped: 0, overLimit: 0, failed: 1)), "\(scenario)")
+        case .reasonsUnknown: #expect(reasons == .failed, "\(scenario)")
+        case .readStopped:
+            if note { #expect(model.mailActions.readNote == SettingsMailText.readUnavailableNotice, "\(scenario)") }
+            #expect(reasons == .loaded(UnreadReasons(stopped: 1, overLimit: 0, failed: 0)), "\(scenario)")
+        case .readOverLimit:
+            if note { #expect(model.mailActions.readNote == SettingsMailText.readOverLimitNotice, "\(scenario)") }
+            #expect(reasons == .loaded(UnreadReasons(stopped: 0, overLimit: 1, failed: 0)), "\(scenario)")
+        case .manualChanged: break
+        }
+        if note && scenario != .readStopped && scenario != .readOverLimit { #expect(model.mailActions.readNote == nil, "\(scenario)") }
     }
 
     nonisolated(unsafe) private static var keepAlive: [(FakeSupabase, FakeMailServer)] = []

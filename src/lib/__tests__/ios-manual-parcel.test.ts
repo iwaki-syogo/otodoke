@@ -319,8 +319,10 @@ describe("the edit and the delete", () => {
     // field carries it, manual-actions.ts), with source = manual added to its filters. A form opened on another version
     // writes nothing: it is compared with the version just read before anything is written.
     expect(writer).toContain("write(id: id, .manualEdit(columns, updatedAt: openedUpdatedAt))");
-    expect(writer).toContain("guard !openedUpdatedAt.isEmpty, openedUpdatedAt == saved.updatedAt else { return .changed }");
-    expect(writer.indexOf("openedUpdatedAt == saved.updatedAt")).toBeLessThan(writer.indexOf("ManualParcel.checkEdit(input, saved: saved)"));
+    expect(writer).toContain("guard !openedUpdatedAt.isEmpty else { return .changed }");
+    // A form opened on another version is written only when it says exactly what is stored (then nothing is left to write).
+    expect(writer).toContain("return ManualParcel.writesNothing(values, saved: saved, title: storedNames.title, shop: storedNames.shop) ? .saved : .changed");
+    expect(writer.indexOf("let stale = openedUpdatedAt != saved.updatedAt")).toBeLessThan(writer.indexOf("columns = values"));
     expect(readFile("ios/Otodoke/Screens/Parcels/ManualParcelModel.swift")).toContain("update(parcel.id, typed, parcel.updatedAt)");
     expect(writer).toMatch(/case let \.manualEdit\(_, updatedAt\):\s*query = query\s*\.eq\("source", value: "manual"\)\s*\.eq\("updated_at", value: updatedAt\)/);
     expect(writer).toMatch(/\.delete\(\)\s*\.eq\("id", value: id\)\s*\.eq\("user_id", value: me\)\s*\.eq\("source", value: "manual"\)\s*\.select\("id"\)/);

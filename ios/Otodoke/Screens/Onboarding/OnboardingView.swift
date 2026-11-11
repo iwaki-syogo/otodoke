@@ -56,7 +56,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                SettingsStatusRows(model: model).approvalSection
+                SettingsStatusRows(model: model, register: {}).approvalSection
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsParts.heading(OnboardingText.step1Heading)
                     addressPart

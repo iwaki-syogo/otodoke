@@ -301,7 +301,7 @@ struct ManualParcelEditTests {
         #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "新しい本")
     }
 
-    @Test func writingTheSameValuesAgainIsSavedOnceAndAStaleFormCannotSaveAgain() async throws {
+    @Test func writingTheSameValuesAgainIsSavedOnceAndTheSameStaleFormAgainWritesNothingMore() async throws {
         let fake = FakeSupabase.make()
         let (writer, _) = try await writer(fake)
         let original = manualRow()
@@ -309,8 +309,12 @@ struct ManualParcelEditTests {
         // Nothing typed differs from what is stored: still a save, on the opened version.
         let same = try edited(original) { $0.title = "元" }
         #expect(await writer.updateManual(id: Rows.id(1), input: same, openedUpdatedAt: opened(original)) == .saved)
-        // The first save moved updated_at on: the same form (opened before) must not write again.
-        #expect(await writer.updateManual(id: Rows.id(1), input: same, openedUpdatedAt: opened(original)) == .changed)
+        // The first save moved updated_at on. The same form (opened before) says exactly what is stored now: saved, no second write.
+        #expect(await writer.updateManual(id: Rows.id(1), input: same, openedUpdatedAt: opened(original)) == .saved)
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
+        // A form that differs from what is stored is not written over (it is not the same form any more).
+        let other = try edited(original) { $0.title = "別の品名" }
+        #expect(await writer.updateManual(id: Rows.id(1), input: other, openedUpdatedAt: opened(original)) == .changed)
         #expect(await fake.requests("PATCH", "parcels").count == 1)
     }
 
@@ -462,7 +466,7 @@ struct ManualParcelEditTests {
         #expect(m.deleteCount == 0)
     }
 
-    @Test func pressingSaveAgainAfterALostAnswerThatWentThroughSaysChangedAndWritesNothingMore() async throws {
+    @Test func pressingSaveAgainAfterALostAnswerThatWentThroughIsSavedAndWritesOnce() async throws {
         let fake = FakeSupabase.make()
         let (writer, _) = try await writer(fake)
         let original = manualRow()
@@ -478,14 +482,39 @@ struct ManualParcelEditTests {
         await fake.fail("PATCH", "parcels", with: .applyThenDrop(.networkConnectionLost))
         await m.submit()
         #expect(m.error == ManualParcelText.unknown && !m.isSaved)
-        // The first send went through and moved updated_at on; the form was opened before that, so the second press
-        // writes nothing (the person is told to open it again) and what the first wrote stays.
+        // The first send went through and moved updated_at on; the form was opened before that, but it says exactly what
+        // is stored now: saved (the sheet closes), and nothing is written a second time.
         await m.submit()
-        #expect(m.error == ManualParcelText.changed && !m.isSaved)
+        #expect(m.isSaved && m.error == nil)
         #expect(await fake.requests("PATCH", "parcels").count == 1)
         let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
         #expect(stored["title"]?.string == "新しい本")
         #expect(stored["tracking_url"]?.string == "https://example.com/t")
+    }
+
+    @Test func negativeControlAMailAddedATrackingNumberAfterTheLostAnswerSoPressingAgainWritesNothingAndSaysChanged() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow(1, ["tracking_number": .null, "carrier": .null, "tracking_url": .null])
+        await fake.insert("parcels", [original])
+        let m = ManualParcelModel(
+            editing: try Rows.parcelRow(original),
+            update: { await writer.updateManual(id: $0, input: $1, openedUpdatedAt: $2) },
+            delete: { await writer.deleteManual(id: $0) },
+            stillThere: { true }, userID: { FakeSupabase.me }, reload: {}
+        )
+        m.input.title = "新しい本"
+        await fake.fail("PATCH", "parcels", with: .applyThenDrop(.networkConnectionLost))
+        await m.submit()
+        #expect(m.error == ManualParcelText.unknown && !m.isSaved)
+        // The first send went through; then a shipping mail added the tracking number the form does not have.
+        await fake.touch("parcels", id: Rows.id(1), ["tracking_number": "9876543210987", "carrier": "ヤマト運輸", "status": "shipped"])
+        await m.submit()
+        #expect(m.error == ManualParcelText.changed && !m.isSaved)
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
+        let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
+        #expect(stored["tracking_number"]?.string == "9876543210987")
+        #expect(stored["title"]?.string == "新しい本")
     }
 
     @Test func deleteNeedsTheCheck() async throws {

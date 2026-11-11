@@ -1,5 +1,5 @@
 {
- "note": "Cases of the rule that counts why unread mail waits: readUnreadReasons (src/app/app/settings/settings-reads.ts) and UnreadReasonsRule (ios/Otodoke/Logic/UnreadReasons.swift) must both answer `expected` for the whole `emails` table. Run by src/lib/__tests__/unread-reasons-table.test.ts and UnreadReasonsTests.swift. Made-up rows only.",
+ "note": "Cases of the rule that counts why unread mail waits: readUnreadReasons (src/app/app/settings/settings-reads.ts) and UnreadReasonsRule (ios/Otodoke/Logic/UnreadReasons.swift) must both answer `expected` for the whole `emails` table. Run by src/lib/__tests__/unread-reasons-table.test.ts and UnreadReasonsTests.swift. Made-up rows only. `now` is the clock both sides use (the 3-minute rule for a pending mail depends on it). Every time carries its offset (+00:00, +09:00 or Z): a time without one is read in the machine's zone on one side and as UTC on the other. The three pending cases are written like the filter's own time (…Z with milliseconds) because the Web's test database compares times as text; the database itself compares instants.",
  "cases": [
   {
    "name": "empty: no unread mail",
@@ -569,6 +569,61 @@
     "overLimit": 0,
     "failed": 1
    }
+  },
+  {
+   "name": "a pending mail older than 3 minutes is unread and counts as a failure",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "pending",
+     "error": null,
+     "created_at": "2026-11-04T02:56:59.000Z",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "a pending mail newer than 3 minutes is still being read: not counted",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "pending",
+     "error": null,
+     "created_at": "2026-11-04T02:58:00.000Z",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "a pending mail at exactly 3 minutes is not older: not counted",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "pending",
+     "error": null,
+     "created_at": "2026-11-04T02:57:00.000Z",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 0
+   }
   }
- ]
+ ],
+ "now": "2026-11-04T03:00:00Z"
 }

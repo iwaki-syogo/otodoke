@@ -180,6 +180,11 @@ actor FakeSupabase {
         predicateFaults.append(PredicateFault(matches: matches, nth: nth, kind: kind))
     }
 
+    /// Every request that matches fails, from now on (a failure that does not end, whatever number of reads the screen makes).
+    func failAlways(where matches: @escaping @Sendable (StubRequest) -> Bool, with kind: FaultKind) {
+        predicateFaults.append(PredicateFault(matches: matches, nth: 0, kind: kind))
+    }
+
     /// Changes the data just before the nth request of this method to this resource is handled.
     func before(_ method: String, _ resource: String, nth: Int = 1, _ mutate: @escaping @Sendable (inout [String: [Row]]) -> Void) {
         hooks.append(Hook(method: method, resource: resource, nth: nth, mutate: mutate))
@@ -239,7 +244,7 @@ actor FakeSupabase {
             hook.mutate(&tables)
         }
         let kind = faults.first(where: { $0.method == request.method && $0.resource == resource && $0.nth == nth })?.kind
-            ?? predicateFaults.first(where: { f in f.matches(request) && requests.filter(f.matches).count == f.nth })?.kind
+            ?? predicateFaults.first(where: { f in f.matches(request) && (f.nth == 0 || requests.filter(f.matches).count == f.nth) })?.kind
         if let kind {
             switch kind {
             case let .http(status):
@@ -513,7 +518,7 @@ actor FakeSupabase {
 
     /// The two reads of SettingsReader.unreadReasons, answered from the `emails` table (the Web's readUnreadReasons):
     ///  - the unread rows (`select` has `processing_status` and `error`, no `processing_status=` filter): rows of the user that are
-    ///    over_limit or failed, by id, after `id=gt.` (the `or` text must be StatusRules.unreadFilter's shape);
+    ///    over_limit or failed, or pending since before the threshold in the `or` text, by id, after `id=gt.` (the `or` text must be StatusRules.unreadFilter's shape);
     ///  - the newest processed mail (`processing_status=eq.processed`): the `or` text must be the Web's NOT_SAMPLE_NOR_CONFIRMATION
     ///    (compared by text), and then a sample (provider_email_id like demo:%) and a forwarding confirmation are left out.
     /// nil for any other emails read (the count, the confirmations ...), which keep their own answers.
@@ -537,7 +542,14 @@ actor FakeSupabase {
             return .json(400, ["code": "PGRST100", "message": "unexpected or: \(or)"])
         }
         let after = request.query("id").first(where: { $0.hasPrefix("gt.") }).map { String($0.dropFirst(3)) }
-        var rows = mine.filter { ["over_limit", "failed"].contains($0["processing_status"]?.string ?? "") }
+        // The Web's UNREAD_FILTER: over_limit or failed, or pending since before the threshold (created_at.lt.<ISO time>).
+        let stuckBefore = or.range(of: "created_at.lt.").map { String(or[$0.upperBound...].prefix { $0 != ")" }) }.flatMap(Instant.micros)
+        var rows = mine.filter { row in
+            let status = row["processing_status"]?.string ?? ""
+            if ["over_limit", "failed"].contains(status) { return true }
+            guard status == "pending", let stuckBefore, let created = row["created_at"]?.string.flatMap(Instant.micros) else { return false }
+            return created < stuckBefore
+        }
         rows.sort { ($0["id"]?.string ?? "") < ($1["id"]?.string ?? "") }
         if let after { rows = rows.filter { ($0["id"]?.string ?? "") > after } }
         let page = rows.prefix(request.query("limit").first.flatMap { Int($0) } ?? Self.maxRows)

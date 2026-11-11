@@ -16,14 +16,19 @@ struct UnreadReasonsCase: Decodable {
     let emails: [JSONValue]
     let expected: Expected
 
-    struct File: Decodable { let cases: [UnreadReasonsCase] }
+    struct File: Decodable {
+        let now: String
+        let cases: [UnreadReasonsCase]
+    }
 
-    static func load() throws -> [UnreadReasonsCase] {
+    static func load() throws -> [UnreadReasonsCase] { try loadFile().cases }
+
+    static func loadFile() throws -> File {
         let bundle = Bundle(for: FixtureBundleToken.self)
         let url = bundle.url(forResource: "unread-reasons", withExtension: "json", subdirectory: "Fixtures")
             ?? bundle.url(forResource: "unread-reasons", withExtension: "json")
             ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/unread-reasons.json")
-        return try JSONDecoder().decode(File.self, from: Data(contentsOf: url)).cases
+        return try JSONDecoder().decode(File.self, from: Data(contentsOf: url))
     }
 
     /// The table as rows of the user.
@@ -49,7 +54,10 @@ struct UnreadReasonsTests {
     }
 
     @Test func theTableTheWebAlsoRunsGivesTheSameAnswers() async throws {
+        // The clock is the table's own (the Web's test sets the same one): the 3-minute rule of a pending mail depends on it.
+        #expect(try UnreadReasonsCase.loadFile().now == "2026-11-04T03:00:00Z")
         let cases = try UnreadReasonsCase.load()
+        #expect(cases.contains { $0.name.contains("pending") })
         #expect(cases.count >= 15)
         for c in cases {
             let got = try await reasons(c.rows)

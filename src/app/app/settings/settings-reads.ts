@@ -42,7 +42,7 @@ export async function readUnreadCount(supabase: Supabase, where: string): Promis
  */
 const NOT_SAMPLE = [`provider_email_id.is.null`, `provider_email_id.not.like.${SAMPLE_PROVIDER_ID}`];
 const NOT_CONFIRMATION = [`classification.is.null`, `classification.neq.forwarding_confirmation`];
-const NOT_SAMPLE_NOR_CONFIRMATION = NOT_SAMPLE.flatMap((a) => NOT_CONFIRMATION.map((c) => `and(${a},${c})`)).join(",");
+export const NOT_SAMPLE_NOR_CONFIRMATION = NOT_SAMPLE.flatMap((a) => NOT_CONFIRMATION.map((c) => `and(${a},${c})`)).join(",");
 
 /**
  * Why mail is waiting, counted by hand from one read of the unread rows: `stopped` (Claude cannot

@@ -353,6 +353,24 @@ enum ManualParcel {
         }
     }
 
+    /// Whether writing `columns` (the result of checkEdit) would change nothing that is stored: every column the form
+    /// always sends equals what is stored, and no other column is there (those are written only on a difference).
+    /// shop_key is not compared (the edit always sends "other").
+    static func writesNothing(_ columns: [String: Column], saved: Saved, title: String, shop: String) -> Bool {
+        for (key, value) in columns {
+            switch key {
+            case "title": guard value == .text(title) else { return false }
+            case "shop": guard value == .text(shop) else { return false }
+            case "shop_key": continue
+            case "total_amount": guard value == Column(saved.totalAmount) else { return false }
+            case "status": guard value == .text(saved.status) else { return false }
+            case "requires_presence": guard value == Column(saved.requiresPresence) else { return false }
+            default: return false
+            }
+        }
+        return true
+    }
+
     /// manualCarrierChoice(name, tracking): one of the five when the stored name is theirs, "auto" when the
     /// number gives the stored name (or none is stored), else "keep".
     static func carrierChoice(_ name: String?, tracking: String?) -> String {

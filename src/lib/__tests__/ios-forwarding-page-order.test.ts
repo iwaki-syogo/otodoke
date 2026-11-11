@@ -46,10 +46,10 @@ describe("「メールの転送」: the sections come in the Web's order", () =>
   });
 
   it("negative control: the approval card first, or an unreadable order, is caught", () => {
-    const first = IOS.replace("SettingsStatusRows(model: model).approvalSection", "").replace("            addressSection\n", "            SettingsStatusRows(model: model).approvalSection\n            addressSection\n");
+    const first = IOS.replace("SettingsStatusRows(model: model, register: {}).approvalSection", "").replace("            addressSection\n", "            SettingsStatusRows(model: model, register: {}).approvalSection\n            addressSection\n");
     expect(iosOrder(first)).toEqual(["approval", "address", "guides"]);
     expect(iosOrder(first)).not.toEqual(webOrder(WEB));
-    expect(iosOrder(IOS.replace("SettingsStatusRows(model: model).approvalSection", ""))).toEqual([]);
+    expect(iosOrder(IOS.replace("SettingsStatusRows(model: model, register: {}).approvalSection", ""))).toEqual([]);
     expect(webOrder(WEB.replace("gmail-approval", ""))).toEqual([]);
   });
 });

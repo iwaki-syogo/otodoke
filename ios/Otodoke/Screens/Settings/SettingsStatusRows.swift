@@ -8,7 +8,7 @@ import SwiftUI
 struct SettingsStatusRows: View {
     let model: SettingsModel
     /// 「荷物を登録」 (shown while reading is stopped): opens the form of a parcel typed in by hand.
-    var register: () -> Void = {}
+    let register: () -> Void
     @Environment(\.openURL) private var openURL
 
     /// The view of 「うまく届かないとき」; the approval card is drawn through `approvalSection` by 「メールの転送」.
