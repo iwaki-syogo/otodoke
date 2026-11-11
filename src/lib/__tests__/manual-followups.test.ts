@@ -13,7 +13,7 @@ import {
 } from "@/lib/manual-parcel";
 import { manualFormDefaults, manualStatusChoices } from "@/app/app/parcels/manual-form";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Two follow-ups on parcels typed in by hand:
@@ -106,7 +106,7 @@ describe("(a) a cancel notice on a typed-in parcel", () => {
 
   it("reaches the parcel through the pipeline", async () => {
     const db = new FakeDb({ parcels: [typedIn({ status: "shipped" }) as unknown as Record<string, unknown>] });
-    await processInboundEmail(asAdmin(db), mailOf("2026-11-03T01:00:00Z"), { precomputed: precomputed(cancelNotice) });
+    await processInboundEmail(asConsentingAdmin(db), mailOf("2026-11-03T01:00:00Z"), { precomputed: precomputed(cancelNotice) });
     const row = db.find("parcels", MANUAL_ID)!;
     expect(row.status).toBe("cancelled");
     expect(row.title).toBe("手入力の品名");

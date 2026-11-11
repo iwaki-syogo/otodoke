@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Query } from "./fake-db";
-import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Review R1-3, turned into regression tests: reading a stored unread mail again (設定 「読み取る」,
@@ -56,7 +56,7 @@ describe("re-reading a stored mail keeps its row", () => {
     const mail = waiting();
     const db = seeded(mail);
     storeFails(db);
-    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("connection reset");
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow("connection reset");
     expect(db.rows("emails").map((e) => [e.id, e.processing_status, e.subject, e.text_body])).toEqual([["e-waiting", "over_limit", mail.subject, mail.text]]);
     expect(mocks.extractEmail).not.toHaveBeenCalled();
   });
@@ -65,14 +65,14 @@ describe("re-reading a stored mail keeps its row", () => {
     const mail = waiting({ messageId: null });
     const db = seeded(mail, "failed");
     storeFails(db);
-    await expect(processInboundEmail(asAdmin(db), mail, { replacesEmailId: "e-waiting" })).rejects.toThrow("connection reset");
+    await expect(processInboundEmail(asConsentingAdmin(db), mail, { replacesEmailId: "e-waiting" })).rejects.toThrow("connection reset");
     expect(db.rows("emails").map((e) => [e.id, e.processing_status, e.subject])).toEqual([["e-waiting", "failed", mail.subject]]);
   });
 
   it("is read in the same row, never deleted and inserted anew; the pending grace starts again", async () => {
     const mail = waiting();
     const db = seeded(mail);
-    const out = await processInboundEmail(asAdmin(db), mail);
+    const out = await processInboundEmail(asConsentingAdmin(db), mail);
     expect(out).toMatchObject({ kind: "processed", emailId: "e-waiting" });
     expect(db.rows("emails")).toHaveLength(1);
     expect(db.rows("emails")[0]).toMatchObject({ id: "e-waiting", processing_status: "processed", body_state: "dropped", error: null });
@@ -87,7 +87,7 @@ describe("re-reading a stored mail keeps its row", () => {
     const mail = waiting();
     const db = seeded(mail, "failed");
     db.rows("extractions").push({ id: "x-old", user_id: USER, email_id: "e-waiting", parcel_id: null, model: "m", result: {}, confidence: 0.5 });
-    await processInboundEmail(asAdmin(db), mail);
+    await processInboundEmail(asConsentingAdmin(db), mail);
     const left = db.rows("extractions").filter((x) => x.email_id === "e-waiting");
     expect(left.map((x) => x.id)).not.toContain("x-old");
     expect(left).toHaveLength(1);
@@ -104,14 +104,14 @@ describe("re-reading a stored mail keeps its row", () => {
       Object.assign(db.find("emails", "e-waiting")!, { processing_status: "pending", created_at: "2026-11-03T00:00:00Z" });
       return undefined;
     });
-    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("changed while it was being stored");
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow("changed while it was being stored");
     expect(mocks.extractEmail).not.toHaveBeenCalled();
     expect(db.rows("emails")).toHaveLength(1);
   });
 
   it("control: a new mail is still inserted with a fresh id", async () => {
     const db = new FakeDb();
-    const out = await processInboundEmail(asAdmin(db), waiting({ messageId: "<new@example.test>" }));
+    const out = await processInboundEmail(asConsentingAdmin(db), waiting({ messageId: "<new@example.test>" }));
     expect(out.kind).toBe("processed");
     expect(db.callsOn("emails", "insert")).toHaveLength(1);
   });
@@ -126,7 +126,7 @@ describe("a redelivered mail that was read", () => {
     // The sender is marked, so the screen's drop would have gone to the cheap check.
     db.rows("screen_events").push({ id: "flag", user_id: USER, decision: "dropped", subject: "前の通知", from_domain: "mall.example.test", flagged_at: "2026-11-02T00:00:00Z", created_at: "2026-11-02T00:00:00Z" });
     mocks.isPurchaseMail.mockResolvedValue(false);
-    expect(await processInboundEmail(asAdmin(db), mail)).toEqual({ kind: "duplicate", emailId: "e-read" });
+    expect(await processInboundEmail(asConsentingAdmin(db), mail)).toEqual({ kind: "duplicate", emailId: "e-read" });
     expect(db.rows("emails").map((e) => e.id)).toEqual(["e-read"]);
     expect(mocks.isPurchaseMail).not.toHaveBeenCalled();
     expect(db.rpcCalls).toHaveLength(0);
@@ -136,7 +136,7 @@ describe("a redelivered mail that was read", () => {
   it("control: a stored unread mail the screen now drops is still removed (it would stay unread forever)", async () => {
     const mail = promo();
     const db = new FakeDb({ emails: [{ id: "e-unread", user_id: USER, message_id: mail.messageId, processing_status: "over_limit", created_at: STORED_AT }] });
-    expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
+    expect((await processInboundEmail(asConsentingAdmin(db), mail)).kind).toBe("screened_out");
     expect(db.rows("emails")).toHaveLength(0);
     // Gone from emails, so it is listed in 読まなかったメール, with its subject.
     expect(db.rows("screen_events").map((e) => [e.decision, e.subject])).toEqual([["dropped", "今週のおすすめ"]]);
@@ -153,7 +153,7 @@ describe("a redelivered mail that was read", () => {
       Object.assign(db.find("emails", "e-unread")!, { processing_status: "pending", created_at: "2026-11-03T00:00:00Z" });
       return undefined;
     });
-    expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
+    expect((await processInboundEmail(asConsentingAdmin(db), mail)).kind).toBe("screened_out");
     expect(db.rows("emails").map((e) => [e.id, e.processing_status])).toEqual([["e-unread", "pending"]]);
     // That delivery may read and seal it: its subject is not kept in plaintext as dropped (R3-33).
     expect(db.rows("screen_events")).toEqual([]);
@@ -163,7 +163,7 @@ describe("a redelivered mail that was read", () => {
     const mail = promo();
     const db = new FakeDb({ emails: [{ id: "e-unread", user_id: USER, message_id: mail.messageId, processing_status: "over_limit", created_at: STORED_AT }] });
     db.hooks.push((q: Query) => (q.table === "emails" && q.op === "delete" ? { data: null, error: { message: "connection reset" } } : undefined));
-    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("emails cleanup failed");
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow("emails cleanup failed");
     expect(db.rows("screen_events")).toEqual([]);
     expect(db.rows("emails").map((e) => e.id)).toEqual(["e-unread"]);
   });

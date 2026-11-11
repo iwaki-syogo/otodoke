@@ -19,7 +19,7 @@ import { parcelSections } from "@/lib/parcel-sections";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Query, type Row } from "./fake-db";
 import { findAll, linksTo, parseHtml, textOf, type HtmlNode } from "./html-tree";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asAdmin, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 import { appSourceFiles, read, withoutComments } from "./source-scan";
 
 /**
@@ -35,6 +35,12 @@ const T = "123456789012";
 const T_RAW = "1234-5678-9012";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown }, revalidatePath: vi.fn() }));
+// These existing UI scenarios begin after the person has allowed reading.
+vi.mock("@/lib/ai-consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-consent")>()),
+  readAiReadingConsent: async () => "granted",
+}));
+
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath, revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
@@ -71,7 +77,7 @@ const keysOf = (v: unknown) => Object.keys(v as object);
 const writes = (db: FakeDb, op: "insert" | "update") => db.callsOn("parcels", op).map((q) => q.values as Row);
 
 function run(db: FakeDb, x: ReturnType<typeof reading>, sentAt = "2026-11-03T01:00:00Z") {
-  return processInboundEmail(asAdmin(db), mailOf(sentAt), { precomputed: precomputed(x) });
+  return processInboundEmail(asConsentingAdmin(db), mailOf(sentAt), { precomputed: precomputed(x) });
 }
 
 /* ---------------------------------------------------------------------------------------------- */

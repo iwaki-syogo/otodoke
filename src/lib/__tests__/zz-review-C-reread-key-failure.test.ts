@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const keyReadFails = (db: FakeDb) => db.hooks.push((q) => (q.table === "user_keys" && q.op === "select" ? { data: null, error: { message: "timeout" } } : undefined));
 
@@ -20,7 +20,7 @@ describe("review C: a failed key read during a re-read", () => {
     });
     keyReadFails(db);
 
-    await expect(processInboundEmail(asAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })) })).rejects.toThrow("user_keys lookup failed");
+    await expect(processInboundEmail(asConsentingAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })) })).rejects.toThrow("user_keys lookup failed");
     expect(db.rows("emails").map((e) => [e.id, e.processing_status, e.subject])).toEqual([["e-waiting", "over_limit", mail.subject]]);
   });
 
@@ -31,7 +31,7 @@ describe("review C: a failed key read during a re-read", () => {
     });
     keyReadFails(db);
 
-    await expect(processInboundEmail(asAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })), replacesEmailId: "e-no-id" })).rejects.toThrow("user_keys lookup failed");
+    await expect(processInboundEmail(asConsentingAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })), replacesEmailId: "e-no-id" })).rejects.toThrow("user_keys lookup failed");
     expect(db.rows("emails").map((e) => e.id)).toEqual(["e-no-id"]);
   });
 
@@ -40,7 +40,7 @@ describe("review C: a failed key read during a re-read", () => {
     const db = new FakeDb({
       emails: [{ id: "e-no-id", user_id: USER, message_id: null, subject: mail.subject, text_body: mail.text, html_body: mail.html, processing_status: "failed", created_at: "2026-11-01T00:00:00Z" }],
     });
-    await processInboundEmail(asAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })), replacesEmailId: "e-no-id" });
+    await processInboundEmail(asConsentingAdmin(db), mail, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })), replacesEmailId: "e-no-id" });
     expect(db.rows("emails")).toHaveLength(1);
     expect(db.rows("emails")[0]).toMatchObject({ id: "e-no-id", processing_status: "processed" });
   });

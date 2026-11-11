@@ -9,7 +9,7 @@ const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const jwt = (sub = "user-1") => `${b64url({ alg: "ES256" })}.${b64url({ sub, amr: [{ method: "otp", timestamp: 1 }] })}.c2ln`;
 const ID = "123e4567-e89b-12d3-a456-426614174000";
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), process: vi.fn(), rows: { current: [] as unknown[] } }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), process: vi.fn(), consent: vi.fn(), rows: { current: [] as unknown[] } }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeingReadError: class MailBeingReadError extends Error {} }));
@@ -17,6 +17,7 @@ vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeing
 vi.mock("@/lib/supabase/admin", () => {
   const chain: Record<string, unknown> = {};
   for (const m of ["from", "select", "eq", "or", "order"]) chain[m] = () => chain;
+  chain.maybeSingle = () => mocks.consent();
   chain.limit = () => Promise.resolve({ data: mocks.rows.current, error: null });
   return { createAdminClient: () => chain };
 });
@@ -45,6 +46,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
   for (const fn of [mocks.getUser, mocks.mark, mocks.read, mocks.process]) fn.mockReset();
+  mocks.consent.mockReset().mockResolvedValue({ data: { decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" }, error: null });
   mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1", email: "me@example.com" } }, error: null });
   mocks.mark.mockResolvedValue({ ok: true, outcome: "remembered" });
   mocks.read.mockResolvedValue({ ok: true, read: 3, overLimit: false, unavailable: false });
@@ -123,6 +125,16 @@ describe("mark-parcel", () => {
 });
 
 describe("read-waiting", () => {
+  it("403 ai_consent_required for an unanswered or declined choice, and 503 unavailable for a failed consent read", async () => {
+    for (const data of [null, { decision: "declined" }]) {
+      mocks.consent.mockResolvedValue({ data, error: null });
+      expect(await call("read-waiting")).toEqual({ status: 403, json: { ok: false, code: "ai_consent_required" }, cache: "no-store" });
+    }
+    mocks.consent.mockResolvedValue({ data: null, error: { message: "offline" } });
+    expect(await call("read-waiting")).toEqual({ status: 503, json: { ok: false, code: "unavailable" }, cache: "no-store" });
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
   it("reads for the token's user and answers the counts", async () => {
     expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 3, over_limit: false, busy: false, stopped: false }, cache: "no-store" });
     expect(mocks.read.mock.calls[0][1]).toBe("user-1");

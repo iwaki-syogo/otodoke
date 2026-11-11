@@ -17,7 +17,7 @@ import { createKeyPair, openStoredKey, wrapPrivateKey, type StoredKey } from "@/
 import { activateKey, readRetiredKeys, registerKey } from "@/lib/mail-keys";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Row } from "./fake-db";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asAdmin, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const PASS = "テスト用の合言葉です1234";
 
@@ -50,7 +50,7 @@ async function unlockLikeTheBrowser(db: FakeDb, passphrase: string) {
 const inUse = (db: FakeDb) => db.rows("user_keys").filter((k) => k.user_id === USER && k.activated_at && !k.retired_at).map((k) => k.key_id);
 
 async function sealedMail(db: FakeDb) {
-  await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), messageId: "<m1@example.test>" }, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })) });
+  await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), messageId: "<m1@example.test>" }, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })) });
   return db.rows("emails")[0] as Row;
 }
 

@@ -3,7 +3,7 @@ import { identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carri
 import { ManualParcelSchema, manualParcelRow } from "@/lib/manual-parcel";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Review R2-3: normalizeTracking applied NFKC (8a07200), which spells the sign № as "No". So
@@ -101,7 +101,7 @@ describe("a tracking number written with № in a mail and on the hand-entry for
       { x: shop, mail: { ...mailOf("2026-11-06T01:00:00Z"), messageId: "<shop-sign@test>" } },
       { x: carrier, mail: { ...mailOf("2026-11-07T00:30:00Z"), messageId: "<carrier-sign@test>" } },
     ];
-    for (const m of carrierFirst ? [...mails].reverse() : mails) await processInboundEmail(asAdmin(db), m.mail, { precomputed: precomputed(m.x) });
+    for (const m of carrierFirst ? [...mails].reverse() : mails) await processInboundEmail(asConsentingAdmin(db), m.mail, { precomputed: precomputed(m.x) });
     const parcels = db.rows("parcels").filter((r) => r.user_id === USER);
     expect(parcels).toHaveLength(1);
     expect(parcels[0]).toMatchObject({ tracking_number: NUMBER, carrier: "ヤマト運輸", status: "out_for_delivery", total_amount: 3300 });

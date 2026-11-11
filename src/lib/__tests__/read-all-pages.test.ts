@@ -6,7 +6,7 @@ import { shiftMonth, todayJst } from "@/lib/format";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, describeQuery, type Query, type Row } from "./fake-db";
 import { findAll, hasClasses, linksTo, parseHtml, textOf, type HtmlNode } from "./html-tree";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Lists that are read as complete are read past PostgREST's 1000-row cap.
@@ -21,6 +21,12 @@ import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fi
 const LOAD_FAILED = "読み込めませんでした";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
+
+// These existing UI scenarios begin after the person has allowed reading.
+vi.mock("@/lib/ai-consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-consent")>()),
+  readAiReadingConsent: async () => "granted",
+}));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -193,7 +199,7 @@ describe("the pipeline finds the parcel past the first 1000", () => {
         row({ id: "p-target", order_number: ORDER }),
       ],
     });
-    await processInboundEmail(asAdmin(pipelineDb), mailOf("2026-11-03T01:00:00Z"), {
+    await processInboundEmail(asConsentingAdmin(pipelineDb), mailOf("2026-11-03T01:00:00Z"), {
       precomputed: precomputed(reading({ relevance: "shipped", order_number: sure(ORDER), expected_date: sure("2026-11-05") })),
     });
     const mine = pipelineDb.rows("parcels").filter((r) => r.user_id === USER);
@@ -211,7 +217,7 @@ describe("the pipeline finds the parcel past the first 1000", () => {
     });
     pipelineDb.hooks.push((q) => (q.table === "parcels" && q.op === "select" && q.range?.[0] === 1000 ? fail : undefined));
     await expect(
-      processInboundEmail(asAdmin(pipelineDb), mailOf("2026-11-03T01:00:00Z"), {
+      processInboundEmail(asConsentingAdmin(pipelineDb), mailOf("2026-11-03T01:00:00Z"), {
         precomputed: precomputed(reading({ relevance: "shipped", order_number: sure(ORDER), expected_date: sure("2026-11-05") })),
       }),
     ).rejects.toThrow(/parcels lookup failed/);

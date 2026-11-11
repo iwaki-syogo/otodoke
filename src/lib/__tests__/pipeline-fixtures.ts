@@ -60,3 +60,13 @@ export function precomputed(x: Extraction): ExtractionResult {
 }
 
 export const asAdmin = (db: FakeDb) => db as unknown as AdminClient;
+
+/** These existing pipeline scenarios start after the two test accounts explicitly consented. */
+export function asConsentingAdmin(db: FakeDb): AdminClient {
+  for (const userId of [USER, OTHER]) {
+    if (!db.rows("ai_reading_consents").some((row) => row.user_id === userId)) {
+      db.rows("ai_reading_consents").push({ user_id: userId, decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" });
+    }
+  }
+  return asAdmin(db);
+}

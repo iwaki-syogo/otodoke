@@ -4,7 +4,7 @@ import { toBase64 } from "@/lib/crypto/bytes";
 import { openMail, type PrivateRecipient } from "@/lib/crypto/envelope";
 import { createKeyPair } from "@/lib/crypto/key-wrap";
 import { FakeDb, type Query, type Row } from "./fake-db";
-import { OTHER, USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { OTHER, USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const ECDH = { name: "ECDH", namedCurve: "P-256" } as const;
 const PLAINTEXT_COLUMNS = ["subject", "from_name", "from_address", "text_body", "html_body"] as const;
@@ -63,7 +63,7 @@ describe("pipeline: a read mail is sealed to the user's key", () => {
     const db = new FakeDb();
     const key = await keyedUser(db);
     const mail = realMail();
-    const out = await processInboundEmail(asAdmin(db), mail, { precomputed: precomputed(order) });
+    const out = await processInboundEmail(asConsentingAdmin(db), mail, { precomputed: precomputed(order) });
     expect(out.kind).toBe("processed");
 
     const [row] = db.rows("emails");
@@ -87,7 +87,7 @@ describe("pipeline: a read mail is sealed to the user's key", () => {
   it("the status and the seal go in the same write", async () => {
     const db = new FakeDb();
     await keyedUser(db);
-    await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) });
     const done = db.callsOn("emails", "update").filter((q) => (q.values as Row).processing_status === "processed");
     expect(done).toHaveLength(1);
     expect(done[0].values).toMatchObject({ body_state: "sealed", subject: null, text_body: null, html_body: null, from_name: null, from_address: null });
@@ -96,7 +96,7 @@ describe("pipeline: a read mail is sealed to the user's key", () => {
   it("seals a mail that files no parcel (noted) too", async () => {
     const db = new FakeDb();
     await keyedUser(db);
-    const out = await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(reading({ relevance: "other_purchase" })) });
+    const out = await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(reading({ relevance: "other_purchase" })) });
     expect(out.kind).toBe("noted");
     expect(db.rows("emails")[0].body_state).toBe("sealed");
     expect(plaintextAfterReading(db)).toEqual([]);
@@ -105,7 +105,7 @@ describe("pipeline: a read mail is sealed to the user's key", () => {
   it("seals a sample mail too once the user has a key", async () => {
     const db = new FakeDb();
     await keyedUser(db);
-    await processInboundEmail(asAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
+    await processInboundEmail(asConsentingAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
     expect(db.rows("emails")[0].body_state).toBe("sealed");
   });
 
@@ -113,7 +113,7 @@ describe("pipeline: a read mail is sealed to the user's key", () => {
     const db = new FakeDb();
     await keyedUser(db);
     db.rows("user_keys")[0].retired_at = "2026-11-02T00:00:00Z";
-    await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) });
     expect(db.rows("emails")[0].body_state).toBe("dropped");
   });
 });
@@ -121,7 +121,7 @@ describe("pipeline: a read mail is sealed to the user's key", () => {
 describe("pipeline: without a key", () => {
   it("drops subject, sender and body of a real mail but keeps the parcel", async () => {
     const db = new FakeDb();
-    const out = await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    const out = await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) });
     expect(out.kind).toBe("processed");
     const [row] = db.rows("emails");
     for (const c of PLAINTEXT_COLUMNS) expect(row[c]).toBeNull();
@@ -134,7 +134,7 @@ describe("pipeline: without a key", () => {
 
   it("keeps a public sample mail readable", async () => {
     const db = new FakeDb();
-    await processInboundEmail(asAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
+    await processInboundEmail(asConsentingAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
     const [row] = db.rows("emails");
     expect(row.body_state).toBe("plain");
     expect(row.subject).toBe("【テスト店】ご注文ありがとうございます");
@@ -152,7 +152,7 @@ describe("pipeline: unread mail stays plaintext so it can be read again", () => 
       db.rpcCalls.push({ name, args });
       return Promise.resolve({ data: [{ verdict: "user_limit", claim_id: null }], error: null });
     };
-    const out = await processInboundEmail(asAdmin(db), realMail({ subject: "【テスト店】ご注文の商品を発送しました" }));
+    const out = await processInboundEmail(asConsentingAdmin(db), realMail({ subject: "【テスト店】ご注文の商品を発送しました" }));
     expect(out.kind).toBe("over_limit");
     const [row] = db.rows("emails");
     expect(row.processing_status).toBe("over_limit");
@@ -164,7 +164,7 @@ describe("pipeline: unread mail stays plaintext so it can be read again", () => 
   it("when the model refuses", async () => {
     const db = new FakeDb();
     await keyedUser(db);
-    const out = await processInboundEmail(asAdmin(db), realMail(), { precomputed: { ...precomputed(order), refused: true } });
+    const out = await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: { ...precomputed(order), refused: true } });
     expect(out.kind).toBe("discarded");
     expect(db.rows("emails")[0]).toMatchObject({ processing_status: "failed", body_state: "plain" });
   });
@@ -182,7 +182,7 @@ describe("pipeline: Gmail's forwarding confirmation", () => {
   it("keeps only the approval link in plaintext and seals the rest as it arrives", async () => {
     const db = new FakeDb();
     const key = await keyedUser(db);
-    const out = await processInboundEmail(asAdmin(db), confirmation());
+    const out = await processInboundEmail(asConsentingAdmin(db), confirmation());
     expect(out.kind).toBe("forwarding_confirmation");
     const [row] = db.rows("emails");
     expect(row.forwarding_confirm_url).toBe("https://mail-settings.google.com/mail/vf-%5Babc%5D-xyz");
@@ -196,7 +196,7 @@ describe("pipeline: Gmail's forwarding confirmation", () => {
 
   it("without a key, keeps the link and drops the rest", async () => {
     const db = new FakeDb();
-    await processInboundEmail(asAdmin(db), confirmation());
+    await processInboundEmail(asConsentingAdmin(db), confirmation());
     expect(db.rows("emails")[0]).toMatchObject({ body_state: "dropped", subject: null, text_body: null, forwarding_confirm_url: "https://mail-settings.google.com/mail/vf-%5Babc%5D-xyz" });
   });
 });
@@ -236,7 +236,7 @@ describe("pipeline: a key put in use or replaced while the mail is being read", 
     onceWhen(db, (q) => q.table === "parcels" && q.op === "insert", () => {
       db.rows("user_keys")[0].activated_at = "2026-11-03T00:00:01Z";
     });
-    await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) });
     expect(db.rows("emails")[0].body_state).toBe("sealed");
     expect(kidOf(db)).toBe(key.keyId);
     expect((await openMail(key, USER, String(db.rows("emails")[0].id), db.rows("emails")[0].body_envelope)).subject).toBe(realMail().subject);
@@ -252,7 +252,7 @@ describe("pipeline: a key put in use or replaced while the mail is being read", 
         if (k.key_id === newKey.keyId) k.activated_at = "2026-11-03T00:00:01Z";
       }
     });
-    await processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    await processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) });
     expect(db.rows("emails")[0].body_state).toBe("sealed");
     expect(kidOf(db)).toBe(newKey.keyId);
   });
@@ -269,7 +269,7 @@ describe("pipeline: a key put in use or replaced while the mail is being read", 
         db.rows("user_keys").find((k) => k.key_id === newKey.keyId)!.activated_at = "2026-11-03T00:00:01Z";
       }
     });
-    const out = await processInboundEmail(asAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
+    const out = await processInboundEmail(asConsentingAdmin(db), realMail({ messageId: "demo:amazon/order" }), { precomputed: precomputed(order), publicSample: true });
     expect(out.kind).toBe("processed");
     expect(db.rows("emails")[0]).toMatchObject({ processing_status: "processed", body_state: "sealed", subject: null });
     expect(kidOf(db)).toBe(newKey.keyId);
@@ -292,7 +292,7 @@ describe("pipeline: not knowing the key fails closed", () => {
   it("stores nothing and pays for nothing when user_keys cannot be read", async () => {
     const db = new FakeDb();
     db.hooks.push((q) => (q.table === "user_keys" ? { data: null, error: { message: "boom" } } : undefined));
-    await expect(processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) })).rejects.toThrow("user_keys lookup failed");
+    await expect(processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) })).rejects.toThrow("user_keys lookup failed");
     expect(db.rows("emails")).toHaveLength(0);
     expect(db.rows("parcels")).toHaveLength(0);
   });
@@ -301,7 +301,7 @@ describe("pipeline: not knowing the key fails closed", () => {
     const db = new FakeDb();
     await keyedUser(db);
     db.rows("user_keys")[0].key_id = "0".repeat(32);
-    await expect(processInboundEmail(asAdmin(db), realMail(), { precomputed: precomputed(order) })).rejects.toThrow("does not match");
+    await expect(processInboundEmail(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) })).rejects.toThrow("does not match");
     expect(db.rows("emails")).toHaveLength(0);
   });
 });
@@ -325,12 +325,12 @@ describe("negative control: the invariant test catches a pipeline that does not 
     const { processInboundEmail: unsealed } = await import("@/lib/pipeline");
     const db = new FakeDb();
     await keyedUser(db);
-    await unsealed(asAdmin(db), realMail(), { precomputed: precomputed(order) });
+    await unsealed(asConsentingAdmin(db), realMail(), { precomputed: precomputed(order) });
     expect(plaintextAfterReading(db)).toHaveLength(1);
 
     // And without a key.
     const db2 = new FakeDb();
-    await unsealed(asAdmin(db2), realMail(), { precomputed: precomputed(order) });
+    await unsealed(asConsentingAdmin(db2), realMail(), { precomputed: precomputed(order) });
     expect(plaintextAfterReading(db2)).toHaveLength(1);
   });
 });

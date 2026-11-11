@@ -5,7 +5,7 @@ import { ExtractionSchema, type Extraction } from "@/lib/extract/schema";
 import { parcelTotal } from "@/lib/match";
 import type { InboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Query, type Result } from "./fake-db";
-import { USER, asAdmin, mailOf, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Review B-2: the amounts and counts Claude reads are written to Postgres `integer` columns
@@ -153,7 +153,7 @@ describe("a mail stating 合計 3,000,000,000円 goes through the webhook once",
     const db = new FakeDb();
     db.hooks.push(int4Guard);
 
-    const first = await processInboundEmail(asAdmin(db), orderMail());
+    const first = await processInboundEmail(asConsentingAdmin(db), orderMail());
     expect(first.kind).toBe("processed");
     const parcels = db.rows("parcels").filter((p) => p.user_id === USER);
     expect(parcels).toHaveLength(1);
@@ -163,7 +163,7 @@ describe("a mail stating 合計 3,000,000,000円 goes through the webhook once",
     expect((db.rows("extractions")[0].result as Extraction).total_amount).toEqual({ value: null, evidence: "合計 3,000,000,000円", confidence: 0.95 });
     expect(db.rows("emails")).toMatchObject([{ processing_status: "processed" }]);
 
-    const again = await processInboundEmail(asAdmin(db), orderMail());
+    const again = await processInboundEmail(asConsentingAdmin(db), orderMail());
     expect(again.kind).toBe("duplicate");
     expect(sdk.calls).toHaveLength(1);
     expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2")).toHaveLength(1);
@@ -173,7 +173,7 @@ describe("a mail stating 合計 3,000,000,000円 goes through the webhook once",
     sdk.answer = JSON.stringify(reading({ relevance: "order", order_number: sure("ORD-99990000"), items: [line("高い品", 1, 3_000_000_000), line("多い品", 5_000_000_000, 100)] }));
     const db = new FakeDb();
     db.hooks.push(int4Guard);
-    expect((await processInboundEmail(asAdmin(db), orderMail())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), orderMail())).kind).toBe("processed");
     expect(db.rows("parcel_items")).toMatchObject([
       { name: "高い品", quantity: 1, unit_price: null },
       { name: "多い品", quantity: null, unit_price: 100 },
@@ -185,7 +185,7 @@ describe("a mail stating 合計 3,000,000,000円 goes through the webhook once",
     sdk.answer = JSON.stringify(reading({ relevance: "order", order_number: sure("ORD-99990000"), items: [line("テスト商品", 2, 1200)], total_amount: amount(3000) }));
     const db = new FakeDb();
     db.hooks.push(int4Guard);
-    expect((await processInboundEmail(asAdmin(db), orderMail())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), orderMail())).kind).toBe("processed");
     expect(db.rows("parcels")[0].total_amount).toBe(3000);
     expect(db.rows("parcel_items")).toMatchObject([{ name: "テスト商品", quantity: 2, unit_price: 1200 }]);
   });

@@ -4,7 +4,7 @@ import { ManualParcelSchema, manualParcelRow } from "@/lib/manual-parcel";
 import { buildParcelInsert, buildParcelUpdate, chooseParcel, mergeIntoManual, normalizeOrderNumber, type ParcelCandidate, type ParcelRow } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Review D1-1: full-width digits (Japanese mail templates, numbers typed or pasted with Japanese
@@ -54,7 +54,7 @@ describe("a tracking number in full-width digits", () => {
       { x: shop, mail: { ...mailOf("2026-11-03T01:00:00Z"), messageId: "<shop@test>" } },
       { x: carrier, mail: { ...mailOf("2026-11-04T00:30:00Z"), messageId: "<carrier@test>" } },
     ];
-    for (const m of carrierFirst ? [...mails].reverse() : mails) await processInboundEmail(asAdmin(db), m.mail, { precomputed: precomputed(m.x) });
+    for (const m of carrierFirst ? [...mails].reverse() : mails) await processInboundEmail(asConsentingAdmin(db), m.mail, { precomputed: precomputed(m.x) });
     const parcels = db.rows("parcels").filter((r) => r.user_id === USER);
     expect(parcels).toHaveLength(1);
     expect(parcels[0]).toMatchObject({ tracking_number: "123456789012", order_number: "A-20261103-77", status: "out_for_delivery", expected_date: "2026-11-04", total_amount: 3300 });
@@ -82,8 +82,8 @@ describe("an order number in full-width characters", () => {
     const db = new FakeDb();
     const order = reading({ relevance: "order", shop_name: "小さな店", order_number: sure("ＡＢ－１２３４５６７８"), items: [item("品物", 3300)], total_amount: sure(3300) });
     const shipped = reading({ relevance: "shipped", shop_name: "小さな店", order_number: sure("AB-12345678"), carrier: sure("ヤマト運輸"), tracking_number: sure("6203-9184-5571"), total_amount: sure(3300) });
-    await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-01T01:00:00Z"), messageId: "<order@test>" }, { precomputed: precomputed(order) });
-    await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-02T01:00:00Z"), messageId: "<shipped@test>" }, { precomputed: precomputed(shipped) });
+    await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-01T01:00:00Z"), messageId: "<order@test>" }, { precomputed: precomputed(order) });
+    await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-02T01:00:00Z"), messageId: "<shipped@test>" }, { precomputed: precomputed(shipped) });
     const parcels = db.rows("parcels").filter((r) => r.user_id === USER);
     expect(parcels).toHaveLength(1);
     expect(parcels[0]).toMatchObject({ status: "shipped", tracking_number: "620391845571", total_amount: 3300 });

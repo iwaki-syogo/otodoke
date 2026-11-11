@@ -1,7 +1,7 @@
 import { APIError } from "@anthropic-ai/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb, type Row } from "./fake-db";
-import { USER, asAdmin, precomputed, reading } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, precomputed, reading } from "./pipeline-fixtures";
 
 /** 「読み取る」 with Claude stopped ends at the first mail; one failing mail does not stop the rest. Made-up mails only. */
 
@@ -46,7 +46,7 @@ describe("runReadWaitingMail when Claude fails", () => {
   it("20 waiting, the first call 402: Claude is asked once and the result says unavailable", async () => {
     mocks.extractEmail.mockRejectedValueOnce(apiError(402, "billing_error"));
     const db = twenty();
-    const done = await runReadWaitingMail(asAdmin(db), USER);
+    const done = await runReadWaitingMail(asConsentingAdmin(db), USER);
     expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
     expect(done).toMatchObject({ unavailable: true, read: 0 });
     expect(db.rows("emails").filter((e) => e.error === "claude_unavailable")).toHaveLength(1);
@@ -54,12 +54,12 @@ describe("runReadWaitingMail when Claude fails", () => {
 
   it("negative control: only the first call 500 — the rest are still read, and it is not unavailable", async () => {
     mocks.extractEmail.mockRejectedValueOnce(apiError(500, "api_error"));
-    const done = await runReadWaitingMail(asAdmin(twenty()), USER);
+    const done = await runReadWaitingMail(asConsentingAdmin(twenty()), USER);
     expect(mocks.extractEmail).toHaveBeenCalledTimes(20);
     expect(done).toMatchObject({ ok: false, unavailable: false, read: 19 });
   });
 
   it("all read: not unavailable", async () => {
-    expect(await runReadWaitingMail(asAdmin(twenty()), USER)).toMatchObject({ ok: true, unavailable: false, read: 20 });
+    expect(await runReadWaitingMail(asConsentingAdmin(twenty()), USER)).toMatchObject({ ok: true, unavailable: false, read: 20 });
   });
 });

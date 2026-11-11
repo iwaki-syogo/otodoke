@@ -4,6 +4,7 @@ import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
 import { ClaudeUnavailableError, claudeFailure } from "@/lib/extract/claude-error";
 import { claimClaudeCall, type ClaudeClaim } from "@/lib/claude-usage";
+import { requireAiReadingConsent } from "@/lib/ai-consent";
 import {
   isParcelRelevant,
   buildParcelInsert,
@@ -121,39 +122,6 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     throw new MailBeingReadError("this mail is still being read");
   }
 
-  // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
-  if (!isForwardingConfirmation && !options.precomputed) {
-    const screen = screenMail(mail);
-    if (!screen.pass) {
-      const keep = await secondLook(db, mail, screen);
-      if (keep) {
-        await logScreenEvent(db, mail, "rescued", screen.reason);
-      } else {
-        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
-        // forever. Only while the row is as it was read, as for the take-over below: a delivery that
-        // took it over meanwhile is reading it, and its row is not removed from under it.
-        let removed = true;
-        if (stored) {
-          const { data, error } = await db
-            .from("emails")
-            .delete()
-            .eq("user_id", mail.userId)
-            .eq("id", stored.id)
-            .eq("processing_status", stored.processing_status)
-            .eq("created_at", stored.created_at)
-            .select("id");
-          if (error) throw new Error(`emails cleanup failed: ${error.message}`);
-          removed = (data ?? []).length > 0;
-        }
-        // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
-        // delivery that took the row over may read and seal it (review R3-33). Removed first and
-        // logged after, so a failure in between leaves no subject behind.
-        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
-        return { kind: "screened_out", reason: screen.reason };
-      }
-    }
-  }
-
   // Known before anything is stored or paid for: not knowing whether there is a key fails here,
   // with the stored row (a mail read again from 設定, say) as it was. The Gmail confirmation is
   // closed with it as it is stored; a mail that is read is closed with the key read again right
@@ -185,7 +153,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
         }
       : {}),
   };
-  let emailRow: { id: string };
+  let emailRow: { id: string; created_at: string };
   if (stored) {
     // Only while the row is as it was read: two deliveries never both take it over and pay twice.
     // created_at starts the pending grace again, as a new row would.
@@ -196,7 +164,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       .eq("user_id", mail.userId)
       .eq("processing_status", stored.processing_status)
       .eq("created_at", stored.created_at)
-      .select("id")
+      .select("id, created_at")
       .maybeSingle();
     if (error) throw new Error(`emails update failed: ${error.message}`);
     // Another run took the row over first (two presses at once): not a failure of this mail.
@@ -209,7 +177,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     const { data, error } = await db
       .from("emails")
       .insert({ id: emailId, user_id: mail.userId, ...columns })
-      .select("id")
+      .select("id, created_at")
       .single();
     // 23505: another run stored the same mail between the lookup above and this insert.
     if (error?.code === "23505") throw new MailBeingReadError(`emails insert failed: ${error.message}`);
@@ -218,6 +186,37 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
+
+  await requireAiReadingConsent(db, mail.userId, emailRow.id, options);
+
+  // The cheap second look is paid too: screening runs only after the stored mail passed consent.
+  if (!isForwardingConfirmation && !options.precomputed) {
+    const screen = screenMail(mail);
+    if (!screen.pass) {
+      const keep = await secondLook(db, mail, screen);
+      if (keep) {
+        await logScreenEvent(db, mail, "rescued", screen.reason);
+      } else {
+        // Remove only the pending row this run stored. Another delivery that took it over
+        // meanwhile owns the row now; its subject must not be logged as dropped either.
+        const { data, error } = await db
+          .from("emails")
+          .delete()
+          .eq("user_id", mail.userId)
+          .eq("id", emailRow.id)
+          .eq("processing_status", "pending")
+          .eq("created_at", emailRow.created_at)
+          .select("id");
+        if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+        const removed = (data ?? []).length > 0;
+        // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
+        // delivery that took the row over may read and seal it (review R3-33). Removed first and
+        // logged after, so a failure in between leaves no subject behind.
+        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
+        return { kind: "screened_out", reason: screen.reason };
+      }
+    }
+  }
 
   // 1.5. Take one paid call from today's allowance. Over the limit, the mail is kept to read later.
   let claim: ClaudeClaim | null = null;

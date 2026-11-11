@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { requireEnv } from "@/lib/env";
 import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
+import { AiReadingNotAllowedError } from "@/lib/ai-consent";
 import { processInboundEmail } from "@/lib/pipeline";
 import { scheduleSealRemaining } from "@/lib/seal-later";
 
@@ -109,6 +110,11 @@ export async function POST(request: Request) {
     scheduleSealRemaining(userId, admin());
     return NextResponse.json({ ok: true, outcome: outcome.kind });
   } catch (err) {
+    // Waiting for a choice is deliberate, not a transient failure: the stored mail is read by
+    // the person later. Retrying this webhook after they consented must not start a paid read.
+    if (err instanceof AiReadingNotAllowedError && err.code === "ai_consent_required") {
+      return NextResponse.json({ ok: true, outcome: "ai_consent_required" });
+    }
     // Claude is stopped and trying again will not change that: the mail is stored, so answer 200.
     if (err instanceof ClaudeUnavailableError) {
       console.error("inbound: claude unavailable, mail kept unread");
