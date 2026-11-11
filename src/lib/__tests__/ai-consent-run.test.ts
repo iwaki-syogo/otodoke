@@ -35,7 +35,7 @@ const waiting = (n: number, over: Partial<Row> = {}): Row => ({
   text_body: `ご注文番号 TEST-${n} を承りました`, html_body: null, created_at: "2026-11-01T00:00:00.000000Z", ...over,
 });
 const seeded = (n = 1) => new FakeDb({ ai_reading_consents: [choice()], emails: Array.from({ length: n }, (_, i) => waiting(i + 1)) });
-const notRelevant = () => precomputed(reading({ relevance: "unrelated" }));
+const notRelevant = () => precomputed(reading({ relevance: "unrelated", relevance_evidence: "ご注文番号" }));
 
 beforeEach(() => {
   Object.assign(timing, { TRIAGE_TIMEOUT_MS: 15_000, EXTRACT_TIMEOUT_MS: 90_000, MAIL_READ_BUDGET_MS: 120_000, MAIL_REQUEST_BUDGET_MS: 270_000 });
