@@ -336,9 +336,10 @@ enum ManualParcel {
             let trackingNumber: String? = number.isEmpty ? nil : number
             let storedNumber = Carriers.normalizeTracking(saved.trackingNumber ?? "")
             // The carrier is compared by the name the form would write, so "a named carrier" and "automatic" that come to the
-            // same carrier are not a difference (the tracking URL is then kept).
+            // same carrier are not a difference (the tracking URL is then kept). The Web's own test (the same choice as the stored
+            // one) also keeps it, so a stored null that the number names, left as it is, is not written either.
             let formCarrier = v.carrier == keepCarrier ? saved.carrier : carrierName(ManualCarrier(rawValue: v.carrier) ?? .auto, tracking: trackingNumber)
-            let trackingKept = (storedNumber.isEmpty ? nil : storedNumber) == trackingNumber && formCarrier == saved.carrier
+            let trackingKept = (storedNumber.isEmpty ? nil : storedNumber) == trackingNumber && (formCarrier == saved.carrier || carrierChoice(saved.carrier, tracking: saved.trackingNumber) == v.carrier)
             if !trackingKept {
                 columns["tracking_number"] = Column(trackingNumber)
                 columns["carrier"] = Column(formCarrier)

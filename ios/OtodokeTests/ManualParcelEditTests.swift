@@ -394,6 +394,24 @@ struct ManualParcelEditTests {
         #expect(other["carrier"] != nil && other["tracking_url"] == .null)
     }
 
+    @Test func aStoredNullCarrierThatTheNumberNamesIsLeftAloneWhenOnlyTheTitleChanges() async throws {
+        let (number, _) = try autoCarrier()
+        let s = saved { $0.trackingNumber = number; $0.carrier = nil }
+        // The form starts at "auto" for it (the number gives a name, none is stored).
+        #expect(ManualParcel.carrierChoice(nil, tracking: number) == "auto")
+        let cols = try columns(s)
+        #expect(cols["tracking_number"] == nil && cols["carrier"] == nil && cols["tracking_url"] == nil)
+        // And through the writer: the tracking URL stays and the carrier stays null.
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow(1, ["tracking_number": .string(number), "carrier": nil])
+        await fake.insert("parcels", [original])
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original)) == .saved)
+        let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
+        #expect(stored["tracking_url"]?.string == "https://example.com/t")
+        #expect(stored["carrier"]?.string == nil)
+    }
+
     @Test func aSaveWithTheCarrierSetToAutomaticWhoseAnswerIsLostIsSavedWhenPressedAgain() async throws {
         let (number, name) = try autoCarrier()
         let fake = FakeSupabase.make()
