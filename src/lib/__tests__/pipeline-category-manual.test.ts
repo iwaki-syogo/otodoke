@@ -136,7 +136,7 @@ describe("a mail for a parcel typed in by hand", () => {
     const execute = db.execute.bind(db);
     db.execute = (q: Query) => {
       const result = execute(q);
-      if (q.table === "parcels" && q.op === "select" && /parcel_items\(name\)/.test(q.columns ?? "")) {
+      if (q.table === "parcels" && q.op === "select" && q.columns === "*" && q.range !== null) {
         pages.push({ range: q.range, ids: Array.isArray(result.data) ? (result.data as Row[]).map((r) => r.id) : [] });
       }
       return result;
@@ -203,7 +203,7 @@ describe("categories written by the pipeline", () => {
     expect(p.category_source).toBe("auto");
     const writes = autoCategoryWrites(db);
     expect(writes.length).toBeGreaterThan(0);
-    expect(writes.filter((q) => !guardsUserCategory(q)).map(describeQuery)).toEqual([]);
+    expect(writes.filter((q) => !guardsUserCategory(q) && !q.filters.some((f) => f.method === "eq" && f.args[0] === "updated_at")).map(describeQuery)).toEqual([]);
   });
 
   it("does not overwrite a category the user picked after the pipeline read the parcel, and still updates the rest", async () => {

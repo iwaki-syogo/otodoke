@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Database } from "@/lib/db/database.types";
 import { withMailRun } from "@/lib/mail-run-db";
 
@@ -47,6 +47,11 @@ function expectOwnedPost(sent: SentRequest[], table: string, operation: string, 
   // A source-table write would evade the owner check even if an RPC was also sent.
   expect(sent.some((request) => !request.path.includes("/rpc/") && ["POST", "PATCH", "DELETE"].includes(request.method))).toBe(false);
 }
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", () => { throw new Error("all transport must use the local custom fetch"); });
+});
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("mail-run ownership adapter over the real Supabase transport", () => {
   it("insert + select + single sends its values through the owned RPC and returns one row", async () => {
@@ -165,4 +170,58 @@ describe("mail-run ownership adapter over the real Supabase transport", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ path: "/rest/v1/rpc/release_claude_call", method: "POST", body: args });
   });
+
+  const version = "2026-11-12T01:00:00.123456+09:00";
+  const items = [{ name: "テスト商品", quantity: 2, unit_price: 900, evidence: "テスト商品 2点" }];
+  const filingRpcs = [
+    {
+      name: "create_mail_parcel" as const,
+      args: {
+        p_snapshot: [{ id: PARCEL, updated_at: version, item_names: ["テスト商品"] }],
+        p_values: { user_id: USER, shop: "テスト店", title: "テスト商品", total_amount: 1800, received_at: null },
+        p_items: items,
+      },
+      ok: [{ verdict: "ok", parcel_id: PARCEL }],
+      retry: [{ verdict: "retry", parcel_id: null }],
+    },
+    {
+      name: "ensure_mail_parcel_items" as const,
+      args: { p_parcel_id: PARCEL, p_expected_updated_at: version, p_items: items },
+      ok: [{ verdict: "ok" }],
+      retry: [{ verdict: "retry" }],
+    },
+    {
+      name: "update_mail_parcel" as const,
+      args: {
+        p_snapshot: [{ id: PARCEL, updated_at: version, item_names: ["テスト商品"] }],
+        p_parcel_id: PARCEL,
+        p_expected_updated_at: version,
+        p_values: { status: "delivered", total_amount: 0, expected_date: null },
+        p_category: { category: "other", category_source: "auto" },
+        p_items: items,
+      },
+      ok: [{ verdict: "ok", parcel_id: PARCEL, parcel_row: { id: PARCEL, status: "delivered", total_amount: 0, expected_date: null } }],
+      retry: [{ verdict: "retry", parcel_id: null, parcel_row: null }],
+    },
+  ];
+
+  for (const rpc of filingRpcs) {
+    it.each(["ok", "retry", "denied"] as const)(`${rpc.name} preserves filing arguments and %s while the run context wins`, async (outcome) => {
+      const error = { code: "42501", message: "mail run no longer owns this mail", details: null, hint: null };
+      const response = outcome === "denied" ? error : rpc[outcome];
+      const { owned, sent } = transport({ body: response, status: outcome === "denied" ? 403 : 200 });
+      // A caller-supplied identity cannot replace the context this adapter was created with.
+      const args = { ...rpc.args, p_email_id: USER, p_run_id: PARCEL };
+      const before = JSON.stringify(args);
+      const result = await owned.rpc(rpc.name, args);
+      expect(JSON.stringify(args)).toBe(before);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].path).toBe(`/rest/v1/rpc/${rpc.name}`);
+      expect(sent[0].method).toBe("POST");
+      expect(sent[0].body).toEqual({ ...rpc.args, p_email_id: EMAIL, p_run_id: RUN });
+      expect(sent.some((request) => !request.path.includes("/rpc/"))).toBe(false);
+      if (outcome === "denied") expect(result).toMatchObject({ data: null, error, status: 403 });
+      else expect(result).toMatchObject({ data: response, error: null, status: 200 });
+    });
+  }
 });

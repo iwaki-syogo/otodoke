@@ -20,7 +20,8 @@ function assertOnlyFreeMailStorage(calls: RpcCall[]): void {
   const tables = new Set(["emails", "parcels", "parcel_items", "extractions"]);
   const operations = new Set(["insert", "update", "delete"]);
   for (const call of calls) {
-    if (call.name === "store_mail_run") continue;
+    // The sample is filed by the parcel-filing RPCs: database writes only, no AI allowance.
+    if (["store_mail_run", "create_mail_parcel", "update_mail_parcel", "ensure_mail_parcel_items", "mail_parcel_snapshot"].includes(call.name)) continue;
     if (call.name === "mail_run_write" && call.args && typeof call.args === "object") {
       const args = call.args as { p_table?: unknown; p_operation?: unknown };
       if (typeof args.p_table === "string" && tables.has(args.p_table)
@@ -42,6 +43,8 @@ describe("reading permission is a server decision", () => {
   it("the no-allowance contract permits known storage writes", () => {
     expect(() => assertOnlyFreeMailStorage([
       { name: "store_mail_run", args: {} },
+      { name: "create_mail_parcel", args: {} },
+      { name: "update_mail_parcel", args: {} },
       ...["insert", "update", "delete"].map((p_operation) => ({ name: "mail_run_write", args: { p_table: "emails", p_operation } })),
     ])).not.toThrow();
   });
@@ -91,6 +94,7 @@ describe("reading permission is a server decision", () => {
     expect(mocks.triage).not.toHaveBeenCalled();
     expect(db.rpcCalls.filter((c) => /claude_call/.test(c.name))).toEqual([]);
     expect(() => assertOnlyFreeMailStorage(db.rpcCalls)).not.toThrow();
+    expect(db.rpcCalls.filter((call) => ["claim_claude_call", "claim_claude_call_v2"].includes(call.name) || call.name === "mail_run_write" && (call.args as { p_operation?: string }).p_operation === "claim")).toEqual([]);
     expect(db.rows("emails")).toHaveLength(1);
     expect(db.rows("emails")[0]).toMatchObject({ user_id: USER, processing_status: "failed", error: expected, text_body: mail.text });
   });
@@ -150,6 +154,7 @@ describe("reading permission is a server decision", () => {
     expect(mocks.triage).not.toHaveBeenCalled();
     expect(db.rpcCalls.filter((c) => /claude_call/.test(c.name))).toEqual([]);
     expect(() => assertOnlyFreeMailStorage(db.rpcCalls)).not.toThrow();
+    expect(db.rpcCalls.filter((call) => ["claim_claude_call", "claim_claude_call_v2"].includes(call.name) || call.name === "mail_run_write" && (call.args as { p_operation?: string }).p_operation === "claim")).toEqual([]);
   });
 
   it("a sample flag alone cannot send a real mail to Claude without permission", async () => {

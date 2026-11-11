@@ -75,7 +75,7 @@ describe("pipeline: every service-role query on parcels, parcel_items and extrac
     const out = await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), html: "<p>新しい商品</p>" }, { precomputed: precomputed(x) });
     expect(out.kind).toBe("processed");
     expect(unscoped(db)).toEqual([]);
-    expect(db.callsOn("parcel_items", "select").length).toBeGreaterThanOrEqual(1);
+    expect(db.rpcCalls.some((call) => call.name === "create_mail_parcel" && Array.isArray((call.args as {p_items?:unknown}).p_items))).toBe(true);
   });
 
   it("when a mail with items joins an existing parcel", async () => {

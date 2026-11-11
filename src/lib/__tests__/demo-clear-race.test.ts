@@ -83,7 +83,7 @@ describe("B5: clear fences a sample load started on another request", () => {
   it("also rejects a parcel insert delayed after its sample email was reserved", async () => {
     vi.stubGlobal("fetch", () => { throw new Error("external fetch is forbidden in this test"); });
     const db = new FakeDb();
-    const gate = delayedRequest(db, (name, args) => name === "mail_run_write" && args.p_table === "parcels" && args.p_operation === "insert");
+    const gate = delayedRequest(db, (name, args) => name === "create_mail_parcel");
     const loading = runLoadDemo(() => gate.client, USER);
     await gate.stopped;
     expect(db.rows("emails")).toHaveLength(1);

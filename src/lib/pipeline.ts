@@ -412,51 +412,47 @@ interface ReadingMeta {
 
 /** File one reading into its parcel, or answer null when it describes no parcel. */
 async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string, x: Extraction, meta: ReadingMeta): Promise<{ parcelId: string; created: boolean } | null> {
-  const parcel = await findParcel(db, mail.userId, x);
-  if (!parcel && !startsParcel(x)) return null;
-
-  let parcelId: string;
+  let parcelId: string | null = null;
   let created = false;
-  if (parcel) {
-    if (parcel.source === "manual") {
-      await fillManual(db, mail.userId, parcel, x, mail.sentAt);
-    } else {
-      const { rest, category } = splitCategory(buildParcelUpdate(parcel, x, mail.sentAt));
-      if (Object.keys(rest).length > 0) {
-        const { error } = await db.from("parcels").update(rest).eq("id", parcel.id).eq("user_id", mail.userId);
-        if (error) throw new Error(`parcels update failed: ${error.message}`);
-      }
-      if (category) await writeAutoCategory(db, mail.userId, parcel.id, category);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    // A conflict reruns the same local match against every current candidate. It
+    // never asks Claude again, nor assumes that the old id is still a match.
+    const { parcel, snapshot } = await findParcel(db, mail.userId, x);
+    if (!parcel && !startsParcel(x)) return null;
+    if (parcel) {
+      const update = parcel.source === "manual" ? mergeIntoManual(parcel, x, mail.sentAt) : buildParcelUpdate(parcel, x, mail.sentAt);
+      const { rest, category } = splitCategory(update);
+      const saved = await db.rpc("update_mail_parcel", {
+        p_snapshot: snapshot as unknown as Json, p_parcel_id: parcel.id, p_expected_updated_at: parcel.updated_at,
+        p_values: rest as unknown as Json, p_category: category as unknown as Json, p_items: itemValues(x) as unknown as Json,
+      });
+      if (saved.error) throw new Error(`parcels update failed: ${saved.error.message}`);
+      const row = Array.isArray(saved.data) ? saved.data[0] : null;
+      if (row?.verdict === "retry") continue;
+      if (row?.verdict !== "ok" || row.parcel_id !== parcel.id || !row.parcel_row || typeof row.parcel_row !== "object" || Array.isArray(row.parcel_row)) throw new Error("parcels update returned no saved row");
+      assertParcelWrite(rest, row.parcel_row as unknown as ParcelRow);
+      parcelId = parcel.id;
+      break;
     }
-    parcelId = parcel.id;
-  } else {
-    const { data: inserted, error } = await db.from("parcels").insert(buildParcelInsert(mail.userId, x, mail.sentAt)).select("id").single();
-    if (error || !inserted) throw new Error(`parcels insert failed: ${error?.message}`);
-    parcelId = inserted.id;
+    const inserted = await db.rpc("create_mail_parcel", {
+      p_snapshot: snapshot as unknown as Json, p_values: buildParcelInsert(mail.userId, x, mail.sentAt) as unknown as Json,
+      p_items: itemValues(x) as unknown as Json,
+    });
+    if (inserted.error) throw new Error(`parcels insert failed: ${inserted.error.message}`);
+    const row = Array.isArray(inserted.data) ? inserted.data[0] : null;
+    if (row?.verdict === "retry") continue;
+    if (row?.verdict !== "ok" || typeof row.parcel_id !== "string") throw new Error("parcels insert returned no verdict or id");
+    parcelId = row.parcel_id;
     created = true;
+    break;
   }
-
-  // Items: only when the parcel has none yet (order mails carry the full list).
-  if (x.items.length > 0) {
-    const { count, error: countError } = await db
-      .from("parcel_items")
-      .select("id", { count: "exact", head: true })
-      .eq("parcel_id", parcelId)
-      .eq("user_id", mail.userId);
-    if (countError) throw new Error(`parcel_items count failed: ${countError.message}`);
-    if (!count) {
-      const { error } = await db.from("parcel_items").insert(
-        x.items.map((it) => ({
-          parcel_id: parcelId,
-          user_id: mail.userId,
-          name: it.name,
-          quantity: it.quantity,
-          unit_price: it.unit_price,
-          evidence: it.evidence,
-        })),
-      );
-      if (error) throw new Error(`parcel_items insert failed: ${error.message}`);
-    }
+  if (parcelId === null) {
+    // Keep the paid evidence even when contention outlasts this request. The mail
+    // stays failed/plain for a later read instead of being marked processed.
+    const { error } = await db.from("extractions").insert({ user_id: mail.userId, email_id: emailId, parcel_id: null, model: meta.model,
+      result: { ...x, _usage: meta.usage, _truncated: meta.truncated } as unknown as Json, confidence: Math.max(0, Math.min(1, x.overall_confidence)) });
+    if (error) throw new Error(`extractions insert failed: ${error.message}`);
+    throw new Error("parcel changed while a mail was merged; not merged yet");
   }
 
   // Keep the evidence trail.
@@ -478,7 +474,7 @@ const NOT_USER_CATEGORY = "category_source.is.null,category_source.neq.user";
 
 type CategoryColumns = Pick<ParcelUpdate, "category" | "category_source">;
 
-/** The category columns go in a write of their own, so their guard never holds back the rest. */
+/** Normal filing passes a separate category patch to the atomic RPC; twins keep their guarded write. */
 function splitCategory(update: ParcelUpdate): { rest: ParcelUpdate; category: CategoryColumns | null } {
   const { category, category_source, ...rest } = update;
   const has = category !== undefined || category_source !== undefined;
@@ -497,29 +493,24 @@ async function readParcel(db: AdminClient, userId: string, parcelId: string): Pr
   return data;
 }
 
-/**
- * A mail fills the gaps of a parcel the person typed in. The write holds only while the row is
- * as it was read (updated_at), so a value they save in between is kept: the row is read again
- * and merged once more, and a second miss fails the mail so it can be read again.
- */
-async function fillManual(db: AdminClient, userId: string, read: ParcelRow, x: Extraction, sentAt: string | null) {
-  let row: ParcelRow | null = read;
-  for (let attempt = 0; attempt < 2 && row; attempt++) {
-    const { rest, category } = splitCategory(mergeIntoManual(row, x, sentAt));
-    if (Object.keys(rest).length > 0) {
-      const { data, error } = await db.from("parcels").update(rest).eq("id", row.id).eq("user_id", userId).eq("updated_at", row.updated_at).select("id");
-      if (error) throw new Error(`parcels update failed: ${error.message}`);
-      if (!data || data.length === 0) {
-        row = await readParcel(db, userId, row.id);
-        continue;
-      }
-    }
-    if (category) await writeAutoCategory(db, userId, row.id, category);
-    return;
+/** Initial items are seeded atomically with creation, or ensured once on an existing parcel. */
+function itemValues(x: Extraction) {
+  return x.items.map((it) => ({ name: it.name, quantity: it.quantity, unit_price: it.unit_price, evidence: it.evidence }));
+}
+
+/** Returned rows must actually contain the requested change, including when a trigger runs. */
+function assertParcelWrite(expected: ParcelUpdate, actual: ParcelRow) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (value === undefined) continue;
+    const stored = actual[key as keyof ParcelRow];
+    const timestamps = ["ordered_at", "last_email_at", "received_at", "check_dismissed_at"];
+    const clockTime = (text: string) => { const [h,m,sec="0"] = text.split(":"); return Number(h)*3600+Number(m)*60+Number(sec); };
+    const equal = value !== null && typeof value === "string" && typeof stored === "string"
+      ? timestamps.includes(key) ? Date.parse(value) === Date.parse(stored)
+        : ["expected_window_start","expected_window_end"].includes(key) ? clockTime(value) === clockTime(stored) : value === stored
+      : value === stored;
+    if (!equal) throw new Error(`parcels update did not store ${key} as requested`);
   }
-  // Not merged: the mail must not be marked processed, or a redelivery would skip it. Failing
-  // leaves it as failed for the webhook's retry, which merges again into what the person saved.
-  throw new Error(`parcel ${read.id}: changed by the user while a mail was merged; not merged yet`);
 }
 
 /**
@@ -653,17 +644,27 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
 }
 
 /** Every parcel of this user, with item names, so the rules in chooseParcel see the same data everywhere. */
-async function findParcel(db: AdminClient, userId: string, x: Extraction): Promise<ParcelCandidate | null> {
-  // The embedded items are filtered too: the service role sees every account's rows.
-  // Read past the 1000-row cap: a parcel cut off here would be missed and opened a second time.
-  let data: Array<ParcelRow & { parcel_items: Array<{ name: string }> }>;
+interface ParcelSnapshotRow { id: string; updated_at: string; item_names: string[] }
+async function findParcel(db: AdminClient, userId: string, x: Extraction): Promise<{ parcel: ParcelCandidate | null; snapshot: ParcelSnapshotRow[] }> {
+  let data: ParcelRow[];
+  let items: Array<{ id: string; parcel_id: string; name: string }>;
   try {
-    data = await readAll(() => db.from("parcels").select("*, parcel_items(name)", { count: "exact" }).eq("user_id", userId).eq("parcel_items.user_id", userId));
+    data = await readAll(() => db.from("parcels").select("*", { count: "exact" }).eq("user_id", userId));
+    // Embedded to-many relations have their own row cap. Read every item separately
+    // so matching and the SQL snapshot both see the complete names multiset.
+    items = data.length === 0 ? [] : await readAll(() => db.from("parcel_items").select("id, parcel_id, name", { count: "exact" }).eq("user_id", userId));
   } catch (err) {
     throw new Error(`parcels lookup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const candidates = data.map(({ parcel_items, ...row }) => ({ ...row, itemNames: parcel_items.map((it) => it.name) }));
-  return chooseParcel(candidates, x);
+  const names = new Map<string, string[]>();
+  for (const item of items) {
+    const list = names.get(item.parcel_id) ?? [];
+    list.push(item.name);
+    names.set(item.parcel_id, list);
+  }
+  const candidates = data.map((row) => ({ ...row, itemNames: names.get(row.id) ?? [] }));
+  const snapshot = candidates.map((row) => ({ id: row.id, updated_at: row.updated_at, item_names: row.itemNames }));
+  return { parcel: chooseParcel(candidates, x), snapshot };
 }
 
 /**
@@ -671,14 +672,25 @@ async function findParcel(db: AdminClient, userId: string, x: Extraction): Promi
  * A typed-in parcel's amount is the person's: it is only filled while empty, checked by the write itself.
  */
 async function refreshTotal(db: AdminClient, userId: string, parcelId: string) {
-  const { data, error } = await db.from("extractions").select("result").eq("parcel_id", parcelId).eq("user_id", userId);
-  if (error) throw new Error(`extractions lookup failed: ${error.message}`);
-  const total = parcelTotal(data.map((row) => row.result as unknown as Extraction));
-  const { error: updateError } = await db
-    .from("parcels")
-    .update({ total_amount: total })
-    .eq("id", parcelId)
-    .eq("user_id", userId)
-    .or("source.neq.manual,total_amount.is.null");
-  if (updateError) throw new Error(`parcels total update failed: ${updateError.message}`);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const row = await readParcel(db, userId, parcelId);
+    if (!row) throw new Error("parcel disappeared while its total was being saved");
+    // A typed-in amount remains the person's value, including a concurrent edit.
+    if (row.source === "manual" && row.total_amount !== null) return;
+    let data: Array<{ result: Json }>;
+    try {
+      data = await readAll(() => db.from("extractions").select("id, result", { count: "exact" }).eq("parcel_id", parcelId).eq("user_id", userId));
+    } catch (error) {
+      throw new Error(`extractions lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const total = parcelTotal(data.map((reading) => reading.result as unknown as Extraction));
+    const { data: saved, error: updateError } = await db.from("parcels").update({ total_amount: total }).eq("id", parcelId).eq("user_id", userId)
+      .eq("updated_at", row.updated_at).or("source.neq.manual,total_amount.is.null").select("id, total_amount");
+    if (updateError) throw new Error(`parcels total update failed: ${updateError.message}`);
+    if (!Array.isArray(saved)) throw new Error("parcels total update returned no result");
+    if (saved.length === 0) continue;
+    if (saved.length !== 1 || saved[0].total_amount !== total) throw new Error("parcels total was not stored as requested");
+    return;
+  }
+  throw new Error("parcel changed while its total was being saved; not saved yet");
 }

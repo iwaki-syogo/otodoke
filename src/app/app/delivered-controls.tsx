@@ -182,7 +182,7 @@ export function SwipeToDeliver({ id, status, receivedAt = null, children }: { id
 /** "Mark all as received" for the parcels waiting for a check, with a second tap to confirm. */
 export function DeliverAll({ items }: { items: Marked }) {
   const showToast = useContext(ToastContext);
-  const [step, setStep] = useState<"idle" | "confirm" | "error">("idle");
+  const [step, setStep] = useState<"idle" | "confirm" | "error" | "partial">("idle");
   const { pending, run } = usePendingAction();
 
   const save = () =>
@@ -194,11 +194,13 @@ export function DeliverAll({ items }: { items: Marked }) {
           setStep("error");
           return;
         }
-        setStep("idle");
+        const partial = done.saved < new Set(items.map((it) => it.id)).size;
+        setStep(partial ? "partial" : "idle");
         // 元に戻す covers only what this press wrote; the rest (already received) is said in a note.
         const writtenAt = new Map(done.written.map((w) => [w.id, w.received_at]));
-        const undo = items.flatMap((it) => (writtenAt.has(it.id) ? [{ ...it, written_at: writtenAt.get(it.id)! }] : []));
-        showToast({ text: "受け取り済みにしました", undo: undo.length > 0 ? undo : null, note: undo.length > 0 && undo.length < done.saved ? CANNOT_UNDO_NOTE : null });
+        const uniqueItems = [...new Map(items.map((it) => [it.id, it])).values()];
+        const undo = uniqueItems.flatMap((it) => (writtenAt.has(it.id) ? [{ ...it, written_at: writtenAt.get(it.id)! }] : []));
+        showToast({ text: partial ? "一部を保存できませんでした" : "受け取り済みにしました", undo: undo.length > 0 ? undo : null, note: undo.length > 0 && undo.length < done.saved ? CANNOT_UNDO_NOTE : null });
       } catch {
         setStep("error");
       }
@@ -228,6 +230,7 @@ export function DeliverAll({ items }: { items: Marked }) {
         すべて受け取り済みにする
       </button>
       {step === "error" ? <p className="mt-1 text-xs text-red-700">保存できませんでした。もう一度押してください。</p> : null}
+      {step === "partial" ? <p className="mt-1 text-xs text-red-700">保存できなかった荷物があります。開き直してください。</p> : null}
     </div>
   );
 }
