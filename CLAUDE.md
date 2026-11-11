@@ -82,7 +82,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 1 段目は無料のルール。迷うものだけ 2 段目で Haiku に聞く。API が失敗したら残す
 - 変更したら `npm run check:screen`（pre-commit で自動）。荷物のメールを 1 通でも落とすと止まる
 - 本番の様子は `npm run report:screen`。利用者が「これは荷物」と押した差出人は次から読む
-- 有料の呼び出しは `claim_claude_call` で 1 人 1 日・全体 1 日の上限を取ってから行う。コードからは `src/lib/claude-usage.ts` の `claimClaudeCall` を使う（Claude が断った呼び出しは `release()` で数を戻す。DB に `claim_claude_call_v2` が無い間は旧関数に戻る）
+- 有料の呼び出しは `claim_claude_call` で 1 人 1 日・全体 1 日の上限を取ってから行う。コードからは `src/lib/claude-usage.ts` の `claimClaudeCall` を使う（Claude が止まっている（claude_unavailable）ときだけ `release()` で数を戻す。DB に `claim_claude_call_v2` が無い間は旧関数に戻る）
 
 ## Claude Code の使い方（このリポジトリの hooks）
 

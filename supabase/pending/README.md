@@ -21,17 +21,21 @@ Now waiting:
   missing. Run `supabase/verify/20261111100000_claude_call_release.before.sql` first (verdict 'OK'),
   then the file, then `supabase/verify/20261111100000_claude_call_release.sql` (verdict 'OK').
   Rollback: `supabase/rollback/20261111100000_claude_call_release.down.sql`.
-  **How to apply:** move all four files to `supabase/migrations/` (the SQL), `supabase/verify/` and
-  `supabase/rollback/` with a fresh timestamp (also in every comment and test that names them), then
-  `supabase db push`. Do not run it with `supabase db query`: migrations and production's schema would
-  differ. Order: the `.before.sql` verify, push, the verify. **Fix when moving:** add
-  `claude_call_claims` to the table list in `account-deletion-cascade.test.ts` ("these are the tables that
-  hold a user's rows"), and change the pending-only tests in `verify-sql-shape.test.ts`
-  (the 20261111100000 block that reads `supabase/pending/…` and expects no file in `migrations/`).
-  **Check after applying:** with the new code on dev, read one mail, then today's
-  `claude_call_claims` must have 1 or more rows; 0 rows means the code fell back to the old function
-  (it logs a warning "claim_claude_call_v2 is missing"). The locks it takes on `auth.users` are in
-  the file's header.
+  **How to apply:** move the SQL to `supabase/migrations/` and rename all four files (the SQL, the
+  verify, the `.before.sql` verify and the rollback) with a fresh timestamp, also in every comment
+  and test that names them. Before pushing, run `supabase db push --dry-run` and check that this one
+  file is the only one it lists. Then `supabase db push`. Do not run it with `supabase db query`:
+  migrations and production's schema would differ. Order: the `.before.sql` verify, push, the verify.
+  **Fix when moving:** add `claude_call_claims` to the table list in `account-deletion-cascade.test.ts`
+  ("these are the tables that hold a user's rows"); in `verify-sql-shape.test.ts` change the `VERIFY`
+  array (the two 20261111100000 entries) and the pending-only block (the 20261111100000 one that reads
+  `supabase/pending/…` and expects no file in `migrations/`).
+  **Check after applying:** with the new code on dev, have Claude read one REAL mail. A sample mail,
+  an ad, or a Gmail forwarding confirmation makes no claim, so it proves nothing. Then count today's
+  rows (Japan time): `select count(*) from public.claude_call_claims where day = (now() at time zone 'Asia/Tokyo')::date;`
+  It must be 1 or more. With 0 rows, look in the Vercel Preview logs for "claim_claude_call_v2 is
+  missing": the code fell back to the old function. The locks it takes on `auth.users` are in the
+  file's header.
 - `20261106130000_mail_sealed_after_processing.sql` — refuses a read mail left in plaintext. Apply only
   after the sealing code is in production and its verify file says so (see the file's header).
 - `20261114090000_drop_unsealed_plaintext.sql` — decision 7: on 2026-11-14, drop the plaintext subject,
