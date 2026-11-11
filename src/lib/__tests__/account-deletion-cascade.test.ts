@@ -147,6 +147,7 @@ describe("every row of a user's goes with the auth user", () => {
       "emails",
       "extractions",
       "inbox_addresses",
+      "mail_intake_notices",
       "parcel_items",
       "parcels",
       "screen_events",

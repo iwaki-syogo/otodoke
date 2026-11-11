@@ -26,6 +26,8 @@ import { forwardingConfirmUrl, isForwardingConfirmation as isGmailConfirmation }
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
 import type { MailPlaintext } from "@/lib/crypto/envelope";
 import { PENDING_GRACE_MS } from "@/lib/unread";
+import { withMailRun } from "@/lib/mail-run-db";
+import { mailStorageLimits } from "@/lib/mail-storage";
 import { screenMail, type ScreenResult } from "@/lib/screen";
 import { isRememberableDomain } from "@/lib/screen-senders";
 import { emailBodyText } from "@/lib/text/html-to-text";
@@ -47,6 +49,7 @@ export interface InboundEmail {
 
 export type PipelineOutcome =
   | { kind: "duplicate"; emailId: string }
+  | { kind: "storage_limit"; limit: string }
   | { kind: "forwarding_confirmation"; emailId: string }
   | { kind: "screened_out"; reason: string }
   | { kind: "over_limit"; emailId: string; limit: string }
@@ -75,13 +78,15 @@ interface StoredRow {
   id: string;
   processing_status: string;
   created_at: string;
+  processing_run_id: string | null;
+  processing_lease_until: string | null;
 }
 
 /** The row this mail already has: by its Message-ID, or the row being read again. Throws when it cannot tell. */
 async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | null): Promise<StoredRow | null> {
-  if (!mail.messageId && !rowId) return null;
-  const query = db.from("emails").select("id, processing_status, created_at").eq("user_id", mail.userId);
-  const { data, error } = await (mail.messageId ? query.eq("message_id", mail.messageId) : query.eq("id", rowId!)).maybeSingle();
+  if (!mail.messageId && !rowId && !mail.providerEmailId) return null;
+  const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until").eq("user_id", mail.userId);
+  const { data, error } = await (mail.messageId ? query.eq("message_id", mail.messageId) : rowId ? query.eq("id", rowId) : query.eq("provider_email_id", mail.providerEmailId!)).maybeSingle();
   if (error) throw new Error(`emails lookup failed: ${error.message}`);
   // A row found by its Message-ID wins; the row named for re-reading is the fallback.
   if (!data && mail.messageId && rowId) return storedRow(db, { ...mail, messageId: null }, rowId);
@@ -117,40 +122,17 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   if (stored?.processing_status === "processed") return { kind: "duplicate", emailId: stored.id };
   // Another delivery of this mail is being read right now. Taking its row over would break that
   // run and pay for a second read, so fail and let the webhook retry later.
-  if (stored?.processing_status === "pending" && Date.now() - new Date(stored.created_at).getTime() < PENDING_GRACE_MS) {
+  if (stored?.processing_status === "pending" && (stored.processing_lease_until ? Date.parse(stored.processing_lease_until) > Date.now() : Date.now() - new Date(stored.created_at).getTime() < PENDING_GRACE_MS)) {
     throw new MailBeingReadError("this mail is still being read");
   }
 
-  // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
-  if (!isForwardingConfirmation && !options.precomputed) {
+  // A clearly unrelated new mail needs neither storage nor a key. Borderline
+  // and remembered senders still acquire the owned lease before paid triage.
+  if (!stored && !isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
-    if (!screen.pass) {
-      const keep = await secondLook(db, mail, screen);
-      if (keep) {
-        await logScreenEvent(db, mail, "rescued", screen.reason);
-      } else {
-        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
-        // forever. Only while the row is as it was read, as for the take-over below: a delivery that
-        // took it over meanwhile is reading it, and its row is not removed from under it.
-        let removed = true;
-        if (stored) {
-          const { data, error } = await db
-            .from("emails")
-            .delete()
-            .eq("user_id", mail.userId)
-            .eq("id", stored.id)
-            .eq("processing_status", stored.processing_status)
-            .eq("created_at", stored.created_at)
-            .select("id");
-          if (error) throw new Error(`emails cleanup failed: ${error.message}`);
-          removed = (data ?? []).length > 0;
-        }
-        // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
-        // delivery that took the row over may read and seal it (review R3-33). Removed first and
-        // logged after, so a failure in between leaves no subject behind.
-        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
-        return { kind: "screened_out", reason: screen.reason };
-      }
+    if (!screen.pass && !screen.borderline && !(await senderMarked(db, mail))) {
+      await logScreenEvent(db, mail, "dropped", screen.reason);
+      return { kind: "screened_out", reason: screen.reason };
     }
   }
 
@@ -185,39 +167,57 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
         }
       : {}),
   };
-  let emailRow: { id: string };
+  const runId = crypto.randomUUID();
+  const limits = mailStorageLimits();
+  const { data: reservation, error: reservationError } = await db.rpc("store_mail_run", {
+    p_user_id: mail.userId, p_email_id: emailId, p_run_id: runId,
+    p_columns: columns as unknown as Json, p_expected_created_at: stored?.created_at ?? null,
+    p_limits: {
+      user_count: limits.OTODOKE_UNREAD_USER_MAIL_LIMIT, global_count: limits.OTODOKE_UNREAD_GLOBAL_MAIL_LIMIT,
+      user_bytes: limits.OTODOKE_UNREAD_USER_BYTE_LIMIT, global_bytes: limits.OTODOKE_UNREAD_GLOBAL_BYTE_LIMIT,
+    },
+  });
+  if (reservationError) throw new Error(`mail reservation failed: ${reservationError.message}`);
+  const reserved = Array.isArray(reservation) ? reservation[0] : null;
+  if (!reserved) throw new Error("mail reservation returned no verdict");
+  if (reserved.verdict === "busy") throw new MailBeingReadError("this mail is still being read");
+  if (reserved.verdict === "duplicate") return { kind: "duplicate", emailId: reserved.email_id };
+  if (reserved.verdict === "user_storage_limit" || reserved.verdict === "global_storage_limit") return { kind: "storage_limit", limit: reserved.verdict };
+  if (reserved.verdict !== "ok" || reserved.email_id !== emailId) throw new Error("mail reservation returned an unexpected verdict");
+  const emailRow = { id: emailId };
+  // Every subsequent mutation, including parcel and extraction writes, is fenced
+  // by the same database row lock as takeover. A late old run cannot finish.
+  db = withMailRun(db, emailId, runId);
   if (stored) {
-    // Only while the row is as it was read: two deliveries never both take it over and pay twice.
-    // created_at starts the pending grace again, as a new row would.
-    const { data, error } = await db
-      .from("emails")
-      .update({ ...columns, created_at: new Date().toISOString() })
-      .eq("id", stored.id)
-      .eq("user_id", mail.userId)
-      .eq("processing_status", stored.processing_status)
-      .eq("created_at", stored.created_at)
-      .select("id")
-      .maybeSingle();
-    if (error) throw new Error(`emails update failed: ${error.message}`);
-    // Another run took the row over first (two presses at once): not a failure of this mail.
-    if (!data) throw new MailBeingReadError("this mail changed while it was being stored; it is read on the next try");
-    // What an earlier, unfinished read of this row left: read again from the start, as for a new row.
     const { error: leftoverError } = await db.from("extractions").delete().eq("email_id", stored.id).eq("user_id", mail.userId);
     if (leftoverError) throw new Error(`extractions cleanup failed: ${leftoverError.message}`);
-    emailRow = data;
-  } else {
-    const { data, error } = await db
-      .from("emails")
-      .insert({ id: emailId, user_id: mail.userId, ...columns })
-      .select("id")
-      .single();
-    // 23505: another run stored the same mail between the lookup above and this insert.
-    if (error?.code === "23505") throw new MailBeingReadError(`emails insert failed: ${error.message}`);
-    if (error || !data) throw new Error(`emails insert failed: ${error?.message}`);
-    emailRow = data;
   }
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
+
+  // 0. Screen under the owned lease. A rejected mail is removed immediately.
+  if (!isForwardingConfirmation && !options.precomputed) {
+    const screen = screenMail(mail);
+    if (!screen.pass) {
+      const keep = await secondLook(db, mail, screen);
+      if (keep) {
+        await logScreenEvent(db, mail, "rescued", screen.reason);
+      } else {
+        // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
+        // forever. Only while the row is as it was read, as for the take-over below: a delivery that
+        // took it over meanwhile is reading it, and its row is not removed from under it.
+        const { data, error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("id", emailId).select("id");
+        if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+        const removed = (data ?? []).length > 0;
+        // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
+        // delivery that took the row over may read and seal it (review R3-33). Removed first and
+        // logged after, so a failure in between leaves no subject behind.
+        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
+        return { kind: "screened_out", reason: screen.reason };
+      }
+    }
+  }
+
 
   // 1.5. Take one paid call from today's allowance. Over the limit, the mail is kept to read later.
   let claim: ClaudeClaim | null = null;

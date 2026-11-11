@@ -70,6 +70,7 @@ export async function runLoadDemo(getDb: () => AdminClient, userId: string): Pro
         }
         throw err;
       }
+      if (outcome.kind === "storage_limit") throw new Error(`mail storage limit: ${outcome.limit}`);
       if (outcome.kind === "processed" || outcome.kind === "noted" || outcome.kind === "duplicate") processed++;
     }
     await receiveSampleParcels(db, userId);

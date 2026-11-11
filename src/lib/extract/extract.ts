@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { env, requireEnv } from "@/lib/env";
+import { EXTRACT_TIMEOUT_MS } from "@/lib/unread";
 import { EXTRACT_SYSTEM_PROMPT, buildUserMessage, type EmailForPrompt } from "./prompt";
 import { ExtractionSchema, storableInt, type Extraction } from "./schema";
 
@@ -20,7 +21,7 @@ export interface ExtractionResult {
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
-  if (!client) client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+  if (!client) client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY"), maxRetries: 0, timeout: EXTRACT_TIMEOUT_MS });
   return client;
 }
 

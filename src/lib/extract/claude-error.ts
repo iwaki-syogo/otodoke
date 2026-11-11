@@ -7,14 +7,11 @@ import { APIConnectionError, APIError } from "@anthropic-ai/sdk";
  *  - claude_error: probably temporary (rate limit, server trouble, a broken connection).
  * `unbilled`: the call was refused for good, so the allowance taken for it is given back
  * (src/lib/claude-usage.ts, used by the pipeline). True only for claude_unavailable: those answers
- * (402, 401, 403, 404, a billing 400, a spend-limit 400 or 429) are never billed, and a retry does
- * not turn them into something else. A temporary failure (429 rate limit, 5xx, 529) is NOT
- * unbilled even though it carries a status: the SDK retries by itself (twice by default), and an
- * earlier try may have been served and billed before a later one came back 529 or 500. Giving its
- * allowance back would also let the per-person limit stop limiting retries. A broken connection
- * may have been served too. Accepted as rare: if the first try was a connection error (actually
- * served and billed) and the SDK retry comes back 402 or a spend limit, one billed call is given
- * back; that needs the connection error first. maxRetries is left as it is.
+ * (402, 401, 403, 404, a billing 400, a spend-limit 400 or 429) refuse the single request before
+ * serving it. Every paid client sets maxRetries: 0: one claimed call sends one POST, with no
+ * earlier SDK attempt hidden behind that refusal. Temporary failures (429 rate limit, 5xx, 529),
+ * timeouts and broken connections keep their allowance: whether that one request was served and
+ * billed is unknown. A later, deliberate attempt must obtain its own allowance.
  */
 export type ClaudeFailure = { code: "claude_unavailable" | "claude_error"; unbilled: boolean };
 

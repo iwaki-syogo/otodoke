@@ -18,7 +18,7 @@ import { scheduleSealRemaining } from "@/lib/seal-later";
  * them is fetched first, as before.
  */
 // One mail means one Claude call; leave room for a slow response.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /** Far beyond any real order mail. Anyone can send to an inbox address, so storage needs a ceiling. */
 const MAX_BODY_CHARS = 512 * 1024;

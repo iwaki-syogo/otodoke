@@ -6,12 +6,13 @@ import { scheduleSealRemaining } from "@/lib/seal-later";
 import { todayJst } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
-import { PENDING_GRACE_MS, UNREAD_FILTER } from "@/lib/unread";
+import { PENDING_GRACE_MS, WAITING_MAIL_FILTER as UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
 import { NotYetButton } from "./not-yet-button";
 import { PageLink } from "./page-link";
 import { LOAD_DEMO_LABEL } from "./settings/demo-labels";
-import { readMailSoFar, type MailSoFar } from "./settings/settings-reads";
+import { readIntakeNotice, readMailSoFar, type MailSoFar } from "./settings/settings-reads";
+import { READ_STORAGE_LIMIT_NOTICE, READ_STORAGE_NOTICE_FAILED } from "@/lib/read-notices";
 import { ParcelCard } from "./parcel-card";
 
 export const metadata = { title: "荷物" };
@@ -62,6 +63,13 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
     </div>
   );
 
+  const intake = await readIntakeNotice(supabase, "parcels page");
+  const intakeNotice = intake.failed ? (
+    <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{READ_STORAGE_NOTICE_FAILED}</p>
+  ) : intake.at ? (
+    <Link href="/app/settings/trouble" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">{READ_STORAGE_LIMIT_NOTICE}</Link>
+  ) : null;
+
   const waitingNotice = waiting ? (
     <Link href="/app/settings/trouble" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
       まだ読んでいないメールが {waiting} 通あります。この一覧は最新ではないかもしれません。
@@ -91,6 +99,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
         {addLink}
         {sampleBusyNotice}
         {waitingNotice}
+        {intakeNotice}
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         {pageLinks}
       </div>
@@ -103,6 +112,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
         {addLink}
         {sampleBusyNotice}
         {waitingNotice}
+        {intakeNotice}
         <EmptyState mail={await mailSoFar(supabase, user.id)} />
         {pageLinks}
       </div>
@@ -115,6 +125,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
       {addLink}
       {sampleBusyNotice}
       {waitingNotice}
+      {intakeNotice}
       <Section title="配達済み" count={arrived.length} items={arrived} swipe />
       <CheckSection items={toCheck} />
       <Section title="配達中" count={delivering.length} items={delivering} swipe />

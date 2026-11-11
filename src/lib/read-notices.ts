@@ -14,3 +14,8 @@ export const READ_FAILED_REASON = "読み取れなかったメールがありま
 export const READ_UNAVAILABLE_NOTICE = "メールの読み取りは停止中です。";
 export const READ_OVER_LIMIT_NOTICE = "今日の読み取り上限に達しました。残りは明日の0時から読み取れます。";
 export const READ_FAILED_NOTICE = "読み取れなかったメールがあります。時間をおいてお試しください。";
+
+/** A storage rejection retains no body; the original mailbox is the recovery source. */
+export const READ_STORAGE_LIMIT_NOTICE = "受け取れなかったメールがあります。";
+export const READ_STORAGE_LIMIT_REASON = "未読を読み取ったあと、元メールをもう一度送ってください。";
+export const READ_STORAGE_NOTICE_FAILED = "メールの受信状況を確認できませんでした。";

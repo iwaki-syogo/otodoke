@@ -104,7 +104,7 @@ describe("re-reading a stored mail keeps its row", () => {
       Object.assign(db.find("emails", "e-waiting")!, { processing_status: "pending", created_at: "2026-11-03T00:00:00Z" });
       return undefined;
     });
-    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("changed while it was being stored");
+    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("still being read");
     expect(mocks.extractEmail).not.toHaveBeenCalled();
     expect(db.rows("emails")).toHaveLength(1);
   });
@@ -150,10 +150,10 @@ describe("a redelivered mail that was read", () => {
     db.hooks.push((q: Query) => {
       if (raced || q.table !== "emails" || q.op !== "delete") return undefined;
       raced = true;
-      Object.assign(db.find("emails", "e-unread")!, { processing_status: "pending", created_at: "2026-11-03T00:00:00Z" });
+      Object.assign(db.find("emails", "e-unread")!, { processing_status: "pending", processing_run_id: "another-run", processing_lease_until: new Date(Date.now()+360_000).toISOString(), created_at: "2026-11-03T00:00:00Z" });
       return undefined;
     });
-    expect((await processInboundEmail(asAdmin(db), mail)).kind).toBe("screened_out");
+    await expect(processInboundEmail(asAdmin(db), mail)).rejects.toThrow("lease");
     expect(db.rows("emails").map((e) => [e.id, e.processing_status])).toEqual([["e-unread", "pending"]]);
     // That delivery may read and seal it: its subject is not kept in plaintext as dropped (R3-33).
     expect(db.rows("screen_events")).toEqual([]);

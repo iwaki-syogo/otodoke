@@ -4,7 +4,7 @@ import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import type { AdminClient } from "@/lib/supabase/admin";
-import { UNREAD_FILTER } from "@/lib/unread";
+import { MAIL_READ_BUDGET_MS, MAIL_REQUEST_BUDGET_MS, WAITING_MAIL_FILTER as UNREAD_FILTER } from "@/lib/unread";
 
 /**
  * "This dropped mail was a parcel" and "read the mail that is waiting", as plain functions: shared
@@ -52,6 +52,7 @@ export type ReadWaitingResult =
 
 /** Read up to 20 waiting mails; stops when today's allowance runs out. `read` counts the mails processed (every outcome but over_limit). */
 export async function runReadWaitingMail(db: AdminClient, userId: string): Promise<ReadWaitingResult> {
+  const started = Date.now();
   const { data, error } = await db
     .from("emails")
     .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
@@ -71,6 +72,7 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
   // (precomputed, never Claude); the entries are loaded once, only if one is waiting.
   let samples: Map<string, DemoEntry> | null = null;
   for (const m of data) {
+    if (Date.now() - started > MAIL_REQUEST_BUDGET_MS - MAIL_READ_BUDGET_MS) break;
     try {
       const file = sampleFileOf(m.provider_email_id);
       let outcome;
@@ -104,6 +106,7 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
         overLimit = true;
         break;
       }
+      if (outcome.kind === "storage_limit") throw new Error(`mail storage limit: ${outcome.limit}`);
       read++;
     } catch (err) {
       // Claude is stopped: every next mail would fail the same way, so stop here (the mail is kept).

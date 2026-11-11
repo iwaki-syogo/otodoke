@@ -95,6 +95,8 @@ export type Database = {
           html_body: string | null
           id: string
           message_id: string | null
+          processing_run_id: string | null
+          processing_lease_until: string | null
           processing_status: string
           provider_email_id: string | null
           received_at: string
@@ -116,6 +118,8 @@ export type Database = {
           html_body?: string | null
           id?: string
           message_id?: string | null
+          processing_run_id?: string | null
+          processing_lease_until?: string | null
           processing_status?: string
           provider_email_id?: string | null
           received_at?: string
@@ -137,6 +141,8 @@ export type Database = {
           html_body?: string | null
           id?: string
           message_id?: string | null
+          processing_run_id?: string | null
+          processing_lease_until?: string | null
           processing_status?: string
           provider_email_id?: string | null
           received_at?: string
@@ -194,6 +200,12 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mail_intake_notices: {
+        Row: { user_id: string; limited_at: string; reason: string }
+        Insert: { user_id: string; limited_at?: string; reason: string }
+        Update: { user_id?: string; limited_at?: string; reason?: string }
+        Relationships: []
       }
       inbox_addresses: {
         Row: {
@@ -495,6 +507,14 @@ export type Database = {
           claim_id: number
           verdict: string
         }[]
+      }
+      store_mail_run: {
+        Args: { p_user_id: string; p_email_id: string; p_run_id: string; p_columns: Json; p_expected_created_at: string | null; p_limits: Json }
+        Returns: { verdict: string; email_id: string }[]
+      }
+      mail_run_write: {
+        Args: { p_email_id: string; p_run_id: string; p_table: string; p_operation: string; p_values: Json; p_filters: Json }
+        Returns: Json
       }
       release_claude_call: {
         Args: { p_claim_id: number; p_user_id: string }

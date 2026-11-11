@@ -230,7 +230,7 @@ describe("the reading gives the call back only when Claude is stopped (claude_un
     ["400 (own spend limit)", () => ownLimit(), true],
     ["429 (the monthly spend limit of the tier)", () => tierLimit(), true],
     ["404 (no such model)", () => apiError(404, "not_found_error", "x"), true],
-    ["500 (server trouble: an earlier try of the SDK may have been billed)", () => apiError(500, "api_error", "x"), false],
+    ["500 (server trouble: whether the request was billed is unknown)", () => apiError(500, "api_error", "x"), false],
     ["529 (overloaded)", () => apiError(529, "overloaded_error", "x"), false],
     ["429 (an ordinary rate limit)", () => apiError(429, "rate_limit_error", "x"), false],
     ["a broken connection (it may have been served)", () => new APIConnectionError({ message: "socket hang up" }), false],
