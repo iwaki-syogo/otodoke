@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { CONTACT_EMAIL } from "./contact";
+import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 
 // Prerendered (○ in `next build`). Next renders the root not-found with every page as its
 // fallback, so a root 404 that reads the request makes this page per request too: it did while
@@ -68,6 +69,7 @@ export default function PrivacyPage() {
             ブラウザで、ログイン用の値とメールの鍵を開く値の 2 つに分け、ログイン用の値だけをサーバーに送ります。ログイン用の値は、Supabase がハッシュ値に変えて保存します。
           </Term>
           <Term name="転送されたメール">荷物の情報を読み取るために使います。読み取った後は、元のメールを見られるように暗号化して保存します。</Term>
+          <Term name="読み取りの許可">許可するかどうかの選択と、選んだ日時、画面の文の版を記録します。あなたが許可したかを、メールを読み取る前に確かめるためです。</Term>
           <Term name="荷物の情報と根拠の行">
             店・品名・金額・日付・注文番号・伝票番号などと、読み取った値の根拠になった元メールの行です。一覧・カレンダー・支出を出すのと、読み取った値を確かめるのに使います。
           </Term>
@@ -95,8 +97,11 @@ export default function PrivacyPage() {
 
       <Section title="メールの扱い">
         <Terms>
+          <Term name="読み取りの許可と取り消し">
+            届いたメールを Anthropic の Claude に送る前に、読み取りの許可を求めます。許可しなくても、荷物は手で登録できます。設定の「あなたのメールの扱い」にある「{AI_CONSENT_TEXT.stop}」で、その後の読み取りを止められます。すでに読み取った荷物と結果は残ります。
+          </Term>
           <Term name="ふるい">
-            届いたメールは、まずサーバーの中の決まりで、広告などを分けます。迷うメールと、「これは荷物」で覚えた差出人のメールだけ、件名と本文の初めの部分を Claude Haiku に送って確かめます。読まないと決めたメールの本文は保存しません。
+            届いたメールは、まずサーバーの中の決まりで、広告などを分けます。読み取りを許可している場合だけ、迷うメールと、「これは荷物」で覚えた差出人のメールの件名と本文の初めの部分を Claude Haiku に送って確かめます。読まないと決めたメールの本文は保存しません。
           </Term>
           <Term name="Claude での読み取り">
             残ったメールは Claude が読み取ります。読み取る数秒のあいだ、サーバーと Claude API がメールの中身を扱います。買い物に関係ないと分かったメールは、Otodoke に残しません。
@@ -112,7 +117,7 @@ export default function PrivacyPage() {
             <Bullets>
               <li>荷物の情報と、根拠の行・読み取りメモ。一覧・カレンダー・支出を出すのと、読み取った値を確かめるのに使います。根拠の行は本文の抜粋です。</li>
               <li>差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク。ふるいと、同じメールを二度読まないためと、承認ページを出すために使います。</li>
-              <li>読み取る前のメール。1 日の上限を超えた分などは、読み取るまで暗号化せずに置きます。</li>
+              <li>読み取る前のメール。読み取りの許可を待つものや、1 日の上限を超えた分などは、読み取るまで暗号化せずに置きます。</li>
             </Bullets>
           </Term>
           <Term name="バックアップ">データベースのバックアップは、最大 7 日間残ります。暗号化していないメールも、その間はバックアップに残ります。</Term>
@@ -178,8 +183,8 @@ export default function PrivacyPage() {
       </Section>
 
       <p className="mt-10 text-xs text-neutral-500">制定日: 2026 年 11 月</p>
-      {/* The day the password sign-in reaches production (「変えた日を書きます」 above). Change it if that day moves. */}
-      <p className="mt-1 text-xs text-neutral-500">改定日: 2026 年 11 月 7 日</p>
+      {/* The reading-permission policy's release date. Change it if the release moves. */}
+      <p className="mt-1 text-xs text-neutral-500">改定日: 2026 年 11 月 12 日</p>
     </main>
   );
 }

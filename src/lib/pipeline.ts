@@ -4,6 +4,7 @@ import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
 import { ClaudeUnavailableError, claudeFailure } from "@/lib/extract/claude-error";
 import { claimClaudeCall, type ClaudeClaim } from "@/lib/claude-usage";
+import { requireAiReadingConsent } from "@/lib/ai-consent";
 import {
   isParcelRelevant,
   buildParcelInsert,
@@ -195,6 +196,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
+
+  await requireAiReadingConsent(db, mail.userId, emailRow.id, options);
 
   // 0. Screen under the owned lease. A rejected mail is removed immediately.
   if (!isForwardingConfirmation && !options.precomputed) {

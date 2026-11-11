@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fake-db";
+import { AiReadingNotAllowedError } from "@/lib/ai-consent";
 
 /**
  * POST /api/inbound (Resend's `email.received` webhook), after the review of 2026-11-06 (item 8).
@@ -291,6 +292,22 @@ describe("Claude is stopped", () => {
     mocks.processInboundEmail.mockImplementation(async () => {
       throw new Error("claude is unavailable");
     });
+    expect(await post()).toEqual({ status: 500, body: { error: "processing failed" } });
+  });
+});
+
+describe("mail stored while waiting for reading permission", () => {
+  it("answers 200 for a deliberate wait, so granting later cannot make a webhook retry start a paid read", async () => {
+    mocks.processInboundEmail.mockRejectedValue(new AiReadingNotAllowedError("ai_consent_required"));
+    expect(await post()).toEqual({ status: 200, body: { ok: true, outcome: "ai_consent_required" } });
+    expect(mocks.scheduleSeal).not.toHaveBeenCalled();
+    expect(logged()).not.toContain("注文番号");
+  });
+
+  it("a failed consent lookup is still 500 for recovery, and an unrelated error with the same message is not acknowledged", async () => {
+    mocks.processInboundEmail.mockRejectedValue(new AiReadingNotAllowedError("ai_consent_unknown"));
+    expect(await post()).toEqual({ status: 500, body: { error: "processing failed" } });
+    mocks.processInboundEmail.mockRejectedValue(new Error("ai_consent_required"));
     expect(await post()).toEqual({ status: 500, body: { error: "processing failed" } });
   });
 });

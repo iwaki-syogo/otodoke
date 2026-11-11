@@ -5,7 +5,7 @@ import { MANUAL_MAX_AMOUNT, ManualParcelSchema, manualParcelFields, manualParcel
 import type { ParcelRow } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Review R2-4: an amount typed in is held to 10,000,000 (MANUAL_MAX_AMOUNT), to stop a mistyped
@@ -65,7 +65,7 @@ describe("a typed-in parcel whose empty amount a mail filled in above the typing
   it("is saved unchanged from its edit form", async () => {
     const db = new FakeDb({ parcels: [typedIn()] });
     const order = reading({ relevance: "order", shop_name: "手入力の店", tracking_number: sure("1234-5678-9012"), total_amount: sure(MAIL_TOTAL) });
-    await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-05T01:00:00Z"), messageId: "<big-order@test>" }, { precomputed: precomputed(order) });
+    await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-05T01:00:00Z"), messageId: "<big-order@test>" }, { precomputed: precomputed(order) });
     const parcel = db.find("parcels", MANUAL_ID) as unknown as ParcelRow;
     expect(parcel.total_amount).toBe(MAIL_TOTAL);
 

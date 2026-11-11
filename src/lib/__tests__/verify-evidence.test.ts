@@ -3,7 +3,7 @@ import { evidenceIsPresent, verifyEvidence } from "@/lib/extract/verify-evidence
 import { buildParcelInsert, buildParcelUpdate, mergeIntoManual, parcelTotal, splitOrders } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
-import { asAdmin, mailOf, none, precomputed, reading } from "./pipeline-fixtures";
+import { asConsentingAdmin, mailOf, none, precomputed, reading } from "./pipeline-fixtures";
 import type { ParcelRow } from "@/lib/match";
 
 const field = <T>(value: T, evidence: string | null, confidence = 0.95) => ({ value, evidence, confidence });
@@ -131,7 +131,7 @@ describe("pipeline verifies before persisting or using an extraction", () => {
   it("keeps the mail and good fields while refusing an invented amount", async () => {
     const db = new FakeDb();
     const mail = { ...mailOf("2026-11-12T00:00:00Z"), ...source };
-    const out = await processInboundEmail(asAdmin(db), mail, { precomputed: precomputed({ ...good(), total_amount: field(9999, "作った合計") }) });
+    const out = await processInboundEmail(asConsentingAdmin(db), mail, { precomputed: precomputed({ ...good(), total_amount: field(9999, "作った合計") }) });
     expect(out.kind).toBe("processed");
     expect(db.rows("parcels")[0]).toMatchObject({ total_amount: null, expected_date: "2026-11-12", requires_presence: true, needs_review: true });
     expect(db.rows("extractions")[0].result).toMatchObject({ total_amount: { value: null }, evidence_review: ["total_amount"] });
@@ -140,7 +140,7 @@ describe("pipeline verifies before persisting or using an extraction", () => {
 
   it("does not discard a mail because of an ungrounded unrelated verdict", async () => {
     const db = new FakeDb();
-    const out = await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-12T00:00:00Z"), ...source }, {
+    const out = await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-12T00:00:00Z"), ...source }, {
       precomputed: precomputed({ ...good(), relevance: "unrelated", relevance_evidence: "広告をどうぞ" }),
     });
     expect(out.kind).toBe("processed");

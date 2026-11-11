@@ -26,7 +26,7 @@ vi.mock("next/navigation", () => ({
     throw new Error(`NEXT_REDIRECT ${to}`);
   },
 }));
-vi.mock("@/lib/supabase/server", () => ({ getUser: async () => ({ id: USER, email: "qa@example.com" }) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mocks.db, getUser: async () => ({ id: USER, email: "qa@example.com" }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 // loadDemoEntries reads fixture files, which finish in an order and at a time set by the machine's
 // load. Both loads must reach their first query on the same turn, so the entries are read once
@@ -99,6 +99,8 @@ const newDb = (seed: { emails: Row[]; parcels: Row[] } = { emails: [], parcels: 
   // The FakeDb stamps rows from its own clock (a past date by default); the pipeline's "young pending
   // row" check reads the real time, so start the fake clock there or no row would ever look young.
   const d = new FakeDb(seed, Date.now());
+  // These concurrency scenarios begin after the person has allowed real-mail reading.
+  d.rows("ai_reading_consents").push({ user_id: USER, decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" });
   d.hooks.push(uniqueMessageIndex);
   return d;
 };

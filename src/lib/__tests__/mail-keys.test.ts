@@ -8,7 +8,7 @@ import { activateKey, countPlainRead, readRetiredKeys, readSealedEnvelope, readS
 import { processInboundEmail } from "@/lib/pipeline";
 import { KEY_IN_USE_CHANGED, KEY_WRAP_CHANGED } from "@/lib/crypto/key-messages";
 import { FakeDb, type Row } from "./fake-db";
-import { OTHER, USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { OTHER, USER, asAdmin, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const PASS = "テスト用の合言葉です1234";
 
@@ -50,7 +50,7 @@ describe("key registration", () => {
     expect(current(db)).toHaveLength(0);
 
     // Until then a mail is dropped, not sealed to the unproven key.
-    await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), messageId: "m1" }, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })) });
+    await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), messageId: "m1" }, { precomputed: precomputed(reading({ relevance: "order", order_number: sure("ORD-1") })) });
     expect(db.rows("emails")[0].body_state).toBe("dropped");
 
     const recipient = await openStoredKey(stored(db, reg.keyId), PASS, USER);

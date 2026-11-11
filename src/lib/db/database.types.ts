@@ -39,6 +39,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_reading_consents: {
+        Row: {
+          decided_at: string
+          decision: string
+          text_version: string
+          user_id: string
+        }
+        Insert: {
+          decided_at?: string
+          decision: string
+          text_version: string
+          user_id: string
+        }
+        Update: {
+          decided_at?: string
+          decision?: string
+          text_version?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       claude_call_claims: {
         Row: {
           claimed_at: string
@@ -523,6 +544,13 @@ export type Database = {
       release_login_mail: {
         Args: { p_claim_id: number; p_email_hash: string }
         Returns: number
+      }
+      set_ai_reading: {
+        Args: { p_decision: string; p_text_version: string }
+        Returns: {
+          decided_at: string
+          decision: string
+        }[]
       }
     }
     Enums: {

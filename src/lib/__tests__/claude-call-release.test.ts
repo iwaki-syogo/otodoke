@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import type { InboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
-import { OTHER, USER, asAdmin, mailOf, precomputed, reading, sure, item } from "./pipeline-fixtures";
+import { OTHER, USER, asConsentingAdmin, mailOf, precomputed, reading, sure, item } from "./pipeline-fixtures";
 
 /**
  * Giving back the allowance of a Claude call that Claude refused (supabase/migrations/
@@ -55,7 +55,7 @@ afterEach(() => {
 describe("claimClaudeCall", () => {
   it("claims through v2 and release gives the call back, once", async () => {
     const db = new FakeDb();
-    const claim = await claimClaudeCall(asAdmin(db), USER);
+    const claim = await claimClaudeCall(asConsentingAdmin(db), USER);
     expect(claim.verdict).toBe("ok");
     expect(used(db)).toBe(1);
     await claim.release();
@@ -67,7 +67,7 @@ describe("claimClaudeCall", () => {
   it("a refused verdict has nothing to release", async () => {
     const db = new FakeDb({ claude_usage_daily: [{ user_id: USER, day: "2026-11-03", calls: 30 }] });
     db.claudeNow = () => Date.parse("2026-11-03T01:00:00Z");
-    const claim = await claimClaudeCall(asAdmin(db), USER);
+    const claim = await claimClaudeCall(asConsentingAdmin(db), USER);
     expect(claim.verdict).toBe("user_limit");
     await claim.release();
     expect(rpcs(db, "release_claude_call")).toHaveLength(0);
@@ -76,7 +76,7 @@ describe("claimClaudeCall", () => {
 
   it("a release that fails is logged and does not throw", async () => {
     const db = new FakeDb();
-    const claim = await claimClaudeCall(asAdmin(db), USER);
+    const claim = await claimClaudeCall(asConsentingAdmin(db), USER);
     db.claudeReleaseMissing = true;
     await expect(claim.release()).resolves.toBeUndefined();
     expect(console.warn).toHaveBeenCalled();
@@ -127,7 +127,7 @@ describe("seams between the code and the database", () => {
   it("1. new code, migration not applied (v2 missing): the old claim is used, the count goes down as before, no error", async () => {
     const db = new FakeDb();
     db.claudeReleaseMissing = true;
-    const claim = await claimClaudeCall(asAdmin(db), USER);
+    const claim = await claimClaudeCall(asConsentingAdmin(db), USER);
     expect(claim.verdict).toBe("ok");
     expect(rpcs(db, "claim_claude_call")).toHaveLength(1);
     // Going back to the old function is said in the log, every time.
@@ -142,7 +142,7 @@ describe("seams between the code and the database", () => {
     mocks.extractEmail.mockRejectedValue(credit());
     const db = new FakeDb();
     db.claudeReleaseMissing = true;
-    await expect(processInboundEmail(asAdmin(db), orderMail())).rejects.toBeInstanceOf(ClaudeUnavailableError);
+    await expect(processInboundEmail(asConsentingAdmin(db), orderMail())).rejects.toBeInstanceOf(ClaudeUnavailableError);
     expect(db.rows("emails")[0]).toMatchObject({ processing_status: "failed", error: "claude_unavailable" });
     expect(used(db)).toBe(1);
   });
@@ -159,7 +159,7 @@ describe("seams between the code and the database", () => {
   it("3. new code, applied database: a refused reading gives its call back", async () => {
     mocks.extractEmail.mockRejectedValue(credit());
     const db = new FakeDb();
-    await expect(processInboundEmail(asAdmin(db), orderMail())).rejects.toBeInstanceOf(ClaudeUnavailableError);
+    await expect(processInboundEmail(asConsentingAdmin(db), orderMail())).rejects.toBeInstanceOf(ClaudeUnavailableError);
     expect(used(db)).toBe(0);
     expect(db.rows("claude_call_claims")).toMatchObject([{ user_id: USER }]);
     expect(db.rows("claude_call_claims")[0].released_at).not.toBeNull();
@@ -167,9 +167,9 @@ describe("seams between the code and the database", () => {
 
   it("4. new code after the rollback SQL: v2 is missing again, the old claim is used", async () => {
     const db = new FakeDb();
-    const before = await claimClaudeCall(asAdmin(db), USER);
+    const before = await claimClaudeCall(asConsentingAdmin(db), USER);
     db.claudeReleaseMissing = true;
-    const after = await claimClaudeCall(asAdmin(db), USER);
+    const after = await claimClaudeCall(asConsentingAdmin(db), USER);
     expect(after.verdict).toBe("ok");
     await after.release();
     expect(used(db)).toBe(2);
@@ -192,9 +192,9 @@ describe("seams between the code and the database", () => {
   it("6. claimed at 23:59 JST, released at 0:01 JST: the earlier day gives the call back, the new day is not touched", async () => {
     const db = new FakeDb();
     db.claudeNow = () => Date.parse("2026-11-10T14:59:00Z"); // 2026-11-10 23:59 JST
-    const claim = await claimClaudeCall(asAdmin(db), USER);
+    const claim = await claimClaudeCall(asConsentingAdmin(db), USER);
     db.claudeNow = () => Date.parse("2026-11-10T15:01:00Z"); // 2026-11-11 00:01 JST
-    const today = await claimClaudeCall(asAdmin(db), USER);
+    const today = await claimClaudeCall(asConsentingAdmin(db), USER);
     await claim.release();
     const byDay = Object.fromEntries(db.rows("claude_usage_daily").map((r) => [String(r.day), r.calls]));
     expect(byDay).toEqual({ "2026-11-10": 0, "2026-11-11": 1 });
@@ -207,7 +207,7 @@ describe("seams between the code and the database", () => {
       db.hooks.push(() => undefined);
       const rpc = db.rpc.bind(db);
       db.rpc = (name: string, args?: unknown) => (name === "claim_claude_call_v2" ? Promise.resolve({ data: null, error }) : rpc(name, args));
-      await expect(claimClaudeCall(asAdmin(db), USER)).rejects.toThrow(/claim_claude_call failed/);
+      await expect(claimClaudeCall(asConsentingAdmin(db), USER)).rejects.toThrow(/claim_claude_call failed/);
       expect(rpcs(db, "claim_claude_call")).toHaveLength(0);
     }
   });
@@ -217,7 +217,7 @@ describe("seams between the code and the database", () => {
       const db = new FakeDb();
       const rpc = db.rpc.bind(db);
       db.rpc = (name: string, args?: unknown) => (name === "claim_claude_call_v2" ? Promise.resolve({ data: null, error }) : rpc(name, args));
-      expect((await claimClaudeCall(asAdmin(db), USER)).verdict).toBe("ok");
+      expect((await claimClaudeCall(asConsentingAdmin(db), USER)).verdict).toBe("ok");
       expect(rpcs(db, "claim_claude_call")).toHaveLength(1);
     }
   });
@@ -238,14 +238,14 @@ describe("the reading gives the call back only when Claude is stopped (claude_un
   ])("%s", async (_name, make, given) => {
     mocks.extractEmail.mockRejectedValue(make());
     const db = new FakeDb();
-    await processInboundEmail(asAdmin(db), orderMail()).catch(() => {});
+    await processInboundEmail(asConsentingAdmin(db), orderMail()).catch(() => {});
     expect(used(db)).toBe(given ? 0 : 1);
     expect(rpcs(db, "release_claude_call")).toHaveLength(given ? 1 : 0);
   });
 
   it("a mail that reads fine keeps its call", async () => {
     const db = new FakeDb();
-    expect((await processInboundEmail(asAdmin(db), orderMail())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), orderMail())).kind).toBe("processed");
     expect(used(db)).toBe(1);
     expect(rpcs(db, "release_claude_call")).toHaveLength(0);
   });
@@ -253,10 +253,10 @@ describe("the reading gives the call back only when Claude is stopped (claude_un
   it("many mails while Claude is stopped do not use up the day: after it is back, the next mail is read", async () => {
     mocks.extractEmail.mockRejectedValue(credit());
     const db = new FakeDb();
-    for (let i = 0; i < 40; i++) await processInboundEmail(asAdmin(db), orderMail(`s${i}`)).catch(() => {});
+    for (let i = 0; i < 40; i++) await processInboundEmail(asConsentingAdmin(db), orderMail(`s${i}`)).catch(() => {});
     expect(used(db)).toBe(0);
     mocks.extractEmail.mockImplementation(async () => precomputed(order));
-    expect((await processInboundEmail(asAdmin(db), orderMail("back"))).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), orderMail("back"))).kind).toBe("processed");
   });
 });
 
@@ -268,7 +268,7 @@ describe("the cheap check (second look) never stops the reading by itself", () =
   ])("%s: the call of the check comes back, the mail is kept and read, and a good reading makes it processed", async (_name, make) => {
     mocks.isPurchaseMail.mockRejectedValue(make());
     const db = markedDb();
-    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad())).kind).toBe("processed");
     expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
     expect(rpcs(db, "claim_claude_call_v2")).toHaveLength(2);
     expect(rpcs(db, "release_claude_call")).toHaveLength(1);
@@ -281,7 +281,7 @@ describe("the cheap check (second look) never stops the reading by itself", () =
     mocks.isPurchaseMail.mockRejectedValue(credit());
     mocks.extractEmail.mockRejectedValue(credit());
     const db = markedDb();
-    await expect(processInboundEmail(asAdmin(db), ad())).rejects.toBeInstanceOf(ClaudeUnavailableError);
+    await expect(processInboundEmail(asConsentingAdmin(db), ad())).rejects.toBeInstanceOf(ClaudeUnavailableError);
     expect(db.rows("emails")).toMatchObject([{ user_id: USER, processing_status: "failed", error: "claude_unavailable" }]);
     expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
     expect(used(db)).toBe(0);
@@ -290,7 +290,7 @@ describe("the cheap check (second look) never stops the reading by itself", () =
   it("a temporary failure (500): the mail is kept and read, and the call of the check is not given back", async () => {
     mocks.isPurchaseMail.mockRejectedValue(apiError(500, "api_error", "x"));
     const db = markedDb();
-    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad())).kind).toBe("processed");
     expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
     expect(rpcs(db, "release_claude_call")).toHaveLength(0);
     expect(used(db)).toBe(2);
@@ -299,7 +299,7 @@ describe("the cheap check (second look) never stops the reading by itself", () =
   it("a broken connection: the mail is kept and read, and the call of the check is not given back", async () => {
     mocks.isPurchaseMail.mockRejectedValue(new APIConnectionError({ message: "socket hang up" }));
     const db = markedDb();
-    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad())).kind).toBe("processed");
     expect(rpcs(db, "release_claude_call")).toHaveLength(0);
     expect(used(db)).toBe(2);
   });
@@ -307,7 +307,7 @@ describe("the cheap check (second look) never stops the reading by itself", () =
   it("an answer 'not a purchase' keeps its call (it was paid for)", async () => {
     mocks.isPurchaseMail.mockResolvedValue(false);
     const db = markedDb();
-    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("screened_out");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad())).kind).toBe("screened_out");
     expect(used(db)).toBe(1);
     expect(db.rows("emails")).toHaveLength(0);
   });
@@ -316,7 +316,7 @@ describe("the cheap check (second look) never stops the reading by itself", () =
     mocks.isPurchaseMail.mockRejectedValue(credit());
     const db = markedDb();
     db.claudeReleaseMissing = true;
-    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad())).kind).toBe("processed");
     expect(used(db)).toBe(2);
   });
 });

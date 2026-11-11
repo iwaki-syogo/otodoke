@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, describeQuery, embedScopedToUser, scopedToUser, type Hook, type Query, type Row } from "./fake-db";
-import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * The pipeline with categories and parcels typed in by hand (in-memory database, no API call).
@@ -45,7 +45,7 @@ const shopMail = reading({
 });
 
 function run(db: FakeDb, x = shopMail, sentAt = SENT) {
-  return processInboundEmail(asAdmin(db), mailOf(sentAt), { precomputed: precomputed(x) });
+  return processInboundEmail(asConsentingAdmin(db), mailOf(sentAt), { precomputed: precomputed(x) });
 }
 
 /** Runs `change` once, right before the first update on parcels: the user saves in between. */

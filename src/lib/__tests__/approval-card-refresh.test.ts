@@ -14,6 +14,12 @@ const CONFIRM_URL = "https://mail-settings.google.com/mail/vf-xyz";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown, noDomain: false } }));
 
+// These existing UI scenarios begin after the person has allowed reading.
+vi.mock("@/lib/ai-consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-consent")>()),
+  readAiReadingConsent: async () => "granted",
+}));
+
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), notFound: vi.fn(), useRouter: () => ({ refresh: vi.fn() }), usePathname: () => "/app/welcome" }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => Object.assign(mocks.state.db as FakeDb, { auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) } }),

@@ -3,7 +3,7 @@ import { toBase64 } from "@/lib/crypto/bytes";
 import { createKeyPair } from "@/lib/crypto/key-wrap";
 import type { InboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Row } from "./fake-db";
-import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * screen_events keeps the subject of a dropped ad (disclosed: 14 days, shown in settings so a
@@ -51,7 +51,7 @@ afterEach(() => {
 describe("screen_events: the subject is kept only for a dropped mail", () => {
   it("a dropped ad keeps its subject and sender domain, and no mail row", async () => {
     const db = new FakeDb();
-    const out = await processInboundEmail(asAdmin(db), ad());
+    const out = await processInboundEmail(asConsentingAdmin(db), ad());
     expect(out.kind).toBe("screened_out");
     expect(db.rows("screen_events")).toMatchObject([{ decision: "dropped", subject: AD_SUBJECT, from_domain: "shop.example.test" }]);
     expect(db.rows("emails")).toHaveLength(0);
@@ -62,7 +62,7 @@ describe("screen_events: the subject is kept only for a dropped mail", () => {
     await keyedUser(db);
     db.rows("screen_events").push({ id: "flag", user_id: USER, decision: "dropped", subject: "前に落とした広告", from_domain: "shop.example.test", flagged_at: "2026-11-02T00:00:00Z", created_at: "2026-11-02T00:00:00Z" });
 
-    const out = await processInboundEmail(asAdmin(db), ad({ subject: "【テスト店】週末セール開催中 ご注文の件" }));
+    const out = await processInboundEmail(asConsentingAdmin(db), ad({ subject: "【テスト店】週末セール開催中 ご注文の件" }));
     expect(out.kind).toBe("processed");
     const rescued = db.rows("screen_events").filter((e) => e.decision === "rescued");
     expect(rescued).toHaveLength(1);

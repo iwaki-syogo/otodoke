@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, MAIL_RUN_ALLOWED_COLUMNS } from "./fake-db";
-import { USER, asAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const RECEIVED = "2026-11-02T00:00:00.000Z";
 const TRACKING = "123456789012";
@@ -25,7 +25,7 @@ describe("mail gateway column contract from the real SQL", () => {
         { id: "carrier-reading", user_id: USER, email_id: "mail-carrier", parcel_id: "absorb", result: reading({ relevance: "shipped", shop_name: null, tracking_number: sure(TRACKING) }) },
       ],
     });
-    await processInboundEmail(asAdmin(db), mailOf("2026-11-03T01:00:00Z"), {
+    await processInboundEmail(asConsentingAdmin(db), mailOf("2026-11-03T01:00:00Z"), {
       precomputed: precomputed(reading({ relevance: "shipped", order_number: sure("ORD-12345678"), tracking_number: sure(TRACKING) })),
     });
     expect(db.find("parcels", "absorb")).toBeUndefined();

@@ -5,7 +5,7 @@ import { processInboundEmail } from "@/lib/pipeline";
 import { demoInput, type DemoEntry } from "@/lib/demo";
 import { READ_STORAGE_LIMIT_REASON } from "@/lib/read-notices";
 import { FakeDb, type Row } from "./fake-db";
-import { USER, asAdmin, precomputed, reading } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, precomputed, reading } from "./pipeline-fixtures";
 
 const mocks = vi.hoisted(() => ({ entries: [] as DemoEntry[], extract: vi.fn(), triage: vi.fn() }));
 vi.mock("@/lib/demo", async (actual) => ({
@@ -40,19 +40,19 @@ afterEach(() => { vi.unstubAllEnvs(); });
 describe("storage limits keep caller success counts honest", () => {
   it("fails a sample load at the ceiling, keeps its notice, and succeeds after unread mail is read", async () => {
     const db = new FakeDb({ emails: [waiting("waiting-1"), waiting("waiting-2")] });
-    const result = await runLoadDemo(() => asAdmin(db), USER);
+    const result = await runLoadDemo(() => asConsentingAdmin(db), USER);
     expect(result).toMatchObject({ ok: false, processed: 0, message: "mail storage limit: user_storage_limit" });
     expect(db.rows("emails")).toHaveLength(2);
     expect(db.rows("mail_intake_notices")).toMatchObject([{ user_id: USER, reason: "user_storage_limit" }]);
     expect(READ_STORAGE_LIMIT_REASON).toContain("未読を読み取ったあと");
 
     const old = waiting("waiting-1");
-    await processInboundEmail(asAdmin(db), {
+    await processInboundEmail(asConsentingAdmin(db), {
       userId: USER, providerEmailId: String(old.provider_email_id), messageId: String(old.message_id),
       from: String(old.from_address), fromName: null, subject: String(old.subject), sentAt: String(old.sent_at),
       text: String(old.text_body), html: null,
     }, { precomputed: precomputed(reading({ relevance: "other_purchase" })) });
-    expect(await runLoadDemo(() => asAdmin(db), USER)).toMatchObject({ ok: true, processed: 1 });
+    expect(await runLoadDemo(() => asConsentingAdmin(db), USER)).toMatchObject({ ok: true, processed: 1 });
     expect(mocks.extract).not.toHaveBeenCalled();
     expect(mocks.triage).not.toHaveBeenCalled();
   });
@@ -65,14 +65,14 @@ describe("storage limits keep caller success counts honest", () => {
     const db = new FakeDb({ emails: [stored] });
     const before = structuredClone(db.rows("emails"));
     mocks.entries = [sample("x".repeat(100_001))];
-    const result = await runReadWaitingMail(asAdmin(db), USER);
+    const result = await runReadWaitingMail(asConsentingAdmin(db), USER);
     expect(result).toMatchObject({ ok: false, stage: "read", read: 0, onlyBusy: false, overLimit: false, unavailable: false });
     expect(db.rows("emails")).toEqual(before);
     expect(db.rows("mail_intake_notices")).toHaveLength(1);
     expect(mocks.extract).not.toHaveBeenCalled();
 
     mocks.entries = [original];
-    expect(await runReadWaitingMail(asAdmin(db), USER)).toMatchObject({ ok: true, read: 1 });
+    expect(await runReadWaitingMail(asConsentingAdmin(db), USER)).toMatchObject({ ok: true, read: 1 });
     expect(db.rows("emails")[0].processing_status).toBe("processed");
   });
 });

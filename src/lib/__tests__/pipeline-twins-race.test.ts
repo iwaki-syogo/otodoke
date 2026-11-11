@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { processInboundEmail } from "@/lib/pipeline";
 import { categoryForTwins } from "@/lib/match/category";
 import { FakeDb, type Hook, type Query, type Row } from "./fake-db";
-import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * The person saves in the app while a mail is being merged (in-memory database, no API call).
@@ -20,7 +20,7 @@ function parcel(over: Row): Row {
 }
 
 function run(db: FakeDb, x: ReturnType<typeof reading>, mail = mailOf(SENT)) {
-  return processInboundEmail(asAdmin(db), mail, { precomputed: precomputed(x) });
+  return processInboundEmail(asConsentingAdmin(db), mail, { precomputed: precomputed(x) });
 }
 
 /** Runs `change` once, when the twin merge reads the mails of the parcels: after it read the parcels. */

@@ -58,3 +58,33 @@ Answer: `200 { "ok": true, "read": 3, "over_limit": false, "busy": false, "stopp
 
 A real failure answers `500 { "ok": false, "code": "read_failed", "read": 1 }`; `read` is how many were processed
 before and around it (a failing mail does not stop the ones after it).
+
+## Explicit permission for real-mail reading
+
+Before `read-waiting` starts, the server reads this user's `ai_reading_consents` row through
+`readingAllowed`. Only `decision = granted` permits the operation. The pipeline checks again for
+each real mail, before either the Haiku check or extraction, without changing the daily allowance.
+
+| Status | `code` | Meaning |
+|---|---|---|
+| 403 | `ai_consent_required` | No choice yet, or reading was declined or withdrawn. Open the reading-permission screen. |
+| 503 | `unavailable` | The permission could not be read. Retry the permission lookup; this is not an unanswered choice. |
+
+Both answers are `{ "ok": false, "code": "<code>" }`, with no paid reading started. A mail held by
+the pipeline has `processing_status = failed` and a fixed `error`: `ai_consent_required` or
+`ai_consent_unknown`. It remains in the existing unread set and can be read in place after permission
+or recovery. Permission changes do not automatically start a paid reading. An in-flight read which
+finds permission withdrawn fails that mail without adding it to `read`; it can return `read_failed`.
+
+The initial guard also stops this endpoint from resuming interrupted sample rows without permission.
+Use the existing demo API to load the made-up sample without permission: it uses saved extraction
+results and never calls Claude. This exception requires both the internal public-sample flag and a
+precomputed result; a sample flag by itself cannot authorize a real mail.
+
+The consent read is `from("ai_reading_consents").select("decision, decided_at, text_version")`
+filtered by the signed-in user's `user_id`. An empty result means undecided; a failed request must
+stay distinct. Choices are recorded through
+`rpc("set_ai_reading", { p_decision, p_text_version })`, where `p_decision` is `granted` or `declined`.
+The current text version and the shared permission words are defined in `src/lib/ai-consent-text.ts`.
+The server supplies `decided_at`; clients cannot write the table directly. Do not show the forwarding
+address until the consent read confirms `granted`. Previously extracted results remain after withdrawal.

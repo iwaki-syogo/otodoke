@@ -207,10 +207,29 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     expect(doc).toContain("POST /api/mail/read-waiting");
   });
 
-  it("the codes iOS maps are exactly the codes the Web answers with", () => {
-    const web = [...doc.matchAll(/^\| \d{3} \| `(\w+)` \|/gm)].map((m) => m[1]).sort();
-    expect(web).toEqual(["invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"]);
-    expect(codes(client)).toEqual(web);
+  it("keeps the six established mappings and only adds the consent refusal, safely rejected by an older iOS client", () => {
+    // A code may be documented for more than one failure source (503 unavailable: auth or consent).
+    const web = [...new Set([...doc.matchAll(/^\| \d{3} \| `(\w+)` \|/gm)].map((m) => m[1]))].sort();
+    const established = ["invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"];
+    expect(web).toEqual(["ai_consent_required", ...established]);
+    const mapped = codes(client);
+    if (mapped.includes("ai_consent_required")) {
+      expect(mapped).toEqual(web);
+      const target = client.match(/case "ai_consent_required": throw \.(\w+)/)?.[1];
+      expect(target).toBeTruthy();
+      expect(["network", "unknownResult"]).not.toContain(target);
+      const failures = client.match(/enum MailAPIFailure:[\s\S]*?\n\}/)?.[0] ?? "";
+      expect(failures).toMatch(new RegExp(`\\bcase ${target}\\b`));
+    } else {
+      expect(mapped).toEqual(established);
+      // Forward compatibility of the existing build: a new 403 fails as network; it is neither
+      // successful nor an unknown result that would silently hide the permission refusal.
+      expect(handler).toMatch(/ai_consent_required: 403/);
+      expect(client).toMatch(/if http\.statusCode == 200, KeyAPIClient\.isJSONTrue\(object\["ok"\]\) \{ return object \}/);
+      expect(client).toMatch(/default: throw http\.statusCode == 200 \? \.unknownResult : \.network/);
+      expect(client.replace("default: throw http.statusCode == 200 ? .unknownResult : .network", "default: throw .unknownResult"))
+        .not.toMatch(/default: throw http\.statusCode == 200 \? \.unknownResult : \.network/);
+    }
     for (const c of web) expect(handler, c).toContain(c);
   });
 

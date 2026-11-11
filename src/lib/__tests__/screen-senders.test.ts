@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboundEmail } from "@/lib/pipeline";
 import { SHARED_MAIL_DOMAINS, SHARED_MAIL_DOMAIN_SUFFIXES, isRememberableDomain, isSharedMailDomain, personalMailReason } from "@/lib/screen-senders";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * 「これは荷物」 after the review of 2026-11-06 (B-3, F-1). Made-up mails only.
@@ -48,7 +48,7 @@ describe("a sender marked 「これは荷物」", () => {
     mocks.isPurchaseMail.mockResolvedValue(false);
     const db = new FakeDb();
     mark(db, "mall.example.test");
-    for (let i = 0; i < 5; i++) expect((await processInboundEmail(asAdmin(db), ad(i))).kind).toBe("screened_out");
+    for (let i = 0; i < 5; i++) expect((await processInboundEmail(asConsentingAdmin(db), ad(i))).kind).toBe("screened_out");
     expect(mocks.isPurchaseMail).toHaveBeenCalledTimes(5);
     expect(mocks.extractEmail).not.toHaveBeenCalled();
     expect(claims(db)).toBe(5);
@@ -59,7 +59,7 @@ describe("a sender marked 「これは荷物」", () => {
     mocks.isPurchaseMail.mockResolvedValue(true);
     const db = new FakeDb();
     mark(db, "mall.example.test");
-    const out = await processInboundEmail(asAdmin(db), ad(1));
+    const out = await processInboundEmail(asConsentingAdmin(db), ad(1));
     expect(out.kind).toBe("processed");
     expect(mocks.isPurchaseMail).toHaveBeenCalledTimes(1);
     expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
@@ -69,7 +69,7 @@ describe("a sender marked 「これは荷物」", () => {
   it("control: the same ad from an unmarked sender costs nothing", async () => {
     const db = new FakeDb();
     mark(db, "mall.example.test");
-    expect((await processInboundEmail(asAdmin(db), ad(1, "news@other.example.test"))).kind).toBe("screened_out");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad(1, "news@other.example.test"))).kind).toBe("screened_out");
     expect(mocks.isPurchaseMail).not.toHaveBeenCalled();
     expect(claims(db)).toBe(0);
   });
@@ -79,7 +79,7 @@ describe("a sender marked 「これは荷物」", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const db = new FakeDb();
     db.hooks.push((q) => (q.table === "screen_events" && q.op === "select" ? { data: null, error: { message: "timeout" }, count: null } : undefined));
-    expect((await processInboundEmail(asAdmin(db), ad(1))).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), ad(1))).kind).toBe("processed");
     expect(mocks.isPurchaseMail).toHaveBeenCalledTimes(1);
     log.mockRestore();
   });
@@ -91,7 +91,7 @@ describe("a shared domain is never taken as marked", () => {
   it("a mark on gmail.com made before this rule does not send a friend's mail to Claude", async () => {
     const db = new FakeDb();
     mark(db, "gmail.com");
-    expect((await processInboundEmail(asAdmin(db), friend())).kind).toBe("screened_out");
+    expect((await processInboundEmail(asConsentingAdmin(db), friend())).kind).toBe("screened_out");
     expect(mocks.isPurchaseMail).not.toHaveBeenCalled();
     expect(mocks.extractEmail).not.toHaveBeenCalled();
     expect(claims(db)).toBe(0);
@@ -101,7 +101,7 @@ describe("a shared domain is never taken as marked", () => {
     mocks.isPurchaseMail.mockResolvedValue(false);
     const db = new FakeDb();
     mark(db, "shop.example.test");
-    await processInboundEmail(asAdmin(db), { ...friend(), from: "info@shop.example.test" });
+    await processInboundEmail(asConsentingAdmin(db), { ...friend(), from: "info@shop.example.test" });
     expect(mocks.isPurchaseMail).toHaveBeenCalledTimes(1);
   });
 });

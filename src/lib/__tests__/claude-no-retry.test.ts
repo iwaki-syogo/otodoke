@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboundEmail } from "@/lib/pipeline";
 import { EXTRACT_TIMEOUT_MS, TRIAGE_TIMEOUT_MS } from "@/lib/unread";
 import { FakeDb } from "./fake-db";
-import { USER, asAdmin, item, mailOf, reading, sure } from "./pipeline-fixtures";
+import { USER, asConsentingAdmin, item, mailOf, reading, sure } from "./pipeline-fixtures";
 
 /** Exercise the installed SDK and the real pipeline. The replacement fetch never uses a network. */
 const EXTRACT_MODEL = "test-extraction-model";
@@ -95,7 +95,7 @@ describe("paid Claude POSTs are never retried by the SDK", () => {
       });
       const db = database(triage);
       const { processInboundEmail } = await import("@/lib/pipeline");
-      await expect(processInboundEmail(asAdmin(db), triage ? adMail() : orderMail())).rejects.toThrow();
+      await expect(processInboundEmail(asConsentingAdmin(db), triage ? adMail() : orderMail())).rejects.toThrow();
 
       const expectedModels = triage ? [TRIAGE_MODEL, EXTRACT_MODEL] : [EXTRACT_MODEL];
       expect(network.models).toEqual(expectedModels);
@@ -113,7 +113,7 @@ describe("paid Claude POSTs are never retried by the SDK", () => {
     const network = installFetch((model) => successResponse(model, output));
     const db = database();
     const { processInboundEmail } = await import("@/lib/pipeline");
-    expect((await processInboundEmail(asAdmin(db), orderMail())).kind).toBe("processed");
+    expect((await processInboundEmail(asConsentingAdmin(db), orderMail())).kind).toBe("processed");
     expect(network.models).toEqual([EXTRACT_MODEL]);
     expect(claimed(db)).toHaveLength(1);
     expect(used(db)).toBe(1);
@@ -124,7 +124,7 @@ describe("paid Claude POSTs are never retried by the SDK", () => {
     const network = installFetch((model) => successResponse(model, { about_this_persons_purchase: false }));
     const db = database(true);
     const { processInboundEmail } = await import("@/lib/pipeline");
-    expect((await processInboundEmail(asAdmin(db), adMail())).kind).toBe("screened_out");
+    expect((await processInboundEmail(asConsentingAdmin(db), adMail())).kind).toBe("screened_out");
     expect(network.models).toEqual([TRIAGE_MODEL]);
     expect(claimed(db)).toHaveLength(1);
     expect(used(db)).toBe(1);
@@ -135,7 +135,7 @@ describe("paid Claude POSTs are never retried by the SDK", () => {
     const network = installFetch(() => stoppedResponse());
     const db = database(triage);
     const { processInboundEmail } = await import("@/lib/pipeline");
-    await expect(processInboundEmail(asAdmin(db), triage ? adMail() : orderMail())).rejects.toMatchObject({ name: "ClaudeUnavailableError" });
+    await expect(processInboundEmail(asConsentingAdmin(db), triage ? adMail() : orderMail())).rejects.toMatchObject({ name: "ClaudeUnavailableError" });
     const expectedModels = triage ? [TRIAGE_MODEL, EXTRACT_MODEL] : [EXTRACT_MODEL];
     expect(network.models).toEqual(expectedModels);
     expect(claimed(db)).toHaveLength(expectedModels.length);
@@ -164,7 +164,7 @@ describe("paid Claude POSTs are never retried by the SDK", () => {
     const db = database(triage);
     const { processInboundEmail } = await import("@/lib/pipeline");
     // Attach the rejection handler before advancing the clock so the timeout is never unhandled.
-    const run = processInboundEmail(asAdmin(db), triage ? adMail() : orderMail()).catch((error: unknown) => error);
+    const run = processInboundEmail(asConsentingAdmin(db), triage ? adMail() : orderMail()).catch((error: unknown) => error);
     await Promise.race([started, run.then(() => { throw new Error("pipeline finished before the pending POST"); })]);
     expect(network.models).toEqual([target]);
     expect(claimed(db)).toHaveLength(1);

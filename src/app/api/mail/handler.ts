@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readingAllowed } from "@/lib/ai-consent";
 import { readBearerSession } from "@/lib/auth-session";
 import { isScreenEventId, runMarkWronglyDropped, runReadWaitingMail } from "@/lib/mail-run";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -10,7 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * The daily Claude caps are in the pipeline (claim_claude_call), so they apply here as on the web.
  */
 
-export type MailApiCode = "unauthorized" | "invalid_input" | "not_found" | "mark_failed" | "read_failed" | "unavailable";
+export type MailApiCode = "unauthorized" | "invalid_input" | "not_found" | "mark_failed" | "read_failed" | "unavailable" | "ai_consent_required";
 
 const STATUS: Record<MailApiCode, number> = {
   unauthorized: 401,
@@ -19,6 +20,7 @@ const STATUS: Record<MailApiCode, number> = {
   mark_failed: 500,
   read_failed: 500,
   unavailable: 503,
+  ai_consent_required: 403,
 };
 
 /** The largest body taken; the real ones are a few bytes. */
@@ -79,7 +81,11 @@ export async function readWaitingStep(request: Request): Promise<Response> {
 
   let done;
   try {
-    done = await runReadWaitingMail(createAdminClient(), who.userId);
+    const db = createAdminClient();
+    const allowed = await readingAllowed(db, who.userId);
+    if (allowed === "unknown") return failure("unavailable");
+    if (allowed !== "granted") return failure("ai_consent_required");
+    done = await runReadWaitingMail(db, who.userId);
   } catch (thrown) {
     console.error("[mail-api] read-waiting threw:", thrown instanceof Error ? thrown.name : typeof thrown);
     return failure("read_failed");

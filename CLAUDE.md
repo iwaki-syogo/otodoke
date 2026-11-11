@@ -116,3 +116,13 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - Vercel: project=`otodoke-app`, team=`syodgo-9062s-projects`, production_url=https://otodoke.app（独自ドメイン。Vercel で取得。README・画面・説明文の本番 URL はこれにそろえる）。Vercel の既定の名前 `otodoke-app.vercel.app` は案内に使わない。GitHub 連携済み: main への push で本番デプロイ
 - Resend: 受信ドメイン=`in.otodoke.app`, 送信ドメイン=`otodoke.app`（どちらも検証済み、リージョン ap-northeast-1。DNS は Vercel）。プランと送受信の枠は公開 repo に書かない（枠を使い切らせる手引きになる）。手元の非公開メモにある
 - Anthropic: Claude API（個人組織。キーは `.env.local` のみ）
+
+## メールの読み取りの許可
+
+- 文と文の版の正本は `src/lib/ai-consent-text.ts`。Web と iOS でそろえる。本文の版が変わっただけでは自動で聞き直さない。
+- 本人の選択は `ai_reading_consents`、書き込みは `set_ai_reading` RPC だけ。日時はサーバーが付ける。移行で既存利用者を許可済みにしない。
+- 実メールは保存後、`src/lib/ai-consent.ts` の共通確認を通ってから Claude のふるいと抽出へ進む。未決定と拒否は `ai_consent_required`、確認不能は `ai_consent_unknown` で区別し、既存の `failed` 状態で未読として保持する。`unread.ts` の条件で後から読み直せる。
+- 未決定者は `/app` で許可画面へ進む。welcome と転送設定は許可前に転送先アドレスを作成・表示しない。拒否後も手動登録とサンプルを使える。
+- サンプルは作り物のメールと保存済みの抽出だけを使い、Claude API を呼ばない。専用のサンプル操作から戻った `/app?sample=1` は、未決定でも結果を見られる。同意を記録する操作ではない。
+- 設定の「あなたのメールの扱い」から許可を取り消せる。既存の結果は残る。許可操作だけで有料の読み取りを自動開始しない。
+- iOS の同意と未読再開 API の契約は `docs/api/mail.md`。DB だけを当てても旧 Web の呼出は止まらないため、新しいガード版 Web と DB を続けて反映する。本番反映と DB 適用は別途承認の対象。

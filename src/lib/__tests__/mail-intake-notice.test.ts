@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: vi.fn() }));
 
 beforeEach(() => { mocks.db = new FakeDb(); vi.spyOn(console, "error").mockImplementation(() => {}); });
-const noticeDb = () => new FakeDb({ mail_intake_notices: [{ user_id: USER, reason: "user_storage_limit", limited_at: AT }] });
+const noticeDb = () => new FakeDb({ ai_reading_consents: [{ user_id: USER, decision: "granted", decided_at: AT, text_version: "v1" }], mail_intake_notices: [{ user_id: USER, reason: "user_storage_limit", limited_at: AT }] });
 
 describe("storage rejection is visible and recoverable", () => {
   it("shows on the everyday parcel page even when no body was kept and no mail is unread", async () => {
@@ -40,7 +40,7 @@ describe("storage rejection is visible and recoverable", () => {
   });
 
   it("reports an unknown reception state when its notice lookup fails", async () => {
-    const db = new FakeDb();
+    const db = new FakeDb({ ai_reading_consents: [{ user_id: USER, decision: "granted", decided_at: AT, text_version: "v1" }] });
     db.hooks.push((q) => q.table === "mail_intake_notices" ? { data: null, error: { message: "offline" } } : undefined);
     mocks.db = db;
     const Page = (await import("@/app/app/page")).default;
