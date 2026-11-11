@@ -445,8 +445,15 @@ export function needsCheck(p: DatedParcel, today: string): boolean {
   if (p.status === "cancelled" || isReceived(p)) return false;
   const cutoff = addDays(today, -CHECK_AFTER_DAYS);
   const lastDay = lastExpectedDay(p);
+  const mailDay = p.last_email_at ? todayJst(new Date(p.last_email_at)) : null;
+  // A delivered parcel is counted from the later of its date and its last mail: a typed-in parcel keeps the
+  // old date the person gave, and the delivery mail that came today must not make it overdue at once.
+  if (p.status === "delivered") {
+    const base = lastDay && mailDay ? (lastDay > mailDay ? lastDay : mailDay) : (lastDay ?? mailDay);
+    return base !== null && base <= cutoff;
+  }
   if (lastDay) return lastDay <= cutoff;
-  return p.last_email_at !== null && todayJst(new Date(p.last_email_at)) <= cutoff;
+  return mailDay !== null && mailDay <= cutoff;
 }
 
 /**

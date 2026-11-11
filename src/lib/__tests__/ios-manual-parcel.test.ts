@@ -69,7 +69,8 @@ describe("limits and choices", () => {
 
   it("the carriers, the ways of receiving and the statuses are the Web's, in the Web's order", () => {
     expect(swiftCases("ManualCarrier")).toEqual([...MANUAL_CARRIERS]);
-    expect(swiftCases("ManualStatus")).toEqual([...MANUAL_STATUSES]);
+    // The app (build 13) has the first three; the Web adds 受け取り済み ("received", saved as delivered with received_at).
+    expect(swiftCases("ManualStatus")).toEqual(MANUAL_STATUSES.filter((s) => s !== "received"));
     // MANUAL_PRESENCE is ["face", "drop", ""]; the Swift enum names the empty one `none`.
     expect(swiftCases("ManualPresence").map((c) => (c === "none" ? "" : c)).sort()).toEqual([...MANUAL_PRESENCE].sort());
     expect(LOGIC).toMatch(/case none = ""/);
@@ -128,10 +129,10 @@ describe("the words", () => {
     expect(FORM).toContain(`<option value="drop">${constant(TEXT, "presenceDrop")}</option>`);
     expect(FORM).toContain(`ordered: "${constant(TEXT, "statusOrdered")}"`);
     expect(FORM).toContain(`shipped: "${constant(TEXT, "statusShipped")}"`);
-    // Known difference until iOS build 14: the Web's form says 受け取り済み (received_at goes in with
-    // the status), the app (build 13) still says 届いた. Its trigger sets received_at all the same.
-    // When the app follows, this becomes `delivered: "${constant(TEXT, "statusDelivered")}"` again.
-    expect(FORM).toContain('delivered: "受け取り済み"');
+    // Known difference until iOS build 14: the Web's form has 配達済み and 受け取り済み, the app (build 13)
+    // has one 届いた. Its trigger sets received_at all the same (so its 届いた is the Web's 受け取り済み).
+    expect(FORM).toContain('delivered: "配達済み"');
+    expect(FORM).toContain('received: "受け取り済み"');
     expect(constant(TEXT, "statusDelivered")).toBe("届いた");
     expect(FORM).toContain(`pendingLabel="${constant(TEXT, "submitting")}"`);
     expect(FORM).toContain(`{parcel ? "保存" : "${constant(TEXT, "submit")}"}`);

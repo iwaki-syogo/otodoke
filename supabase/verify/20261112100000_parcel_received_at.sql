@@ -16,9 +16,12 @@
 --   trigger_ok         parcels_received_at: BEFORE, FOR EACH ROW, INSERT and UPDATE, enabled; its
 --                      function is SECURITY INVOKER with a fixed search_path and never says
 --                      "return old"; parcels_set_updated_at is still on
---   unmoved_delivered  delivered parcels with no received_at. Must be 0 right after applying; once
---                      the app is out, a delivered parcel the person has not received (配達済み)
---                      legitimately has none, so this file is a check of the apply, not a monitor
+--   unmoved_delivered  delivered parcels with no received_at that were last updated BEFORE the migration
+--                      added the column (the time is in the column's comment). Must be 0: the backfill
+--                      moved them all. A parcel the mail processing delivered after that has no
+--                      received_at by design (配達済み) and is not counted, so it does not matter how
+--                      long it was between applying and this file
+--   delivered_since    delivered parcels with no received_at updated since then (information only)
 --   stray_received     parcels with received_at that are not delivered. Must be 0, always
 --   behaviour          'OK' when, in order (each on a parcel of its own):
 --                        as authenticated: shipped -> delivered gives received_at = now
@@ -150,7 +153,10 @@ with checks as (
       where t.tgrelid = 'public.parcels'::regclass and t.tgname = 'parcels_received_at' and not t.tgisinternal
     ), false)
     and exists (select 1 from pg_trigger t where t.tgrelid = 'public.parcels'::regclass and t.tgname = 'parcels_set_updated_at' and t.tgenabled = 'O') as trigger_ok,
-    (select count(*) from public.parcels where status = 'delivered' and received_at is null) as unmoved_delivered,
+    (select count(*) from public.parcels where status = 'delivered' and received_at is null
+       and updated_at < coalesce(substring(col_description('public.parcels'::regclass, (select attnum from pg_attribute where attrelid = 'public.parcels'::regclass and attname = 'received_at')) from 'added (\S+)')::timestamptz, 'infinity')) as unmoved_delivered,
+    (select count(*) from public.parcels where status = 'delivered' and received_at is null
+       and updated_at >= coalesce(substring(col_description('public.parcels'::regclass, (select attnum from pg_attribute where attrelid = 'public.parcels'::regclass and attname = 'received_at')) from 'added (\S+)')::timestamptz, 'infinity')) as delivered_since,
     (select count(*) from public.parcels where received_at is not null and status <> 'delivered') as stray_received,
     coalesce(current_setting('otodoke.verify_received', true), 'FAILED: the behaviour block did not run') as behaviour
 )

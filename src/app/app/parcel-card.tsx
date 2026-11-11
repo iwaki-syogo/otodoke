@@ -73,7 +73,8 @@ export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; 
         ) : parcel.status === "ordered" ? (
           <span className="text-neutral-500">お届け日はまだ未定</span>
         ) : null}
-        <PresenceBadge parcel={parcel} compact />
+        {/* Delivered (配達済み or 受け取り済み): being home no longer matters. */}
+        {parcel.status === "delivered" ? null : <PresenceBadge parcel={parcel} compact />}
         {parcel.needs_review ? <span className="text-xs text-amber-700">要確認</span> : null}
         {showAmount && parcel.total_amount !== null ? <span className="ml-auto text-neutral-700">{yen(parcel.total_amount)}</span> : null}
       </div>

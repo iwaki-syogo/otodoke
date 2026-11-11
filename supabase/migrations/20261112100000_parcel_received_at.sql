@@ -37,9 +37,11 @@
 -- delivered row to now. The Web and iOS forms write with "where updated_at = <the value read>", so
 -- a form open across the migration would be refused once ("open it again"). The trigger is
 -- switched off for the backfill and on again (ALTER TABLE ... DISABLE TRIGGER is transactional),
--- so updated_at does not move. This takes a SHARE ROW EXCLUSIVE lock on parcels (writes wait,
--- reads do not) for the length of the backfill; lock_timeout is 5 s. The statement needs the
--- table's owner, which the migration's role is.
+-- so updated_at does not move. The statement needs the table's owner, which the migration's role is.
+--
+-- Locks: ADD COLUMN takes an AccessExclusiveLock on parcels and holds it until the commit, so reads
+-- AND writes wait until the file has been applied (at most 5 s waiting for the lock, since
+-- lock_timeout is 5 s, plus the time of the backfill).
 --
 -- Permissions and RLS: nothing to change. authenticated and service_role have table-level
 -- privileges on parcels, not column-level ones, and "own parcels" is a row policy. The new column
@@ -49,8 +51,16 @@
 -- Before: supabase/verify/20261112100000_parcel_received_at.before.sql
 -- After:  supabase/verify/20261112100000_parcel_received_at.sql
 -- Rollback: supabase/rollback/20261112100000_parcel_received_at.down.sql
--- Apply this file BEFORE the app that reads received_at is deployed (select * would still work
--- without it, but the 受け取り済み page filters on the column).
+-- ORDER: apply this file BEFORE the Web that reads received_at is pushed. The Preview of dev uses the
+-- same database as production, so a push to dev also comes after the migration. With the Web first
+-- (nothing is lost; the data stays as it is):
+--   - 受け取った (swipe, the button on the parcel page), 届いていない, 受け取っていない, setting or
+--     leaving delivered on a typed-in parcel, 「すべて受け取り済みにする」 and the sample load fail
+--     with a missing-column error;
+--   - /app/delivered cannot be read (it filters on received_at);
+--   - every delivered parcel of the past has no received_at yet, so all of them show under 配達済み
+--     and (after 14 days) 要確認.
+-- The column's comment keeps the time this file added it (read by the verify file).
 
 begin;
 set local lock_timeout = '5s';
@@ -59,6 +69,8 @@ do $$
 begin
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name = 'received_at') then
     alter table public.parcels add column received_at timestamptz;
+    -- When this was done: the verify file tells the parcels moved now from those the mail processing delivered since.
+    execute format('comment on column public.parcels.received_at is %L', 'added ' || to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'));
     -- Everything delivered so far counts as received. updated_at stays as it is (see the header).
     alter table public.parcels disable trigger parcels_set_updated_at;
     update public.parcels set received_at = updated_at where status = 'delivered';

@@ -11,6 +11,7 @@ import {
   MANUAL_CARRIERS,
   MANUAL_KEEP_CARRIER,
   MANUAL_LIMITS,
+  MANUAL_RECEIVED,
   MANUAL_STATUSES,
   manualCarrierChoice,
   type ManualFormState,
@@ -21,7 +22,8 @@ import { createManualParcel, deleteManualParcel, updateManualParcel } from "./ma
 const STATUS_CHOICES: Record<string, string> = {
   ordered: "注文済み",
   shipped: "発送済み",
-  delivered: "受け取り済み",
+  delivered: "配達済み",
+  received: "受け取り済み",
 };
 /** Statuses only a mail sets: offered while the parcel is there, so it saves back unchanged. */
 const KEPT_STATUSES: readonly string[] = [...MANUAL_CARRIED_STATUSES, MANUAL_CANCELLED];
@@ -51,7 +53,8 @@ export function manualFormDefaults(parcel: ParcelRow | null, today: string): Rec
     tracking_number: parcel.tracking_number ?? "",
     carrier: manualCarrierChoice(parcel.carrier, parcel.tracking_number),
     presence: parcel.requires_presence === null ? "" : parcel.requires_presence ? "face" : "drop",
-    status: ALL_STATUSES.includes(parcel.status) ? parcel.status : "ordered",
+    // delivered is two choices: 受け取り済み when received_at is set, 配達済み when it is not.
+    status: parcel.status === "delivered" ? (parcel.received_at ? MANUAL_RECEIVED : "delivered") : ALL_STATUSES.includes(parcel.status) ? parcel.status : "ordered",
   };
 }
 

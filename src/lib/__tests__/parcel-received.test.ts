@@ -1,12 +1,13 @@
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { STATUS_LABEL, addDays, parcelStatusLabel, todayJst } from "@/lib/format";
 import { runLoadDemo } from "@/lib/demo-run";
-import { ManualParcelSchema, manualParcelFields } from "@/lib/manual-parcel";
 import {
   buildParcelInsert,
   buildParcelUpdate,
   mergeIntoManual,
+  needsCheck,
   rebuildParcel,
   receivedAfterMerge,
   startsParcel,
@@ -359,11 +360,11 @@ describe("the parcel list", () => {
   const headings = (root: HtmlNode) => findAll(root, (n) => n.tag === "h2").map((h) => textOf(h).replace(/\d+$/, "").trim());
   const shown = (root: HtmlNode) => findAll(root, (n) => n.tag === "a" && (n.attrs.href ?? "").startsWith("/app/parcels/p-")).map((n) => n.attrs.href.slice("/app/parcels/".length));
 
-  const arrived = parcel({ id: "p-arrived", status: "delivered", received_at: null, expected_date: addDays(today, -1) });
+  const arrived = parcel({ id: "p-arrived", status: "delivered", received_at: null, last_email_at: null, expected_date: addDays(today, -1) });
   const received = parcel({ id: "p-received", status: "delivered", received_at: R, expected_date: addDays(today, -1) });
   const cancelled = parcel({ id: "p-cancelled", status: "cancelled", expected_date: addDays(today, 3) });
   const coming = parcel({ id: "p-coming", status: "shipped", expected_date: addDays(today, 2) });
-  const old = parcel({ id: "p-old", status: "delivered", received_at: null, expected_date: addDays(today, -14) });
+  const old = parcel({ id: "p-old", status: "delivered", received_at: null, last_email_at: null, expected_date: addDays(today, -14) });
   const oldShipped = parcel({ id: "p-old-shipped", status: "shipped", expected_date: addDays(today, -20) });
 
   it("puts 配達済み first, then 要確認, and keeps received and cancelled parcels off the list", async () => {
@@ -374,7 +375,7 @@ describe("the parcel list", () => {
   });
 
   it("moves a delivered parcel to 要確認 on the 14th day, and not before", async () => {
-    seed([parcel({ id: "p-13", status: "delivered", expected_date: addDays(today, -13) }), parcel({ id: "p-14", status: "delivered", expected_date: addDays(today, -14) })]);
+    seed([parcel({ id: "p-13", status: "delivered", last_email_at: null, expected_date: addDays(today, -13) }), parcel({ id: "p-14", status: "delivered", last_email_at: null, expected_date: addDays(today, -14) })]);
     const root = await render();
     const sections = findAll(root, (n) => n.tag === "section");
     const idsIn = (title: string) => {
@@ -511,29 +512,46 @@ describe("the sample does not bring a year of deliveries back to the list", () =
 }, 60_000);
 
 /* ---------------------------------------------------------------------------------------------- */
-describe("a typed-in parcel's status 「受け取り済み」", () => {
-  const input = (status: string) => ManualParcelSchema.parse({ title: "品", shop: "店", status });
-  const NOW = new Date("2026-11-05T03:00:00Z");
+describe("the 14 days of a delivered parcel count from the later of its date and its last mail", () => {
+  const TODAY = "2026-11-05";
+  const base = { expected_date_end: null, received_at: null };
 
-  it("writes received_at with the status for a new parcel", () => {
-    expect(manualParcelFields(input("delivered"), NOW)).toMatchObject({ status: "delivered", received_at: NOW.toISOString() });
+  it("does not ask about a typed-in parcel with an old date when a delivery mail came today", () => {
+    const p = { ...base, status: "delivered", expected_date: "2026-09-01", last_email_at: "2026-11-05T01:00:00Z" };
+    expect(needsCheck(p, TODAY)).toBe(false);
+    expect(parcelSections([{ ...parcel({ id: "p-x" }), ...p } as unknown as ParcelRow], TODAY).arrived).toHaveLength(1);
   });
 
-  it("writes received_at when a parcel changes to delivered", () => {
-    expect(manualParcelFields(input("delivered"), NOW, { category: null, status: "shipped" })).toMatchObject({ status: "delivered", received_at: NOW.toISOString() });
+  it("asks once both the date and the last mail are 14 days back", () => {
+    expect(needsCheck({ ...base, status: "delivered", expected_date: "2026-09-01", last_email_at: "2026-10-23T01:00:00Z" }, TODAY)).toBe(false);
+    expect(needsCheck({ ...base, status: "delivered", expected_date: "2026-09-01", last_email_at: "2026-10-22T01:00:00Z" }, TODAY)).toBe(true);
+    expect(needsCheck({ ...base, status: "delivered", expected_date: "2026-10-23", last_email_at: "2026-10-01T01:00:00Z" }, TODAY)).toBe(false);
   });
 
-  it("leaves received_at alone when the parcel was delivered already (a mail may have delivered it without the person's word)", () => {
-    expect(keysOf(manualParcelFields(input("delivered"), NOW, { category: null, status: "delivered" }))).not.toContain("received_at");
+  it("uses the date alone for a delivered parcel with no mail, and the mail alone with no date", () => {
+    expect(needsCheck({ ...base, status: "delivered", expected_date: "2026-10-21", last_email_at: null }, TODAY)).toBe(true);
+    expect(needsCheck({ ...base, status: "delivered", expected_date: null, last_email_at: "2026-10-23T01:00:00Z" }, TODAY)).toBe(false);
+    expect(needsCheck({ ...base, status: "delivered", expected_date: null, last_email_at: null }, TODAY)).toBe(false);
   });
 
-  it("clears it when a delivered parcel changes to another status", () => {
-    expect(manualParcelFields(input("shipped"), NOW, { category: null, status: "delivered" })).toMatchObject({ status: "shipped", received_at: null });
+  it("leaves the count of a parcel that is not delivered as it was (the date alone, however new the mail)", () => {
+    expect(needsCheck({ ...base, status: "shipped", expected_date: "2026-09-01", last_email_at: "2026-11-05T01:00:00Z" }, TODAY)).toBe(true);
+  });
+});
+
+describe("the card of a delivered parcel", () => {
+  const card = async (over: Row) => {
+    const { ParcelCard } = await import("@/app/app/parcel-card");
+    return textOf(parseHtml(renderToStaticMarkup(createElement(ParcelCard, { parcel: parcel({ requires_presence: true, ...over }) as unknown as ParcelRow }))));
+  };
+
+  it("shows no at-home badge, delivered or received", async () => {
+    expect(await card({ status: "delivered", received_at: null })).not.toContain("対面");
+    expect(await card({ status: "delivered", received_at: R })).not.toContain("対面");
   });
 
-  it("writes none for a status that was not and is not delivered", () => {
-    expect(keysOf(manualParcelFields(input("ordered"), NOW))).not.toContain("received_at");
-    expect(keysOf(manualParcelFields(input("shipped"), NOW, { category: null, status: "ordered" }))).not.toContain("received_at");
+  it("still shows it before delivery", async () => {
+    expect(await card({ status: "shipped" })).toContain("対面受け取り");
   });
 });
 

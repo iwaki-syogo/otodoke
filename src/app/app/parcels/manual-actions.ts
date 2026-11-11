@@ -3,7 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MANUAL_DELETE_UNCHECKED, ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, manualWritesNothing, type ManualFormState } from "@/lib/manual-parcel";
+import {
+  MANUAL_DELETE_UNCHECKED,
+  ManualParcelSchema,
+  manualNeedsReceivedClear,
+  manualParcelFields,
+  manualParcelRow,
+  manualParcelSchemaFor,
+  manualWritesNothing,
+  type ManualFormState,
+} from "@/lib/manual-parcel";
 import { createClient } from "@/lib/supabase/server";
 
 // Parcels typed in by hand. Writes go through the user's own session (row-level security), and
@@ -30,6 +39,18 @@ function invalid(error: z.ZodError): string {
   return error.issues[0]?.message ?? "入力を確かめてください";
 }
 
+/**
+ * 配達済み (delivered, not received) cannot come out of one write from another status: the database
+ * fills received_at when a signed-in session turns a parcel into delivered with it empty. So the
+ * choice is saved, then received_at is cleared by a second write. The parcel stays delivered and received
+ * if that second write fails, and the person is told it was not saved.
+ */
+async function clearReceived(session: NonNullable<Awaited<ReturnType<typeof signedIn>>>, id: string): Promise<boolean> {
+  const { error } = await session.supabase.from("parcels").update({ received_at: null }).eq("id", id).eq("user_id", session.userId).eq("status", "delivered");
+  if (error) console.error("clearReceived:", error.message);
+  return !error;
+}
+
 async function signedIn() {
   const supabase = await createClient();
   const {
@@ -54,6 +75,10 @@ export async function createManualParcel(_prev: ManualFormState, formData: FormD
     console.error("createManualParcel:", error?.message);
     return { error: FAILED, values };
   }
+  if (manualNeedsReceivedClear(parsed.data.status) && !(await clearReceived(session, data.id))) {
+    revalidatePath("/app", "layout");
+    return { error: FAILED, values };
+  }
   revalidatePath("/app", "layout");
   redirect(`/app/parcels/${data.id}`);
 }
@@ -69,7 +94,7 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
   // what an unchanged field keeps (see manualParcelFields).
   const { data: saved, error: readError } = await session.supabase
     .from("parcels")
-    .select("title, shop, status, total_amount, category, ordered_at, expected_date, tracking_number, carrier, requires_presence, updated_at")
+    .select("title, shop, status, received_at, total_amount, category, ordered_at, expected_date, tracking_number, carrier, requires_presence, updated_at")
     .eq("id", id.data)
     .eq("user_id", session.userId)
     .eq("source", "manual")
@@ -115,6 +140,10 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
     return { error: CHANGED, values: {} };
   }
   if (data.length !== 1) return { error: NOT_FOUND, values };
+  if (manualNeedsReceivedClear(parsed.data.status, saved) && !(await clearReceived(session, id.data))) {
+    revalidatePath("/app", "layout");
+    return { error: FAILED, values };
+  }
   revalidatePath("/app", "layout");
   redirect(`/app/parcels/${id.data}`);
 }

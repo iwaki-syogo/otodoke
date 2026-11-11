@@ -25,7 +25,12 @@ export type ManualCarrierChoice = ManualCarrier | typeof MANUAL_KEEP_CARRIER;
 export const MANUAL_PRESENCE = ["face", "drop", ""] as const;
 
 /** Statuses the form offers. */
-export const MANUAL_STATUSES = ["ordered", "shipped", "delivered"] as const;
+export const MANUAL_STATUSES = ["ordered", "shipped", "delivered", "received"] as const;
+/**
+ * "received" is a choice on the form only: it is saved as status delivered with received_at set.
+ * "delivered" (配達済み) is delivered with received_at empty.
+ */
+export const MANUAL_RECEIVED = "received";
 /**
  * Statuses a mail can move a typed-in parcel to. The form shows them only when the parcel is
  * already there, so saving it unchanged still works.
@@ -129,9 +134,29 @@ export function manualCarrierChoice(name: string | null, tracking: string | null
   return MANUAL_KEEP_CARRIER;
 }
 
+const isReceivedRow = (saved?: Pick<ManualSaved, "status" | "received_at">) => saved?.status === "delivered" && saved.received_at != null;
+
+function receivedColumns(choice: string, saved: ManualSaved | undefined, now: Date): { received_at?: string | null } {
+  const wasDelivered = saved?.status === "delivered";
+  if (choice === MANUAL_RECEIVED) return isReceivedRow(saved) ? {} : { received_at: now.toISOString() };
+  if (choice === "delivered") return wasDelivered ? (isReceivedRow(saved) ? { received_at: null } : {}) : { received_at: null };
+  return wasDelivered ? { received_at: null } : {};
+}
+
+/**
+ * Whether saving as 配達済み needs a second write that clears received_at. The database trigger fills
+ * received_at when a signed-in session turns a parcel into delivered with it empty (that is how a build
+ * that does not know the column is served), so one update cannot ask for "delivered, not received" from
+ * another status. Saving 配達済み onto a parcel that is delivered already needs none.
+ */
+export function manualNeedsReceivedClear(choice: string, saved?: Pick<ManualSaved, "status">): boolean {
+  return choice === "delivered" && saved?.status !== "delivered";
+}
+
 /** What is stored for the parcel being edited. A column not given counts as changed. */
 export type ManualSaved = {
   status?: string | null;
+  received_at?: string | null;
   category: string | null;
   ordered_at?: string | null;
   expected_date?: string | null;
@@ -165,12 +190,10 @@ export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: Manu
   const presence = v.presence === "" ? null : v.presence === "face";
   const evidence = saved?.requires_presence !== undefined && saved.requires_presence === presence ? {} : { presence_evidence: null };
 
-  // 「受け取り済み」 on the form (status delivered) means the person has it: received_at goes in with the
-  // status. A parcel already delivered keeps its received_at as it is (a mail may have delivered it
-  // without the person saying so), and one that leaves delivered loses it (the database does the same).
-  const wasDelivered = saved?.status === "delivered";
-  const received =
-    v.status === "delivered" ? (wasDelivered ? {} : { received_at: now.toISOString() }) : wasDelivered ? { received_at: null } : {};
+  // The form's 配達済み is delivered with no received_at, its 受け取り済み (received) is delivered with one.
+  // An unchanged choice writes nothing about it, so a parcel keeps the received_at it has. A parcel that
+  // leaves delivered loses it (the database does the same).
+  const received = receivedColumns(v.status, saved, now);
 
   // An order date left empty is today for a new parcel; an edit keeps the stored one.
   const orderedAt = v.ordered_at ?? (saved?.ordered_at !== undefined ? saved.ordered_at : todayJst(now));
@@ -186,7 +209,7 @@ export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: Manu
     ...tracking,
     requires_presence: presence,
     ...evidence,
-    status: v.status,
+    status: v.status === MANUAL_RECEIVED ? "delivered" : v.status,
     ...received,
   };
 }
@@ -206,6 +229,7 @@ export type ManualStoredForCompare = {
   status: string | null;
   total_amount: number | null;
   requires_presence: boolean | null;
+  received_at?: string | null;
 };
 
 /**
@@ -249,6 +273,10 @@ export function manualWritesNothing(
         break;
       case "status":
         if (value !== saved.status) return false;
+        break;
+      case "received_at":
+        // "=== undefined": a column not read never equals the value.
+        if (saved.received_at === undefined || value !== saved.received_at) return false;
         break;
       case "requires_presence":
         if (value !== saved.requires_presence) return false;

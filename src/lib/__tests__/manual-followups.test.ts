@@ -125,7 +125,7 @@ describe("(a) the edit form of a cancelled typed-in parcel", () => {
   it("keeps offering 配達中 and 不在・再配達 the same way", () => {
     expect(manualStatusChoices("out_for_delivery")).toContain("out_for_delivery");
     expect(manualStatusChoices("attempted")).toContain("attempted");
-    expect(manualStatusChoices("shipped")).toEqual(["ordered", "shipped", "delivered"]);
+    expect(manualStatusChoices("shipped")).toEqual(["ordered", "shipped", "delivered", "received"]);
   });
 
   it("parses cancelled only for a parcel that is cancelled now", () => {

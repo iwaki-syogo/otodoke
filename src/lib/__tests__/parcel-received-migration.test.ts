@@ -23,6 +23,21 @@ function lastStatement(sql: string): string {
   return parts[parts.length - 1];
 }
 
+/** What is wrong with a trigger function's SQL, by the rules this migration is written to. Empty = fine. */
+function problemsOf(fn: string): string[] {
+  const out: string[] = [];
+  const returns = [...fn.matchAll(/\breturn\s+(\w+)/gi)].map((m) => m[1].toLowerCase());
+  if (returns.length < 2 || !returns.every((r) => r === "new")) out.push("returns something other than NEW");
+  if (/security definer/i.test(fn)) out.push("security definer");
+  if (!/set search_path = ''/.test(fn)) out.push("no fixed search_path");
+  if (/request\.jwt|auth\.role|auth\.jwt/.test(fn) || !fn.includes("current_user")) out.push("does not use current_user");
+  if (!/old\.status = 'delivered' and new\.status is distinct from 'delivered'\s*then\s*new\.received_at := null;/.test(fn)) out.push("does not clear received_at on leaving delivered");
+  // Every place now() is written must have the authenticated check in front of it.
+  const sets = [...fn.matchAll(/new\.received_at := now\(\)/g)];
+  if (sets.length === 0 || sets.some((m) => !fn.slice(Math.max(0, m.index! - 300), m.index!).includes("current_user = 'authenticated'"))) out.push("now() is not behind the authenticated check");
+  return out;
+}
+
 describe("the migration", () => {
   it("comes after the 2:00 migration, and its three companion files exist", () => {
     const names = readdirSync(path.join(root, "supabase/migrations")).sort();
@@ -48,38 +63,41 @@ describe("the migration", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it("tells the roles apart by current_user, in a SECURITY INVOKER function with a fixed search_path", () => {
+  it("passes the checks on its trigger function", () => {
     expect(FUNCTION).not.toBe("");
-    expect(FUNCTION).toContain("current_user = 'authenticated'");
-    expect(FUNCTION).not.toMatch(/security definer/i);
-    expect(FUNCTION).not.toMatch(/request\.jwt|auth\.role|auth\.jwt/);
-    expect(FUNCTION).toMatch(/set search_path = ''/);
-  });
-
-  it("returns NEW on every path and never OLD (a BEFORE UPDATE trigger that returns OLD throws the write away without an error)", () => {
-    expect(FUNCTION).not.toMatch(/return\s+old\b/i);
-    expect(FUNCTION).not.toMatch(/return\s+null\b/i);
-    const returns = [...FUNCTION.matchAll(/\breturn\s+(\w+)/gi)].map((m) => m[1].toLowerCase());
-    expect(returns.length).toBeGreaterThanOrEqual(2);
-    expect(returns.every((r) => r === "new")).toBe(true);
+    expect(problemsOf(FUNCTION)).toEqual([]);
   });
 
   it("is a BEFORE INSERT OR UPDATE row trigger on parcels, dropped first so the file can run again", () => {
     expect(MIGRATION).toMatch(/drop trigger if exists parcels_received_at on public\.parcels;\s*create trigger parcels_received_at before insert or update on public\.parcels\s*for each row execute function public\.parcels_received_at\(\);/);
   });
 
-  it("clears received_at when the status leaves delivered, for any role, and sets it for the signed-in user only", () => {
-    expect(FUNCTION).toMatch(/old\.status = 'delivered' and new\.status is distinct from 'delivered'\s*then\s*new\.received_at := null;/);
-    // The only place now() is written is behind the authenticated check.
-    const sets = [...FUNCTION.matchAll(/new\.received_at := now\(\)/g)];
-    expect(sets).toHaveLength(2);
-    for (const m of sets) expect(FUNCTION.slice(Math.max(0, m.index! - 300), m.index!)).toContain("current_user = 'authenticated'");
+  it("keeps the time it added the column in the column's comment, for the verify file", () => {
+    expect(MIGRATION).toMatch(/comment on column public\.parcels\.received_at is %L/);
+    expect(withoutComments(read(`supabase/verify/${NAME}.sql`))).toContain("'added (\\S+)'");
   });
 
-  it("negative control: a trigger that returns OLD, or tells roles by the JWT setting, is caught", () => {
-    const bad = "create or replace function public.parcels_received_at() returns trigger as $$ begin if x then return old; end if; return new; end $$;";
-    expect(bad).toMatch(/return\s+old\b/i);
-    expect("select current_setting('request.jwt.claims')").toMatch(/request\.jwt/);
+  describe("negative controls: the checks fail on a broken function", () => {
+    const broken = (edit: (fn: string) => string) => problemsOf(edit(FUNCTION));
+    it("returns OLD", () => {
+      expect(broken((f) => f.replace(/return new;(?![\s\S]*return new;)/, "return old;"))).toContain("returns something other than NEW");
+      expect(broken((f) => f.replace("return new;", "return old;"))).toContain("returns something other than NEW");
+    });
+    it("is SECURITY DEFINER", () => {
+      expect(broken((f) => f.replace("set search_path = ''", "security definer\nset search_path = ''"))).toContain("security definer");
+    });
+    it("lets every role set received_at (no role check in front of now())", () => {
+      expect(broken((f) => f.replaceAll(" and current_user = 'authenticated'", ""))).toContain("now() is not behind the authenticated check");
+    });
+    it("tells roles by the JWT setting", () => {
+      expect(broken((f) => f.replaceAll("current_user = 'authenticated'", "current_setting('request.jwt.claims', true) is not null"))).toContain("does not use current_user");
+    });
+    it("does not clear received_at when the status leaves delivered", () => {
+      expect(broken((f) => f.replace("new.received_at := null;", "null;"))).toContain("does not clear received_at on leaving delivered");
+    });
+    it("has no fixed search_path", () => {
+      expect(broken((f) => f.replace("set search_path = ''", ""))).toContain("no fixed search_path");
+    });
   });
 });
 
