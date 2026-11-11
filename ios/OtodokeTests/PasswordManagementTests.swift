@@ -89,6 +89,37 @@ struct PasswordManagementTests {
         #expect(model.message == PasswordChangeText.unknown && model.offersSignIn)
     }
 
+    @Test(arguments: ["weak", "mismatch", "same"])
+    func changeInputErrorAfterASuccessDoesNotKeepSuccess(_ secondInput: String) async {
+        let api = PasswordStub(), model = makeModel(nil, api: api)
+        await model.submit()
+        #expect(model.succeeded && model.offersSignIn)
+        #expect(model.message == PasswordChangeText.changed)
+        #expect(await api.changes.count == 1)
+
+        // Refill the current password so the second press reaches input validation on the same model.
+        model.current = current
+        let expected: String
+        switch secondInput {
+        case "weak":
+            model.next = "password123"; model.again = model.next
+            expected = LoginText.passwordWeak
+        case "mismatch":
+            model.next = next; model.again = next + "different"
+            expected = LoginText.passwordMismatch
+        default:
+            model.next = current; model.again = current
+            expected = PasswordChangeText.same
+        }
+        await model.submit()
+
+        #expect(!model.succeeded)
+        #expect(!model.offersSignIn)
+        #expect(model.message == expected)
+        #expect(await api.changes.count == 1)
+        #expect(!model.isWorking)
+    }
+
     @Test func recoveryWrapsTheExistingKeyForTheCurrentLoginWithoutChangingAuth() async throws {
         let login = try await deriver.master(password: current, email: email)
         let other = try await deriver.master(password: next, email: email)
@@ -108,6 +139,50 @@ struct PasswordManagementTests {
         #expect(wrap.keyId == row.keyId)
         let updated = StoredKeyRow(keyId: row.keyId, publicKey: row.publicKey, wrappedPrivateKey: wrap.wrappedPrivateKey, wrapIv: wrap.wrapIv, kdfSalt: wrap.kdfSalt, kdfIterations: wrap.kdfIterations)
         #expect(try PasswordV1.openStoredKey(updated, master: login, userID: user).keyID == row.keyId)
+        #expect(model.current.isEmpty && model.other.isEmpty)
+    }
+
+    @Test(arguments: ["authentication", "rewrap"])
+    func recoveryFailureAfterASuccessDoesNotKeepOpened(_ secondFailure: String) async throws {
+        let otherMaster = try await deriver.master(password: next, email: email)
+        let row = try stored(otherMaster)
+        let api = PasswordStub()
+        var authenticationCalls = 0
+        var completeCalls = 0
+        var refuseAuthentication = false
+        let model = PasswordRecoveryModel(
+            keys: PasswordKeys(row: row), api: api, deriver: deriver,
+            identity: { [user, email] in (user, email) }, isCurrent: { true },
+            authenticate: { (_: String, _: String?) async throws(LoginFailure) -> String in
+                authenticationCalls += 1
+                if refuseAuthentication { throw .credentials }
+                return "test-token"
+            },
+            complete: { _ in completeCalls += 1; return true }
+        )
+
+        model.current = current; model.other = next
+        model.turnstile.receive(.token("first-captcha"), generation: model.turnstile.generation)
+        await model.submit()
+        #expect(model.opened)
+        #expect(model.message == nil)
+        #expect(authenticationCalls == 1 && completeCalls == 1)
+        #expect(await api.wraps.count == 1)
+
+        // The same instance is kept when the sheet is opened again. A failed second attempt must
+        // not make PasswordRecoveryView dismiss and call onOpened with the first attempt's flag.
+        refuseAuthentication = secondFailure == "authentication"
+        if secondFailure == "rewrap" { await api.setCode("key_wrap_changed") }
+        model.current = current; model.other = next
+        model.turnstile.receive(.token("second-captcha"), generation: model.turnstile.generation)
+        await model.submit()
+
+        #expect(!model.opened)
+        #expect(model.message == (secondFailure == "authentication" ? LoginText.credentials : LoginText.keyWrapChanged))
+        #expect(authenticationCalls == 2)
+        #expect(completeCalls == 1)
+        #expect(await api.wraps.count == (secondFailure == "authentication" ? 1 : 2))
+        #expect(!model.isWorking)
         #expect(model.current.isEmpty && model.other.isEmpty)
     }
 }

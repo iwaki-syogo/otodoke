@@ -150,9 +150,10 @@ final class PasswordChangeModel {
 
     func submit() async {
         guard !isWorking, !current.isEmpty, isCurrent(), let who = identity() else { return }
+        succeeded = false; offersSignIn = false
         if let problem = PasswordRule.problem(password: next, again: again) { message = problem; return }
         if PasswordV1.passwordNorm(current) == PasswordV1.passwordNorm(next) { message = PasswordChangeText.same; return }
-        isWorking = true; message = nil; succeeded = false; offersSignIn = false
+        isWorking = true; message = nil
         defer { isWorking = false; turnstile.reset() }
         let typedCurrent = current, typedNext = next
         do {

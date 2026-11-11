@@ -28,7 +28,7 @@ final class PasswordRecoveryModel {
 
     func submit() async {
         guard !isWorking, !current.isEmpty, !other.isEmpty, isCurrent(), let who = identity() else { return }
-        isWorking = true; message = nil
+        isWorking = true; message = nil; opened = false
         defer { isWorking = false; clearPasswords(); turnstile.reset() }
         let typed = current, previous = other
         do {
