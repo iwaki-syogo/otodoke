@@ -3,6 +3,7 @@ import { DB_INT_MAX, storableInt, type Extraction, type OtherOrder, type Relevan
 import { identifyCarrier, normalizeTracking, trackingUrlFor } from "@/lib/carriers";
 import { addDays, todayJst } from "@/lib/format";
 import { categoryForInsert, categoryForUpdate } from "./category";
+import { validConfidence } from "@/lib/extract/verify-evidence";
 
 /** Calendar date (JST) of an ISO instant, for the `date` columns. */
 function jstDate(iso: string | null): string | null {
@@ -48,6 +49,7 @@ export function relevanceToStatus(r: Relevance): string | null {
 
 /** A payment notice that already names a tracking number means the parcel has left the shop. */
 function statusOf(x: Extraction): string | null {
+  if (x.evidence_review?.includes("relevance")) return null;
   return x.relevance === "payment" && confident(x.tracking_number) ? "shipped" : relevanceToStatus(x.relevance);
 }
 
@@ -81,7 +83,11 @@ export function asTime(v: string | null): string | null {
 }
 
 function confident<T>(f: { value: T | null; confidence: number }): T | null {
-  return f.value !== null && f.confidence >= MIN_CONFIDENCE ? f.value : null;
+  return f.value !== null && validConfidence(f.confidence) && f.confidence >= MIN_CONFIDENCE ? f.value : null;
+}
+
+function needsEvidenceReview(x: Extraction): boolean {
+  return !validConfidence(x.overall_confidence) || x.overall_confidence < MIN_CONFIDENCE || (x.evidence_review?.length ?? 0) > 0;
 }
 
 /** The tracking number to store and compare: normalized, or null when nothing of it is left (never ""). */
@@ -137,6 +143,7 @@ export function parcelTitle(items: Extraction["items"], fallback: string | null)
 function orderDate(x: Extraction, emailSentAt: string | null): string | null {
   const stated = asDate(confident(x.ordered_at));
   if (stated) return stated;
+  if (x.evidence_review?.includes("relevance")) return null;
   if (!DATES_THE_PURCHASE.includes(x.relevance)) return null;
   if (x.relevance === "shipped" && confident(x.order_number) === null && confident(x.total_amount) === null) return null;
   return jstDate(emailSentAt);
@@ -169,7 +176,7 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
     requires_presence: confident(x.requires_presence),
     presence_evidence: x.requires_presence.evidence,
     total_amount: confident(x.total_amount),
-    needs_review: x.overall_confidence < MIN_CONFIDENCE,
+    needs_review: needsEvidenceReview(x),
     last_email_at: emailSentAt,
     ...categoryForInsert(x.category ?? null),
   };
@@ -234,7 +241,7 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   }
 
   if (emailSentAt && (!existing.last_email_at || emailSentAt > existing.last_email_at)) update.last_email_at = emailSentAt;
-  if (x.overall_confidence < MIN_CONFIDENCE) update.needs_review = true;
+  if (needsEvidenceReview(x)) update.needs_review = true;
 
   return update;
 }
@@ -298,6 +305,7 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   if (emailSentAt && (!existing.last_email_at || emailSentAt > existing.last_email_at)) update.last_email_at = emailSentAt;
   // The typed-in title names the parcel, so a mail's items never count as the first ones here.
   Object.assign(update, categoryForUpdate(existing, x.category ?? null, false));
+  if (needsEvidenceReview(x)) update.needs_review = true;
   return update;
 }
 
@@ -397,7 +405,7 @@ const STATED_OUTRIGHT = 0.9;
 export function parcelTotal(mails: Extraction[]): number | null {
   const orderMails = mails.filter((m) => ORDER_MAILS.includes(m.relevance));
   // storableInt: a reading saved before extract.ts bounded its numbers may hold one the column cannot.
-  const stated = orderMails.map((m) => m.total_amount).filter((f) => storableInt(f.value) && f.confidence >= MIN_CONFIDENCE);
+  const stated = orderMails.map((m) => m.total_amount).filter((f) => storableInt(f.value) && confident(f) !== null);
   const firm = stated.filter((f) => f.confidence >= STATED_OUTRIGHT).at(-1)?.value ?? null;
   const weak = stated.at(-1)?.value ?? 0;
 
@@ -410,7 +418,7 @@ export function parcelTotal(mails: Extraction[]): number | null {
   const shipments = new Set<number>();
   for (const m of mails) {
     const amount = storableInt(m.total_amount.value);
-    if (SHIPMENT_MAILS.includes(m.relevance) && amount && m.total_amount.confidence >= MIN_CONFIDENCE) shipments.add(amount);
+    if (SHIPMENT_MAILS.includes(m.relevance) && amount && confident(m.total_amount) !== null) shipments.add(amount);
   }
   const shipped = [...shipments].reduce((a, b) => a + b, 0);
 
@@ -533,7 +541,7 @@ const NO_VALUE = { value: null, evidence: null, confidence: 0 };
  * The extra orders carry no tracking: shipment mails name one order each and add it later.
  */
 export function splitOrders(x: Extraction): Extraction[] {
-  const others = (x.other_orders ?? []).filter((o: OtherOrder) => confident(o.order_number) !== null);
+  const others = (x.other_orders ?? []).filter((o: OtherOrder) => confident(o.order_number) !== null || (o.evidence_review?.length ?? 0) > 0);
   const first: Extraction = { ...x, other_orders: [] };
   return [
     first,
@@ -551,6 +559,7 @@ export function splitOrders(x: Extraction): Extraction[] {
         expected_window_end: { ...NO_VALUE },
         tracking_number: { ...NO_VALUE },
         package_description: { ...NO_VALUE },
+        evidence_review: o.evidence_review ? [...(x.evidence_review ?? []).filter((s) => s === "relevance" || s === "overall_confidence"), ...o.evidence_review] : x.evidence_review,
       }),
     ),
   ];

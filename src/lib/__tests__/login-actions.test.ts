@@ -91,7 +91,7 @@ describe("signInWithAuthSecret", () => {
 
   it.each([
     ["a wrong address or secret", { status: 400, code: "invalid_credentials" }, "credentials"],
-    ["an address not confirmed yet", { status: 400, code: "email_not_confirmed" }, "not_confirmed"],
+    ["an address not confirmed yet", { status: 400, code: "email_not_confirmed" }, "credentials"],
     ["Supabase's own limit", { status: 429, code: "over_request_rate_limit" }, "rate"],
     ["a 429 without a code", { status: 429 }, "rate"],
     ["a refused bot check", { status: 400, code: "captcha_failed" }, "captcha"],
@@ -141,7 +141,7 @@ describe("signInWithAuthSecret", () => {
     expect(mocks.signIn).not.toHaveBeenCalled();
   });
 
-  it("counts only a wrong address or secret: claims an attempt before asking, keeps it on credentials, gives it back otherwise", async () => {
+  it("counts wrong credentials and pending confirmation identically, giving back only other outcomes", async () => {
     mocks.signIn.mockResolvedValue({ data: { user: null, session: null }, error: { status: 400, code: "invalid_credentials" } });
     await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET });
     const claim = calls("claim_login_mail").map(([, args]) => args).find((args) => args.p_email_hash === sha(`otodoke:login-attempt:email:${EMAIL}`));
@@ -158,7 +158,6 @@ describe("signInWithAuthSecret", () => {
 
     for (const answer of [
       { data: { user: { id: "user-1" }, session: {} }, error: null },
-      { data: { user: null, session: null }, error: { status: 400, code: "email_not_confirmed" } },
       { data: { user: null, session: null }, error: { status: 429, code: "over_request_rate_limit" } },
       { data: { user: null, session: null }, error: { status: 0 } },
     ]) {
@@ -173,6 +172,52 @@ describe("signInWithAuthSecret", () => {
     limits(verdict);
     expect(await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code: "rate" });
     expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["new account awaiting confirmation", [{ id: "new-identity" }], "email_not_confirmed"],
+    ["existing account awaiting confirmation", [{ id: "pending-identity" }], "email_not_confirmed"],
+    ["confirmed account with another secret", [], "invalid_credentials"],
+  ])("%s: sign-up, follow-up sign-in, and the later rate response are indistinguishable", async (_what, identities, authCode) => {
+    const held = new Map<string, number>();
+    const claimKeys = new Map<number, string>();
+    let claimId = 0;
+    mocks.rpc.mockImplementation(async (fn: string, args: { p_email_hash: string; p_email_10m_limit: number; p_claim_id?: number }) => {
+      if (fn === "release_login_mail") {
+        const key = claimKeys.get(args.p_claim_id!);
+        if (key) held.set(key, (held.get(key) ?? 0) - 1);
+        return { data: 1, error: null };
+      }
+      if (fn !== "claim_login_mail") return { data: null, error: null };
+      const count = held.get(args.p_email_hash) ?? 0;
+      if (count >= args.p_email_10m_limit) return { data: [{ verdict: "email_10m", claim_id: null }], error: null };
+      held.set(args.p_email_hash, count + 1);
+      claimKeys.set(++claimId, args.p_email_hash);
+      return { data: [{ verdict: "ok", claim_id: claimId }], error: null };
+    });
+    mocks.signUp.mockResolvedValue({ data: { user: { id: "user-1", identities }, session: null }, error: null });
+    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
+    mocks.signIn.mockResolvedValue({ data: { user: null, session: null }, error: { status: 400, code: authCode } });
+    const { LOGIN_ATTEMPT_LIMITS } = await import("@/lib/login-mail-limit");
+    for (let i = 0; i < LOGIN_ATTEMPT_LIMITS.emailPer10Minutes; i++) {
+      expect(await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code: "credentials" });
+    }
+    expect(await signInWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: false, code: "rate" });
+    expect(calls("release_login_mail")).toHaveLength(0);
+    expect(mocks.signIn).toHaveBeenCalledTimes(LOGIN_ATTEMPT_LIMITS.emailPer10Minutes);
+  });
+
+  it("a correct secret awaiting confirmation can sign in after confirmation without changing input", async () => {
+    const input = { email: EMAIL, authSecret: SECRET };
+    mocks.signIn.mockResolvedValueOnce({ data: { user: null, session: null }, error: { status: 400, code: "email_not_confirmed" } });
+    expect(await signInWithAuthSecret(input)).toEqual({ ok: false, code: "credentials" });
+    expect(calls("release_login_mail")).toHaveLength(0);
+    expect(await signInWithAuthSecret(input)).toEqual({ ok: true, userId: "user-1" });
+    expect(mocks.signIn.mock.calls.map(([value]) => value)).toEqual([
+      { email: EMAIL, password: SECRET, options: { captchaToken: undefined } },
+      { email: EMAIL, password: SECRET, options: { captchaToken: undefined } },
+    ]);
+    expect(calls("release_login_mail")).toHaveLength(1);
   });
 
   it.each([
@@ -231,9 +276,9 @@ describe("signUpWithAuthSecret", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("a success whose user has no identities says signup_existing (a confirmed address, no mail sent)", async () => {
+  it("a success whose user has no identities keeps the same result for a confirmed address (no mail sent)", async () => {
     mocks.signUp.mockResolvedValue({ data: { user: { id: "u", identities: [] }, session: null }, error: null });
-    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_existing" });
+    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
   });
 
   it.each([
@@ -251,9 +296,9 @@ describe("signUpWithAuthSecret", () => {
     expect(await signUpWithAuthSecret({ email: "o'brien+otodoke@example.co.uk", authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
   });
 
-  it("an error user_already_exists (422, confirmations off) says signup_existing, is not logged as a failure, and the allowance is kept", async () => {
+  it("an error user_already_exists (422, confirmations off) keeps the same result, is not logged as a failure, and the allowance is kept", async () => {
     mocks.signUp.mockResolvedValue({ data: { user: null, session: null }, error: { status: 422, code: "user_already_exists" } });
-    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_existing" });
+    expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
     expect(calls("claim_login_mail")).toHaveLength(1);
     expect(calls("release_login_mail")).toHaveLength(0);
     expect(consoleText()).not.toContain("user_already_exists");
@@ -272,8 +317,8 @@ describe("signUpWithAuthSecret", () => {
   ])("answers the same as a sent mail when %s", async (_what, error) => {
     mocks.signUp.mockResolvedValue({ data: { user: null, session: null }, error });
     expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
-    // Supabase sent nothing for this press: the app's mail allowance is given back.
-    expect(calls("release_login_mail")).toHaveLength(1);
+    // Hidden outcomes count the same as new and pending accounts, including later rate answers.
+    expect(calls("release_login_mail")).toHaveLength(0);
   });
 
   it.each([

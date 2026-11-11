@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PASSWORD_RULE } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
-import { EXISTING_ACCOUNT, clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
+import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
 import type { TokenField } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -113,37 +113,18 @@ describe("making the account", () => {
     expect(widget.round).toBe(1);
   });
 
-  it("signup_existing: no waiting screen; the address (never the password) is handed to /login and the tab goes there", async () => {
+  it.each(["signup_exists_or_sent", "signup_existing"])("%s: the same waiting screen, without an account-existence handoff", async (code) => {
     vi.stubGlobal("window", {});
     clearLoginHandoff();
-    actions.signUp.mockResolvedValue({ ok: true, code: "signup_existing" });
+    actions.signUp.mockResolvedValue({ ok: true, code });
     const view = await filled();
     await press(view);
     await drawn();
-    expect(peekLoginHandoff()).toEqual({ email: EMAIL, code: EXISTING_ACCOUNT });
-    expect(JSON.stringify(peekLoginHandoff())).not.toContain(PASSWORD);
-    await vi.waitFor(() => expect(nav.to).toEqual(["/login"]));
-    expect(view.text()).not.toContain("確認のメールを送りました");
-    expect(view.hosts((h) => h.type === "input").length).toBeGreaterThan(0);
-    clearLoginHandoff();
-  });
-
-  it("signup_existing: the press stays shown while leaving, so a second press before the page changes does nothing", async () => {
-    vi.stubGlobal("window", {});
-    clearLoginHandoff();
-    actions.signUp.mockResolvedValue({ ok: true, code: "signup_existing" });
-    const view = await filled();
-    await press(view);
-    await drawn();
-    expect(nav.to).toEqual(["/login"]);
-    expect(textOfHost(button(view))).toBe("作っています…");
-    expect(button(view).props["aria-busy"]).toBe(true);
-    await press(view);
-    await drawn();
-    expect(actions.signUp).toHaveBeenCalledTimes(1);
-    // No password error flashes (the fields were emptied on the way out).
-    expect(view.text()).not.toContain("10 文字以上にしてください");
-    clearLoginHandoff();
+    expect(peekLoginHandoff()).toBeNull();
+    expect(nav.to).toEqual([]);
+    expect(view.text()).toContain("確認のメールを送りました");
+    expect(view.hosts((h) => h.type === "input")).toHaveLength(0);
+    expect(view.hosts((h) => h.type === "a" && h.props.href === "/login")).toHaveLength(1);
   });
 
   it("negative control: signup_exists_or_sent still shows the waiting screen and hands nothing to /login", async () => {

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
+import { LOGIN_MESSAGES, SIGN_IN_RETRY_MESSAGE, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { EXISTING_ACCOUNT, clearLoginHandoff, handOffToLogin, peekLoginHandoff } from "@/lib/login-handoff";
 import { CONFIRMED_LOGIN_PATH, EXISTING_ACCOUNT_NOTICE } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
@@ -144,7 +144,7 @@ describe("the press", () => {
     await first;
     await drawn();
     expect(textOfHost(button(view))).toBe("ログイン");
-    expect(view.text()).toContain(LOGIN_MESSAGES.credentials);
+    expect(view.text()).toContain(SIGN_IN_RETRY_MESSAGE);
     // The token went with the press: the widget moves on to a new one.
     expect(widget.round).toBe(1);
   });
@@ -249,7 +249,7 @@ describe("the press", () => {
     const view = await filled();
     await press(view);
     await drawn();
-    expect(view.text()).toContain(LOGIN_MESSAGES[code]);
+    expect(view.text()).toContain(code === "not_confirmed" ? SIGN_IN_RETRY_MESSAGE : LOGIN_MESSAGES[code]);
   });
 });
 
@@ -445,7 +445,7 @@ describe("from /signup's waiting screen after `credentials` (login-handoff.ts)",
     await drawn();
     expect(input(view, "login-email").props.value).toBe(EMAIL);
     expect(input(view, "login-password").props.value).toBe("");
-    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([LOGIN_MESSAGES.credentials]);
+    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([SIGN_IN_RETRY_MESSAGE]);
     // Let go once shown: the next visit to /login starts empty.
     expect(peekLoginHandoff()).toBeNull();
     const again = mount(() => LoginForm({ next: "/app" }));
@@ -465,7 +465,7 @@ describe("from /signup's waiting screen after `credentials` (login-handoff.ts)",
     const text = view.text();
     expect(text).toContain(EXISTING_ACCOUNT_NOTICE);
     expect(text).toContain(RESET_LOSES_MAIL);
-    expect(text).not.toContain(LOGIN_MESSAGES.credentials);
+    expect(text).not.toContain(SIGN_IN_RETRY_MESSAGE);
     expect(view.hosts((h) => h.props.role === "alert")).toEqual([]);
     const forgot = view.hosts((h) => h.type === "a" && h.props.href === "/login/forgot");
     expect(forgot.map(textOfHost)).toEqual(["パスワードを忘れた"]);
@@ -510,7 +510,7 @@ describe("from /signup's waiting screen after `credentials` (login-handoff.ts)",
     const view = await filled();
     await press(view);
     await drawn();
-    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([LOGIN_MESSAGES.credentials]);
+    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([SIGN_IN_RETRY_MESSAGE]);
     expect(view.text()).not.toContain(EXISTING_ACCOUNT_NOTICE);
   });
 

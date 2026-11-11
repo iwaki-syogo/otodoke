@@ -15,7 +15,7 @@ export const sure = <T>(value: T) => ({ value, evidence: "根拠の行", confide
 export function reading(over: Partial<Extraction> & { category?: string | null } = {}): Extraction {
   return {
     relevance: "shipped",
-    relevance_evidence: null,
+    relevance_evidence: "テスト本文",
     shop_name: "テスト店",
     shop_key: "other",
     order_number: none,
@@ -50,7 +50,7 @@ export function mailOf(sentAt: string, userId = USER): InboundEmail {
     fromName: null,
     subject: "テストのお知らせ",
     sentAt,
-    text: "テスト本文",
+    text: "テスト本文\n根拠の行",
     html: null,
   };
 }

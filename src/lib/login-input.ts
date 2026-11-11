@@ -36,6 +36,8 @@ export type MailRequestInput = z.infer<typeof MailRequestInputSchema>;
 export const FinishResetInputSchema = z
   .object({
     authSecret: authSecretField,
+    expectedUserId: z.string().min(1).max(128),
+    expectedEmailNorm: emailField,
     keyId: KeyActivationSchema.shape.keyId,
     challenge: KeyActivationSchema.shape.challenge,
     expectedCurrentKeyId: KeyActivationSchema.shape.expectedCurrentKeyId,

@@ -60,6 +60,7 @@ describe("what each need counts (auth-session.ts isFresh)", () => {
 
 const auth = vi.hoisted(() => ({ getSession: vi.fn(), getUser: vi.fn(), updateUser: vi.fn(), bearerUser: vi.fn() }));
 const store = vi.hoisted(() => ({ register: vi.fn(), activate: vi.fn(), rewrap: vi.fn(), restore: vi.fn(), readKey: vi.fn() }));
+vi.mock("@/lib/crypto/reset-key-check", () => ({ checkResetKey: async () => ({ ok: true, keyId: "a".repeat(32) }) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-real-ip": "203.0.113.7" }) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -161,7 +162,7 @@ describe("the web's key Actions (key-actions.ts)", () => {
 });
 
 describe("the reset puts its key in use through finishReset, not activateMailKey", () => {
-  const RESET = { authSecret: NEW_SECRET, keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null };
+  const RESET = { expectedUserId: "user-1", expectedEmailNorm: "someone@example.com", authSecret: NEW_SECRET, keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null };
 
   it.each(MAILBOX)("on a reset link's session (%s): the key is registered, then finishReset sets the secret and puts the key in use", async (method) => {
     cookieSession(method);

@@ -72,7 +72,7 @@ describe("pipeline: every service-role query on parcels, parcel_items and extrac
   it("when a mail opens a new parcel with items", async () => {
     const db = new FakeDb();
     const x = reading({ relevance: "order", order_number: sure("ORD-99990000"), items: [item("新しい商品", 1200)], total_amount: sure(1200) });
-    const out = await processInboundEmail(asAdmin(db), mailOf("2026-11-03T01:00:00Z"), { precomputed: precomputed(x) });
+    const out = await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), html: "<p>新しい商品</p>" }, { precomputed: precomputed(x) });
     expect(out.kind).toBe("processed");
     expect(unscoped(db)).toEqual([]);
     expect(db.callsOn("parcel_items", "select").length).toBeGreaterThanOrEqual(1);
@@ -81,7 +81,7 @@ describe("pipeline: every service-role query on parcels, parcel_items and extrac
   it("when a mail with items joins an existing parcel", async () => {
     const db = twinsScenario();
     const x = reading({ relevance: "shipped", order_number: sure(ORDER), items: [item("テスト商品 ブルー", 5000)] });
-    const out = await processInboundEmail(asAdmin(db), mailOf("2026-11-03T01:00:00Z"), { precomputed: precomputed(x) });
+    const out = await processInboundEmail(asAdmin(db), { ...mailOf("2026-11-03T01:00:00Z"), html: "<p>テスト商品 ブルー</p>" }, { precomputed: precomputed(x) });
     expect(out.kind).toBe("processed");
     expect(unscoped(db)).toEqual([]);
   });

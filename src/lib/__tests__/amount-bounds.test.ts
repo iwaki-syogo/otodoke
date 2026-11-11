@@ -76,7 +76,7 @@ function orderMail(): InboundEmail {
     messageId: "<huge-amount@example.test>",
     from: "order@shop.example.test",
     subject: "【テスト店】ご注文ありがとうございます",
-    text: "ご注文番号: ORD-99990000\n合計 3,000,000,000円",
+    text: "テスト本文\n根拠の行\nご注文番号: ORD-99990000\n合計 3,000,000,000円\n合計の行\nテスト商品の行\n高い品の行\n多い品の行",
   };
 }
 

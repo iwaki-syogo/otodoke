@@ -33,7 +33,7 @@ import { challengeAad, openBytes, type EnvelopeV1, type PrivateRecipient } from 
 import { createWrappedKey, openStoredKeyWithKek, rewrapStoredKey, type StoredKey } from "./key-wrap";
 import { authSecretHex, deriveMaster, emailNorm, kekFor, newKdfSalt, normalizePassword } from "./password-v1";
 import { forgetTabKey, setTabKey } from "./tab-key";
-import { KEY_SESSION_STALE, keyStepCode, loginMessage, type ChangeSecretResult, type FinishResetResult, type LoginCode, type SignInResult, type SignUpResult } from "@/lib/login-errors";
+import { KEY_SESSION_STALE, SIGN_IN_RETRY_MESSAGE, keyStepCode, loginMessage, type ChangeSecretResult, type FinishResetResult, type LoginCode, type SignInResult, type SignUpResult } from "@/lib/login-errors";
 import type { ChangeSecretInput, FinishResetInput, SignInInput, SignUpInput } from "@/lib/login-input";
 import type { KeyActivation, KeyRead, KeyRegistration, KeyResult, KeyRewrap, StoredKeyColumns } from "@/lib/mail-keys";
 
@@ -83,8 +83,9 @@ export interface ResetPorts {
  */
 export type FlowCode = LoginCode;
 
-/** The words for a code (LOGIN_MESSAGES; the unknown-code words for anything else). */
+/** Web sign-in failures share one prompt; other codes use LOGIN_MESSAGES. */
 export function flowMessage(code: FlowCode): string {
+  if (code === "credentials" || code === "not_confirmed") return SIGN_IN_RETRY_MESSAGE;
   return loginMessage(code);
 }
 
@@ -393,7 +394,7 @@ async function resetSteps(input: { email: string; userId: string; password: stri
     const expectedCurrentKeyId = current.key?.key_id ?? null;
     const reg = await registerNewKey(master, input.userId, expectedCurrentKeyId, ports);
     if (!reg.ok) return reg;
-    const done = await ports.finishReset({ authSecret: await authSecretHex(master), keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId });
+    const done = await ports.finishReset({ authSecret: await authSecretHex(master), expectedUserId: input.userId, expectedEmailNorm: emailNorm(input.email), keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId });
     if (!done.ok) return { ok: false, code: done.code };
     setTabKey(input.userId, reg.recipient);
     return { ok: true };

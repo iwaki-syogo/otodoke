@@ -34,6 +34,7 @@ import { activateKey, readStoredKey, rewrapKey, type KeyRestore, type KeyResult 
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { TURNSTILE_TOKEN_MAX_LENGTH } from "@/lib/turnstile";
+import { checkResetKey } from "@/lib/crypto/reset-key-check";
 
 /** The path a confirmation or reset mail leads to; /auth/confirm decides by the link's type. */
 const CONFIRM_LANDING = "/auth/confirm?next=%2Fapp";
@@ -77,7 +78,7 @@ function logThrown(step: string, thrown: unknown): void {
 /**
  * The app's own limits before a sign-in with the login secret: every sign-in from this IP
  * (LOGIN_TRY_LIMITS, never given back), then the failures for this address (LOGIN_ATTEMPT_LIMITS,
- * given back unless the address or the secret was wrong). Null when either says no.
+ * kept for wrong credentials or pending confirmation). Null when either says no.
  */
 async function claimSignIn(email: string): Promise<{ claimId: number | null } | null> {
   const ip = await requestIp();
@@ -95,8 +96,9 @@ async function claimSignIn(email: string): Promise<{ claimId: number | null } | 
 }
 
 /**
- * Sign in with the login secret, on this browser's cookies. Only a wrong address or secret counts
- * against the app's attempt limit. No redirect: the browser opens the key next, with the userId.
+ * Sign in with the login secret, on this browser's cookies. Wrong credentials and a pending
+ * confirmation share one response and consume the same allowance. No redirect: the browser
+ * opens the key next, with the userId.
  */
 export async function signIn(input: unknown): Promise<SignInResult> {
   const parsed = SignInInputSchema.safeParse(input);
@@ -118,7 +120,8 @@ export async function signIn(input: unknown): Promise<SignInResult> {
   const { data, error } = answer;
   if (error) {
     logRefusal("sign-in", error);
-    const code = signInFailureCode(error);
+    const failure = signInFailureCode(error);
+    const code = failure === "not_confirmed" ? "credentials" : failure;
     if (code !== "credentials") await releaseLoginAttempt(email, attempt.claimId);
     return { ok: false, code };
   }
@@ -140,14 +143,14 @@ function mailRefusal(error: AuthError): MailRequestFailure | "sent" {
   return "other";
 }
 
-type MailSend = (client: ReturnType<typeof throwawayAuthClient>, email: string, redirectTo: string, captchaToken: string | undefined) => Promise<{ error: AuthError | null; accessToken?: string; existing?: boolean }>;
+type MailSend = (client: ReturnType<typeof throwawayAuthClient>, email: string, redirectTo: string, captchaToken: string | undefined) => Promise<{ error: AuthError | null; accessToken?: string }>;
 
 /**
  * A mail Supabase sends to an address (confirmation, again, reset), through a client that keeps no
  * session: this browser's cookies are not touched. Counted against the app's mail limit; given
- * back when Supabase sent nothing.
+ * back for failures, except hidden sign-up outcomes which keep the same claim as a sent mail.
  */
-async function requestMail(step: string, input: unknown, send: MailSend, asciiOnly: boolean): Promise<{ ok: true; existing?: boolean } | { ok: false; code: MailRequestFailure | "email_not_ascii" }> {
+async function requestMail(step: string, input: unknown, send: MailSend, asciiOnly: boolean): Promise<{ ok: true } | { ok: false; code: MailRequestFailure | "email_not_ascii" }> {
   const email = normalizeLoginAddress((input as { email?: unknown } | null)?.email);
   if (!isLoginAddress(email)) return { ok: false, code: "invalid_email" };
   if (asciiOnly && !isAsciiAddress(email)) return { ok: false, code: "email_not_ascii" };
@@ -174,26 +177,23 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
     if (error) logRefusal(`${step} (ending the session it made)`, error);
   }
   if (result.error && result.error.code === "user_already_exists" && step === "sign-up") {
-    // Registered already (Supabase 422): an answer, not a failure. Nothing is logged as a refusal and
-    // the claim is kept for an existing address (both identities [] and this 422; unlike other
-    // refusals, which give it back): the press counts against the mail limit.
-    return { ok: true, existing: true };
+    // An address-dependent sign-up outcome has the same response and allowance as a sent mail.
+    return { ok: true };
   }
   if (result.error) {
     logRefusal(step, result.error);
-    await releaseLoginMail(email, claim.claimId);
     const code = mailRefusal(result.error);
+    // Hidden sign-up outcomes consume the same app allowance as a new account.
+    if (step !== "sign-up" || code !== "sent") await releaseLoginMail(email, claim.claimId);
     return code === "sent" ? { ok: true } : { ok: false, code };
   }
-  return result.existing ? { ok: true, existing: true } : { ok: true };
+  return { ok: true };
 }
 
 /**
  * Make an account: the address and the login secret. Supabase mails the confirmation link for a new
- * or still-unconfirmed address (signup_exists_or_sent). An address that is registered and confirmed
- * already gets no mail and is told apart (signup_existing), so the signup form can send the person
- * straight to /login. Supabase's own answer says which: a success with an empty `identities`, or
- * a `user_already_exists` refusal (confirmations turned off).
+ * or still-unconfirmed address. A confirmed address can receive no mail from Supabase; its app
+ * response is identical so the address's registration is not disclosed by the sign-up Action.
  */
 export async function signUp(input: unknown): Promise<SignUpResult> {
   const parsed = SignUpInputSchema.safeParse(input);
@@ -203,15 +203,12 @@ export async function signUp(input: unknown): Promise<SignUpResult> {
     parsed.data,
     async (client, email, redirectTo, captchaToken) => {
       const { data, error } = await client.auth.signUp({ email, password: parsed.data.authSecret, options: { emailRedirectTo: redirectTo, captchaToken } });
-      // Supabase answers a repeat sign-up of a confirmed address as a success with no mail and a
-      // user whose `identities` is an empty array: the address is registered already.
-      const existing = !error && Array.isArray(data.user?.identities) && data.user.identities.length === 0;
-      return { error, accessToken: data.session?.access_token, existing };
+      return { error, accessToken: data.session?.access_token };
     },
     true,
   );
   if (!result.ok) return result;
-  return { ok: true, code: result.existing ? "signup_existing" : "signup_exists_or_sent" };
+  return { ok: true, code: "signup_exists_or_sent" };
 }
 
 /** The confirmation mail again. The same answer for every address. */
@@ -273,7 +270,8 @@ async function setLoginSecret(supabase: ServerClient, authSecret: string): Promi
 }
 
 /**
- * The end of a reset (/reset-password): the new login secret first, then the key the browser made
+ * The end of a reset (/reset-password): verify the screen owner and the pending key first, then
+ * the new login secret, then the key the browser made
  * for it is put in use (the old key is retired under the same lock: activate_user_key_checked).
  * Only on a session from a reset link of the last 15 minutes (auth-session.ts).
  *
@@ -283,19 +281,25 @@ async function setLoginSecret(supabase: ServerClient, authSecret: string): Promi
 export async function finishReset(input: unknown): Promise<FinishResetResult> {
   const parsed = FinishResetInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid_input" };
-  const { authSecret, keyId, challenge, expectedCurrentKeyId } = parsed.data;
+  const { authSecret, keyId, challenge, expectedCurrentKeyId, expectedUserId, expectedEmailNorm } = parsed.data;
   const supabase = await createClient();
   const read = await readCookieSession(supabase);
   if (read.state === "unknown") return { ok: false, code: "network" };
   if (read.state === "signed_out") return { ok: false, code: "signed_out" };
+  // These are equality conditions only: the authenticated session remains the owner of every query.
+  if (read.session.userId !== expectedUserId || !read.session.email || normalizeLoginAddress(read.session.email) !== expectedEmailNorm) return { ok: false, code: "signed_out" };
   if (!isFresh(read.session.amr, "reset")) return { ok: false, code: "reset_expired" };
+
+  const db = createAdminClient();
+  const checked = await checkResetKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId });
+  if (!checked.ok) return { ok: false, code: keyStepCode(checked.error) };
 
   const set = await setLoginSecret(supabase, authSecret);
   if (set === "unknown") return { ok: false, code: "secret_change_unknown" };
   if (set === "signed_out" || set === "rate") return { ok: false, code: set };
   if (set === "refused") return { ok: false, code: "other" };
 
-  const activated = await activateKey(createAdminClient(), read.session.userId, { keyId, challenge, expectedCurrentKeyId });
+  const activated = await activateKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId });
   revalidatePath("/app", "layout");
   if (!activated.ok) {
     const code = keyStepCode(activated.error);

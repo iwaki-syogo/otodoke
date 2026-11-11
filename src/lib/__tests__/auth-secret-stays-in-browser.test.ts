@@ -37,7 +37,7 @@ const INPUTS: Array<[string, z.ZodType, Record<string, unknown>]> = [
   ["signInWithAuthSecret", SignInInputSchema, { email: "someone@example.com", authSecret: HEX64, captchaToken: null }],
   ["signUpWithAuthSecret", SignUpInputSchema, { email: "someone@example.com", authSecret: HEX64 }],
   ["resendConfirmation / sendResetMail", MailRequestInputSchema, { email: "someone@example.com" }],
-  ["finishReset", FinishResetInputSchema, { authSecret: HEX64, keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null }],
+  ["finishReset", FinishResetInputSchema, { authSecret: HEX64, expectedUserId: "user-1", expectedEmailNorm: "person@example.test", keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null }],
   ["changeLoginSecret", ChangeSecretInputSchema, { currentAuthSecret: HEX64, newAuthSecret: HEX64.replace("0", "f"), rewrap: REWRAP }],
   ["POST /api/keys/register", KeyRegistrationSchema, { publicKey: POINT, wrappedPrivateKey: b64(154), wrapIv: b64(12), kdfSalt: b64(16), kdfIterations: 600_000, expectedCurrentKeyId: null }],
   ["POST /api/keys/activate", KeyActivationSchema, { keyId: KEY_ID, challenge: b64(32), expectedCurrentKeyId: null }],

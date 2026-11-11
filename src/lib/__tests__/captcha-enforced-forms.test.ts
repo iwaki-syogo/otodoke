@@ -412,7 +412,7 @@ describe("presses Supabase Auth checks no token for: they go at once, with no bo
     submit(view);
     await vi.waitFor(() => expect(nav.to).toEqual(["/app"]), AT_ONCE);
     expect(actions.finishReset).toHaveBeenCalledTimes(1);
-    expect(Object.keys(actions.finishReset.mock.calls[0][0]).sort()).toEqual(["authSecret", "challenge", "expectedCurrentKeyId", "keyId"]);
+    expect(Object.keys(actions.finishReset.mock.calls[0][0]).sort()).toEqual(["authSecret", "challenge", "expectedCurrentKeyId", "expectedEmailNorm", "expectedUserId", "keyId"]);
     expect(widget.token).toBeNull();
   });
 

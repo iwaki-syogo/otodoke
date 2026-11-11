@@ -6,9 +6,11 @@ import { describe, expect, it } from "vitest";
  * [iOS existing address]
  *  - the guidance box sits above the form, as the Web's /login (login-form.tsx: "Above the form: on a phone a box
  *    below it can be off-screen"): in LoginView's body after the title and before the address field;
- *  - the sign-up's judgement of "this address is registered" is the Web's (src/lib/login-auth.ts): a user whose
- *    `identities` is an empty array, or a user_already_exists refusal read by its code alone; the codes that say
- *    "sent" are the same list.
+ *  - iOS still identifies an empty identities array and user_already_exists as an existing address.
+ *    Its migration to the generic waiting state belongs to the iOS owner. Web sign-up suppresses
+ *    that distinction (I6); login-actions.test.ts verifies the responses for each Auth outcome,
+ *    while this source contract prevents reintroducing the old Web branch. Mail refusal codes
+ *    shared by the clients are still compared below.
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
@@ -58,20 +60,23 @@ describe("the guidance box is above the form (as the Web's /login)", () => {
   });
 });
 
-describe("the sign-up's judgement of a registered address is the Web's", () => {
+describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
   const web = read("src/lib/login-auth.ts");
+  const webSignup = web.slice(web.indexOf("export async function signUp("), web.indexOf("export async function resendSignupMail("));
   const swift = stripComments(read("ios/Otodoke/Auth/AuthService.swift"));
+  const genericWebSignup = (src: string) => src.includes('return { ok: true, code: "signup_exists_or_sent" };') && !/signup_existing|identities/.test(src);
 
   /** The codes of the "sent" list: the array literal that precedes `.includes(` / `.contains(`. */
   const webSent = (src: string) => [...(src.match(/\[((?:"[a-z_]+",?\s*)+)\]\.includes\(error\.code/)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
   const swiftSent = (src: string) => [...(src.match(/\[((?:"[a-z_]+",?\s*)+)\]\.contains\(code/)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
 
-  it("an empty `identities` array is existing, on both sides", () => {
-    expect(web).toContain("Array.isArray(data.user?.identities) && data.user.identities.length === 0");
+  it("iOS still reads empty identities as existing; Web sign-up returns only the generic success", () => {
+    expect(webSignup).toContain("export async function signUp(");
+    expect(genericWebSignup(webSignup)).toBe(true);
     expect(swift).toMatch(/if case let \.user\(user\) = answer, let identities = user\.identities, identities\.isEmpty \{ return \.existing \}/);
   });
 
-  it("user_already_exists is read by its code alone (no status), and only for the sign-up", () => {
+  it("user_already_exists is read by code alone: generic Web success, legacy iOS existing state", () => {
     expect(web).toMatch(/result\.error\.code === "user_already_exists" && step === "sign-up"/);
     expect(web.match(/result\.error\.code === "user_already_exists"[^)]*/)?.[0]).not.toMatch(/status/);
     const line = swift.match(/if case let \.refused\(_, code\) = Self\.answer\(of: error\), code == "user_already_exists" \{ return \.existing \}/);
@@ -100,5 +105,11 @@ describe("the sign-up's judgement of a registered address is the Web's", () => {
     expect(swift.replace("identities.isEmpty", "identities.count > 1")).not.toMatch(/identities\.isEmpty \{ return \.existing \}/);
     const withStatus = 'if case let .refused(status, code) = Self.answer(of: error), status == 422, code == "user_already_exists" { return .existing }';
     expect(withStatus).not.toMatch(/\.refused\(_, code\) = Self\.answer\(of: error\), code == "user_already_exists"/);
+  });
+
+  it("negative control: restoring the Web existing-address result violates the source contract", () => {
+    const restored = webSignup.replace('return { ok: true, code: "signup_exists_or_sent" };', 'return { ok: true, code: result.existing ? "signup_existing" : "signup_exists_or_sent" };');
+    expect(restored).not.toBe(webSignup);
+    expect(genericWebSignup(restored)).toBe(false);
   });
 });

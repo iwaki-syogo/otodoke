@@ -8,7 +8,6 @@ import { flowMessage, signInAndOpenKey, signUpWithPassword } from "@/lib/crypto/
 import { PASSWORD_RULE, passwordProblem } from "@/lib/crypto/password-v1";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT, loginMessage } from "@/lib/login-errors";
 import { isAsciiAddress, isLoginAddress, normalizeLoginAddress } from "@/lib/login-form";
-import { EXISTING_ACCOUNT, handOffToLogin } from "@/lib/login-handoff";
 import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, autoSignInGapMs, landingAfterSignIn } from "@/lib/onboarding";
 import { safeNextPath } from "@/lib/safe-next";
 import { pressText, tokenForAutoAttempt, tokenForPress, type TokenField } from "@/lib/turnstile";
@@ -57,9 +56,8 @@ type SignInAnswer = Awaited<ReturnType<typeof signInAndOpenKey>>;
  *   AUTO_SIGN_IN_MAX): each one counts against the sign-in limits per IP. A press always tries.
  * - Signed in, but the key did not open or could not be made: the waiting screen goes, and the
  *   key's words stay with 「このまま進む」 and the way to 設定 › パスワードとメールの鍵.
- * - `credentials` (an account with another password has the address): it stops waiting and goes to
- *   /login with the address filled in and the existing_account notice (the address is already
- *   registered; src/lib/login-handoff.ts; no password is handed off).
+ * - `credentials` and `not_confirmed` keep the same waiting screen. Every address gets the same
+ *   login link, without a notice that could disclose an existing account.
  *   Any other refusal stays here with LOGIN_MESSAGES' words, and the next return or press tries again.
  * - A try by itself refused with `captcha` (the token ran out) tries once more with a new token,
  *   then says nothing until the next trigger.
@@ -195,7 +193,7 @@ export function SignupForm() {
 
   function submit(e: React.FormEvent): Promise<void> | undefined {
     e.preventDefault();
-    // Leaving for /login (the fields were emptied): a press now is the press that is leaving.
+    // A successful sign-in is leaving: no further sign-up is sent.
     if (leaveFor) return;
     const problem = addressProblem() ?? passwordProblem(password, again);
     if (problem) {
@@ -223,7 +221,6 @@ export function SignupForm() {
     running.current = "signup";
     setActive("signup");
     setCreating(true);
-    let leaving = false;
     try {
       const captchaToken = await pressToken();
       let result: Awaited<ReturnType<typeof signUpWithPassword>>;
@@ -237,15 +234,6 @@ export function SignupForm() {
         setError(pressText(result.code, captchaToken, flowMessage(result.code)));
         return;
       }
-      if (result.code === "signup_existing") {
-        // Registered and confirmed already: no mail was sent, so there is nothing to wait for.
-        handOffToLogin({ email: typed.email, code: EXISTING_ACCOUNT });
-        leaving = true;
-        setPassword("");
-        setAgain("");
-        setLeaveFor("/login");
-        return;
-      }
       account.current = { email: typed.email, password: typed.password };
       waitingShown.current = true;
       // The backoff counts from the moment the waiting screen appears.
@@ -254,11 +242,8 @@ export function SignupForm() {
       setAgain("");
       setSentTo(typed.email);
     } finally {
-      // Leaving for /login: the press stays shown (and held) until that page is drawn.
-      if (!leaving) {
-        setCreating(false);
-        release();
-      }
+      setCreating(false);
+      release();
     }
   }
 
@@ -414,31 +399,21 @@ export function SignupForm() {
         }
         if (epoch.current !== mine) return;
         if (restartAfter.current) {
-          // 「別のアドレスでやり直す」 waited for this answer. Signed out still (a refusal other than
-          // credentials, which goes to /login with the address): the form comes back. Signed in: on
+          // 「別のアドレスでやり直す」 waited for this answer. Still signed out: the form comes back. Signed in: on
           // as below, the restart dropped.
           restartAfter.current = false;
           setRestartPending(false);
-          if (!result.ok && result.code !== "credentials") {
+          if (!result.ok) {
             startOver();
             return;
           }
         }
         const told = trigger === "press" || pressedMeanwhile.current;
         if (!result.ok) {
-          if (result.code === "not_confirmed") {
+          if (result.code === "not_confirmed" || result.code === "credentials") {
             // The backoff grows with each try by itself refused so; a press changes nothing of it.
             if (trigger === "auto") auto.current.refusals += 1;
             if (told) setNotice({ kind: "not_yet" });
-            return;
-          }
-          if (result.code === "credentials") {
-            // Another password has this address: the login, with the address filled in.
-            account.current = null;
-            clearAutoTimer();
-            handOffToLogin({ email: creds.email, code: EXISTING_ACCOUNT });
-            leaving = true;
-            setLeaveFor("/login");
             return;
           }
           auto.current.notBefore = Date.now() + AUTO_SIGN_IN_AFTER_FAILURE_MS;
@@ -585,6 +560,7 @@ export function SignupForm() {
           <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
             {resending && ticking("resend") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
           </PendingButton>
+          <Link href="/login" className="self-center py-2 text-sm underline underline-offset-4">ログイン</Link>
           {resent && !resent.ok ? <p role="alert" className="text-sm text-red-800">{resent.text}</p> : null}
           <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-xs text-neutral-500 underline underline-offset-4">
             {CONFIRM_WAIT.restart}

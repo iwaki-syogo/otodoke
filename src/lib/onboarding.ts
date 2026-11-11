@@ -26,9 +26,9 @@ export const CONFIRM_WAIT = {
 } as const;
 
 /**
- * /login, after /signup's waiting screen was refused with `credentials`: the address already has an
- * account. Not in LOGIN_MESSAGES (the iOS app copies those). Shown with the link to /login/forgot
- * and RESET_LOSES_MAIL under it.
+ * Legacy /login handoff notice, retained for existing callers. Current Web sign-up and its
+ * waiting screen do not disclose whether an account exists. Not in LOGIN_MESSAGES (the iOS app
+ * copies those). Shown with the link to /login/forgot and RESET_LOSES_MAIL under it.
  */
 export const EXISTING_ACCOUNT_NOTICE = "このアドレスは、もう登録されています。前に決めたパスワードでログインしてください。";
 

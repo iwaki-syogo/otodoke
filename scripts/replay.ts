@@ -9,6 +9,7 @@ import path from "node:path";
 import { buildParcelInsert, buildParcelUpdate, chooseParcel, needsCheck, isParcelRelevant, parcelTotal, splitOrders, startsParcel, type ParcelCandidate } from "../src/lib/match";
 import { normalizeTracking } from "../src/lib/carriers";
 import { withDefaults, type Extraction } from "../src/lib/extract/schema";
+import { verifyEvidence } from "../src/lib/extract/verify-evidence";
 
 const root = process.cwd();
 const evalDir = path.join(root, "fixtures/raw/eval");
@@ -23,6 +24,8 @@ interface Mail {
   date: string | null;
   from: string;
   subject: string;
+  text: string | null;
+  html: string | null;
 }
 interface MailLog {
   file: string;
@@ -57,7 +60,7 @@ async function main() {
   const sims: Sim[] = [];
   let discarded = 0;
   let noted = 0;
-  const readings = rows.flatMap(({ s, mail }) => (s.data ? splitOrders(withDefaults(s.data)).map((x) => ({ s, mail, x })) : []));
+  const readings = rows.flatMap(({ s, mail }) => (s.data ? splitOrders(verifyEvidence(withDefaults(s.data), mail)).map((x) => ({ s, mail, x })) : []));
   for (const { s, mail, x } of readings) {
     if (!isParcelRelevant(x.relevance)) {
       discarded++;

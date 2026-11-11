@@ -100,8 +100,13 @@ PERSONAL_MAIL_DOMAINS = (
     "ymail.ne.jp", "outlook.com", "outlook.jp", "hotmail.com", "hotmail.co.jp", "live.jp",
     "docomo.ne.jp", "ezweb.ne.jp", "au.com", "softbank.ne.jp", "i.softbank.jp", "nifty.com",
 )
-# Hosts whose URL paths carry per-recipient tokens (short links, tracking pixels,
-# presigned delivery photos). Opaque path segments on them are replaced by same-shape fakes.
+# Delivery photos and tracking links are removed, never replaced with another object on a real host.
+DELIVERY_PHOTO_HOSTS = re.compile(r"(^|\.)s3(?:[.\-][a-z0-9.\-]+)?\.amazonaws\.com$")
+TRACKING_LINK_HOSTS = re.compile(
+    r"(^|\.)(ml\.kuronekoyamato\.co\.jp|toi\.kuronekoyamato\.co\.jp|"
+    r"k2k\.sagawa-exp\.co\.jp|trackings\.post\.japanpost\.jp)$"
+)
+# Other opaque path segments on short-link hosts are replaced by same-shape fakes.
 TOKEN_PATH_HOSTS = re.compile(
     r"(^|\.)(s3[.\-][a-z0-9.\-]*amazonaws\.com|s\.uniqlo\.com|vt\.tiktok\.com|r10\.to|"
     r"r\.rakuten\.co\.jp|2o7\.net|count\.premium-water\.net|tiktokv\.com|"
@@ -612,6 +617,10 @@ class Anonymizer:
                 return m.group(0)
             host = (parts.hostname or "").lower()
             path = parts.path
+            if (DELIVERY_PHOTO_HOSTS.search(host) or TRACKING_LINK_HOSTS.search(host)
+                    or (host.endswith("amazon.co.jp") and path == "/gp/r.html")
+                    or (host == "member.kms.kuronekoyamato.co.jp" and path.startswith("/parcel/detail"))):
+                return tail
             if host and not PUBLIC_ASSET_HOSTS.search(host):
                 segs = path.split("/")
                 for i, seg in enumerate(segs):

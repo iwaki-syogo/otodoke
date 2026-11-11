@@ -35,10 +35,9 @@ type Notice = { kind: "error"; text: string } | { kind: "existing_account" } | {
  * After the sign-in the tab goes on to `next`, or to the first-run guide when this sign-in made the
  * user's first key (landingAfterSignIn), straight there.
  *
- * Coming from /signup (the waiting screen after a `credentials` refusal right after a sign-up, or
- * the signup form itself when the address was registered already: signup_existing), the address is
- * filled in and the existing_account notice with the forgot-password link is shown
- * (src/lib/login-handoff.ts, this tab's memory; no password is handed off).
+ * A legacy handoff can fill the address and show a notice (src/lib/login-handoff.ts, this tab's
+ * memory; no password is handed off). Current Web sign-up uses a common waiting screen and does
+ * not create an existing_account handoff.
  */
 export function LoginForm({ next }: { next: string }) {
   // /signup (the waiting screen or the signup form) may have handed over the address and why it stopped (login-handoff.ts).
