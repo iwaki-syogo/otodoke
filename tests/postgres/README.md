@@ -2,6 +2,8 @@
 
 PostgreSQL 17 の `initdb`・`pg_ctl`・`psql` と Node.js を使う、外部サービスへの接続がない試験です。実行時に作る一時 DB だけを対象にします。接続 URL を受け取る引数はありません。
 
+台本は自分で `LC_ALL=C` / `LANG=C` を設定します。日本語ロケールでも、エラー文（`permission denied` など）の判定が狂いません。
+
 PostgreSQL 17 の実行ファイルを PATH に置き、リポジトリ直下で実行します。別の場所に置く場合は、`OTODOKE_PG_BINDIR` に実行ファイルのあるディレクトリを指定できます。
 
 ```sh

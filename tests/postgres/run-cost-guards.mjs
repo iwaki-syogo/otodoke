@@ -5,6 +5,10 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Server messages are matched in English (e.g. "permission denied"); a Japanese locale would make a correct refusal look like a failure.
+process.env.LC_ALL = "C";
+process.env.LANG = "C";
+
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const migration = "20261113090000_claude_call_global_lock";
 const port = 65440;
