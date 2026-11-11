@@ -318,6 +318,31 @@ describe("受け取った and its undo", () => {
     expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: null });
   });
 
+  describe("the undo says whether every parcel went back", () => {
+    it("all back: nothing is left received", async () => {
+      const { markDelivered, restoreStatuses } = await actions();
+      await markDelivered([ID, ID2]);
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID2, status: "delivered", received_at: null }])).toEqual({ leftReceived: false });
+    });
+
+    it("one of two no longer fits (the person changed it since): the other goes back, and the answer says one stayed", async () => {
+      const { markDelivered, restoreStatuses } = await actions();
+      await markDelivered([ID, ID2]);
+      db.find("parcels", ID2)!.received_at = null; // 受け取っていない pressed meanwhile
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID2, status: "shipped", received_at: null }])).toEqual({ leftReceived: true });
+      expect(db.find("parcels", ID)).toMatchObject({ status: "shipped", received_at: null });
+      expect(db.find("parcels", ID2)).toMatchObject({ status: "delivered", received_at: null });
+    });
+
+    it("an item the action refuses counts as left, and the same id twice is one parcel", async () => {
+      const { markDelivered, restoreStatuses } = await actions();
+      await markDelivered([ID]);
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID, status: "shipped", received_at: null }])).toEqual({ leftReceived: false });
+      await markDelivered([ID]);
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID2, status: "cancelled", received_at: null }])).toEqual({ leftReceived: true });
+    });
+  });
+
   it.each([
     ["not a time", { id: ID, status: "shipped", received_at: "tomorrow" }],
     ["a received_at on a status that is not delivered", { id: ID, status: "shipped", received_at: R }],

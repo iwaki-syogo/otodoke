@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { PendingButton, usePendingAction } from "@/components/pending-button";
 import { Spinner } from "@/components/spinner";
+import { PARTLY_RESTORED_NOTICE } from "@/lib/format";
+import { runUndo } from "@/lib/undo-outcome";
 import { markDelivered, restoreStatuses } from "./parcel-actions";
 
 type Marked = { id: string; status: string; received_at: string | null }[];
@@ -37,12 +39,11 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
     const items = toast?.undo;
     if (!items) return;
     run(async () => {
-      try {
-        await restoreStatuses(items);
-        setToast(null);
-      } catch {
-        setFailed(true);
-      }
+      const outcome = await runUndo(() => restoreStatuses(items));
+      if (outcome === "failed") setFailed(true);
+      // Some parcels stayed received: say so, so nobody takes the list for the old one.
+      else if (outcome === "partly") setToast({ text: PARTLY_RESTORED_NOTICE, undo: null });
+      else setToast(null);
     });
   };
 

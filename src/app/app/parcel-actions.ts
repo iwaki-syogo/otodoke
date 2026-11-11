@@ -46,12 +46,17 @@ export async function markDelivered(ids: string[]): Promise<number> {
   return data.length;
 }
 
+/** leftReceived: at least one parcel asked for was not put back (it changed since, or was refused). */
+export type RestoreResult = { leftReceived: boolean };
+
 /**
  * Undo: puts parcels marked by hand back to the status and received_at each had before (the
  * received_at is null for a parcel that was not received before). Only a parcel that is still as
  * the mark left it (delivered and received) goes back: one the person changed since stays.
  */
-export async function restoreStatuses(items: { id: string; status: string; received_at?: string | null }[]): Promise<void> {
+export async function restoreStatuses(items: { id: string; status: string; received_at?: string | null }[]): Promise<RestoreResult> {
+  const asked = new Set(items.slice(0, MAX_AT_ONCE).map((it) => it.id).filter((id) => typeof id === "string"));
+  let restored = 0;
   const clean: { id: string; status: string; received_at: string | null }[] = [];
   for (const it of items.slice(0, MAX_AT_ONCE)) {
     const previous = PreviousReceivedAt.safeParse(it.received_at ?? null);
@@ -60,9 +65,9 @@ export async function restoreStatuses(items: { id: string; status: string; recei
     if (previous.data !== null && it.status !== "delivered") continue;
     clean.push({ id: it.id, status: it.status, received_at: previous.data });
   }
-  if (clean.length === 0) return;
+  if (clean.length === 0) return { leftReceived: asked.size > 0 };
   const session = await signedIn();
-  if (!session) return;
+  if (!session) return { leftReceived: true };
   const groups = new Map<string, { status: string; received_at: string | null; ids: string[] }>();
   for (const it of clean) {
     const key = `${it.status}|${it.received_at ?? ""}`;
@@ -71,16 +76,19 @@ export async function restoreStatuses(items: { id: string; status: string; recei
     groups.set(key, group);
   }
   for (const { status, received_at, ids } of groups.values()) {
-    const { error } = await session.supabase
+    const { data, error } = await session.supabase
       .from("parcels")
       .update({ status, received_at })
       .in("id", ids)
       .eq("user_id", session.userId)
       .eq("status", "delivered")
-      .not("received_at", "is", null);
+      .not("received_at", "is", null)
+      .select("id");
     if (error) throw new Error(error.message);
+    restored += new Set(data.map((row) => row.id)).size;
   }
   revalidatePath("/app", "layout");
+  return { leftReceived: restored < asked.size };
 }
 
 const NOT_UPDATED = "更新できませんでした。開き直してください";
