@@ -424,6 +424,24 @@ describe("受け取った and its undo", () => {
     });
   });
 
+  it("B3: an old undo cannot clear a receipt confirmed again from another tab (received, not received, received, then the first undo)", async () => {
+    const { markDeliveredForUndo, markNotReceived, restoreStatuses } = await actions();
+    // Tab 1: the shipped parcel is marked received (time T1); its toast keeps the undo item.
+    const first = await markDeliveredForUndo([ID]);
+    const t1 = first.written[0].received_at;
+    const undoItem = { id: ID, status: "shipped", received_at: null, written_at: t1 };
+    // Tab 2: 受け取っていない, then 受け取った again at a later time T2.
+    expect(await markNotReceived(ID)).toMatchObject({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = await markDeliveredForUndo([ID]);
+    const t2 = second.written[0].received_at;
+    expect(t2).not.toBe(t1);
+    expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: t2 });
+    // Tab 1: the old 元に戻す.
+    expect(await restoreStatuses([undoItem])).toEqual({ leftReceived: true });
+    expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: t2 });
+  });
+
   it.each([
     ["not a time", { id: ID, status: "shipped", received_at: "tomorrow", written_at: R }],
     ["a received_at on a status that is not delivered", { id: ID, status: "shipped", received_at: R, written_at: R }],
