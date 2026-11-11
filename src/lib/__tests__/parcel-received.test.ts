@@ -6,6 +6,8 @@ import { runLoadDemo } from "@/lib/demo-run";
 import {
   buildParcelInsert,
   buildParcelUpdate,
+  dismissedAfterMerge,
+  isReceived,
   mergeIntoManual,
   needsCheck,
   rebuildParcel,
@@ -215,6 +217,28 @@ describe("a merge of twin parcels keeps received_at", () => {
     expect(writes(db, "update").map(keysOf).flat()).not.toContain("received_at");
   });
 
+  const DISMISSED = "2026-11-02T06:00:00.000Z";
+
+  it("keeps 「まだ」 (check_dismissed_at) of the absorbed parcel when the kept one has none, and of the kept one", async () => {
+    const db = twoParcels({}, { status: "delivered", check_dismissed_at: DISMISSED });
+    await run(db, reading({ relevance: "delivered", order_number: sure("ORD-12345678"), tracking_number: sure(T_RAW) }), SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "delivered", check_dismissed_at: DISMISSED, received_at: null });
+    const kept = twoParcels({ status: "delivered", check_dismissed_at: DISMISSED }, { status: "delivered", check_dismissed_at: "2026-11-02T07:00:00.000Z" });
+    await run(kept, reading({ relevance: "delivered", order_number: sure("ORD-12345678"), tracking_number: sure(T_RAW) }), SENT);
+    expect(kept.find("parcels", "p-a")!.check_dismissed_at).toBe(DISMISSED);
+  });
+
+  it("writes none when neither parcel has it, and drops it when the merged parcel is not delivered", async () => {
+    const db = twoParcels({}, {});
+    await run(db, both, SENT);
+    expect(writes(db, "update").map(keysOf).flat()).not.toContain("check_dismissed_at");
+    expect(receivedAfterMerge({ received_at: null }, [], "delivered")).toBeNull();
+    expect(dismissedAfterMerge({ check_dismissed_at: null }, [{ check_dismissed_at: DISMISSED }], "delivered")).toBe(DISMISSED);
+    expect(dismissedAfterMerge({ check_dismissed_at: DISMISSED }, [], "shipped")).toBeNull();
+    expect(dismissedAfterMerge({ check_dismissed_at: DISMISSED }, [], "cancelled")).toBeNull();
+  });
+
   it("keeps it on a typed-in parcel that absorbs a received twin", async () => {
     const db = new FakeDb({
       emails: [{ id: "m-c", user_id: USER, sent_at: "2026-11-02T00:00:00Z" }],
@@ -303,8 +327,8 @@ describe("受け取った and its undo", () => {
   describe("markNotReceived (受け取っていない)", () => {
     const received = (id: string, over: Row = {}) => Object.assign(db.find("parcels", id)!, { status: "delivered", received_at: R, ...over });
 
-    it("clears received_at and answers 「まだ」 for 要確認, with the conditions of the other undo actions", async () => {
-      received(ID);
+    it("clears received_at and answers 「まだ」 for 要確認 (past 14 days), with the conditions of the other undo actions", async () => {
+      received(ID, { expected_date: "2026-09-01" });
       expect(await (await actions()).markNotReceived(ID)).toEqual({ ok: true });
       const [q]: Query[] = db.callsOn("parcels", "update");
       expect(Object.keys(q.values as object).sort()).toEqual(["check_dismissed_at", "received_at"]);
@@ -553,6 +577,26 @@ describe("「まだ」 and 「受け取っていない」 do not loop through �
     expect(ids(parcelSections(db.rows("parcels") as unknown as ParcelRow[], addDays(TODAY, 30)).arrived)).toEqual([ID]);
   });
 
+  it("answered early (delivered 2 days ago), 受け取っていない records nothing and the parcel is asked once on day 14", async () => {
+    const { markDelivered, markNotReceived } = await import("@/app/app/parcel-actions");
+    db.find("parcels", ID)!.received_at = null;
+    Object.assign(db.find("parcels", ID)!, { expected_date: addDays(TODAY, -2) });
+    expect(await markDelivered([ID])).toBe(1);
+    expect(await markNotReceived(ID)).toEqual({ ok: true });
+    const row = db.find("parcels", ID)!;
+    expect(row).toMatchObject({ received_at: null, check_dismissed_at: null });
+    const at = (day: string) => parcelSections(db.rows("parcels") as unknown as ParcelRow[], day);
+    expect(ids(at(TODAY).arrived)).toEqual([ID]);
+    expect(at(TODAY).toCheck).toHaveLength(0);
+    expect(ids(at(addDays(TODAY, 12)).toCheck)).toEqual([ID]);
+  });
+
+  it("answered at once (delivered 40 days ago) it is recorded: the update carries the answer", async () => {
+    await (await import("@/app/app/parcel-actions")).markNotReceived(ID);
+    const [q]: Query[] = db.callsOn("parcels", "update");
+    expect(typeof (q.values as Row).check_dismissed_at).toBe("string");
+  });
+
   it("after 受け取った it is received, out of both sections", async () => {
     db.find("parcels", ID)!.received_at = null;
     await (await import("@/app/app/parcel-actions")).dismissCheck(ID);
@@ -613,6 +657,19 @@ describe("「まだ」 and 「受け取っていない」 do not loop through �
 });
 
 /* ---------------------------------------------------------------------------------------------- */
+describe("only a finite received_at is 受け取った", () => {
+  it.each([["-infinity", false], ["infinity", false], ["", false], ["not a time", false], [null, false], [undefined, false], ["2026-11-02T00:00:00.000Z", true], ["2026-11-02T09:00:00+09:00", true]])(
+    "received_at %j reads as received: %s",
+    (received_at, want) => {
+      expect(isReceived({ status: "delivered", received_at: received_at as string | null })).toBe(want);
+    },
+  );
+
+  it("never when the parcel is not delivered", () => {
+    expect(isReceived({ status: "shipped", received_at: R })).toBe(false);
+  });
+});
+
 describe("the 14 days of a delivered parcel count from the later of its date and its last mail", () => {
   const TODAY = "2026-11-05";
   const base = { expected_date_end: null, received_at: null };

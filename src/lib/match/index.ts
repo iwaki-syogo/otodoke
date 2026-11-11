@@ -429,9 +429,20 @@ export function lastExpectedDay(p: Pick<ParcelRow, "expected_date" | "expected_d
   return p.expected_date_end ?? p.expected_date;
 }
 
-/** The person said they have it: delivered, and received_at set. */
+/**
+ * What the Web writes to received_at to say "delivered, and not received" in one write. The database
+ * stores null for it; it is never read back. (See supabase/migrations/20261112100000_parcel_received_at.sql.)
+ */
+export const RECEIVED_AT_NONE = "-infinity";
+
+/** A received_at that is a real moment. Only a finite time counts as 「受け取った」. */
+export function isReceivedAt(v: string | null | undefined): v is string {
+  return typeof v === "string" && Number.isFinite(Date.parse(v));
+}
+
+/** The person said they have it: delivered, and received_at a real time. */
 export function isReceived(p: Pick<ParcelRow, "status"> & { received_at?: string | null }): boolean {
-  return p.status === "delivered" && (p.received_at ?? null) !== null;
+  return p.status === "delivered" && isReceivedAt(p.received_at);
 }
 
 /**
@@ -457,6 +468,19 @@ export function needsCheck(p: DatedParcel, today: string): boolean {
   }
   if (lastDay) return lastDay <= cutoff;
   return mailDay !== null && mailDay <= cutoff;
+}
+
+/**
+ * 「まだ」 (check_dismissed_at) after a merge: either parcel having it is enough, for a merged parcel that is
+ * delivered; the kept parcel's first. Null otherwise (the database empties it when the status leaves delivered).
+ */
+export function dismissedAfterMerge(
+  keep: Pick<ParcelRow, "check_dismissed_at">,
+  absorbed: Pick<ParcelRow, "check_dismissed_at">[],
+  mergedStatus: string,
+): string | null {
+  if (mergedStatus !== "delivered") return null;
+  return keep.check_dismissed_at ?? absorbed.map((p) => p.check_dismissed_at).find((v): v is string => v !== null && v !== undefined) ?? null;
 }
 
 /**

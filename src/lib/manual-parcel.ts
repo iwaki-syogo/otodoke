@@ -3,6 +3,7 @@ import { CARRIERS, identifyCarrier, normalizeTracking } from "@/lib/carriers";
 import { isCategory, type Category } from "@/lib/category";
 import type { Database } from "@/lib/db/database.types";
 import { todayJst } from "@/lib/format";
+import { RECEIVED_AT_NONE, isReceivedAt, needsCheck } from "@/lib/match";
 
 /**
  * A parcel typed in by hand: the form's checks and the parcels columns it becomes.
@@ -134,30 +135,35 @@ export function manualCarrierChoice(name: string | null, tracking: string | null
   return MANUAL_KEEP_CARRIER;
 }
 
-const isReceivedRow = (saved?: Pick<ManualSaved, "status" | "received_at">) => saved?.status === "delivered" && saved.received_at != null;
+const isReceivedRow = (saved?: Pick<ManualSaved, "status" | "received_at">) => saved?.status === "delivered" && isReceivedAt(saved.received_at);
 
-function receivedColumns(choice: string, saved: ManualSaved | undefined, now: Date): { received_at?: string | null; check_dismissed_at?: string } {
-  const wasDelivered = saved?.status === "delivered";
-  if (choice === MANUAL_RECEIVED) return isReceivedRow(saved) ? {} : { received_at: now.toISOString() };
-  // 受け取り済み → 配達済み is the person saying 受け取っていない: 要確認 must not ask at once (as markNotReceived).
-  if (choice === "delivered") return wasDelivered ? (isReceivedRow(saved) ? { received_at: null, check_dismissed_at: now.toISOString() } : {}) : { received_at: null };
-  return wasDelivered ? { received_at: null } : {};
-}
+type ReceivedColumns = { received_at?: string | null; check_dismissed_at?: string };
 
 /**
- * Whether saving as 配達済み needs a second write that clears received_at. The database trigger fills
- * received_at when a signed-in session turns a parcel into delivered with it empty (that is how a build
- * that does not know the column is served), so one update cannot ask for "delivered, not received" from
- * another status. Saving 配達済み onto a parcel that is delivered already needs none.
+ * 配達済み onto a parcel that is not delivered yet is written as received_at = '-infinity' (RECEIVED_AT_NONE) in
+ * the same write: the database stores null and does not fill it in, which a plain null cannot ask for.
+ * `date` is the date the parcel will have after this save, for the 14 days.
  */
-export function manualNeedsReceivedClear(choice: string, saved?: Pick<ManualSaved, "status">): boolean {
-  return choice === "delivered" && saved?.status !== "delivered";
+function receivedColumns(choice: string, saved: ManualSaved | undefined, now: Date, date: { expected_date: string | null; expected_date_end: string | null }): ReceivedColumns {
+  const wasDelivered = saved?.status === "delivered";
+  if (choice === MANUAL_RECEIVED) return isReceivedRow(saved) ? {} : { received_at: now.toISOString() };
+  if (choice === "delivered") {
+    if (!wasDelivered) return { received_at: RECEIVED_AT_NONE };
+    if (!isReceivedRow(saved)) return {};
+    // 受け取り済み → 配達済み is the person saying 受け取っていない. Only when 要確認 would ask at once
+    // (14 days or more since the delivery) is 「まだ」 recorded; an early answer is asked once at day 14.
+    const asked = needsCheck({ status: "delivered", ...date, last_email_at: saved?.last_email_at ?? null, received_at: null, check_dismissed_at: null }, todayJst(now));
+    return asked ? { received_at: null, check_dismissed_at: now.toISOString() } : { received_at: null };
+  }
+  return wasDelivered ? { received_at: null } : {};
 }
 
 /** What is stored for the parcel being edited. A column not given counts as changed. */
 export type ManualSaved = {
   status?: string | null;
   received_at?: string | null;
+  expected_date_end?: string | null;
+  last_email_at?: string | null;
   category: string | null;
   ordered_at?: string | null;
   expected_date?: string | null;
@@ -194,7 +200,7 @@ export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: Manu
   // The form's 配達済み is delivered with no received_at, its 受け取り済み (received) is delivered with one.
   // An unchanged choice writes nothing about it, so a parcel keeps the received_at it has. A parcel that
   // leaves delivered loses it (the database does the same).
-  const received = receivedColumns(v.status, saved, now);
+  const received = receivedColumns(v.status, saved, now, dateKept ? { expected_date: saved?.expected_date ?? null, expected_date_end: saved?.expected_date_end ?? null } : { expected_date: v.expected_date, expected_date_end: null });
 
   // An order date left empty is today for a new parcel; an edit keeps the stored one.
   const orderedAt = v.ordered_at ?? (saved?.ordered_at !== undefined ? saved.ordered_at : todayJst(now));

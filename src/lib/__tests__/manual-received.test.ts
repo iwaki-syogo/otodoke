@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ManualParcelSchema, manualNeedsReceivedClear, manualParcelFields, manualWritesNothing, type ManualFormState } from "@/lib/manual-parcel";
+import { ManualParcelSchema, manualParcelFields, manualWritesNothing, type ManualFormState } from "@/lib/manual-parcel";
+import { addDays, todayJst } from "@/lib/format";
+import type { ParcelRow } from "@/lib/match";
+import { parcelSections } from "@/lib/parcel-sections";
 import { FakeDb } from "./fake-db";
 
 /**
@@ -28,7 +31,13 @@ describe("manualParcelFields: the four choices", () => {
 
   it("受け取り済み → 配達済み empties received_at", () => {
     // It is the person saying 受け取っていない, so 要確認 is told not to ask at once (as markNotReceived does).
-    expect(manualParcelFields(input("delivered"), NOW, saved("delivered", R))).toMatchObject({ status: "delivered", received_at: null, check_dismissed_at: NOW.toISOString() });
+    // Recorded only when 要確認 would ask at once (14 days or more since the delivery); earlier, it is asked once on day 14.
+    const withDate = (date: string) => ({ ...saved("delivered", R), expected_date: date });
+    const dated = (date: string) => ManualParcelSchema.parse({ title: "品", shop: "店", status: "delivered", expected_date: date });
+    expect(manualParcelFields(dated("2026-09-01"), NOW, withDate("2026-09-01"))).toMatchObject({ status: "delivered", received_at: null, check_dismissed_at: NOW.toISOString() });
+    expect(keys(manualParcelFields(dated("2026-11-03"), NOW, withDate("2026-11-03")))).not.toContain("check_dismissed_at");
+    expect(manualParcelFields(dated("2026-11-03"), NOW, withDate("2026-11-03"))).toMatchObject({ status: "delivered", received_at: null });
+    expect(manualParcelFields(input("delivered"), NOW, saved("delivered", R))).toMatchObject({ status: "delivered", received_at: null });
   });
 
   it("the same choice changes nothing about received_at (the stored time stays)", () => {
@@ -42,16 +51,15 @@ describe("manualParcelFields: the four choices", () => {
     expect(keys(manualParcelFields(input("shipped"), NOW, saved("ordered", null)))).not.toContain("received_at");
   });
 
-  it("never stores the form-only value 'received' as a status", () => {
-    for (const s of [undefined, saved("shipped", null), saved("delivered", null), saved("delivered", R)]) expect(manualParcelFields(input("received"), NOW, s).status).toBe("delivered");
+  it("says 配達済み onto a parcel that is not delivered yet with received_at '-infinity', in the same write", () => {
+    // The database stores null for it and does not fill in now(); a plain null would be filled.
+    expect(manualParcelFields(input("delivered"), NOW)).toMatchObject({ status: "delivered", received_at: "-infinity" });
+    expect(manualParcelFields(input("delivered"), NOW, saved("shipped", null))).toMatchObject({ status: "delivered", received_at: "-infinity" });
+    expect(manualParcelFields(input("delivered"), NOW, saved("ordered", null))).toMatchObject({ received_at: "-infinity" });
   });
 
-  it("asks for the second write only for 配達済み onto a parcel that is not delivered yet", () => {
-    expect(manualNeedsReceivedClear("delivered")).toBe(true);
-    expect(manualNeedsReceivedClear("delivered", { status: "shipped" })).toBe(true);
-    expect(manualNeedsReceivedClear("delivered", { status: "delivered" })).toBe(false);
-    expect(manualNeedsReceivedClear("received")).toBe(false);
-    expect(manualNeedsReceivedClear("shipped", { status: "delivered" })).toBe(false);
+  it("never stores the form-only value 'received' as a status", () => {
+    for (const s of [undefined, saved("shipped", null), saved("delivered", null), saved("delivered", R)]) expect(manualParcelFields(input("received"), NOW, s).status).toBe("delivered");
   });
 });
 
@@ -123,11 +131,10 @@ beforeEach(() => {
 const updates = () => db.callsOn("parcels", "update").map((q) => q.values as Record<string, unknown>);
 
 describe("the actions write received_at as the choice says", () => {
-  it("update: shipped → 配達済み is two writes, the second clears received_at", async () => {
+  it("update: shipped → 配達済み is one write, with received_at '-infinity'", async () => {
     expect((await run(updateManualParcel, { status: "delivered" })).redirected).toBe(true);
-    expect(updates()).toHaveLength(2);
-    expect(updates()[0]).toMatchObject({ status: "delivered" });
-    expect(updates()[1]).toEqual({ received_at: null });
+    expect(updates()).toHaveLength(1);
+    expect(updates()[0]).toMatchObject({ status: "delivered", received_at: "-infinity" });
   });
 
   it("update: shipped → 受け取り済み is one write with received_at", async () => {
@@ -149,26 +156,48 @@ describe("the actions write received_at as the choice says", () => {
     expect(updates().every((u) => !("received_at" in u))).toBe(true);
   });
 
-  it("create: 配達済み inserts then clears received_at; 受け取り済み inserts with it", async () => {
+  it("create: 配達済み is one insert with received_at '-infinity' and no second write; 受け取り済み inserts with a time", async () => {
     await run(createManualParcel, { status: "delivered" });
     expect(db.callsOn("parcels", "insert")).toHaveLength(1);
-    expect(updates()).toEqual([{ received_at: null }]);
+    expect((db.callsOn("parcels", "insert")[0].values as Record<string, unknown>).received_at).toBe("-infinity");
+    expect(updates()).toHaveLength(0);
     db = new FakeDb({ parcels: [] });
     mocks.state.db = db;
     await run(createManualParcel, { status: "received" });
     expect(updates()).toHaveLength(0);
-    expect(typeof (db.callsOn("parcels", "insert")[0].values as Record<string, unknown>).received_at).toBe("string");
+    const at = (db.callsOn("parcels", "insert")[0].values as Record<string, unknown>).received_at as string;
+    expect(Number.isFinite(Date.parse(at))).toBe(true);
   });
 
-  it("tells the person it was not saved when the second write fails", async () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    db.hooks.push((q) => (q.table === "parcels" && q.op === "update" && JSON.stringify(q.values) === '{"received_at":null}' ? { data: null, error: { message: "boom" } } : undefined));
-    try {
-      const out = await run(updateManualParcel, { status: "delivered" });
-      expect(out.state?.error).toBe("保存できませんでした");
-    } finally {
-      log.mockRestore();
-    }
+  it("keeps the held-to-the-row conditions of the update (updated_at) for 配達済み", async () => {
+    await run(updateManualParcel, { status: "delivered" });
+    const q = db.callsOn("parcels", "update")[0];
+    expect(q.filters.some((f) => f.method === "eq" && f.args[0] === "updated_at")).toBe(true);
+  });
+
+  describe("受け取り済み → 配達済み does not loop through 要確認", () => {
+    const day = (n: number) => addDays(todayJst(), n);
+    const received = (expected: string) => row({ status: "delivered", received_at: R, expected_date: expected, last_email_at: null });
+    const sections = () => parcelSections(db.rows("parcels") as unknown as ParcelRow[], todayJst());
+
+    it("a parcel delivered 40 days ago: the answer is recorded and it stays under 配達済み", async () => {
+      db = new FakeDb({ parcels: [received(day(-40))] });
+      mocks.state.db = db;
+      await run(updateManualParcel, { status: "delivered", expected_date: day(-40) });
+      expect(updates()).toHaveLength(1);
+      expect(typeof updates()[0].check_dismissed_at).toBe("string");
+      expect(sections().toCheck).toHaveLength(0);
+      expect(sections().arrived).toHaveLength(1);
+    });
+
+    it("a parcel delivered 2 days ago: nothing is recorded, and on day 14 it is asked once", async () => {
+      db = new FakeDb({ parcels: [received(day(-2))] });
+      mocks.state.db = db;
+      await run(updateManualParcel, { status: "delivered", expected_date: day(-2) });
+      expect(updates()[0]).not.toHaveProperty("check_dismissed_at");
+      expect(sections().arrived).toHaveLength(1);
+      expect(parcelSections(db.rows("parcels") as unknown as ParcelRow[], day(12)).toCheck).toHaveLength(1);
+    });
   });
 });
 

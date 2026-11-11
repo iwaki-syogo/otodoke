@@ -22,6 +22,9 @@
 --                      received_at by design (配達済み) and is not counted, so it does not matter how
 --                      long it was between applying and this file
 --   delivered_since    delivered parcels with no received_at updated since then (information only)
+--   comment_ok         the column's comment is exactly 'added <time>' and the time reads (no other word)
+--                      The line is drawn 5 minutes before that time, for a write that began before the
+--                      migration and landed after the lock was let go.
 --   stray_received     parcels with received_at that are not delivered. Must be 0, always
 --   behaviour          'OK' when, in order (each on a parcel of its own):
 --                        as authenticated: shipped -> delivered gives received_at = now
@@ -35,6 +38,8 @@
 --                        as authenticated: shipped -> delivered with a received_at given keeps that value
 --                        as authenticated: delivered -> shipped, and the status really is shipped
 --                          (an update that came back as the old row would show here)
+--                        received_at = '-infinity' with the status, as authenticated, on an insert and on an
+--                          update: stored as null (and not filled); the status alone still fills it
 --                        check_dismissed_at: set on a delivered parcel it stays through updates that
 --                          keep delivered (and through receiving); it is emptied when the status
 --                          leaves delivered, as authenticated (-> shipped) and as service_role (-> cancelled)
@@ -132,6 +137,26 @@ begin
     select received_at into v_at from public.parcels where id = v_p;
     if v_at is distinct from v_given then v_fail := v_fail || format(' auth_given(%s)', v_at); end if;
 
+    -- '-infinity' says "delivered, not received" in one write: stored as null, nothing filled
+    set local role authenticated;
+    insert into public.parcels (user_id, shop, status, received_at) values (v_user, 'verify', 'delivered', '-infinity') returning id into v_p;
+    reset role;
+    select received_at into v_at from public.parcels where id = v_p;
+    if v_at is not null then v_fail := v_fail || format(' infinity_insert(%s)', v_at); end if;
+    insert into public.parcels (user_id, shop, status) values (v_user, 'verify', 'shipped') returning id into v_p;
+    set local role authenticated;
+    update public.parcels set status = 'delivered', received_at = '-infinity', title = 'x' where id = v_p;
+    reset role;
+    select received_at, status into v_at, v_status from public.parcels where id = v_p;
+    if v_at is not null or v_status is distinct from 'delivered' then v_fail := v_fail || format(' infinity_update(%s,%s)', v_at, v_status); end if;
+    -- only the status (a build that does not know the column): filled
+    insert into public.parcels (user_id, shop, status) values (v_user, 'verify', 'shipped') returning id into v_p;
+    set local role authenticated;
+    update public.parcels set status = 'delivered' where id = v_p;
+    reset role;
+    select received_at into v_at from public.parcels where id = v_p;
+    if v_at is distinct from now() then v_fail := v_fail || format(' status_only(%s)', v_at); end if;
+
     -- check_dismissed_at: kept while delivered, emptied when the status leaves delivered (any role)
     insert into public.parcels (user_id, shop, status, check_dismissed_at) values (v_user, 'verify', 'delivered', v_given) returning id into v_p;
     set local role service_role;
@@ -163,9 +188,14 @@ begin
   perform set_config('otodoke.verify_received', case when v_fail = '' then 'OK' else 'FAILED:' || v_fail end, false);
 end $$;
 
-with checks as (
+with added as (
+  -- The comment the migration left on the column: 'added <time>'. Only that exact shape is read.
+  select c as raw, case when c ~ '^added \d{4}-\d{2}-\d{2}T\S+$' then substring(c from 'added (\S+)')::timestamptz end as at
+  from (select col_description('public.parcels'::regclass, (select attnum from pg_attribute where attrelid = 'public.parcels'::regclass and attname = 'received_at')) as c) x
+), checks as (
   select
     (select count(*) = 2 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name in ('received_at', 'check_dismissed_at') and data_type = 'timestamp with time zone' and is_nullable = 'YES') as column_ok,
+    (select at is not null from added) as comment_ok,
     coalesce((
       select count(*) = 1 and bool_and(
                t.tgenabled = 'O'
@@ -180,14 +210,13 @@ with checks as (
       where t.tgrelid = 'public.parcels'::regclass and t.tgname = 'parcels_received_at' and not t.tgisinternal
     ), false)
     and exists (select 1 from pg_trigger t where t.tgrelid = 'public.parcels'::regclass and t.tgname = 'parcels_set_updated_at' and t.tgenabled = 'O') as trigger_ok,
-    (select count(*) from public.parcels where status = 'delivered' and received_at is null
-       and updated_at < coalesce(substring(col_description('public.parcels'::regclass, (select attnum from pg_attribute where attrelid = 'public.parcels'::regclass and attname = 'received_at')) from 'added (\S+)')::timestamptz, 'infinity')) as unmoved_delivered,
-    (select count(*) from public.parcels where status = 'delivered' and received_at is null
-       and updated_at >= coalesce(substring(col_description('public.parcels'::regclass, (select attnum from pg_attribute where attrelid = 'public.parcels'::regclass and attname = 'received_at')) from 'added (\S+)')::timestamptz, 'infinity')) as delivered_since,
+    -- 5 minutes of room: a write that started before the migration may land just after it, once the lock is let go.
+    (select count(*) from public.parcels where status = 'delivered' and received_at is null and updated_at < coalesce((select at from added) - interval '5 minutes', 'infinity')) as unmoved_delivered,
+    (select count(*) from public.parcels where status = 'delivered' and received_at is null and updated_at >= coalesce((select at from added) - interval '5 minutes', 'infinity')) as delivered_since,
     (select count(*) from public.parcels where received_at is not null and status <> 'delivered') as stray_received,
     coalesce(current_setting('otodoke.verify_received', true), 'FAILED: the behaviour block did not run') as behaviour
 )
 select
-  case when column_ok and trigger_ok and unmoved_delivered = 0 and stray_received = 0 and behaviour = 'OK' then 'OK' else 'FAILED' end as verdict,
+  case when column_ok and comment_ok and trigger_ok and unmoved_delivered = 0 and stray_received = 0 and behaviour = 'OK' then 'OK' else 'FAILED' end as verdict,
   checks.*
 from checks;

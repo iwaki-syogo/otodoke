@@ -81,6 +81,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - `status = 'delivered'` は「配達完了（メールか手）」のまま。「本人が受け取ったと言った」は別に `received_at` で持つ（null = 言っていない）。一覧の「配達済み」の段は delivered で received_at が null のもの、「受け取り済み」のページ（`/app/delivered`）は received_at があって cancelled でないもの
 - メールの処理（`pipeline.ts`・`match/`）は received_at を書かない。合流・統合（`receivedAfterMerge`）は、どちらかに入っていれば残す
 - DB のトリガー `parcels_received_at`（本人のセッション＝ `current_user = 'authenticated'` が delivered にしたとき now() を入れ、delivered から他へ変わったら誰でも null にする）が、received_at を知らない古い iOS のスワイプを受ける。Web は status と received_at を同じ更新で明示して書く
+- Web が「配達済み」（delivered で受け取っていない）を別の状態から書くときは、同じ書き込みで `received_at = '-infinity'` を送る（トリガーは null で保存し、自動で now() を入れない）。アプリの判定は有限の時刻だけを受け取り済みと読む（`isReceivedAt`）
 - 配達済みのまま 14 日たつと「要確認」に入る（`needsCheck`）。自動では受け取り済みにしない。要確認の「まだ」（`dismissCheck`）と「受け取っていない」は `check_dismissed_at` を入れ、もう聞かない（delivered から外れるとトリガーが空にする）
 - `STATUS_LABEL`（`format.ts`）は iOS が写して照合テストで固定しているので、delivered の語は「届いた」のまま。Web の画面は `parcelStatusLabel` で出し分ける。iOS が追いつくとき（ビルド 14）に両方そろえて変える
 

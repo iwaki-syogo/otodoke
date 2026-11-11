@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { todayJst } from "@/lib/format";
+import { isReceivedAt, needsCheck } from "@/lib/match";
 import { createClient } from "@/lib/supabase/server";
 import { undeliveredStatus } from "@/lib/undelivered";
 
@@ -126,9 +128,10 @@ export async function markNotDelivered(id: string): Promise<{ ok: true } | { ok:
 
 /**
  * The user says a parcel marked as received has not been received (受け取っていない): it goes back to
- * 配達済み, still delivered, with received_at cleared. check_dismissed_at is set in the same write: the
- * person has just answered, so 要確認 must not ask again at once (a parcel received long ago, moved to
- * received by the migration, would come straight back otherwise). Only a delivered parcel that has received_at
+ * 配達済み, still delivered, with received_at cleared. When the parcel is 14 days or more past its
+ * delivery, check_dismissed_at is set in the same write: the person has just answered, so 要確認 must not
+ * ask at once (a parcel received long ago, moved to received by the migration, would come straight back
+ * otherwise). A parcel answered earlier is not marked, and is asked once on day 14. Only a delivered parcel that has received_at
  * goes back, and only if it is still the row that was read (same updated_at); otherwise nothing is
  * written and nothing is retried.
  */
@@ -140,7 +143,7 @@ export async function markNotReceived(id: string): Promise<{ ok: true } | { ok: 
 
   const { data: row, error: readError } = await session.supabase
     .from("parcels")
-    .select("status,received_at,updated_at")
+    .select("status,received_at,updated_at,expected_date,expected_date_end,last_email_at")
     .eq("id", parsed.data)
     .eq("user_id", session.userId)
     .maybeSingle();
@@ -148,11 +151,14 @@ export async function markNotReceived(id: string): Promise<{ ok: true } | { ok: 
     console.error("markNotReceived:", readError.message);
     return { ok: false, error: NOT_UPDATED };
   }
-  if (!row || row.status !== "delivered" || row.received_at === null) return { ok: false, error: NOT_UPDATED };
+  if (!row || row.status !== "delivered" || !isReceivedAt(row.received_at)) return { ok: false, error: NOT_UPDATED };
+  // 「まだ」 is recorded only when 要確認 would ask at once (14 days or more since the delivery). Answered
+  // earlier, the parcel is asked once, on day 14.
+  const askedAtOnce = needsCheck({ status: "delivered", expected_date: row.expected_date, expected_date_end: row.expected_date_end, last_email_at: row.last_email_at, received_at: null, check_dismissed_at: null }, todayJst());
 
   const { data, error } = await session.supabase
     .from("parcels")
-    .update({ received_at: null, check_dismissed_at: new Date().toISOString() })
+    .update(askedAtOnce ? { received_at: null, check_dismissed_at: new Date().toISOString() } : { received_at: null })
     .eq("id", parsed.data)
     .eq("user_id", session.userId)
     .eq("status", "delivered")

@@ -20,6 +20,7 @@
 --     An old build's swipe on 届いた is that case, and it is exactly "the person said so".
 --   - The status changes from 'delivered' to anything else, by any role: received_at = null.
 --     A parcel that is no longer delivered cannot have been received.
+--   - received_at = '-infinity' (the Web, for 配達済み): stored as null, nothing filled. Insert and update.
 --   - The server (service_role: the mail processing) setting 'delivered' leaves received_at as it
 --     is. A mail says "delivered", never "the person has it".
 --   - The same change (delivered to anything else, any role) also clears check_dismissed_at, so an old
@@ -74,17 +75,28 @@
 begin;
 set local lock_timeout = '5s';
 
+-- Always run, outside the branch below: a database that got an earlier version of this file has
+-- received_at but not this column, and the trigger below needs it.
+alter table public.parcels add column if not exists check_dismissed_at timestamptz;
+
 do $$
 begin
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name = 'received_at') then
     alter table public.parcels add column received_at timestamptz;
-    alter table public.parcels add column if not exists check_dismissed_at timestamptz;
-    -- When this was done: the verify file tells the parcels moved now from those the mail processing delivered since.
-    execute format('comment on column public.parcels.received_at is %L', 'added ' || to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'));
     -- Everything delivered so far counts as received. updated_at stays as it is (see the header).
     alter table public.parcels disable trigger parcels_set_updated_at;
     update public.parcels set received_at = updated_at where status = 'delivered';
     alter table public.parcels enable trigger parcels_set_updated_at;
+  end if;
+end $$;
+
+-- When the column was added, for the verify file: it tells the parcels moved now from those the mail
+-- processing delivered since. Written when missing, so a database that had a version of this file
+-- without it gets one (the time is then of this run).
+do $$
+begin
+  if coalesce(col_description('public.parcels'::regclass, (select attnum from pg_attribute where attrelid = 'public.parcels'::regclass and attname = 'received_at')), '') !~ '^added \d{4}-\d{2}-\d{2}T\S+$' then
+    execute format('comment on column public.parcels.received_at is %L', 'added ' || to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'));
   end if;
 end $$;
 
@@ -93,9 +105,19 @@ returns trigger
 language plpgsql
 set search_path = ''
 as $$
+declare
+  v_none boolean := new.received_at is not distinct from '-infinity'::timestamptz;
 begin
+  -- received_at = '-infinity' is how the Web says "delivered, and NOT received" in one write: it is
+  -- stored as null and the automatic fill below is skipped. (An update that sets status to delivered
+  -- with received_at null cannot say it: that is exactly what a build that does not know the column sends.)
+  -- It is never stored. Any role may send it.
+  if v_none then
+    new.received_at := null;
+  end if;
+
   if tg_op = 'INSERT' then
-    if new.status = 'delivered' and new.received_at is null and current_user = 'authenticated' then
+    if new.status = 'delivered' and new.received_at is null and not v_none and current_user = 'authenticated' then
       new.received_at := now();
     end if;
     return new;
@@ -105,7 +127,7 @@ begin
   if old.status = 'delivered' and new.status is distinct from 'delivered' then
     new.received_at := null;
     new.check_dismissed_at := null;
-  elsif new.status = 'delivered' and old.status is distinct from 'delivered' and new.received_at is null and current_user = 'authenticated' then
+  elsif new.status = 'delivered' and old.status is distinct from 'delivered' and new.received_at is null and not v_none and current_user = 'authenticated' then
     new.received_at := now();
   end if;
   return new;

@@ -12,6 +12,7 @@ import {
   mergeIntoManual,
   parcelTotal,
   rebuildParcel,
+  dismissedAfterMerge,
   receivedAfterMerge,
   splitOrders,
   startsParcel,
@@ -587,6 +588,9 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
     fields.received_at = carried.received_at;
     fields.status = carried.status;
   }
+  // 「まだ」 is the person's word too: either parcel having it is kept, while the merged parcel is delivered.
+  const dismissed = dismissedAfterMerge(keep, absorb, fields.status ?? keep.status);
+  if (dismissed !== null && dismissed !== keep.check_dismissed_at) fields.check_dismissed_at = dismissed;
   const { rest } = splitCategory(fields);
   const category = categoryForTwins(keep, absorb, merged, seenBefore);
 

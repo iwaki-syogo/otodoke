@@ -33,6 +33,9 @@ function problemsOf(fn: string): string[] {
   if (/request\.jwt|auth\.role|auth\.jwt/.test(fn) || !fn.includes("current_user")) out.push("does not use current_user");
   if (!/old\.status = 'delivered' and new\.status is distinct from 'delivered'\s*then\s*new\.received_at := null;/.test(fn)) out.push("does not clear received_at on leaving delivered");
   if (!/new\.received_at := null;\s*new\.check_dismissed_at := null;/.test(fn)) out.push("does not clear check_dismissed_at on leaving delivered");
+  if (!/v_none boolean := new\.received_at is not distinct from '-infinity'::timestamptz/.test(fn) || !/if v_none then\s*new\.received_at := null;\s*end if;/.test(fn)) out.push("does not read -infinity as not received");
+  const fills = [...fn.matchAll(/new\.received_at is null and (not v_none and )?current_user = 'authenticated'/g)];
+  if (fills.length !== 2 || fills.some((m) => !m[1])) out.push("fills received_at over -infinity");
   // Every place now() is written must have the authenticated check in front of it.
   const sets = [...fn.matchAll(/new\.received_at := now\(\)/g)];
   if (sets.length === 0 || sets.some((m) => !fn.slice(Math.max(0, m.index! - 300), m.index!).includes("current_user = 'authenticated'"))) out.push("now() is not behind the authenticated check");
@@ -95,10 +98,18 @@ describe("the migration", () => {
       expect(broken((f) => f.replaceAll("current_user = 'authenticated'", "current_setting('request.jwt.claims', true) is not null"))).toContain("does not use current_user");
     });
     it("does not clear received_at when the status leaves delivered", () => {
-      expect(broken((f) => f.replace("new.received_at := null;", "null;"))).toContain("does not clear received_at on leaving delivered");
+      expect(broken((f) => f.replace("new.received_at := null;\n    new.check_dismissed_at := null;", "new.check_dismissed_at := null;"))).toContain("does not clear received_at on leaving delivered");
     });
     it("leaves check_dismissed_at behind when the status leaves delivered", () => {
       expect(broken((f) => f.replace("new.check_dismissed_at := null;", ""))).toContain("does not clear check_dismissed_at on leaving delivered");
+    });
+    it("does not read '-infinity' as 配達済み (stores it, or drops the check)", () => {
+      expect(broken((f) => f.replace("if v_none then\n    new.received_at := null;\n  end if;", ""))).toContain("does not read -infinity as not received");
+      expect(broken((f) => f.replace("v_none boolean := new.received_at is not distinct from '-infinity'::timestamptz;", "v_none boolean := false;"))).toContain("does not read -infinity as not received");
+    });
+    it("fills received_at on an insert or an update even when -infinity was sent", () => {
+      expect(broken((f) => f.replaceAll(" and not v_none", ""))).toContain("fills received_at over -infinity");
+      expect(broken((f) => f.replace(" and not v_none", ""))).toContain("fills received_at over -infinity");
     });
     it("has no fixed search_path", () => {
       expect(broken((f) => f.replace("set search_path = ''", ""))).toContain("no fixed search_path");
@@ -122,6 +133,14 @@ describe("its verify files and rollback", () => {
     expect(sql).toContain("errcode = 'OTRBK'");
     expect(sql).toMatch(/behaviour = 'OK'/);
     expect(sql).toMatch(/unmoved_delivered = 0/);
+    // The verdict needs the comment to be exactly 'added <time>' (no special word), and the line it draws is 5 minutes early.
+    expect(sql).toMatch(/case when column_ok and comment_ok and trigger_ok and unmoved_delivered = 0/);
+    expect(sql).toContain("^added \\d{4}-\\d{2}-\\d{2}T\\S+$");
+    expect(sql).toContain("interval '5 minutes'");
+    // '-infinity' is tried on an insert and on an update, and a status alone still fills received_at.
+    expect(sql).toContain("infinity_insert");
+    expect(sql).toContain("infinity_update");
+    expect(sql).toContain("status_only");
     expect(sql).toMatch(/!~\* 'return\\s\+old'/);
   });
 
