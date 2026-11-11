@@ -54,7 +54,13 @@ struct StatusListsTests {
 
     @Test func readsEveryDeliveredParcelOfMineInTheWebsOrder() async throws {
         let rows = (1...1_101).map { n in Self.delivered(n, ["ordered_at": n % 7 == 0 ? nil : .string(String(format: "2026-%02d-%02d", n % 12 + 1, n % 28 + 1))]) }
-        let w = try await world(parcels: rows + [Self.delivered(2_000, ["status": "shipped"]), Self.delivered(2_001, ["user_id": .string(FakeSupabase.other)])])
+        let excluded = [
+            Self.delivered(2_000, ["status": "shipped"]),
+            Self.delivered(2_001, ["user_id": .string(FakeSupabase.other)]),
+            Self.delivered(2_002, ["received_at": nil]),
+            Self.delivered(2_003, ["status": "cancelled", "received_at": "2026-11-01T12:00:00Z"]),
+        ]
+        let w = try await world(parcels: rows + excluded)
         let read = await w.reader.parcels(.delivered)
         let got = try #require(read.value)
         #expect(got.count == 1_101)
@@ -64,7 +70,8 @@ struct StatusListsTests {
         #expect(requests.count >= 2)
         for q in requests {
             #expect(q.query("user_id") == ["eq.\(FakeSupabase.me)"])
-            #expect(q.query("status") == ["eq.delivered"])
+            #expect(q.query("received_at") == ["not.is.null"])
+            #expect(q.query("status") == ["neq.cancelled"])
         }
     }
 

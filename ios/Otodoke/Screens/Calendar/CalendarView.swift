@@ -52,6 +52,7 @@ struct CalendarView<Detail: View>: View {
                     }
                     days
                     PageLinkRow(label: "受け取り済み") { path.append(.delivered) }
+                        .accessibilityIdentifier("page-link.received")
                 }
                 .padding(16)
             }

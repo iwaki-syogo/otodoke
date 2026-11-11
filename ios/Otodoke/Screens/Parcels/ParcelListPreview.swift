@@ -109,7 +109,9 @@ struct ListPreview {
             model.debugShow(mode: .signUp, email: "qa@example.com", notice: LoginText.signupExistsOrSent)
         case .loginWaiting:
             model.debugShowWaiting(email: "qa@example.com")
-        default:
+        case .list, .empty, .failed, .toast, .saving, .many, .bottom,
+             .receivedList, .receivedDetail, .receivedCheck, .deliveredPage, .cancelledPage,
+             .emptyReceived, .emptyApproval, .checking, .detail, .welcome, .accountDelete:
             return nil
         }
         return model
@@ -187,7 +189,7 @@ struct ListPreview {
             var delivered = Self.row(31, shop: "見本ストア", title: "架空のマグカップ", status: "delivered", date: CivilDate.addDays(today, -20), presence: true)
             delivered.lastEmailAt = CivilDate.addDays(today, -20) + "T00:00:00Z"
             model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
-        case .empty:
+        case .empty, .accountDelete:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
         case .emptyReceived, .emptyApproval:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded,

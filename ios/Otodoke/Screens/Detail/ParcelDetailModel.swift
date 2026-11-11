@@ -736,7 +736,7 @@ final class ParcelDetailModel {
                 notes: x.notes.jsTruthy,
                 mail: MailBody.display(email),
                 emailID: email.id,
-                deliveryEvidence: x.relevance == "delivered" ? x.relevanceEvidence?.trimmingCharacters(in: .whitespacesAndNewlines).jsTruthy : nil,
+                deliveryEvidence: x.relevance == "delivered" ? (x.relevanceEvidence?.trimmingCharacters(in: .whitespacesAndNewlines)).jsTruthy : nil,
                 evidenceAt: email.sentAt ?? x.createdAt
             )
         }

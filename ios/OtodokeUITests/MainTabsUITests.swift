@@ -67,7 +67,7 @@ final class MainTabsUITests: XCTestCase {
 
     func testThePageLinksOpenTheirPlaces() {
         let app = launch("empty")
-        let delivered = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "受け取り済み")).firstMatch
+        let delivered = app.buttons["page-link.received"]
         XCTAssertTrue(delivered.waitForExistence(timeout: 10))
         delivered.tap()
         XCTAssertTrue(app.navigationBars["受け取り済み"].waitForExistence(timeout: 5))
@@ -119,8 +119,8 @@ final class MainTabsUITests: XCTestCase {
     /// The two page links at the foot of the list are the name and an arrow: no number, no 「件」.
     func testThePageLinksShowNoCount() {
         let app = launch("list")
-        for link in ["受け取り済み", "キャンセルした荷物"] {
-            let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", link)).firstMatch
+        for (link, identifier) in [("受け取り済み", "page-link.received"), ("キャンセルした荷物", "page-link.cancelled")] {
+            let row = app.buttons[identifier]
             var tries = 0
             while !row.exists && tries < 6 { app.swipeUp(); tries += 1 }
             XCTAssertTrue(row.exists, link)
@@ -133,7 +133,7 @@ final class MainTabsUITests: XCTestCase {
     /// The number is on the page the link opens, by the heading.
     func testTheOpenedPagesShowTheirCount() {
         let app = launch("list")
-        let delivered = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "受け取り済み")).firstMatch
+        let delivered = app.buttons["page-link.received"]
         var tries = 0
         while !delivered.exists && tries < 6 { app.swipeUp(); tries += 1 }
         delivered.tap()

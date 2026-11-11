@@ -368,8 +368,10 @@ struct ParcelListView<Detail: View>: View {
     private var pageLinks: some View {
         Group {
             PageLinkRow(label: "受け取り済み") { path.append(.delivered) }
+                .accessibilityIdentifier("page-link.received")
                 .listRowStyle(top: 20)
             PageLinkRow(label: "キャンセルした荷物") { path.append(.cancelled) }
+                .accessibilityIdentifier("page-link.cancelled")
                 .listRowStyle()
         }
     }

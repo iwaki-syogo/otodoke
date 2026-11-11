@@ -553,13 +553,21 @@ final class RealDataUITests: XCTestCase {
 
     /// 「1,050 件」 beside a page link, nil when the link has no count (it has none now).
     private func pageLinkCount(_ app: XCUIApplication, _ link: String) -> Int? {
-        guard scrollTo(app, app.staticTexts[link], max: 60) else { return nil }
+        let identifiers = ["受け取り済み": "page-link.received", "キャンセルした荷物": "page-link.cancelled"]
+        guard let identifier = identifiers[link] else {
+            XCTFail("unknown page link: \(link)")
+            return nil
+        }
+        let button = app.buttons[identifier]
+        guard scrollTo(app, button, max: 60) else {
+            XCTFail("page link not found: \(link)")
+            return nil
+        }
         let all = texts(app)
-        guard let l = all.first(where: { $0.label == link }) else { return nil }
-        for n in all where abs(n.frame.midY - l.frame.midY) < 8 {
+        let lineY = button.frame.midY
+        for n in all where abs(n.frame.midY - lineY) < 8 {
             if let m = n.label.wholeMatch(of: /([0-9,]+) 件/) { return Int(m.1.replacingOccurrences(of: ",", with: "")) }
         }
-        let button = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", link)).firstMatch
         if let m = button.label.firstMatch(of: /([0-9,]+) 件/) { return Int(m.1.replacingOccurrences(of: ",", with: "")) }
         return nil
     }
@@ -574,7 +582,7 @@ final class RealDataUITests: XCTestCase {
         scrollToTop(app)
         var seen = Set<String>()
         var outOfOrder: [String] = []
-        let end = app.staticTexts["受け取り済み"]
+        let end = app.buttons["page-link.received"]
         for step in 0..<60 {
             let onScreen = texts(app)
                 .filter { index[$0.label] != nil }

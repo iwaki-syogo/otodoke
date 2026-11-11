@@ -135,3 +135,9 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - sampleだけでなく実メールのcreate/update/ensure、本人の直接DML、全消去、退会cascadeも同じ順に参加する。退会は既存世代とメールをcascade前に取り、自動読取claim・費用claim v2/releaseもAuth親行を先取りする。DBロックは各短期RPCの中だけで保持し、外部API待ちへ持ち出さない。
 - private coreの `_without_sample_fence` はAPI roleから直接実行しない。新しいservice処理も公開RPCの入口を通す。header無しの任意複数表/複数利用者DMLやTRUNCATEは保守操作としてwriter停止・drainを要する。
 - 統合時は `tests/postgres/run-sample-lock-order.mjs` の自然競合と旧順序の陰性対照、`scripts/test-sample-generation.py`、`scripts/test-sample-generation-lifecycle.py` を使い捨てPGで確認する。前提・集計・後片付けは `tests/postgres/README.md`。検証終了は専用PGの停止・待ち受け0・専用データ削除まで。
+
+## ビルド14の受け取り状態（2026-11-11）
+
+- ビルド14では `STATUS_LABEL.delivered` とiOSの `Format.statusLabel` を「配達済み」にそろえた。上の受け取り済み節にある「iOSの照合のため届いたのまま」はビルド13までの説明。本人の受取は有限の `received_at` で出し分ける。
+- マスターからの報告: `20261112100000_parcel_received_at.sql` は2026-11-11 23:23 JSTに本番へ適用され、verifyも成功。Webの受け取り済みはdevのPreviewへ反映された。Codexが本番DBへ適用・検証したという記録ではない。
+- iOS用の削除・パスワード変更APIは `docs/api/account.md`。これらのAPIをWeb本番へ反映してから、呼び出すiOS版を配布する。

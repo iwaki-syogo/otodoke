@@ -44,7 +44,7 @@ extension MainScreens {
                 return (id, email)
             },
             isCurrent: { [weak auth] in guard let auth, let generation else { return false }; return auth.session.isCurrent(generation) },
-            authenticate: { [weak auth] secret, captcha in
+            authenticate: { [weak auth] (secret: String, captcha: String?) async throws(LoginFailure) -> String in
                 guard let auth else { throw LoginFailure.other }
                 return try await auth.authenticateForKeyRecovery(authSecret: secret, captchaToken: captcha)
             },

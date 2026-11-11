@@ -214,7 +214,7 @@ final class ScreenshotUITests: XCTestCase {
         for style in ["Light", "Dark"] {
             XCUIDevice.shared.appearance = style == "Dark" ? .dark : .light
             var app = launch("bottom")
-            let delivered = app.buttons["受け取り済み"]
+            let delivered = app.buttons["page-link.received"]
             XCTAssertTrue(delivered.waitForExistence(timeout: 10), style)
             XCTAssertTrue(app.buttons["キャンセルした荷物"].exists, style)
             try shoot("links-\(style)")
