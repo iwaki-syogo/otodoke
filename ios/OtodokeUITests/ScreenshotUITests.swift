@@ -72,7 +72,10 @@ final class ScreenshotUITests: XCTestCase {
             checking.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
         }
         XCTAssertTrue(labelled("確認中…").waitForExistence(timeout: 10))
-        XCTAssertTrue(labelled("1 件は元に戻せません").waitForExistence(timeout: 5))
+        let note = labelled("元に戻せない荷物があります")
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertFalse(note.label.contains("件"))
+        XCTAssertNil(note.label.wholeMatch(of: /.*[0-9].*/))
         try shoot("checking-toast-note")
     }
 

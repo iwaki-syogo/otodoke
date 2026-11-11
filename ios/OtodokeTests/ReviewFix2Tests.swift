@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import Otodoke
 
-/// [Fix 2: R1・NtH-1・NtH-2] What the list and the detail say after an unknown write: the toast counts
-/// rows that 「元に戻す」 cannot put back and says so (and says so again after 「元に戻す」), 「確かめる」
+/// [Fix 2: R1・NtH-1・NtH-2] What the list and the detail say after an unknown write: the toast warns
+/// without counts when 「元に戻す」 cannot put back every receipt (and warns after 「元に戻す」), 「確かめる」
 /// shows 確認中… rather than 保存中…, and a tap after 「確かめられませんでした」 says when nothing had been saved.
 @Suite("Review fix 2")
 @MainActor
@@ -41,23 +41,49 @@ struct ReviewFix2Tests {
 
     // MARK: R1
 
-    @Test func deliverAllSaysHowManyCannotBeUndone() async throws {
+    @Test(arguments: [1, 2])
+    func deliverAllWarnsWithoutCountsWhenSomeReceiptsCannotBeUndone(_ lostAnswers: Int) async throws {
         let fake = FakeSupabase.make()
         await seed(fake)
         let model = try await makeList(fake)
         await model.load()
-        await fake.fail("PATCH", "parcels", nth: 2, with: .applyThenDrop(.networkConnectionLost))
+        for nth in 2...(lostAnswers + 1) {
+            await fake.fail("PATCH", "parcels", nth: nth, with: .applyThenDrop(.networkConnectionLost))
+        }
         await model.deliverAll()
         #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
-        #expect(model.toastNote == "1 件は元に戻せません")
+        #expect(model.toastNote == "元に戻せない荷物があります")
+        #expect(await fake.count("PATCH", "parcels") == 3)
 
         await model.undo()
         #expect(await status(fake, 4) == "shipped")
         #expect(await status(fake, 7) == "delivered")
-        #expect(await status(fake, 8) == "shipped")
-        // Not hidden as if all went back: says which stay delivered.
-        #expect(model.toast == ListToast(text: "2 件を元に戻しました。1 件は受取済のままです", canUndo: false))
+        #expect(await status(fake, 8) == (lostAnswers == 2 ? "delivered" : "shipped"))
+        #expect(model.rows.filter(ParcelRules.isReceived).count == lostAnswers)
+        #expect(await fake.count("PATCH", "parcels") == 3 + (3 - lostAnswers))
+        // The warning stays after the sendable receipts are put back; no unknown write is retried.
+        #expect(model.toast == ListToast(text: "受け取り済みのままの荷物があります", canUndo: false))
         #expect(model.toastNote == nil)
+    }
+
+    @Test func allUnknownConfirmedReceiptsOfferNoUndoAndKeepTheirSavedState() async throws {
+        let fake = FakeSupabase.make()
+        await seed(fake)
+        let model = try await makeList(fake)
+        await model.load()
+        for nth in 1...3 {
+            await fake.fail("PATCH", "parcels", nth: nth, with: .applyThenDrop(.networkConnectionLost))
+        }
+        await model.deliverAll()
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: false))
+        #expect(model.toastNote == nil)
+        #expect(model.unconfirmed.isEmpty)
+        #expect(model.rows.filter(ParcelRules.isReceived).map(\.id) == [4, 7, 8].map(Rows.id))
+
+        await model.undo()
+        #expect(await fake.count("PATCH", "parcels") == 3)
+        #expect(model.rows.filter(ParcelRules.isReceived).map(\.id) == [4, 7, 8].map(Rows.id))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: false))
     }
 
     @Test func deliverAllWithEveryAnswerHasNoNoteAndUndoHidesTheToast() async throws {
@@ -81,7 +107,7 @@ struct ReviewFix2Tests {
         await model.load()
         await fake.fail("PATCH", "parcels", nth: 2, with: .applyThenDrop(.networkConnectionLost))
         await model.deliverAll()
-        #expect(model.toastNote == "1 件は元に戻せません")
+        #expect(model.toastNote == "元に戻せない荷物があります")
         await model.markDelivered(id: Rows.id(1))
         #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.toastNote == nil)

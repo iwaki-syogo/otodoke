@@ -8,7 +8,7 @@
 import Foundation
 import Observation
 
-/// The notice at the bottom: 「受け取り済みにしました」/「受け取り済みにしました」 with 「元に戻す」, or a failure.
+/// The notice at the bottom: 「受け取り済みにしました」 with 「元に戻す」, or a failure.
 struct ListToast: Equatable, Sendable {
     let text: String
     let canUndo: Bool
@@ -37,10 +37,10 @@ final class ParcelListModel {
 
     /// Under 「受け取り済みにしました」 when some of them were saved with an unknown answer (Codex-P3):
     /// 「元に戻す」 cannot put those back.
-    static func cannotUndoNote(_ n: Int) -> String { "\(n) 件は元に戻せません" }
-    /// After 「元に戻す」 on such a toast: the rows put back, and the rows left delivered.
+    static func cannotUndoNote(_ n: Int) -> String { "元に戻せない荷物があります" }
+    /// After 「元に戻す」 on such a toast: some receipts remain, without putting counts in the notice.
     static func undoneButKeptText(restored: Int, kept: Int) -> String {
-        "\(restored) 件を元に戻しました。\(kept) 件は受取済のままです"
+        "受け取り済みのままの荷物があります"
     }
 
     enum LoadState: Equatable, Sendable {
@@ -91,7 +91,7 @@ final class ParcelListModel {
     /// a swipe on one only reads the list again.
     private(set) var unconfirmed: Set<String> = []
     private(set) var toast: ListToast?
-    /// A second line of the toast: 「1 件は元に戻せません」.
+    /// A second line of the toast: 「元に戻せない荷物があります」.
     private(set) var toastNote: String?
     /// Bumped by every new toast, so an older timer or an older 「元に戻す」 never touches a newer toast.
     private(set) var toastGeneration = 0
@@ -111,7 +111,7 @@ final class ParcelListModel {
     @ObservationIgnored private let sleep: Sleep
     /// What 「元に戻す」 on the current toast puts back: only the rows that were written.
     @ObservationIgnored private var undoTokens: [UndoToken] = []
-    /// How many rows the current toast counts that 「元に戻す」 does not put back.
+    /// Receipts without an undo token that the current toast must still warn about.
     @ObservationIgnored private var undoKeeps = 0
     @ObservationIgnored private var toastTimer: Task<Void, Never>?
 
