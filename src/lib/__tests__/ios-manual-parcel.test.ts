@@ -315,8 +315,13 @@ describe("the edit and the delete", () => {
     expect(body("func updateManual(", "private func announcedEdit(")).toMatch(manualOnly);
     expect(body("case let .manualEdit(_, updatedAt):\n                query", "response = try await query")).toMatch(manualOnly);
     expect(body("func deleteManual(", "private func announce<T>(")).toMatch(manualOnly);
-    // The update goes through the one write function, on the updated_at read, with source = manual added to its filters.
-    expect(writer).toContain("write(id: id, .manualEdit(columns, updatedAt: saved.updatedAt))");
+    // The update goes through the one write function, on the updated_at the form was opened with (as the Web's hidden
+    // field carries it, manual-actions.ts), with source = manual added to its filters. A form opened on another version
+    // writes nothing: it is compared with the version just read before anything is written.
+    expect(writer).toContain("write(id: id, .manualEdit(columns, updatedAt: openedUpdatedAt))");
+    expect(writer).toContain("guard !openedUpdatedAt.isEmpty, openedUpdatedAt == saved.updatedAt else { return .changed }");
+    expect(writer.indexOf("openedUpdatedAt == saved.updatedAt")).toBeLessThan(writer.indexOf("ManualParcel.checkEdit(input, saved: saved)"));
+    expect(readFile("ios/Otodoke/Screens/Parcels/ManualParcelModel.swift")).toContain("update(parcel.id, typed, parcel.updatedAt)");
     expect(writer).toMatch(/case let \.manualEdit\(_, updatedAt\):\s*query = query\s*\.eq\("source", value: "manual"\)\s*\.eq\("updated_at", value: updatedAt\)/);
     expect(writer).toMatch(/\.delete\(\)\s*\.eq\("id", value: id\)\s*\.eq\("user_id", value: me\)\s*\.eq\("source", value: "manual"\)\s*\.select\("id"\)/);
   });
