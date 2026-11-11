@@ -10,7 +10,7 @@ import { isHttpsUrl } from "@/lib/safe-url";
 import { NO_BODY_TEXT, NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
-import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge } from "../../parcel-card";
+import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge, showsPresence } from "../../parcel-card";
 import { MarkDeliveredButton } from "./mark-delivered-button";
 import { NotDeliveredButton } from "./not-delivered-button";
 import { NotReceivedButton } from "./not-received-button";
@@ -92,7 +92,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
         <h1 className="mt-1 line-clamp-3 text-xl font-bold leading-snug">{parcel.title ?? "品名の記載なし"}</h1>
         <div className="mt-3 flex flex-wrap gap-2">
           <StatusBadge status={parcel.status} receivedAt={parcel.received_at} />
-          <PresenceBadge parcel={parcel} />
+          {showsPresence(parcel) ? <PresenceBadge parcel={parcel} /> : null}
           {parcel.needs_review ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">要確認</span> : null}
         </div>
         {isReceived(parcel) ? (

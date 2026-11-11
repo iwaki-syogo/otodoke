@@ -25,6 +25,11 @@ export function StatusBadge({ status, receivedAt = null }: { status: string; rec
 /** Face-to-face only because nothing said otherwise (`faceToFaceAssumed`). The same words everywhere. */
 export const ASSUMED_FACE_TO_FACE = "念のため対面";
 
+/** Delivered (配達済み or 受け取り済み): being home no longer matters, so no presence badge. */
+export function showsPresence(parcel: Pick<ParcelRow, "status">): boolean {
+  return parcel.status !== "delivered";
+}
+
 /**
  * Face-to-face or not, decided by `faceToFace` (an unstated method counts as face-to-face, except Amazon).
  * That default keeps the red but has its own words, so it never reads like what a mail said.
@@ -73,8 +78,7 @@ export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; 
         ) : parcel.status === "ordered" ? (
           <span className="text-neutral-500">お届け日はまだ未定</span>
         ) : null}
-        {/* Delivered (配達済み or 受け取り済み): being home no longer matters. */}
-        {parcel.status === "delivered" ? null : <PresenceBadge parcel={parcel} compact />}
+        {showsPresence(parcel) ? <PresenceBadge parcel={parcel} compact /> : null}
         {parcel.needs_review ? <span className="text-xs text-amber-700">要確認</span> : null}
         {showAmount && parcel.total_amount !== null ? <span className="ml-auto text-neutral-700">{yen(parcel.total_amount)}</span> : null}
       </div>
