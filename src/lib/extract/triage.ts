@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { requireEnv } from "@/lib/env";
+import { TRIAGE_TIMEOUT_MS } from "@/lib/unread";
 import { emailBodyText } from "@/lib/text/html-to-text";
 
 /** The second check for mail the free rules were unsure about. Cheap and short on purpose. */
@@ -24,7 +25,7 @@ const SYSTEM = `メール 1 通が、受信者自身の買い物の連絡かど�
  * refused the call, and stops when Claude is unavailable.
  */
 export async function isPurchaseMail(mail: { subject: string; text: string | null; html: string | null }): Promise<boolean> {
-  const client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+  const client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY"), maxRetries: 0, timeout: TRIAGE_TIMEOUT_MS });
   const body = emailBodyText(mail.text, mail.html).slice(0, TRIAGE_CHARS);
   const response = await client.messages.parse({
     model: TRIAGE_MODEL,
