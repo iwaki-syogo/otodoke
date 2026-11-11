@@ -4,6 +4,7 @@ import { z } from "zod";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } from "@/lib/format";
+import { DELIVERY_EVIDENCE_LABEL, deliveryEvidence } from "@/lib/delivery-evidence";
 import { faceToFace, faceToFaceAssumed } from "@/lib/match";
 import { isHttpsUrl } from "@/lib/safe-url";
 import { NO_BODY_TEXT, NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
@@ -60,6 +61,8 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
     .filter((x) => x.email)
     .sort((a, b) => (a.email!.sent_at ?? "").localeCompare(b.email!.sent_at ?? ""));
 
+  // The delivery mail's own words, when one gave a line; nothing is shown otherwise.
+  const deliveredLine = deliveryEvidence(timeline.map((x) => ({ result: x.result, sentAt: x.email!.sent_at, createdAt: x.created_at })));
   const windowText = formatWindow(parcel.expected_window_start, parcel.expected_window_end);
   // Worked out when shown, so parcels saved with an old carrier URL get the current way in.
   // A stored URL is linked only when it is https: (never javascript: or data:).
@@ -148,6 +151,12 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
               </a>
             ) : null}
           </dd>
+          {deliveredLine ? (
+            <>
+              <dt className="text-neutral-500">{DELIVERY_EVIDENCE_LABEL}</dt>
+              <dd>「{deliveredLine}」</dd>
+            </>
+          ) : null}
           <dt className="text-neutral-500">注文</dt>
           <dd>
             {parcel.ordered_at ? formatDateJa(parcel.ordered_at, { withYear: true }) : <span className="text-neutral-500">不明</span>}
