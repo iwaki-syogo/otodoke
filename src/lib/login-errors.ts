@@ -100,7 +100,7 @@ export type SignInFailure = CommonFailure | "invalid_email";
 export type SignInResult = { ok: true; userId: string } | { ok: false; code: SignInFailure };
 
 export type SignUpFailure = "invalid_email" | "email_not_ascii" | "not_configured" | "rate" | "captcha" | "network" | "other";
-/** `signup_existing`: Supabase said the address is registered already (web only; not a LOGIN_MESSAGES key). */
+/** `signup_existing` is retained for old callers; current sign-up always answers signup_exists_or_sent. */
 export type SignUpResult = { ok: true; code: "signup_exists_or_sent" | "signup_existing" } | { ok: false; code: SignUpFailure };
 
 export type MailRequestFailure = "invalid_email" | "not_configured" | "rate" | "captcha" | "network" | "other";
@@ -171,6 +171,9 @@ export function loginErrorMessage(code: string | undefined): string | null {
 
 /** The held login button, while the bot check shows its checkbox and waits for the tick. */
 export const TURNSTILE_TICK_PROMPT = "確認のチェックを押してください";
+
+/** Web sign-in does not distinguish wrong input from an address still awaiting confirmation. */
+export const SIGN_IN_RETRY_MESSAGE = "入力と確認メールをご確認ください。";
 
 /**
  * The button after key_not_opened that asks for a password that opened the key before: opened with

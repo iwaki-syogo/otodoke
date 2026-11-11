@@ -23,9 +23,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * here; signing in with the password sends none.
  * - Someone whose mail is slow or in spam and asks again: Supabase already refuses a second
  *   send to one address within a minute, so 3 per 10 minutes is two retries, 6 per hour plenty.
- *   A send Supabase refuses is given back (releaseLoginMail; except an already-registered address at
- *   sign-up, which keeps its claim), so pressing the button again
- *   within that minute does not use up the allowance.
+ *   A refused resend/reset is given back (releaseLoginMail). Sign-up outcomes hidden as a sent
+ *   mail keep their claims equally for new, pending and registered addresses, including a refusal
+ *   within that minute; other failures give the claim back.
  * - Someone who mistyped the address: the typo is a different address with its own count.
  * - Several judges on one office or venue network (one shared IP): 20 per hour from one IP for
  *   the three mails together. Twenty people can make their accounts within one hour, or ten if
@@ -94,8 +94,9 @@ export function ipLimitKey(ip: string): string {
  * check of the current password before a change), counted in the same table under a namespace of
  * its own ("login-attempt"), so attempts and mails never count against each other.
  *
- * Only failures count: an attempt is claimed before Supabase is asked and given back unless
- * Supabase said the address or the secret was wrong (releaseLoginAttempt). Supabase's own per-IP
+ * Only failures count: an attempt is claimed before Supabase is asked and kept for either wrong
+ * credentials or pending confirmation (the same app response), given back for other outcomes.
+ * Supabase's own per-IP
  * limit cannot tell visitors apart either (every request comes from this server), and a guesser
  * through the form would use it up for everyone.
  *

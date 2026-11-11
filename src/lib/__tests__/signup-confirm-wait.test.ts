@@ -1,8 +1,8 @@
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
-import { EXISTING_ACCOUNT, clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
-import { LOGIN_TRY_LIMITS } from "@/lib/login-mail-limit";
+import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
+import { LOGIN_ATTEMPT_LIMITS, LOGIN_TRY_LIMITS } from "@/lib/login-mail-limit";
 import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, autoSignInGapMs } from "@/lib/onboarding";
 import { TURNSTILE_AUTO_WAIT_MS, TURNSTILE_TOKEN_STALE_MS, TURNSTILE_WAIT_MS, tokenForAutoAttempt, tokenIsStale, type TokenField } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
@@ -171,7 +171,7 @@ describe("the waiting screen's words", () => {
     expect(paragraphs.slice(0, 2)).toEqual([WORDS.body, EMAIL]);
     expect(buttons(view).map(textOfHost)).toEqual([WORDS.done, WORDS.resend, WORDS.restart]);
     // No standing notes, and none of the sign-up form's links.
-    expect(view.hosts((h) => h.type === "a")).toEqual([]);
+    expect(view.hosts((h) => h.type === "a").map((h) => h.props.href)).toEqual(["/login"]);
     expect(view.text()).not.toContain(LOGIN_MESSAGES.signup_exists_or_sent);
     expect(view.text()).not.toContain("転送するだけ");
   });
@@ -189,6 +189,19 @@ describe("the waiting screen's words", () => {
 });
 
 describe("when it signs in", () => {
+  it("confirmation can finish after the generic refusal, keeping the same remembered input", async () => {
+    flows.signIn.mockResolvedValueOnce({ ok: false, code: "credentials" }).mockResolvedValueOnce({ ok: true, userId: "u", key: "made" });
+    const view = await waiting();
+    pressDone(view);
+    await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet));
+    await vi.waitFor(() => expect(textOfHost(buttons(view)[0])).toBe(WORDS.done));
+    expect(nav.to).toEqual([]);
+    fresh("0.after-confirmation");
+    pressDone(view);
+    await vi.waitFor(() => expect(nav.to).toEqual(["/app/welcome"]));
+    expect(flows.signIn.mock.calls.map(([input]) => [input.email, input.password])).toEqual([[EMAIL, PASSWORD], [EMAIL, PASSWORD]]);
+    expect(AUTO_SIGN_IN_MAX).toBeLessThan(LOGIN_ATTEMPT_LIMITS.emailPer10Minutes);
+  });
   it("the tab shown again tries at once, once for the two events of one return, and with the password from memory (hidden is no trigger)", async () => {
     await waiting();
     // Long after the sign-up, with nothing shown again: nothing tried.
@@ -256,20 +269,16 @@ describe("when it signs in", () => {
     expect(flows.signIn).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["auto", "press"] as const)("credentials (%s): stops waiting and goes to /login with the address and those words, never the password", async (how) => {
+  it.each(["auto", "press"] as const)("credentials (%s): keeps the same waiting screen and does not disclose an account", async (how) => {
     flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
     const view = await waiting();
     if (how === "auto") await shownAndTried(1);
-    else pressDone(view);
-    await vi.waitFor(() => expect(nav.to).toEqual(["/login"]));
-    expect(peekLoginHandoff()).toEqual({ email: EMAIL, code: EXISTING_ACCOUNT });
-    expect(JSON.stringify(peekLoginHandoff())).not.toContain(PASSWORD);
-    // Stopped: no more tries.
-    later();
-    fresh("0.next");
-    tab.show();
+    else { pressDone(view); await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet)); }
     await drawn();
-    expect(flows.signIn).toHaveBeenCalledTimes(1);
+    expect(nav.to).toEqual([]);
+    expect(peekLoginHandoff()).toBeNull();
+    expect(view.text()).toContain(WORDS.title);
+    expect(view.text()).not.toContain("登録済み");
   });
 
   it("the sign-in that made the first key goes straight to the first-run guide, never by the list", async () => {
