@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
+import { PublicPageLinks } from "@/components/public-page-links";
 import { SignupForm } from "./signup-form";
 
 export const metadata = { title: "アカウントを作る" };
@@ -20,6 +21,7 @@ export default function SignupPage() {
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <SignupForm />
+      <PublicPageLinks includePrivacy={false} />
     </main>
   );
 }

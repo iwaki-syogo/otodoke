@@ -103,6 +103,9 @@ describe("設定 is a list of titles", () => {
     ]);
     const account = findAll(root, (n) => n.tag === "section")[1];
     expect(findAll(account, (n) => n.tag === "a").map((a) => a.attrs.href)).toEqual(["/privacy", "/app/settings/delete"]);
+    for (const [href, title] of [["/terms", "利用規約"], ["/support", "サポート"]]) {
+      expect(findAll(root, (n) => n.tag === "a" && n.attrs.href === href).map(textOf)).toEqual([title]);
+    }
   });
 
   it("puts the rows that need action first: password, unread, approval; the rest keep their order", async () => {

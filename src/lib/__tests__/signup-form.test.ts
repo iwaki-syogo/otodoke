@@ -205,6 +205,8 @@ describe("the page", () => {
     expect(text).not.toMatch(/ログインしていた|メールのリンクでログイン/);
     const anchors = findAll(root, (n) => n.tag === "a").map((a) => [a.attrs.href, textOf(a)]);
     expect(anchors).toContainEqual(["/login", "ログイン"]);
+    expect(anchors).toContainEqual(["/terms", "利用規約"]);
+    expect(anchors).toContainEqual(["/support", "サポート"]);
     expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["アカウントを作る"]);
   });
 

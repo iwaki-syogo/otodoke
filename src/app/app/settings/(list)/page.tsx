@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { PublicPageLinks } from "@/components/public-page-links";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { LogoutForm } from "../logout-form";
 import { readActiveKey, readDroppedCount, readApprovalBadge, readUnreadCount } from "../settings-reads";
@@ -100,6 +101,7 @@ export default async function SettingsPage() {
           </RowCard>
         </section>
       ))}
+      <PublicPageLinks includePrivacy={false} />
     </div>
   );
 }
