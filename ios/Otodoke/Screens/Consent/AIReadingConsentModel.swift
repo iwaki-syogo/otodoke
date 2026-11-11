@@ -11,6 +11,7 @@ final class AIReadingConsentModel {
     private(set) var isLoading = false
     private(set) var isSaving = false
     private(set) var message: String?
+    private(set) var choiceGeneration = 0
 
     @ObservationIgnored var onAddressPermissionChange: (@MainActor (Bool) -> Void)? {
         didSet { onAddressPermissionChange?(mayShowAddress) }
@@ -25,6 +26,9 @@ final class AIReadingConsentModel {
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var loadTicket: Int?
     @ObservationIgnored private var saveTicket: Int?
+    @ObservationIgnored private var pendingGrant: AIReadingConsentSaveReceipt?
+    @ObservationIgnored private var savedGrant: AIReadingConsentSaveReceipt?
+    @ObservationIgnored private var authorizationWaiters: [CheckedContinuation<Void, Never>] = []
     private var addressConfirmed = false
     @ObservationIgnored private var publishedAddressPermission = false
 
@@ -49,6 +53,38 @@ final class AIReadingConsentModel {
         !retired && stamp.map { session.isCurrent($0) } == true
     }
 
+    var isActiveSession: Bool { isCurrent }
+
+    /// Only an explicit, confirmed save creates this receipt; refreshes never do.
+    func takeConfirmedGrantReceipt() -> AIReadingConsentSaveReceipt? {
+        defer { pendingGrant = nil }
+        guard isCurrent, decision == .allowed, !isSaving else { return nil }
+        return pendingGrant
+    }
+
+    func mayReadAfterConsent(_ receipt: AIReadingConsentSaveReceipt) -> Bool {
+        mayShowAddress && isCurrentGrant(receipt)
+    }
+
+    func isCurrentGrant(_ receipt: AIReadingConsentSaveReceipt) -> Bool {
+        isCurrent && savedGrant == receipt && receipt.decision == .allowed && decision == .allowed && !isSaving
+    }
+
+    /// A pending explicit save may cross an ordinary foreground refresh. Wait for its answer
+    /// instead of turning the temporary address lock into a permanently lost automatic start.
+    func authorizeReadAfterConsent(_ receipt: AIReadingConsentSaveReceipt) async -> Bool {
+        while isCurrent, savedGrant == receipt, decision == .allowed, !isSaving, isLoading {
+            await withCheckedContinuation { authorizationWaiters.append($0) }
+        }
+        return !Task.isCancelled && mayReadAfterConsent(receipt)
+    }
+
+    private func wakeAuthorizationWaiters() {
+        let waiting = authorizationWaiters
+        authorizationWaiters.removeAll()
+        waiting.forEach { $0.resume() }
+    }
+
     func load() async {
         guard isCurrent, let stamp else { retire(); return }
         // A read begun during a save could observe the value before that save and resurrect it.
@@ -66,10 +102,13 @@ final class AIReadingConsentModel {
         guard loadTicket == ticket, revision == ticket, !isSaving else { return }
         loadTicket = nil
         isLoading = false
+        defer { wakeAuthorizationWaiters() }
         guard !Task.isCancelled else { publishAddressPermission(); return }
         switch result {
         case let .loaded(value):
+            if decision != value { choiceGeneration &+= 1 }
             decision = value
+            if value != .allowed { pendingGrant = nil; savedGrant = nil }
             addressConfirmed = value == .allowed
             message = nil
         case .failed:
@@ -83,11 +122,15 @@ final class AIReadingConsentModel {
     func choose(_ allowed: Bool) async -> Bool {
         guard isCurrent, let stamp else { retire(); return false }
         guard !isSaving else { return false }
+        choiceGeneration &+= 1
         revision &+= 1
         let ticket = revision
         loadTicket = nil
         isLoading = false
         saveTicket = ticket
+        pendingGrant = nil
+        savedGrant = nil
+        wakeAuthorizationWaiters()
         isSaving = true
         message = nil
         addressConfirmed = false
@@ -100,13 +143,14 @@ final class AIReadingConsentModel {
         isSaving = false
         guard !Task.isCancelled else { publishAddressPermission(); return false }
         let expected = allowed ? AIReadingDecision.allowed : .denied
-        guard case let .loaded(value) = result, value == expected else {
+        guard case let .loaded(receipt) = result, receipt.decision == expected, receipt.stamp == stamp else {
             message = saveFailureMessage
             publishAddressPermission()
             return false
         }
-        decision = value
-        addressConfirmed = value == .allowed
+        decision = receipt.decision
+        addressConfirmed = receipt.decision == .allowed
+        if allowed { pendingGrant = receipt; savedGrant = receipt }
         message = nil
         publishAddressPermission()
         return true
@@ -115,9 +159,13 @@ final class AIReadingConsentModel {
     /// Called before the old signed-in screens are released. Late requests can no longer publish.
     func retire() {
         retired = true
+        choiceGeneration &+= 1
         revision &+= 1
         loadTicket = nil
         saveTicket = nil
+        pendingGrant = nil
+        savedGrant = nil
+        wakeAuthorizationWaiters()
         isLoading = false
         isSaving = false
         decision = nil

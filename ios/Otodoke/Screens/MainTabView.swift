@@ -237,7 +237,7 @@ struct MainTabView: View {
         }
         .sheet(isPresented: Binding(get: { screens.settings.requestsReadingConsent }, set: { if !$0 { screens.settings.dismissReadingConsent() } })) {
             NavigationStack {
-                AIReadingConsentView(model: screens.readingConsent, onChanged: { await screens.settings.readingConsentChoiceSaved() })
+                AIReadingConsentView(model: screens.readingConsent, saveChoice: screens.settings.chooseReadingConsent)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(ManualParcelText.close) { screens.settings.dismissReadingConsent() } } }
             }
             .task { await screens.readingConsent.load() }
@@ -296,9 +296,7 @@ struct MainTabView: View {
         .overlay {
             switch landing {
             case .consent:
-                AIReadingConsentView(model: screens.readingConsent, onChanged: {
-                    await screens.settings.readingConsentChoiceSaved()
-                }, openManual: {
+                AIReadingConsentView(model: screens.readingConsent, saveChoice: screens.settings.chooseReadingConsent, openManual: {
                     consentBypassed = true
                     guideClosed = true
                     route.tab = .parcels
@@ -338,6 +336,7 @@ struct MainTabView: View {
                 EmptyView()
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { AIReadingAutomaticStatusView(model: screens.settings.mailActions) }
         #if DEBUG
         .modifier(ConsentPreviewAccessibility(settings: screens.settings))
         #endif

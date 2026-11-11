@@ -158,24 +158,44 @@ describe("the views draw them through the constants, and nothing opens the Web",
     expect(settingsModel).not.toMatch(/case \.readWaiting|case \.markAsParcel/);
   });
 
-  it("one press is one request: a second press while one runs returns before it sends, and nothing is sent again", () => {
-    expect(model).toMatch(/guard markingID == nil else \{ return \}/);
-    expect(model).toMatch(/guard !isReading else \{ return \}/);
-    // The flag is set before the first await (no suspension between the guard and the flag).
-    expect(model).toMatch(/guard markingID == nil else \{ return \}\s*markingID = id/);
-    const read = model.match(/func readWaiting\(\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
-    // The synchronous permission gate may return to the choice, before the busy flag or any await.
-    const start = /guard !isReading else \{ return \}\s*guard mayRead\(\) else \{ readNote = nil; requestReadingConsent\(\); return \}\s*isReading = true/;
-    expect(read).toMatch(start);
-    const token = read.indexOf("await accessToken()");
-    const permission = read.indexOf("guard mayRead() else { requestReadingConsent(); return }");
-    expect(token).toBeGreaterThan(read.indexOf("isReading = true"));
-    expect(permission).toBeGreaterThan(token);
-    expect(read.indexOf("api.readWaiting(")).toBeGreaterThan(permission);
-    // Both the busy guard and the two permission gates remain necessary after this source update.
-    expect(read.replace("guard !isReading else { return }", "")).not.toMatch(start);
-    expect(read.replace("guard mayRead() else { readNote = nil; requestReadingConsent(); return }", "")).not.toMatch(start);
-    expect(read.replace("guard mayRead() else { requestReadingConsent(); return }", "")).not.toContain("guard mayRead() else { requestReadingConsent(); return }");
+  it("one press or saved grant is one request: busy reservation is synchronous and a sent receipt cannot repeat", () => {
+    const markStart = /guard !retired, isCurrent\(\), markingID == nil else \{ return \}\s*markingID = id/;
+    expect(model).toMatch(markStart);
+    const manual = model.match(/func readWaiting\(\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    const perform = model.match(/private func performRead\(afterConsent receipt: AIReadingConsentSaveReceipt\?\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    const drain = model.match(/private func drainAutomaticReads\(\) \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    const start = /guard !retired, isCurrent\(\), !isReading else \{ return \}\s*guard mayRead\(\) else \{ readNote = nil; requestReadingConsent\(\); return \}\s*isReading = true/;
+    expect(manual).toMatch(start);
+    expect(manual).toContain("await performRead(afterConsent: nil)");
+    const reservation = /guard !retired, automaticTask == nil, !isReading else \{ return \}/;
+    expect(drain).toMatch(reservation);
+    const reserved = drain.indexOf("isReading = true");
+    const task = drain.indexOf("automaticTask = Task");
+    expect(reserved).toBeGreaterThan(0);
+    expect(task).toBeGreaterThan(reserved);
+    expect(drain.slice(0, task)).not.toContain("await");
+    expect(drain).toContain("await self.performRead(afterConsent: receipt)");
+    // Permission is rechecked after the token await, and the original receipt is consumed immediately before POST.
+    const token = perform.indexOf("await accessToken()");
+    const authorized = perform.indexOf("guard await authorizeAfterConsent(receipt) else { return }");
+    const consume = /if let receipt \{\s*guard !consumedGrants.contains\(receipt\) else \{ return \}\s*consumedGrants.append\(receipt\)\s*\}/;
+    const consumed = consume.exec(perform);
+    expect(token).toBeGreaterThan(0);
+    expect(authorized).toBeGreaterThan(token);
+    expect(consumed).not.toBeNull();
+    expect(consumed!.index).toBeGreaterThan(authorized);
+    const post = perform.indexOf("try await api.readWaiting(afterConsent: receipt, accessToken: token)");
+    expect(post).toBeGreaterThan(consumed!.index);
+    expect(perform.slice(consumed!.index + consumed![0].length, post)).not.toContain("await");
+    expect(perform).toContain("guard permissionGeneration() == permissionAtStart else { return }");
+    expect(perform).toContain("guard mayRead() else { requestReadingConsent(); return }");
+    // Missing guards, a missing reservation or an unconsumed event cannot satisfy these checks.
+    expect(model.replace("!retired, isCurrent(), markingID == nil", "markingID == nil")).not.toMatch(markStart);
+    expect(manual.replace("!isReading", "true")).not.toMatch(start);
+    expect(manual.replace("guard mayRead() else { readNote = nil; requestReadingConsent(); return }", "")).not.toMatch(start);
+    expect(drain.replace("!isReading", "true")).not.toMatch(reservation);
+    expect(perform.replace("consumedGrants.append(receipt)", "")).not.toMatch(consume);
+    expect(perform.replace("!consumedGrants.contains(receipt)", "true")).not.toMatch(consume);
     expect(model).not.toMatch(/retry|again\(/i);
   });
 });
@@ -316,12 +336,16 @@ describe("the other tabs, the reading aloud and the 44 pt button (review fixes)"
     expect(model).not.toContain(".publish(");
   });
 
-  it("reading announces once after the answer, whatever it was; marking announces nothing", () => {
-    const read = model.match(/func readWaiting\(\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+  it("manual and automatic reading share one guarded completion; marking announces nothing", () => {
+    const perform = model.match(/private func performRead\(afterConsent receipt: AIReadingConsentSaveReceipt\?\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
     const mark = model.match(/func markAsParcel\(id: String\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
-    expect(read).not.toBe("");
-    expect(read.match(/announceChange\(\)/g)?.length).toBe(1);
-    expect(read.indexOf("announceChange()")).toBeGreaterThan(read.indexOf("api.readWaiting"));
+    expect(perform).not.toBe("");
+    expect(perform.match(/announceChange\(\)/g)).toHaveLength(1);
+    expect(perform.indexOf("announceChange()")).toBeGreaterThan(perform.indexOf("api.readWaiting"));
+    const completion = /guard !retired, isCurrent\(\), !Task.isCancelled else \{ return \}\s*announceChange\(\)\s*await reload\(\)/;
+    expect(perform).toMatch(completion);
+    expect(perform.replace("announceChange()", "")).not.toMatch(completion);
+    expect(perform.replaceAll("!retired, ", "")).not.toMatch(completion);
     expect(mark).not.toContain("announceChange");
   });
 

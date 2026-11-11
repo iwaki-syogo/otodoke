@@ -12,17 +12,25 @@ enum AIReadingConsentContract {
     static let textVersion = "v1"
 }
 
+/// One confirmed save, owned by its signed-in generation. decidedAt is the server's exact text:
+/// automatic backlog reading sends it unchanged, including its time zone and fractional seconds.
+struct AIReadingConsentSaveReceipt: Equatable, Sendable {
+    let decision: AIReadingDecision
+    let decidedAt: String
+    let stamp: SessionStamp
+}
+
 /// A successful read includes a real absence (.notDetermined). Transport/decoding failures never do.
 /// A save succeeds only when the server confirms the requested decision with its own timestamp.
 protocol AIReadingConsentStoring: Sendable {
     func load(for stamp: SessionStamp) async -> LoadResult<AIReadingDecision>
-    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingDecision>
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingConsentSaveReceipt>
 }
 
 /// A safe placeholder for previews or an integration whose server contract is unavailable.
 struct UnavailableAIReadingConsentStore: AIReadingConsentStoring {
     func load(for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> { .failed }
-    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> { .failed }
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingConsentSaveReceipt> { .failed }
 }
 
 /// The signed-in person's PostgREST reads and set_ai_reading RPC. No retries or local persistence.
@@ -113,7 +121,7 @@ struct AIReadingConsentClient: AIReadingConsentStoring {
         }
     }
 
-    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> {
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingConsentSaveReceipt> {
         guard await isCurrent(stamp), let database = await database(stamp), await isCurrent(stamp) else { return .failed }
         let requested = allowed ? AIReadingDecision.allowed : .denied
         do {
@@ -122,7 +130,7 @@ struct AIReadingConsentClient: AIReadingConsentStoring {
                   let rows = try? JSONDecoder().decode([Saved].self, from: response.data), rows.count == 1,
                   let row = rows.first, row.decision.appDecision == requested,
                   Instant.micros(row.decidedAt) != nil else { return .failed }
-            return .loaded(requested)
+            return .loaded(AIReadingConsentSaveReceipt(decision: requested, decidedAt: row.decidedAt, stamp: stamp))
         } catch {
             // A lost response may already have saved the decision. Only a fresh read can confirm it;
             // this call never retries or presents the requested value as the server's answer.

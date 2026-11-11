@@ -26,12 +26,13 @@ private actor FakeAIReadingConsentStore: AIReadingConsentStoring {
         return step.result
     }
 
-    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> {
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingConsentSaveReceipt> {
         saveCalls.append((allowed, stamp))
         let step = saves.isEmpty ? Step(result: .loaded(allowed ? .allowed : .denied)) : saves.removeFirst()
         await step.gate?.wait()
-        if case let .loaded(value) = step.result { stored[stamp.userID] = value }
-        return step.result
+        guard case let .loaded(value) = step.result else { return .failed }
+        stored[stamp.userID] = value
+        return .loaded(AIReadingConsentSaveReceipt(decision: value, decidedAt: "2026-11-12T03:00:00.123456+00:00", stamp: stamp))
     }
 }
 
@@ -370,7 +371,7 @@ struct AIReadingConsentClientTests {
         let server = AIConsentWireServer.make()
         let stamp = SessionStamp(userID: FakeSupabase.me, generation: 1)
         let client = AIReadingConsentClient(database: server.database(), isCurrent: { $0 == stamp })
-        #expect(await client.save(allowed, for: stamp) == .loaded(allowed ? .allowed : .denied))
+        #expect(await client.save(allowed, for: stamp) == .loaded(AIReadingConsentSaveReceipt(decision: allowed ? .allowed : .denied, decidedAt: "2026-11-12T03:00:00.123456+00:00", stamp: stamp)))
         let requests = await server.requests
         #expect(requests.count == 1)
         let request = try #require(requests.first)
@@ -381,6 +382,34 @@ struct AIReadingConsentClientTests {
         #expect(body["p_decision"] as? String == (allowed ? "granted" : "declined"))
         #expect(body["p_text_version"] as? String == AIReadingConsentContract.textVersion)
         #expect(AIReadingConsentContract.textVersion == "v1")
+    }
+
+    @Test(arguments: [
+        "2026-11-12T03:00:00.123456+00:00",
+        "2026-11-12T12:00:00.000001+09:00",
+        "2026-11-11T22:30:00.999999-04:30",
+        "2026-11-12T03:00:00Z",
+    ])
+    func theConfirmedReceiptKeepsTheExactServerTimestampAndSessionOwnerThroughTheAutomaticRead(decidedAt: String) async throws {
+        let server = AIConsentWireServer.make()
+        await server.force(.json(200, [["decision": "granted", "decided_at": decidedAt]]))
+        let stamp = SessionStamp(userID: FakeSupabase.me, generation: 17)
+        let client = AIReadingConsentClient(database: server.database(), isCurrent: { $0 == stamp })
+        let saved = try #require(await client.save(true, for: stamp).value)
+        #expect(saved.decision == .allowed)
+        #expect(saved.decidedAt == decidedAt)
+        #expect(Array(saved.decidedAt.utf8) == Array(decidedAt.utf8))
+        #expect(saved.stamp == stamp)
+
+        let fake = FakeSupabase.make()
+        let mailServer = FakeMailServer.make(supabase: fake)
+        await mailServer.force("read-waiting", .answer(status: 200, ok: true, code: nil, extra: ["stopped": false, "over_limit": false]))
+        let mail = MailActionsClient(baseURL: mailServer.baseURL, session: mailServer.urlSession)
+        _ = try await mail.readWaiting(afterConsent: saved, accessToken: "receipt-owner-test-token")
+        let request = try #require(await mailServer.requests("read-waiting").first)
+        #expect(request.jsonDictionary as? [String: String] == ["after_consent": decidedAt])
+        #expect(request.header("authorization") == "Bearer receipt-owner-test-token")
+        #expect(await mailServer.count("read-waiting") == 1)
     }
 
     @Test func anRPCResponseFromAnOldSessionIsNotPublishedAsASavedChoice() async throws {
@@ -417,7 +446,7 @@ struct AIReadingConsentClientTests {
         #expect(await server.requests.count == 1)
     }
 
-    @Test(arguments: ["empty", "many", "wrongDecision", "missingTime", "invalidTime", "infinity", "object", "network", "server"])
+    @Test(arguments: ["empty", "many", "wrongDecision", "missingTime", "emptyTime", "invalidTime", "infinity", "object", "network", "server"])
     func anUnconfirmedSaveIsAFailureAndIsNeverRetried(answer: String) async {
         let server = AIConsentWireServer.make()
         let good = ["decision": "granted", "decided_at": "2026-11-12T03:00:00Z"]
@@ -427,6 +456,7 @@ struct AIReadingConsentClientTests {
         case "many": reply = .json(200, [good, good])
         case "wrongDecision": reply = .json(200, [["decision": "declined", "decided_at": "2026-11-12T03:00:00Z"]])
         case "missingTime": reply = .json(200, [["decision": "granted"]])
+        case "emptyTime": reply = .json(200, [["decision": "granted", "decided_at": ""]])
         case "invalidTime": reply = .json(200, [["decision": "granted", "decided_at": "not a date"]])
         case "infinity": reply = .json(200, [["decision": "granted", "decided_at": "infinity"]])
         case "object": reply = .json(200, good)

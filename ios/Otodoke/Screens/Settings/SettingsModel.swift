@@ -84,6 +84,11 @@ final class SettingsModel {
     @ObservationIgnored var debugFirstKeyCreated = false
     @ObservationIgnored var debugConsentIsHoldingLoad: (@MainActor () -> Bool)?
     @ObservationIgnored var debugConsentFinishLoad: (@MainActor () -> Void)?
+    @ObservationIgnored var debugConsentAutoReadCount: (@MainActor () -> Int)?
+    @ObservationIgnored var debugConsentManualReadCount: (@MainActor () -> Int)?
+    @ObservationIgnored var debugConsentCompleteAuto: (@MainActor () -> Void)?
+    @ObservationIgnored var debugConsentUnreadCount = 2
+    @ObservationIgnored var debugConsentUnreadReasons = UnreadReasons(stopped: 0, overLimit: 0, failed: 2)
     #endif
 
     init(
@@ -161,7 +166,11 @@ final class SettingsModel {
     }
 
     func readingConsentChoiceSaved() async {
+        guard !retired else { return }
         requestsReadingConsent = false
+        if let receipt = readingConsent.takeConfirmedGrantReceipt() {
+            mailActions.startReadingAfterConsent(receipt)
+        }
         await loadSettings()
     }
 
@@ -180,13 +189,24 @@ final class SettingsModel {
     /// with the signed-in session; a test sets its own.
     @ObservationIgnored lazy var mailActions: MailActionsModel = {
         let provider = auth.provider
+        let stamp = auth.session.stamp()
         return MailActionsModel(
             api: MailActionsClient(session: provider.urlSession),
-            accessToken: { try? await provider.auth.session.accessToken },
+            accessToken: { [weak auth] in
+                guard let auth, let stamp, auth.session.isCurrent(stamp),
+                      let session = try? await provider.auth.session,
+                      session.user.id.uuidString.lowercased() == stamp.userID,
+                      auth.session.isCurrent(stamp) else { return nil }
+                return session.accessToken
+            },
             reload: { [weak self] in await self?.load() },
             announceChange: { [changes = mark.changes] in ParcelWriter.announceOutsideChange(changes) },
             mayRead: { [weak self] in self?.mayShowReadingAddress == true },
-            requestReadingConsent: { [weak self] in self?.requestReadingConsent() }
+            requestReadingConsent: { [weak self] in self?.requestReadingConsent() },
+            isCurrent: { [weak self] in self?.readingConsent.isActiveSession == true },
+            authorizeAfterConsent: { [weak self] receipt in await self?.readingConsent.authorizeReadAfterConsent(receipt) == true },
+            isCurrentGrant: { [weak self] receipt in self?.readingConsent.isCurrentGrant(receipt) == true },
+            permissionGeneration: { [weak self] in self?.readingConsent.choiceGeneration ?? -1 }
         )
     }()
 
@@ -229,7 +249,7 @@ final class SettingsModel {
         confirmationFailed = false; approvalWaiting = false; approvalBadgeFailed = false
         lastApprovalRead = nil
         passwordChange.clearPasswords()
-        mailActions.clearNotes()
+        mailActions.retire()
     }
 
     /// S3: on the card without a key row, why the key step after the sign-in did not make one, and whether
@@ -285,7 +305,8 @@ final class SettingsModel {
         if debugConsentFixture {
             hasRead = true
             keyPanel = .present(oldKeyCount: .loaded(0))
-            unread = .loaded(0); dropped = .loaded([])
+            unread = .loaded(debugConsentUnreadCount); dropped = .loaded([])
+            unreadReasons = .loaded(debugConsentUnreadReasons)
             if mayShowReadingAddress {
                 address = .loaded("inbox@\(inboundDomain)")
                 confirmURL = URL(string: "https://mail-settings.google.com/mail/vf-preview")

@@ -1,6 +1,8 @@
 // The Web's two mail endpoints, so 「これは荷物」 and 「読み取る」 finish inside the app (no Safari):
 //   POST /api/mail/mark-parcel   { "id": "<screen_events.id>" }  -> 200 { ok: true, outcome }
 //   POST /api/mail/read-waiting  { }                             -> 200 { ok: true, read, over_limit, busy, stopped }
+// The automatic read after an explicit grant sends { "after_consent": "<RPC decided_at, unchanged>" }.
+// The server claims that grant once; a later manual retry still sends {}. The client never loops batches.
 // (docs/api/mail.md; none of them is a failure. `stopped` and `over_limit` are said as the Web says them; busy: the app only reads
 //  again. A server without `stopped` is an older one: it is told nothing of, as before)
 // The same shape as the sample endpoints (docs/api/demo.md): POST, JSON, `Authorization: Bearer <access token>`
@@ -56,6 +58,8 @@ protocol MailActionsAPI: Sendable {
     func markParcel(id: String, accessToken: String) async throws(MailAPIFailure) -> MarkParcelOutcome
     /// Reads up to 20 waiting mails with Claude on the server: it takes a while (MailActionsClient.readTimeout).
     func readWaiting(accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult
+    /// Once after a confirmed grant. The server deduplicates and continues eligible backlog batches.
+    func readWaiting(afterConsent receipt: AIReadingConsentSaveReceipt, accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult
 }
 
 struct MailActionsClient: MailActionsAPI {
@@ -86,6 +90,17 @@ struct MailActionsClient: MailActionsAPI {
     /// (not even the limit), as before. Only JSON `true` / `false` counts (not 1 / 0).
     func readWaiting(accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult {
         let answer = try await post("read-waiting", [:], timeout: readTimeout, accessToken: accessToken)
+        return Self.readResult(answer)
+    }
+
+    func readWaiting(afterConsent receipt: AIReadingConsentSaveReceipt, accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult {
+        guard receipt.decision == .allowed, Instant.micros(receipt.decidedAt) != nil else { throw .invalidInput }
+        // Parsing above validates only. Never rebuild the timestamp: the server compares its exact receipt.
+        let answer = try await post("read-waiting", ["after_consent": receipt.decidedAt], timeout: readTimeout, accessToken: accessToken)
+        return Self.readResult(answer)
+    }
+
+    private static func readResult(_ answer: [String: Any]) -> ReadWaitingResult {
         guard Self.isJSONBool(answer["stopped"]) else { return ReadWaitingResult() }
         return ReadWaitingResult(stopped: KeyAPIClient.isJSONTrue(answer["stopped"]), overLimit: KeyAPIClient.isJSONTrue(answer["over_limit"]))
     }

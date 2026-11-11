@@ -85,6 +85,32 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertEqual(counter.value as? String, String(count))
     }
 
+    private func assertAutoReadCount(_ count: Int, in app: XCUIApplication) {
+        // This counter belongs to the Fake API's afterConsent overload, not to a saved choice.
+        assertAPICallCount(count, identifier: "consent-preview.auto-read-count", in: app)
+    }
+
+    private func assertManualReadCount(_ count: Int, in app: XCUIApplication) {
+        assertAPICallCount(count, identifier: "consent-preview.manual-read-count", in: app)
+    }
+
+    private func assertAPICallCount(_ count: Int, identifier: String, in app: XCUIApplication) {
+        let counter = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+        XCTAssertTrue(counter.waitForExistence(timeout: 10))
+        let value = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", String(count)), object: counter)
+        wait(for: [value], timeout: 10)
+        XCTAssertEqual(counter.value as? String, String(count))
+    }
+
+    private func assertAutomaticParcelIsVisible(in app: XCUIApplication) {
+        tap(app.tabBars.buttons["荷物"], in: app)
+        XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
+        // Only the waiting-mail Fake produces this parcel; loading the saved sample cannot satisfy it.
+        XCTAssertTrue(app.staticTexts["架空の自動読取の本"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["架空の本 上下巻セット"].exists)
+        assertAutoReadCount(1, in: app)
+    }
+
     func testUndecidedPromptShowsTheAgreedCopyAndSavesAScreenshot() throws {
         let app = launch("consent-required")
         let title = app.staticTexts["ai-reading-consent.title"]
@@ -97,6 +123,7 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertEqual(app.buttons["ai-reading-consent.deny"].label, "許可しない")
         XCTAssertEqual(app.buttons["ai-reading-consent.privacy"].label, "プライバシーポリシー")
         assertForwardingHidden(in: app)
+        assertAutoReadCount(0, in: app)
         if let path = ProcessInfo.processInfo.environment["OTODOKE_SCREENSHOT_DIR"] {
             let directory = URL(fileURLWithPath: path)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -106,9 +133,12 @@ final class AIReadingConsentUITests: XCTestCase {
 
     func testAllowingAndDecliningControlTheSameForwardingDetails() {
         let allowed = launch("consent-required")
+        XCTAssertFalse(allowed.staticTexts["架空の自動読取の本"].exists)
         tap(allowed.buttons["ai-reading-consent.allow"], in: allowed)
         XCTAssertTrue(allowed.staticTexts["ai-reading-consent.title"].waitForNonExistence(timeout: 10))
         assertConsentSaveCount(1, in: allowed)
+        // The single allow press reads the backlog. No separate read button is pressed.
+        assertAutomaticParcelIsVisible(in: allowed)
         settingsPage("メールの転送", in: allowed)
         let address = forwardingControl("forwarding-address", in: allowed)
         XCTAssertTrue(address.waitForExistence(timeout: 10), "the allowed control must contain an address")
@@ -125,12 +155,15 @@ final class AIReadingConsentUITests: XCTestCase {
         assertConsentSaveCount(1, in: denied)
         settingsPage("メールの転送", in: denied)
         assertForwardingHidden(in: denied, address: addressText)
+        assertAutoReadCount(0, in: denied)
+        XCTAssertFalse(denied.staticTexts["架空の自動読取の本"].exists)
         XCTAssertEqual(denied.state, .runningForeground)
     }
 
     func testDeniedUserCanRegisterAParcelByHand() {
         let app = launch("consent-denied")
         tap(app.tabBars.buttons["荷物"], in: app)
+        assertAutoReadCount(0, in: app)
         tap(app.buttons["＋ 登録"], in: app)
         XCTAssertTrue(app.navigationBars["荷物を登録"].waitForExistence(timeout: 10))
         let title = app.textFields["品名"]
@@ -152,11 +185,14 @@ final class AIReadingConsentUITests: XCTestCase {
         settingsPage("あなたのメールの扱い", in: app)
         XCTAssertTrue(app.buttons["読み取りを許可する"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["読み取りをやめる"].exists)
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
     }
 
     func testUndecidedUserCanLoadSamplesWithoutSavingAConsentDecision() {
         let app = launch("consent-required")
         assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
         tap(app.buttons["ai-reading-consent.sample"], in: app)
         XCTAssertTrue(app.navigationBars["サンプルで試す"].waitForExistence(timeout: 10))
         tap(app.buttons["demo-load"], in: app)
@@ -168,6 +204,7 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertTrue(app.buttons["読み取りを許可する"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["読み取りをやめる"].exists)
         assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
     }
 
     func testRevokingPermissionFromSettingsHidesForwardingDetails() {
@@ -181,6 +218,120 @@ final class AIReadingConsentUITests: XCTestCase {
         tap(app.buttons.containing(.staticText, identifier: "メールの転送").firstMatch, in: app)
         XCTAssertTrue(app.navigationBars["メールの転送"].waitForExistence(timeout: 10))
         assertForwardingHidden(in: app)
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testAnExistingGrantDoesNotStartReadingOnLoadOrRelaunch() {
+        let app = launch("consent-allowed")
+        settingsPage("メールの転送", in: app)
+        XCTAssertTrue(forwardingControl("forwarding-address", in: app).waitForExistence(timeout: 10))
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+        app.terminate()
+        app.launch()
+        settingsPage("メールの転送", in: app)
+        XCTAssertTrue(forwardingControl("forwarding-address", in: app).waitForExistence(timeout: 10))
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+        tap(app.tabBars.buttons["荷物"], in: app)
+        XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["架空の自動読取の本"].exists)
+    }
+
+    func testGrantingFromSettingsReadsWaitingMailAndWithdrawalKeepsTheResult() {
+        let app = launch("consent-denied")
+        settingsPage("あなたのメールの扱い", in: app)
+        assertAutoReadCount(0, in: app)
+        tap(app.buttons["読み取りを許可する"], in: app)
+        tap(app.buttons["ai-reading-consent.allow"], in: app)
+        XCTAssertTrue(app.staticTexts["ai-reading-consent.title"].waitForNonExistence(timeout: 10))
+        assertAutomaticParcelIsVisible(in: app)
+        settingsPage("あなたのメールの扱い", in: app)
+        tap(app.buttons["読み取りをやめる"], in: app)
+        XCTAssertTrue(app.buttons["読み取りを許可する"].waitForExistence(timeout: 10))
+        assertConsentSaveCount(2, in: app)
+        assertAutomaticParcelIsVisible(in: app)
+        settingsPage("メールの転送", in: app)
+        assertForwardingHidden(in: app)
+        assertAutoReadCount(1, in: app)
+    }
+
+    func testAnAutomaticReadStaysInProgressAcrossForegroundWithoutStartingTwice() {
+        let app = launch("consent-auto-hold")
+        tap(app.buttons["ai-reading-consent.allow"], in: app)
+        let progress = app.descendants(matching: .any).matching(identifier: "consent-auto-read.progress").firstMatch
+        XCTAssertTrue(progress.waitForExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(1, in: app)
+        XCTAssertFalse(app.staticTexts["架空の自動読取の本"].exists)
+
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
+        XCTAssertTrue(progress.waitForExistence(timeout: 10))
+        assertAutoReadCount(1, in: app)
+
+        tap(app.buttons["consent-auto-read.complete"], in: app)
+        XCTAssertTrue(progress.waitForNonExistence(timeout: 10))
+        assertAutomaticParcelIsVisible(in: app)
+        settingsPage("あなたのメールの扱い", in: app)
+        XCTAssertTrue(app.buttons["読み取りをやめる"].waitForExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(1, in: app)
+    }
+
+    func testAutomaticReadingAtTheDailyLimitKeepsRemainingMailAndPermission() {
+        let app = launch("consent-auto-limit")
+        tap(app.buttons["ai-reading-consent.allow"], in: app)
+        XCTAssertTrue(app.staticTexts["今日の読み取り上限に達しました。残りは明日の0時から読み取れます。"].waitForExistence(timeout: 10))
+        assertAutomaticParcelIsVisible(in: app)
+        settingsPage("うまく届かないとき", in: app)
+        XCTAssertTrue(app.staticTexts["今日の読み取り上限に達しました。明日の0時から読み取れます。"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["読み取る"].exists)
+        assertAutoReadCount(1, in: app)
+        assertManualReadCount(0, in: app)
+        settingsPage("あなたのメールの扱い", in: app)
+        XCTAssertTrue(app.buttons["読み取りをやめる"].waitForExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+    }
+
+    func testStoppedAutomaticReadingKeepsPermissionAndDoesNotInventAResult() {
+        let app = launch("consent-auto-stopped")
+        tap(app.buttons["ai-reading-consent.allow"], in: app)
+        XCTAssertTrue(app.staticTexts["メールの読み取りは停止中です。"].waitForExistence(timeout: 10))
+        tap(app.tabBars.buttons["荷物"], in: app)
+        XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["架空の自動読取の本"].exists)
+        settingsPage("うまく届かないとき", in: app)
+        XCTAssertTrue(app.staticTexts["メールの読み取りは停止中です。荷物を手で登録しますか？"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["荷物を登録"].exists)
+        assertAutoReadCount(1, in: app)
+        assertManualReadCount(0, in: app)
+        settingsPage("あなたのメールの扱い", in: app)
+        XCTAssertTrue(app.buttons["読み取りをやめる"].waitForExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+    }
+
+    func testPartialAutomaticFailureKeepsItsParcelAndRetriesOnlyAfterAManualPress() {
+        let app = launch("consent-auto-failed")
+        tap(app.buttons["ai-reading-consent.allow"], in: app)
+        XCTAssertTrue(app.staticTexts["読み取れなかったメールがあります。時間をおいてお試しください。"].waitForExistence(timeout: 10))
+        assertAutomaticParcelIsVisible(in: app)
+        settingsPage("あなたのメールの扱い", in: app)
+        XCTAssertTrue(app.buttons["読み取りをやめる"].waitForExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        settingsPage("うまく届かないとき", in: app)
+        XCTAssertTrue(app.staticTexts["読み取れなかったメールがあります。時間をおいて読み取りますか？"].waitForExistence(timeout: 10))
+        assertAutoReadCount(1, in: app)
+        assertManualReadCount(0, in: app)
+        // The server's claimed automatic attempt is not replayed. This explicit press uses the {} overload.
+        tap(app.buttons["読み取る"], in: app)
+        XCTAssertTrue(app.staticTexts["未読のメールはありません。"].waitForExistence(timeout: 10))
+        assertAutoReadCount(1, in: app)
+        assertManualReadCount(1, in: app)
+        assertConsentSaveCount(1, in: app)
+        assertAutomaticParcelIsVisible(in: app)
     }
 
     func testPrivacyOpensInsideTheAppAndReturnsToTheConsentPrompt() {
@@ -202,6 +353,7 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertFalse(app.buttons["ai-reading-consent.allow"].exists)
         XCTAssertFalse(app.buttons["ai-reading-consent.deny"].exists)
         assertForwardingHidden(in: app)
+        assertAutoReadCount(0, in: app)
     }
 
     func testFirstGuideStaysAliveDuringASlowConsentRecheck() {
@@ -235,5 +387,6 @@ final class AIReadingConsentUITests: XCTestCase {
         tap(app.buttons["あとで"], in: app)
         XCTAssertTrue(guide.waitForNonExistence(timeout: 10))
         XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
+        assertAutoReadCount(0, in: app)
     }
 }

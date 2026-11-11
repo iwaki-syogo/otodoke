@@ -14,11 +14,13 @@ enum AIReadingConsentText {
     static let saveFailed = "読み取りの許可を保存できませんでした。もう一度お試しください。"
     static let sample = "サンプルで試す"
     static let manual = "手で登録する"
+    static let retainedResults = "すでに読み取った荷物と結果は残ります。設定の「サンプルで試す」にある「すべての荷物を消す」で消せます。"
 }
 
 /// Explicit choice before any forwarding address is revealed. Manual parcels and samples remain usable.
 struct AIReadingConsentView: View {
     let model: AIReadingConsentModel
+    let saveChoice: @MainActor (Bool) async -> Bool
     var onChanged: @MainActor () async -> Void = {}
     var openManual: (() -> Void)?
     var openSample: (() -> Void)?
@@ -68,7 +70,7 @@ struct AIReadingConsentView: View {
 
     private func choice(_ title: String, allowed: Bool, id: String) -> some View {
         Button {
-            Task { if await model.choose(allowed) { await onChanged() } }
+            Task { if await saveChoice(allowed) { await onChanged() } }
         } label: {
             Text(title).frame(maxWidth: .infinity).padding(.vertical, 10)
         }
@@ -102,14 +104,36 @@ struct AIReadingConsentSettingsControl: View {
         }
         .sheet(isPresented: $showsChoice) {
             NavigationStack {
-                AIReadingConsentView(model: model.readingConsent, onChanged: {
-                    await model.readingConsentChoiceSaved()
+                AIReadingConsentView(model: model.readingConsent, saveChoice: model.chooseReadingConsent, onChanged: {
                     showsChoice = false
                 })
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button(ManualParcelText.close) { showsChoice = false } } }
             }
         }
         .sheet(isPresented: $showsPrivacy) { AIReadingPrivacySheet() }
+    }
+}
+
+/// Kept with the signed-in models, so automatic reading outlives the saving sheet.
+struct AIReadingAutomaticStatusView: View {
+    let model: MailActionsModel
+
+    var body: some View {
+        if model.isAutomaticallyReading {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text(SettingsMailText.readBusy).font(.subheadline)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(12)
+            .background(Color(.secondarySystemBackground))
+            .accessibilityIdentifier("consent-auto-read.progress")
+        } else if let note = model.automaticReadNote {
+            SettingsParts.errorBox(note)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .accessibilityIdentifier("consent-auto-read.result")
+        }
     }
 }
 

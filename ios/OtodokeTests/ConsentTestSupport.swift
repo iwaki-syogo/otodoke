@@ -14,7 +14,7 @@ extension AIReadingConsentModel {
 
 private struct KnownAllowedConsentStore: AIReadingConsentStoring {
     func load(for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> { .loaded(.allowed) }
-    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> {
-        .loaded(allowed ? .allowed : .denied)
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingConsentSaveReceipt> {
+        .loaded(AIReadingConsentSaveReceipt(decision: allowed ? .allowed : .denied, decidedAt: "2026-11-12T00:00:00.000001+00:00", stamp: stamp))
     }
 }

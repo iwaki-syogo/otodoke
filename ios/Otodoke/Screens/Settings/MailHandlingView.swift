@@ -7,6 +7,7 @@ import SafariServices
 
 enum MailHandlingText {
     static let heading = "あなたのメールの扱い"
+    static let readingPermission = "読み取りを許可しているときだけ、Anthropic の Claude に送ります。\(AIReadingConsentText.retainedResults)"
     static let items: [String] = [
         "届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。",
         "読み取って買い物に関係ないと分かったメールは、Otodoke に残しません。",
@@ -41,6 +42,11 @@ struct MailHandlingView: View {
                     .font(.headline)
             }
             VStack(alignment: .leading, spacing: 8) {
+                Text(MailHandlingText.readingPermission)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(Array(MailHandlingText.items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("•")
