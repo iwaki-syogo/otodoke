@@ -422,23 +422,47 @@ export function parcelTotal(mails: Extraction[]): number | null {
 /** How long past its date a parcel waits before the user is asked whether it came. */
 export const CHECK_AFTER_DAYS = 14;
 
-type DatedParcel = Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at">;
+type DatedParcel = Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at"> & { received_at?: string | null };
 
 /** The last day a parcel may still arrive on time: the end of a window, or the one date. */
 export function lastExpectedDay(p: Pick<ParcelRow, "expected_date" | "expected_date_end">): string | null {
   return p.expected_date_end ?? p.expected_date;
 }
 
+/** The person said they have it: delivered, and received_at set. */
+export function isReceived(p: Pick<ParcelRow, "status"> & { received_at?: string | null }): boolean {
+  return p.status === "delivered" && (p.received_at ?? null) !== null;
+}
+
 /**
  * Still open two weeks after it should have arrived (or, with no date, two weeks after its
  * last mail). Most shops send no delivery mail, so these are asked about rather than guessed.
+ * A delivered parcel the person has not said they received is asked about the same way, counted
+ * from the day of the delivery mail (its expected_date, which a delivery mail sets to the day it
+ * came); with no date, the same day as for any parcel. It is never moved on its own.
  */
 export function needsCheck(p: DatedParcel, today: string): boolean {
-  if (p.status === "delivered" || p.status === "cancelled") return false;
+  if (p.status === "cancelled" || isReceived(p)) return false;
   const cutoff = addDays(today, -CHECK_AFTER_DAYS);
   const lastDay = lastExpectedDay(p);
   if (lastDay) return lastDay <= cutoff;
   return p.last_email_at !== null && todayJst(new Date(p.last_email_at)) <= cutoff;
+}
+
+/**
+ * What a merge of parcels leaves of "the person said they received it". Either of them having said
+ * so is enough: the merged parcel is delivered and received then, from the first received_at found
+ * (the kept parcel's first). Merged into cancelled it is not received (the database clears it).
+ * `mergedStatus` is the status the merge writes. Null when there is nothing to carry.
+ */
+export function receivedAfterMerge(
+  keep: Pick<ParcelRow, "received_at">,
+  absorbed: Pick<ParcelRow, "received_at">[],
+  mergedStatus: string,
+): { status: "delivered"; received_at: string } | null {
+  if (mergedStatus === "cancelled") return null;
+  const at = keep.received_at ?? absorbed.map((p) => p.received_at).find((v): v is string => v !== null && v !== undefined) ?? null;
+  return at === null ? null : { status: "delivered", received_at: at };
 }
 
 /**

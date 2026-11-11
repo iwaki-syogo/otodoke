@@ -12,8 +12,8 @@ import { mount, type Mounted } from "./hook-harness";
  * is never `disabled` while sending (its name=value would drop out of the POST).
  *
  * The shared parts (src/components/pending-button.tsx): PendingButton + usePendingAction for a
- * press handled in code, SubmitButton for a form. Used by 「届いた」 (the swipe, the parcel page),
- * 「すべて受取済にする」, 「元に戻す」, 「届いていない」 and the 登録／編集 form.
+ * press handled in code, SubmitButton for a form. Used by 「受け取った」 (the swipe, the parcel page),
+ * 「すべて受け取り済みにする」, 「元に戻す」, 「届いていない」 and the 登録／編集 form.
  */
 
 const ctl = vi.hoisted(() => ({
@@ -210,7 +210,7 @@ describe("SubmitButton", () => {
   });
 });
 
-describe("the swipe's 「届いた」 (SwipeToDeliver)", () => {
+describe("the swipe's 「受け取った」 (SwipeToDeliver)", () => {
   const card = createElement("a", { href: "/app/parcels/p1" }, "カード");
   const setup = () => mount(() => SwipeToDeliver({ id: "p1", status: "shipped", children: card }));
   const panelButton = (view: Mounted) => view.host((h) => h.type === "button");
@@ -229,17 +229,17 @@ describe("the swipe's 「届いた」 (SwipeToDeliver)", () => {
     expect(panelButton(view).props["aria-busy"]).toBe(true);
     release(1);
     await flush();
-    expect(ctl.toast).toHaveBeenCalledWith({ text: "届いたにしました", undo: [{ id: "p1", status: "shipped" }] });
+    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: [{ id: "p1", status: "shipped", received_at: null }] });
   });
 
-  it("[D2-8] says it could not save when nothing was saved (0), instead of 「届いたにしました」 and a spinner that never stops", async () => {
+  it("[D2-8] says it could not save when nothing was saved (0), instead of 「受け取り済みにしました」 and a spinner that never stops", async () => {
     ctl.markDelivered.mockResolvedValue(0);
     const view = setup();
     press(panelButton(view));
     await flush();
     expect(ctl.toast).not.toHaveBeenCalled();
     expect(view.text()).toContain("保存できませんでした。もう一度スワイプしてください。");
-    expect(hostText(panelButton(view))).toBe("届いた");
+    expect(hostText(panelButton(view))).toBe("受け取った");
     // And it can be tried again.
     ctl.markDelivered.mockResolvedValue(1);
     press(panelButton(view));
@@ -249,19 +249,19 @@ describe("the swipe's 「届いた」 (SwipeToDeliver)", () => {
   });
 });
 
-describe("「すべて受取済にする」 (DeliverAll)", () => {
+describe("「すべて受け取り済みにする」 (DeliverAll)", () => {
   const items = [
-    { id: "a", status: "shipped" },
-    { id: "b", status: "ordered" },
+    { id: "a", status: "shipped", received_at: null },
+    { id: "b", status: "ordered", received_at: null },
   ];
 
   it("asks once more, then saves once, showing the spinner and 「保存しています…」 meanwhile", async () => {
     let release!: (n: number) => void;
     ctl.markDelivered.mockImplementation(() => new Promise((r) => (release = r)));
     const view = mount(() => DeliverAll({ items }));
-    press(buttonIn(view, "すべて受取済にする"));
+    press(buttonIn(view, "すべて受け取り済みにする"));
     await flush();
-    const confirm = buttonIn(view, "2 件を受取済にする");
+    const confirm = buttonIn(view, "2 件を受け取り済みにする");
     press(confirm);
     press(confirm);
     expect(ctl.markDelivered).toHaveBeenCalledTimes(1);
@@ -273,27 +273,27 @@ describe("「すべて受取済にする」 (DeliverAll)", () => {
     await flush();
     ctl.transitionPending = false;
     view.rerender();
-    expect(ctl.toast).toHaveBeenCalledWith({ text: "2 件を受取済にしました", undo: items });
+    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: items });
   });
 
   it("[D2-8] says it could not save when nothing was saved (0)", async () => {
     ctl.markDelivered.mockResolvedValue(0);
     const view = mount(() => DeliverAll({ items }));
-    press(buttonIn(view, "すべて受取済にする"));
+    press(buttonIn(view, "すべて受け取り済みにする"));
     await flush();
-    press(buttonIn(view, "2 件を受取済にする"));
+    press(buttonIn(view, "2 件を受け取り済みにする"));
     await flush();
     expect(ctl.toast).not.toHaveBeenCalled();
     expect(view.text()).toContain("保存できませんでした。もう一度押してください。");
   });
 });
 
-describe("[D2-1] 「届いた」 on the parcel page (MarkDeliveredButton)", () => {
+describe("[D2-1] 「受け取った」 on the parcel page (MarkDeliveredButton)", () => {
   it("saves the parcel once from a press", async () => {
     ctl.markDelivered.mockResolvedValue(1);
     const view = mount(() => MarkDeliveredButton({ id: "p1" }));
-    press(buttonIn(view, "届いた"));
-    press(buttonIn(view, "届いた"));
+    press(buttonIn(view, "受け取った"));
+    press(buttonIn(view, "受け取った"));
     await flush();
     expect(ctl.markDelivered).toHaveBeenCalledTimes(1);
     expect(ctl.markDelivered).toHaveBeenCalledWith(["p1"]);
@@ -311,7 +311,7 @@ describe("[D2-1] 「届いた」 on the parcel page (MarkDeliveredButton)", () =
     for (const answer of [() => Promise.resolve(0), () => Promise.reject(new Error("boom"))]) {
       ctl.markDelivered.mockImplementation(answer);
       const view = mount(() => MarkDeliveredButton({ id: "p1" }));
-      press(buttonIn(view, "届いた"));
+      press(buttonIn(view, "受け取った"));
       await flush();
       expect(view.text()).toContain("保存できませんでした。もう一度押してください。");
     }

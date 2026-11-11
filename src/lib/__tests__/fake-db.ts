@@ -80,6 +80,7 @@ const PARCEL_DEFAULTS: Row = {
   order_number: null,
   ordered_at: null,
   presence_evidence: null,
+  received_at: null,
   requires_presence: null,
   shop_key: null,
   source: "mail",

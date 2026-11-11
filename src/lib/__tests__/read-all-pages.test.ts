@@ -68,7 +68,7 @@ describe("/app reads every parcel", () => {
     for (let i = 0; i < n; i++) {
       db.rows("parcels").push({ id: `p-${String(i).padStart(5, "0")}`, user_id: USER, shop: "テスト店", title: `品名${i}`, status: "shipped", expected_date: day(1), created_at: "2026-11-01T00:00:00Z" });
     }
-    db.rows("parcels").push({ id: "p-delivered", user_id: USER, shop: "テスト店", status: "delivered", created_at: "2026-11-01T00:00:00Z" });
+    db.rows("parcels").push({ id: "p-delivered", user_id: USER, shop: "テスト店", status: "delivered", received_at: "2026-11-01T00:00:00Z", created_at: "2026-11-01T00:00:00Z" });
   };
 
   it("lists and counts 1,001 parcels on their way, past the 1000-row cap", async () => {
@@ -111,7 +111,7 @@ describe("/app reads every parcel", () => {
     const root = await render();
     expect(failureBoxes(root)).toHaveLength(1);
     expect(textOf(root)).not.toContain("まだ荷物がありません");
-    expect(textOf(linksTo(root, "/app/delivered")[0])).toContain("届いた荷物");
+    expect(textOf(linksTo(root, "/app/delivered")[0])).toContain("受け取り済み");
     expect(textOf(linksTo(root, "/app/delivered")[0])).not.toMatch(/\d/);
     log.mockRestore();
   });

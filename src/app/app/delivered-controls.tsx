@@ -5,7 +5,7 @@ import { PendingButton, usePendingAction } from "@/components/pending-button";
 import { Spinner } from "@/components/spinner";
 import { markDelivered, restoreStatuses } from "./parcel-actions";
 
-type Marked = { id: string; status: string }[];
+type Marked = { id: string; status: string; received_at: string | null }[];
 interface Toast {
   text: string;
   undo: Marked | null;
@@ -18,8 +18,8 @@ const SAVING = "保存しています…";
 const UNDOING = "戻しています…";
 
 /**
- * Holds the "届いたにしました / 元に戻す" notice. It lives above the list because a marked
- * parcel moves to another section, and the card that was swiped is gone by then.
+ * Holds the "受け取り済みにしました / 元に戻す" notice. It lives above the list because a marked
+ * parcel moves to another page, and the card that was swiped is gone by then.
  */
 export function DeliveredToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
@@ -66,8 +66,8 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
 const REVEAL = 96;
 const COMMIT = 120;
 
-/** Swipe a card to the left to say the parcel has arrived. Vertical scrolling is left alone. */
-export function SwipeToDeliver({ id, status, children }: { id: string; status: string; children: ReactNode }) {
+/** Swipe a card to the left to say the parcel is received (受け取った). Vertical scrolling is left alone. */
+export function SwipeToDeliver({ id, status, receivedAt = null, children }: { id: string; status: string; receivedAt?: string | null; children: ReactNode }) {
   const showToast = useContext(ToastContext);
   const [dx, setDx] = useState(0);
   const [state, setState] = useState<"idle" | "dragging" | "saving" | "error">("idle");
@@ -84,16 +84,16 @@ export function SwipeToDeliver({ id, status, children }: { id: string; status: s
     setDx(-COMMIT * 3);
     startTransition(async () => {
       try {
-        // 0: nothing was saved (signed out, or the parcel was cancelled meanwhile). Not 「届いた」.
+        // 0: nothing was saved (signed out, or the parcel was cancelled meanwhile). Not received.
         if ((await markDelivered([id])) === 0) throw new Error("nothing saved");
-        showToast({ text: "届いたにしました", undo: [{ id, status }] });
+        showToast({ text: "受け取り済みにしました", undo: [{ id, status, received_at: receivedAt }] });
       } catch {
         saving.current = false;
         setState("error");
         setDx(0);
       }
     });
-  }, [id, status, showToast]);
+  }, [id, status, receivedAt, showToast]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (state === "saving") return;
@@ -142,7 +142,7 @@ export function SwipeToDeliver({ id, status, children }: { id: string; status: s
               {SAVING}
             </>
           ) : (
-            "届いた"
+            "受け取った"
           )}
         </button>
       </div>
@@ -170,7 +170,7 @@ export function SwipeToDeliver({ id, status, children }: { id: string; status: s
   );
 }
 
-/** "Mark all as arrived" for the parcels waiting for a check, with a second tap to confirm. */
+/** "Mark all as received" for the parcels waiting for a check, with a second tap to confirm. */
 export function DeliverAll({ items }: { items: Marked }) {
   const showToast = useContext(ToastContext);
   const [step, setStep] = useState<"idle" | "confirm" | "error">("idle");
@@ -186,7 +186,7 @@ export function DeliverAll({ items }: { items: Marked }) {
           return;
         }
         setStep("idle");
-        showToast({ text: `${n} 件を受取済にしました`, undo: items });
+        showToast({ text: "受け取り済みにしました", undo: items });
       } catch {
         setStep("error");
       }
@@ -202,7 +202,7 @@ export function DeliverAll({ items }: { items: Marked }) {
           onClick={save}
           className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white"
         >
-          {`${items.length} 件を受取済にする`}
+          {`${items.length} 件を受け取り済みにする`}
         </PendingButton>
         <button type="button" onClick={() => setStep("idle")} disabled={pending} className="rounded-xl border border-neutral-300 px-4 py-3 text-sm disabled:opacity-60">
           やめる
@@ -213,7 +213,7 @@ export function DeliverAll({ items }: { items: Marked }) {
   return (
     <div>
       <button type="button" onClick={() => setStep("confirm")} className="w-full rounded-xl border border-emerald-600 px-4 py-3 text-sm font-bold text-emerald-700">
-        すべて受取済にする
+        すべて受け取り済みにする
       </button>
       {step === "error" ? <p className="mt-1 text-xs text-red-700">保存できませんでした。もう一度押してください。</p> : null}
     </div>

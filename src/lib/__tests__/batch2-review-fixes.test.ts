@@ -71,6 +71,7 @@ const parcel = (over: Record<string, unknown>) => ({
   shop: "テスト店",
   title: `品名${seq}`,
   status: "delivered",
+  received_at: "2026-11-01T00:00:00Z",
   updated_at: "2026-11-01T00:00:00Z",
   ...over,
 });

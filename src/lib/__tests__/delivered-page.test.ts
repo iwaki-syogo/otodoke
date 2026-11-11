@@ -16,7 +16,7 @@ import { ancestorsOf, classesOf, findAll, hasClasses, linksTo, parseHtml, textOf
  * - getUser() (no user -> redirect("/login")); both reads add user_id = the user's id.
  * - parcels: the delivered ones through readAll, as before.
  * - items: parcel_items through readAll, select("parcel_id,name", { count: "exact" }), no .in().
- * - either read failing -> 「読み込めませんでした」 only. 0 delivered -> 「届いた荷物はありません」;
+ * - either read failing -> 「読み込めませんでした」 only. 0 delivered -> 「受け取り済みの荷物はありません」;
  *   0 after filtering -> 「見つかりません」.
  *
  * Client part: DeliveredFilter({ q, s, c, m, options, children }) from
@@ -71,6 +71,7 @@ const parcel = (over: Record<string, unknown>) => ({
   shop: "テスト店",
   title: `品名${seq}`,
   status: "delivered",
+  received_at: "2026-11-01T00:00:00Z",
   updated_at: "2026-11-01T00:00:00Z",
   ...over,
 });
@@ -81,7 +82,7 @@ const D1 = parcel({ shop: "テスト雑貨", shop_key: "other", title: "ノー�
 const D2 = parcel({ shop: "Amazon.co.jp", shop_key: "amazon", title: "USBケーブル", ordered_at: "2026-10-05", category: "electronics" });
 const D3 = parcel({ shop: "アマゾン", shop_key: "amazon", title: "洗剤", ordered_at: "2026-09-20", category: "daily" });
 const D4 = parcel({ shop: "テスト雑貨", shop_key: "other", title: "ペン", ordered_at: null, category: null });
-const SHIPPED = parcel({ shop: "テスト雑貨", title: "まだのノート", status: "shipped", ordered_at: "2026-10-29" });
+const SHIPPED = parcel({ shop: "テスト雑貨", title: "まだのノート", status: "shipped", received_at: null, ordered_at: "2026-10-29" });
 const THEIRS = parcel({ user_id: OTHER, shop: "テスト雑貨", title: "他人のノート", ordered_at: "2026-10-01" });
 const MINE = [D1, D2, D3, D4];
 
@@ -145,7 +146,7 @@ describe("delivered page: reads", () => {
     const text = textOf(root);
     expect(text).toContain("読み込めませんでした");
     expect(text).not.toContain("見つかりません");
-    expect(text).not.toContain("届いた荷物はありません");
+    expect(text).not.toContain("受け取り済みの荷物はありません");
     expect(parcelLinks(root)).toHaveLength(0);
   });
 
@@ -155,7 +156,7 @@ describe("delivered page: reads", () => {
     const text = textOf(root);
     expect(text).toContain("読み込めませんでした");
     expect(text).not.toContain("見つかりません");
-    expect(text).not.toContain("届いた荷物はありません");
+    expect(text).not.toContain("受け取り済みの荷物はありません");
   });
 });
 
@@ -186,15 +187,15 @@ describe("delivered page: results", () => {
   it("says 「見つかりません」 when nothing passes, apart from having no delivered parcels", async () => {
     const root = await render({ q: "どこにも無い語" });
     expect(textOf(root)).toContain("見つかりません");
-    expect(textOf(root)).not.toContain("届いた荷物はありません");
+    expect(textOf(root)).not.toContain("受け取り済みの荷物はありません");
     expect(parcelLinks(root)).toHaveLength(0);
   });
 
-  it("says 「届いた荷物はありません」 when there are none at all", async () => {
+  it("says 「受け取り済みの荷物はありません」 when there are none at all", async () => {
     db = new FakeDb({ parcels: [SHIPPED], parcel_items: [] });
     mocks.state.db = db;
     const text = textOf(await render({ q: "ノート" }));
-    expect(text).toContain("届いた荷物はありません");
+    expect(text).toContain("受け取り済みの荷物はありません");
     expect(text).not.toContain("見つかりません");
   });
 

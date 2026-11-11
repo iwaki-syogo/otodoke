@@ -102,8 +102,8 @@ describe("upcomingByDay", () => {
 /**
  * PageLink({ href, label, count? }) from src/app/app/page-link.tsx (replaces DeliveredLink): a
  * framed row that is one link as a whole, the label underlined, and on the right the count (only
- * when given, as 「1,234 件」) and 「›」. Used for 届いた荷物 and キャンセルした荷物 in the list and
- * 届いた荷物 in the calendar.
+ * when given, as 「1,234 件」) and 「›」. Used for 受け取り済み and キャンセルした荷物 in the list and
+ * 受け取り済み in the calendar.
  */
 describe("PageLink", () => {
   type Props = { href: string; label: string; count?: number };
@@ -113,7 +113,7 @@ describe("PageLink", () => {
   };
 
   it("is one framed link to the href that holds the whole row", async () => {
-    const root = await render({ href: "/app/delivered", label: "届いた荷物" });
+    const root = await render({ href: "/app/delivered", label: "受け取り済み" });
     const links = findAll(root, (n) => n.tag === "a");
     expect(links).toHaveLength(1);
     expect(linksTo(root, "/app/delivered")).toHaveLength(1);
@@ -123,9 +123,9 @@ describe("PageLink", () => {
   });
 
   it("underlines the label, and only the label", async () => {
-    const root = await render({ href: "/app/delivered", label: "届いた荷物", count: 12 });
+    const root = await render({ href: "/app/delivered", label: "受け取り済み", count: 12 });
     const underlined = findAll(root, (n) => hasClasses(n, "underline", "underline-offset-4"));
-    expect(underlined.map((n) => textOf(n).trim())).toEqual(["届いた荷物"]);
+    expect(underlined.map((n) => textOf(n).trim())).toEqual(["受け取り済み"]);
   });
 
   it("puts the count and 「›」 to the right of the label", async () => {
@@ -138,8 +138,8 @@ describe("PageLink", () => {
   });
 
   it("shows no count without one", async () => {
-    const text = textOf(await render({ href: "/app/delivered", label: "届いた荷物" }));
-    expect(text).toMatch(/^\s*届いた荷物\s*›\s*$/);
+    const text = textOf(await render({ href: "/app/delivered", label: "受け取り済み" }));
+    expect(text).toMatch(/^\s*受け取り済み\s*›\s*$/);
     expect(text).not.toContain("件");
   });
 });
@@ -147,13 +147,13 @@ describe("PageLink", () => {
 describe("calendar page", () => {
   const source = readFileSync(path.resolve(__dirname, "../../app/app/calendar/page.tsx"), "utf8");
 
-  it("draws from upcomingByDay and offers 「届いた荷物 ›」 as a PageLink without a count", () => {
+  it("draws from upcomingByDay and offers 「受け取り済み ›」 as a PageLink without a count", () => {
     expect(source).toContain("upcomingByDay");
     expect(source).toMatch(/import\s*\{\s*PageLink\s*\}\s*from\s*["']\.\.\/page-link["']/);
     const uses = source.match(/<PageLink\b[^>]*\/>/g) ?? [];
     expect(uses).toHaveLength(1);
     expect(uses[0]).toMatch(/href=\{?\s*["']\/app\/delivered["']/);
-    expect(uses[0]).toMatch(/label=\{?\s*["']届いた荷物["']/);
+    expect(uses[0]).toMatch(/label=\{?\s*["']受け取り済み["']/);
     expect(uses[0]).not.toMatch(/\bcount=/);
     expect(source).not.toContain("DeliveredLink");
   });

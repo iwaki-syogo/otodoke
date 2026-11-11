@@ -13,7 +13,7 @@ import { findAll, hasClasses, linksTo, parseHtml, textOf, type HtmlNode } from "
  * blocks (headings, cards, the calendar's grid) from the tap until the page arrives. It says
  * 「読み込み中」 to screen readers and never what a list holds (no 「〜はありません」, no counts).
  *
- * A move that changes only the query (?m= on the calendar and the spend screen, ?q= on 届いた荷物)
+ * A move that changes only the query (?m= on the calendar and the spend screen, ?q= on 受け取り済み)
  * shows no loading.tsx (the page keeps its state key): there the screen fades with aria-busy from
  * the tap, and the pressed control spins. The tabs show a spinner in the icon's place while their
  * page is on the way before its loading screen is there (useLinkStatus).
@@ -104,7 +104,7 @@ const SCREENS: Array<[string, (root: HtmlNode) => void]> = [
   [
     "delivered",
     (root) => {
-      expect(h1(root)).toEqual(["届いた荷物"]);
+      expect(h1(root)).toEqual(["受け取り済み"]);
       expect(linksTo(root, "/app")).toHaveLength(1);
       expect(cards(root)).toHaveLength(3);
     },
@@ -278,7 +278,7 @@ describe("a move that changes only the query fades the screen from the tap", () 
   };
   const busy = (root: HtmlNode) => findAll(root, (n) => n.attrs["aria-busy"] === "true");
 
-  it("the calendar: the grid, the days and 「届いた荷物」 fade with aria-busy; 前月／翌月 stay out of it", async () => {
+  it("the calendar: the grid, the days and 「受け取り済み」 fade with aria-busy; 前月／翌月 stay out of it", async () => {
     forced.pending = true;
     const root = await render("@/app/app/calendar/page", { m: AHEAD.slice(0, 7) });
     const area = busy(root);

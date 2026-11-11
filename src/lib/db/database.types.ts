@@ -295,6 +295,7 @@ export type Database = {
           order_number: string | null
           ordered_at: string | null
           presence_evidence: string | null
+          received_at: string | null
           requires_presence: boolean | null
           shop: string
           shop_key: string | null
@@ -323,6 +324,7 @@ export type Database = {
           order_number?: string | null
           ordered_at?: string | null
           presence_evidence?: string | null
+          received_at?: string | null
           requires_presence?: boolean | null
           shop: string
           shop_key?: string | null
@@ -351,6 +353,7 @@ export type Database = {
           order_number?: string | null
           ordered_at?: string | null
           presence_evidence?: string | null
+          received_at?: string | null
           requires_presence?: boolean | null
           shop?: string
           shop_key?: string | null

@@ -161,7 +161,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
               })}
             </ol>
           )}
-          <PageLink href="/app/delivered" label="届いた荷物" />
+          <PageLink href="/app/delivered" label="受け取り済み" />
         </FilterArea>
       </div>
     </FilterScope>

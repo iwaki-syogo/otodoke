@@ -128,7 +128,11 @@ describe("the words", () => {
     expect(FORM).toContain(`<option value="drop">${constant(TEXT, "presenceDrop")}</option>`);
     expect(FORM).toContain(`ordered: "${constant(TEXT, "statusOrdered")}"`);
     expect(FORM).toContain(`shipped: "${constant(TEXT, "statusShipped")}"`);
-    expect(FORM).toContain(`delivered: "${constant(TEXT, "statusDelivered")}"`);
+    // Known difference until iOS build 14: the Web's form says 受け取り済み (received_at goes in with
+    // the status), the app (build 13) still says 届いた. Its trigger sets received_at all the same.
+    // When the app follows, this becomes `delivered: "${constant(TEXT, "statusDelivered")}"` again.
+    expect(FORM).toContain('delivered: "受け取り済み"');
+    expect(constant(TEXT, "statusDelivered")).toBe("届いた");
     expect(FORM).toContain(`pendingLabel="${constant(TEXT, "submitting")}"`);
     expect(FORM).toContain(`{parcel ? "保存" : "${constant(TEXT, "submit")}"}`);
     expect(constant(TEXT, "uncategorized")).toBe(categoryLabel(null));

@@ -42,6 +42,12 @@ const PARCEL_COLUMNS = [
   "tracking_number", "tracking_url", "updated_at", "user_id",
 ];
 
+/**
+ * The rows in the file carry no received_at (the app, build 13, has no such column); the script worked
+ * its answers out with a delivered row as a received one, the old meaning of delivered. Done the same here.
+ */
+const asApp = (p: ParcelRow): ParcelRow => ({ ...p, received_at: p.status === "delivered" ? "2026-11-01T00:00:00+00:00" : null });
+
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -162,14 +168,14 @@ describe("every out is what the Web's own function answers", () => {
 
   it("match", () => {
     for (const c of fx.match.lastExpectedDay) expect(c.out).toBe(lastExpectedDay(c.parcel));
-    for (const c of fx.match.needsCheck) expect(c.out).toBe(needsCheck(c.parcel, c.today));
+    for (const c of fx.match.needsCheck) expect(c.out).toBe(needsCheck(asApp(c.parcel as ParcelRow), c.today));
     for (const c of fx.match.isLate) expect(c.out).toBe(isLate(c.parcel, c.today));
     for (const c of fx.match.faceToFace) expect(c.out).toBe(faceToFace(c.parcel));
   });
 
   it("sections", () => {
     for (const c of fx.sections) {
-      const s = parcelSections(c.parcels as ParcelRow[], c.today);
+      const s = parcelSections((c.parcels as ParcelRow[]).map(asApp), c.today);
       const ids = (xs: ParcelRow[]) => xs.map((p) => p.id);
       expect(c.out).toEqual({ toCheck: ids(s.toCheck), delivering: ids(s.delivering), soon: ids(s.soon), ordered: ids(s.ordered) });
     }

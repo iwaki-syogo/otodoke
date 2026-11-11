@@ -44,8 +44,8 @@ vi.mock("@/lib/supabase/server", () => ({
   getUser: async () => ({ id: USER }),
 }));
 
-const D1 = { id: "00000000-0000-4000-8000-000000000101", user_id: USER, shop: "テスト雑貨", shop_key: "other", title: "ノート", status: "delivered", ordered_at: "2026-10-30", updated_at: "2026-11-01T00:00:00Z" };
-const D2 = { id: "00000000-0000-4000-8000-000000000102", user_id: USER, shop: "テスト雑貨", shop_key: "other", title: "ペン", status: "delivered", ordered_at: "2026-10-05", updated_at: "2026-11-01T00:00:00Z" };
+const D1 = { id: "00000000-0000-4000-8000-000000000101", user_id: USER, shop: "テスト雑貨", shop_key: "other", title: "ノート", status: "delivered", received_at: "2026-11-01T00:00:00Z", ordered_at: "2026-10-30", updated_at: "2026-11-01T00:00:00Z" };
+const D2 = { id: "00000000-0000-4000-8000-000000000102", user_id: USER, shop: "テスト雑貨", shop_key: "other", title: "ペン", status: "delivered", received_at: "2026-11-01T00:00:00Z", ordered_at: "2026-10-05", updated_at: "2026-11-01T00:00:00Z" };
 const ITEM = { id: "10000000-0000-4000-8000-000000000101", parcel_id: D2.id, user_id: USER, name: "変換アダプタ" };
 
 let db: FakeDb;
@@ -93,7 +93,7 @@ describe("[Codex-C3][Q5] delivered page: items are read only for a search word",
     const text = textOf(root);
     expect(text).toContain("読み込めませんでした");
     expect(text).not.toContain("見つかりません");
-    expect(text).not.toContain("届いた荷物はありません");
+    expect(text).not.toContain("受け取り済みの荷物はありません");
     expect(shown(root)).toEqual([]);
   });
 

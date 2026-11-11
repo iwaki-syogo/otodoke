@@ -50,6 +50,7 @@ function row(title: string, over: Partial<ParcelRow>): ParcelRow {
     needs_review: false,
     requires_presence: null,
     presence_evidence: null,
+    received_at: null,
     total_amount: null,
     created_at: "2026-11-01T00:00:00+00:00",
     updated_at: "2026-11-01T00:00:00.000000+00:00",
@@ -60,18 +61,63 @@ function row(title: string, over: Partial<ParcelRow>): ParcelRow {
 const titles = (xs: ParcelRow[]) => xs.map((p) => p.title);
 
 describe("parcelSections", () => {
-  it("leaves delivered and cancelled parcels out of every section", () => {
+  it("leaves received and cancelled parcels out of every section", () => {
     const rows = [
-      row("delivered", { status: "delivered", expected_date: "2026-11-01" }),
+      row("received", { status: "delivered", received_at: "2026-11-01T00:00:00Z", expected_date: "2026-11-01" }),
       row("cancelled", { status: "cancelled", expected_date: "2026-11-05" }),
+      // A cancelled parcel is out even when a stale received_at is left on it.
+      row("cancelled received", { status: "cancelled", received_at: "2026-11-01T00:00:00Z", expected_date: "2026-11-05" }),
       row("shipped", { status: "shipped", expected_date: "2026-11-05" }),
     ];
     const s = parcelSections(rows, TODAY);
     expect(titles(s.open)).toEqual(["shipped"]);
+    expect(titles(s.arrived)).toEqual([]);
     expect(titles(s.toCheck)).toEqual([]);
     expect(titles(s.delivering)).toEqual([]);
     expect(titles(s.ordered)).toEqual([]);
     expect(titles(s.soon)).toEqual(["shipped"]);
+  });
+
+  it("puts a delivered parcel the person has not received in 配達済み, and nowhere else", () => {
+    const rows = [
+      row("delivered 1 day ago", { status: "delivered", expected_date: "2026-11-03" }),
+      row("delivered today", { status: "delivered", expected_date: "2026-11-04" }),
+      row("shipped", { status: "shipped", expected_date: "2026-11-05" }),
+    ];
+    const s = parcelSections(rows, TODAY);
+    expect(titles(s.arrived)).toEqual(["delivered 1 day ago", "delivered today"]);
+    expect(titles(s.toCheck)).toEqual([]);
+    expect(titles(s.open)).toEqual(["shipped"]);
+    expect(titles(s.soon)).toEqual(["shipped"]);
+  });
+
+  it("moves a delivered parcel from 配達済み to 要確認 at 14 days from its delivery day, not at 13", () => {
+    const rows = [
+      row("delivered 15 days ago", { status: "delivered", expected_date: "2026-10-20" }),
+      row("delivered 14 days ago", { status: "delivered", expected_date: "2026-10-21" }),
+      row("delivered 13 days ago", { status: "delivered", expected_date: "2026-10-22" }),
+      row("delivered, no date, mail 14 days ago", { status: "delivered", last_email_at: "2026-10-21T14:59:59Z" }),
+      row("delivered, no date, mail 13 days ago", { status: "delivered", last_email_at: "2026-10-21T15:00:00Z" }),
+    ];
+    const s = parcelSections(rows, TODAY);
+    expect(titles(s.toCheck)).toEqual(["delivered 15 days ago", "delivered 14 days ago", "delivered, no date, mail 14 days ago"]);
+    expect(titles(s.arrived)).toEqual(["delivered 13 days ago", "delivered, no date, mail 13 days ago"]);
+    // In exactly one of the two, whatever its age.
+    for (const r of rows) expect(Number(s.arrived.includes(r)) + Number(s.toCheck.includes(r))).toBe(1);
+  });
+
+  it("keeps a parcel received long ago out of 要確認", () => {
+    const s = parcelSections([row("received long ago", { status: "delivered", received_at: "2026-09-01T00:00:00Z", expected_date: "2026-09-01" })], TODAY);
+    expect(titles(s.toCheck)).toEqual([]);
+    expect(titles(s.arrived)).toEqual([]);
+  });
+
+  it("mixes shipped and delivered in 要確認 in the order given", () => {
+    const rows = [
+      row("shipped long ago", { status: "shipped", expected_date: "2026-10-01" }),
+      row("delivered long ago", { status: "delivered", expected_date: "2026-10-02" }),
+    ];
+    expect(titles(parcelSections(rows, TODAY).toCheck)).toEqual(["shipped long ago", "delivered long ago"]);
   });
 
   it("asks about a parcel 14 days or more past its last day, and not at 13", () => {
@@ -161,7 +207,7 @@ describe("parcelSections", () => {
 
   it("answers empty sections for no parcels", () => {
     const s = parcelSections([], TODAY);
-    expect(s).toEqual({ open: [], toCheck: [], delivering: [], soon: [], ordered: [] });
+    expect(s).toEqual({ open: [], arrived: [], toCheck: [], delivering: [], soon: [], ordered: [] });
   });
 });
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Bone, CardBones, HeadingBones, SkeletonScreen } from "@/components/skeleton";
 
-/** 届いた荷物 while it loads: the search box and the three selects, then cards by month. */
+/** 受け取り済み while it loads: the search box and the three selects, then cards by month. */
 export default function Loading() {
   return (
     <SkeletonScreen>
@@ -9,7 +9,7 @@ export default function Loading() {
         ‹ 荷物
       </Link>
       <h1 className="flex items-baseline gap-2 text-lg font-bold">
-        届いた荷物
+        受け取り済み
         <Bone className="h-4 w-8 self-center" />
       </h1>
       <div className="flex flex-col gap-2">

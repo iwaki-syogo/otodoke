@@ -12,6 +12,7 @@ import {
   mergeIntoManual,
   parcelTotal,
   rebuildParcel,
+  receivedAfterMerge,
   splitOrders,
   startsParcel,
   twinsByTracking,
@@ -578,6 +579,13 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
     void _owner;
     fields = rebuilt;
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
+  }
+  // 受け取り済み is the person's word, never the mails': either parcel having it is enough, and the merged
+  // parcel keeps it (with the status it goes with). The mail processing never sets it by itself.
+  const carried = receivedAfterMerge(keep, absorb, fields.status ?? keep.status);
+  if (carried && (carried.received_at !== keep.received_at || (fields.status ?? keep.status) !== carried.status)) {
+    fields.received_at = carried.received_at;
+    fields.status = carried.status;
   }
   const { rest } = splitCategory(fields);
   const category = categoryForTwins(keep, absorb, merged, seenBefore);

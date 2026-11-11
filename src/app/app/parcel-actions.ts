@@ -5,9 +5,12 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { undeliveredStatus } from "@/lib/undelivered";
 
-/** Statuses a parcel may be put back to after it was marked as arrived by hand. */
-const RESTORABLE = ["ordered", "shipped", "out_for_delivery", "attempted", "unknown"];
+/** Statuses a parcel may be put back to after it was marked as received by hand (delivered: back to 配達済み). */
+const RESTORABLE = ["ordered", "shipped", "out_for_delivery", "attempted", "unknown", "delivered"];
 const MAX_AT_ONCE = 500;
+
+/** A timestamp the client sends back for an undo: an instant, or null for "not received". */
+const PreviousReceivedAt = z.union([z.null(), z.iso.datetime({ offset: true })]);
 
 /** The user's own session, and their id for a condition on top of row-level security. */
 async function signedIn() {
@@ -19,8 +22,10 @@ async function signedIn() {
 }
 
 /**
- * The user says these parcels have arrived. Runs with the user's own session, so row-level
- * security limits it to their parcels. Answers how many rows changed.
+ * The user says they received these parcels (受け取った). Runs with the user's own session, so
+ * row-level security limits it to their parcels. Writes status and received_at together (the
+ * database trigger would fill received_at too, but this does not rely on it). Answers how many
+ * rows changed.
  */
 export async function markDelivered(ids: string[]): Promise<number> {
   const clean = ids.filter((id) => typeof id === "string" && id.length > 0).slice(0, MAX_AT_ONCE);
@@ -29,7 +34,7 @@ export async function markDelivered(ids: string[]): Promise<number> {
   if (!session) return 0;
   const { data, error } = await session.supabase
     .from("parcels")
-    .update({ status: "delivered" })
+    .update({ status: "delivered", received_at: new Date().toISOString() })
     .in("id", clean)
     .eq("user_id", session.userId)
     .neq("status", "cancelled")
@@ -39,16 +44,38 @@ export async function markDelivered(ids: string[]): Promise<number> {
   return data.length;
 }
 
-/** Undo: puts parcels marked by hand back to the status each had before. */
-export async function restoreStatuses(items: { id: string; status: string }[]): Promise<void> {
-  const clean = items.filter((it) => typeof it.id === "string" && RESTORABLE.includes(it.status)).slice(0, MAX_AT_ONCE);
+/**
+ * Undo: puts parcels marked by hand back to the status and received_at each had before (the
+ * received_at is null for a parcel that was not received before). Only a parcel that is still as
+ * the mark left it (delivered and received) goes back: one the person changed since stays.
+ */
+export async function restoreStatuses(items: { id: string; status: string; received_at?: string | null }[]): Promise<void> {
+  const clean: { id: string; status: string; received_at: string | null }[] = [];
+  for (const it of items.slice(0, MAX_AT_ONCE)) {
+    const previous = PreviousReceivedAt.safeParse(it.received_at ?? null);
+    if (typeof it.id !== "string" || !RESTORABLE.includes(it.status) || !previous.success) continue;
+    // Back to not-received only makes sense as delivered; a received_at on any other status is refused.
+    if (previous.data !== null && it.status !== "delivered") continue;
+    clean.push({ id: it.id, status: it.status, received_at: previous.data });
+  }
   if (clean.length === 0) return;
   const session = await signedIn();
   if (!session) return;
-  const byStatus = new Map<string, string[]>();
-  for (const it of clean) byStatus.set(it.status, [...(byStatus.get(it.status) ?? []), it.id]);
-  for (const [status, ids] of byStatus) {
-    const { error } = await session.supabase.from("parcels").update({ status }).in("id", ids).eq("user_id", session.userId).eq("status", "delivered");
+  const groups = new Map<string, { status: string; received_at: string | null; ids: string[] }>();
+  for (const it of clean) {
+    const key = `${it.status}|${it.received_at ?? ""}`;
+    const group = groups.get(key) ?? { status: it.status, received_at: it.received_at, ids: [] };
+    group.ids.push(it.id);
+    groups.set(key, group);
+  }
+  for (const { status, received_at, ids } of groups.values()) {
+    const { error } = await session.supabase
+      .from("parcels")
+      .update({ status, received_at })
+      .in("id", ids)
+      .eq("user_id", session.userId)
+      .eq("status", "delivered")
+      .not("received_at", "is", null);
     if (error) throw new Error(error.message);
   }
   revalidatePath("/app", "layout");
@@ -57,10 +84,10 @@ export async function restoreStatuses(items: { id: string; status: string }[]): 
 const NOT_UPDATED = "更新できませんでした。開き直してください";
 
 /**
- * The user says a parcel marked as arrived has not. Where it goes back to is decided from the row
- * read here, never from the client. The update changes it only if it is still the row that was
- * read (same updated_at): if a mail saved the delivery in between, nothing is written and nothing
- * is retried.
+ * The user says a parcel marked as delivered has not arrived (届いていない). Where it goes back to is
+ * decided from the row read here, never from the client; received_at is cleared with it. The update
+ * changes it only if it is still the row that was read (same updated_at): if a mail saved the
+ * delivery in between, nothing is written and nothing is retried.
  */
 export async function markNotDelivered(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = z.uuid().safeParse(id);
@@ -82,7 +109,7 @@ export async function markNotDelivered(id: string): Promise<{ ok: true } | { ok:
 
   const { data, error } = await session.supabase
     .from("parcels")
-    .update({ status: undeliveredStatus(row) })
+    .update({ status: undeliveredStatus(row), received_at: null })
     .eq("id", parsed.data)
     .eq("user_id", session.userId)
     .eq("status", "delivered")
@@ -90,6 +117,47 @@ export async function markNotDelivered(id: string): Promise<{ ok: true } | { ok:
     .select("id");
   if (error) {
     console.error("markNotDelivered:", error.message);
+    return { ok: false, error: NOT_UPDATED };
+  }
+  if (!data || data.length !== 1) return { ok: false, error: NOT_UPDATED };
+  revalidatePath("/app", "layout");
+  return { ok: true };
+}
+
+/**
+ * The user says a parcel marked as received has not been received (受け取っていない): it goes back to
+ * 配達済み, still delivered, with received_at cleared. Only a delivered parcel that has received_at
+ * goes back, and only if it is still the row that was read (same updated_at); otherwise nothing is
+ * written and nothing is retried.
+ */
+export async function markNotReceived(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false, error: NOT_UPDATED };
+  const session = await signedIn();
+  if (!session) return { ok: false, error: NOT_UPDATED };
+
+  const { data: row, error: readError } = await session.supabase
+    .from("parcels")
+    .select("status,received_at,updated_at")
+    .eq("id", parsed.data)
+    .eq("user_id", session.userId)
+    .maybeSingle();
+  if (readError) {
+    console.error("markNotReceived:", readError.message);
+    return { ok: false, error: NOT_UPDATED };
+  }
+  if (!row || row.status !== "delivered" || row.received_at === null) return { ok: false, error: NOT_UPDATED };
+
+  const { data, error } = await session.supabase
+    .from("parcels")
+    .update({ received_at: null })
+    .eq("id", parsed.data)
+    .eq("user_id", session.userId)
+    .eq("status", "delivered")
+    .eq("updated_at", row.updated_at)
+    .select("id");
+  if (error) {
+    console.error("markNotReceived:", error.message);
     return { ok: false, error: NOT_UPDATED };
   }
   if (!data || data.length !== 1) return { ok: false, error: NOT_UPDATED };

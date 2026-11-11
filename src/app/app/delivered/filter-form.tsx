@@ -31,11 +31,11 @@ export function DeliveredFilter({ q, s, c, m, options, count, children }: Values
   );
 }
 
-/** 「届いた荷物」 with the number found; the number is the old one until the new page arrives, so faint meanwhile. */
+/** 「受け取り済み」 with the number found; the number is the old one until the new page arrives, so faint meanwhile. */
 export function DeliveredHeading({ count, pending = false }: { count?: number; pending?: boolean }) {
   return (
     <h1 className="flex items-baseline gap-2 text-lg font-bold">
-      届いた荷物
+      受け取り済み
       {count === undefined ? null : (
         <span aria-busy={pending || undefined} className={`text-sm font-normal text-neutral-500 ${pending ? "opacity-50" : ""}`}>
           {count.toLocaleString("ja-JP")}

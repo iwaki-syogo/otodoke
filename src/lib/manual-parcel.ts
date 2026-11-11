@@ -131,6 +131,7 @@ export function manualCarrierChoice(name: string | null, tracking: string | null
 
 /** What is stored for the parcel being edited. A column not given counts as changed. */
 export type ManualSaved = {
+  status?: string | null;
   category: string | null;
   ordered_at?: string | null;
   expected_date?: string | null;
@@ -164,6 +165,13 @@ export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: Manu
   const presence = v.presence === "" ? null : v.presence === "face";
   const evidence = saved?.requires_presence !== undefined && saved.requires_presence === presence ? {} : { presence_evidence: null };
 
+  // 「受け取り済み」 on the form (status delivered) means the person has it: received_at goes in with the
+  // status. A parcel already delivered keeps its received_at as it is (a mail may have delivered it
+  // without the person saying so), and one that leaves delivered loses it (the database does the same).
+  const wasDelivered = saved?.status === "delivered";
+  const received =
+    v.status === "delivered" ? (wasDelivered ? {} : { received_at: now.toISOString() }) : wasDelivered ? { received_at: null } : {};
+
   // An order date left empty is today for a new parcel; an edit keeps the stored one.
   const orderedAt = v.ordered_at ?? (saved?.ordered_at !== undefined ? saved.ordered_at : todayJst(now));
 
@@ -179,6 +187,7 @@ export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: Manu
     requires_presence: presence,
     ...evidence,
     status: v.status,
+    ...received,
   };
 }
 

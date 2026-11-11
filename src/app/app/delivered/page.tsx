@@ -8,7 +8,7 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { ParcelCard } from "../parcel-card";
 import { DeliveredFilter, DeliveredHeading } from "./filter-form";
 
-export const metadata = { title: "届いた荷物" };
+export const metadata = { title: "受け取り済み" };
 
 type Param = string | string[] | undefined;
 type SearchParams = Promise<{ q?: Param; s?: Param; c?: Param; m?: Param }>;
@@ -36,7 +36,9 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
           .from("parcels")
           .select("*", { count: "exact" })
           .eq("user_id", user.id)
-          .eq("status", "delivered")
+          // Received: the person said so (received_at), and not cancelled afterwards.
+          .not("received_at", "is", null)
+          .neq("status", "cancelled")
           .order("ordered_at", { ascending: false, nullsFirst: false }),
       ),
       searchWord(q)
@@ -64,7 +66,7 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
       ) : parcels.length === 0 ? (
         <>
           <DeliveredHeading count={shown.length} />
-          <p className="text-sm text-neutral-500">届いた荷物はありません</p>
+          <p className="text-sm text-neutral-500">受け取り済みの荷物はありません</p>
         </>
       ) : (
         <DeliveredFilter q={searchWord(q)} s={s} c={c} m={m} options={deliveredFilterOptions(parcels)} count={shown.length}>

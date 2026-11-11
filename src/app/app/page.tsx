@@ -26,7 +26,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   scheduleSealRemaining(user.id);
   const supabase = await createClient();
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
-  // and never stands in for the list. The links to the delivered and cancelled pages carry no
+  // and never stands in for the list. The links to the received and cancelled pages carry no
   // count; the number is seen after opening the page.
   const [list, { count: waiting }] =
     await Promise.all([
@@ -51,7 +51,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   // A failed read is told apart from having no parcels: by null, never by the empty list.
   const listFailed = list === null;
   const parcels: ParcelRow[] = list ?? [];
-  const { open, toCheck, delivering, soon, ordered } = parcelSections(parcels, todayJst());
+  const { arrived, toCheck, delivering, soon, ordered } = parcelSections(parcels, todayJst());
 
   const addLink = (
     <div className="flex justify-end">
@@ -79,7 +79,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   // At the end of the list, on the empty screen too.
   const pageLinks = (
     <div className="flex flex-col gap-3">
-      <PageLink href="/app/delivered" label="届いた荷物" />
+      <PageLink href="/app/delivered" label="受け取り済み" />
       <PageLink href="/app/cancelled" label="キャンセルした荷物" />
     </div>
   );
@@ -114,35 +114,39 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
       {addLink}
       {sampleBusyNotice}
       {waitingNotice}
+      <Section title="配達済み" count={arrived.length} items={arrived} swipe />
       <CheckSection items={toCheck} />
       <Section title="配達中" count={delivering.length} items={delivering} swipe />
       <Section title="もうすぐ届く" count={soon.length} items={soon} swipe />
       <Section title="注文中" count={ordered.length} items={ordered} empty="注文中の荷物はありません" swipe />
       {pageLinks}
-      {open.length > 0 ? <p className="text-center text-xs text-neutral-500">届いた荷物は、左にスワイプして「届いた」にできます</p> : null}
     </div>
     </DeliveredToastProvider>
   );
 }
 
-/** Parcels two weeks past their date with no delivery mail, to be confirmed by the user. */
+/** Parcels two weeks past their date with no delivery mail, or two weeks delivered with no word from the user, to be confirmed. */
 function CheckSection({ items }: { items: ParcelRow[] }) {
   if (items.length === 0) return null;
   const shown = items.slice(0, 5);
   const rest = items.slice(5);
+  // Each line is there only when some parcel in the section fits it.
+  const notDelivered = items.some((p) => p.status !== "delivered");
+  const delivered = items.some((p) => p.status === "delivered");
   return (
     <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
       <h2 className="flex items-baseline gap-2 text-base font-bold text-amber-950">
         要確認
         <span className="text-sm font-normal text-amber-900">{items.length}</span>
       </h2>
-      <p className="mt-1 text-sm text-amber-950">お届け予定から 2 週間以上たっても、届いた連絡がない荷物です。届いていますか？</p>
+      {notDelivered ? <p className="mt-1 text-sm text-amber-950">お届け予定から 2 週間以上たっても、届いた連絡がない荷物です。届いていますか？</p> : null}
+      {delivered ? <p className="mt-1 text-sm text-amber-950">配達済みから 2 週間以上たっています。受け取りましたか？</p> : null}
       <div className="mt-3">
-        <DeliverAll items={items.map((p) => ({ id: p.id, status: p.status }))} />
+        <DeliverAll items={items.map((p) => ({ id: p.id, status: p.status, received_at: p.received_at }))} />
       </div>
       <div className="mt-3 flex flex-col gap-3">
         {shown.map((p) => (
-          <SwipeToDeliver key={p.id} id={p.id} status={p.status}>
+          <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at}>
             <ParcelCard parcel={p} />
           </SwipeToDeliver>
         ))}
@@ -152,7 +156,7 @@ function CheckSection({ items }: { items: ParcelRow[] }) {
           <summary className="cursor-pointer text-sm text-amber-900">ほか {rest.length} 件を見る</summary>
           <div className="mt-3 flex flex-col gap-3">
             {rest.map((p) => (
-              <SwipeToDeliver key={p.id} id={p.id} status={p.status}>
+              <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at}>
                 <ParcelCard parcel={p} />
               </SwipeToDeliver>
             ))}
@@ -177,7 +181,7 @@ function Section({ title, count, items, empty, swipe = false }: { title: string;
         <div className="mt-3 flex flex-col gap-3">
           {items.map((p) =>
             swipe ? (
-              <SwipeToDeliver key={p.id} id={p.id} status={p.status}>
+              <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at}>
                 <ParcelCard parcel={p} />
               </SwipeToDeliver>
             ) : (

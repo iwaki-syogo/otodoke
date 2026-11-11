@@ -1,5 +1,7 @@
 import { demoInput, loadDemoEntries } from "@/lib/demo";
+import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
+import { readAll } from "@/lib/supabase/read-all";
 import type { AdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -9,6 +11,37 @@ import type { AdminClient } from "@/lib/supabase/admin";
  */
 
 export type LoadDemoResult = { ok: true; processed: number; busy: boolean } | { ok: false; processed: number; message: string; name: string };
+
+const MARK_CHUNK = 100;
+
+/**
+ * The sample's delivered parcels count as received. The mail processing only ever says 配達済み (a
+ * mail said it came; the person's word is theirs), so without this the made-up year of deliveries
+ * would sit in 配達済み and, after two weeks, in 要確認. Only parcels that sample mails belong to
+ * are touched: a real parcel of the same account is left as it is.
+ */
+async function receiveSampleParcels(db: AdminClient, userId: string): Promise<void> {
+  const sampleMails = await readAll<{ id: string }>(() =>
+    db.from("emails").select("id", { count: "exact" }).eq("user_id", userId).like("provider_email_id", SAMPLE_PROVIDER_ID),
+  );
+  if (sampleMails.length === 0) return;
+  const sampleIds = new Set(sampleMails.map((m) => m.id));
+  const links = await readAll<{ email_id: string; parcel_id: string | null }>(() =>
+    db.from("extractions").select("email_id, parcel_id", { count: "exact" }).eq("user_id", userId),
+  );
+  const parcelIds = [...new Set(links.filter((l) => sampleIds.has(l.email_id) && l.parcel_id !== null).map((l) => l.parcel_id as string))];
+  const at = new Date().toISOString();
+  for (let i = 0; i < parcelIds.length; i += MARK_CHUNK) {
+    const { error } = await db
+      .from("parcels")
+      .update({ received_at: at })
+      .in("id", parcelIds.slice(i, i + MARK_CHUNK))
+      .eq("user_id", userId)
+      .eq("status", "delivered")
+      .is("received_at", null);
+    if (error) throw new Error(`sample parcels: ${error.message}`);
+  }
+}
 
 /**
  * Feed the anonymized demo mails through the real pipeline for `userId`.
@@ -39,6 +72,7 @@ export async function runLoadDemo(getDb: () => AdminClient, userId: string): Pro
       }
       if (outcome.kind === "processed" || outcome.kind === "noted" || outcome.kind === "duplicate") processed++;
     }
+    await receiveSampleParcels(db, userId);
   } catch (err) {
     return { ok: false, processed, message: err instanceof Error ? err.message : String(err), name: err instanceof Error ? err.name : typeof err };
   }

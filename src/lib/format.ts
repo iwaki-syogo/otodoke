@@ -104,6 +104,20 @@ export const STATUS_LABEL: Record<string, string> = {
   unknown: "不明",
 };
 
+/**
+ * delivered is two states on the Web: 配達済み (a mail or the person said it was delivered) and
+ * 受け取り済み (the person said they have it: received_at). STATUS_LABEL above is copied by the iOS
+ * app and pinned by its parity test, so it keeps its old word for delivered; the Web shows a parcel's
+ * state with parcelStatusLabel. Change both together when the app follows (build 14).
+ */
+export const DELIVERED_LABEL = "配達済み";
+export const RECEIVED_LABEL = "受け取り済み";
+
+export function parcelStatusLabel(status: string, receivedAt: string | null | undefined): string {
+  if (status === "delivered") return receivedAt ? RECEIVED_LABEL : DELIVERED_LABEL;
+  return STATUS_LABEL[status] ?? status;
+}
+
 export const RELEVANCE_LABEL: Record<string, string> = {
   order: "注文を受け付け",
   payment: "決済・手続き",

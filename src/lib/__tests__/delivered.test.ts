@@ -73,7 +73,7 @@ describe("delivered page wiring", () => {
     expect(page).toContain("filterDelivered(");
     expect(page).toContain("firstParam(");
     expect(page).toContain("見つかりません");
-    expect(page).toContain("届いた荷物はありません");
+    expect(page).toContain("受け取り済みの荷物はありません");
   });
 
   it("gives the filter form a key made from the URL's values", () => {

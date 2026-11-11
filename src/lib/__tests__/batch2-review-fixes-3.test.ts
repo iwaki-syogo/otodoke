@@ -390,11 +390,11 @@ describe("[N2b] the delivered count fades with the results", () => {
   const faint = (n: HtmlNode) => hasClasses(n, "opacity-50");
   const countNode = (h: HtmlNode) => findAll(h, (n) => n.tag === "span" && /^\s*[\d,]+\s*$/.test(textOf(n)))[0];
 
-  it("draws 「届いた荷物」 with the count it is given, faint while pending", async () => {
+  it("draws 「受け取り済み」 with the count it is given, faint while pending", async () => {
     forced.pending = true;
     const busy = headings(await html({ count: 1234 }));
     expect(busy).toHaveLength(1);
-    expect(textOf(busy[0])).toContain("届いた荷物");
+    expect(textOf(busy[0])).toContain("受け取り済み");
     expect(textOf(countNode(busy[0]))).toBe((1234).toLocaleString("ja-JP"));
     expect([countNode(busy[0]), ...ancestorsOf(countNode(busy[0]))].some(faint)).toBe(true);
 
@@ -416,6 +416,7 @@ describe("[N2b] the delivered count fades with the results", () => {
       shop_key: "other",
       title: `品名${seq}`,
       status: "delivered",
+      received_at: "2026-11-01T00:00:00Z",
       category: null,
       updated_at: "2026-11-01T00:00:00Z",
       ...over,
@@ -447,7 +448,7 @@ describe("[N2b] the delivered count fades with the results", () => {
       expect(textOf(countNode(none[0]))).toBe("0");
       const failed = await render([parcel({})], {}, true);
       expect(headings(failed)).toHaveLength(1);
-      expect(textOf(headings(failed)[0]).trim()).toBe("届いた荷物");
+      expect(textOf(headings(failed)[0]).trim()).toBe("受け取り済み");
       expect(textOf(failed)).toContain("読み込めませんでした");
     });
   });

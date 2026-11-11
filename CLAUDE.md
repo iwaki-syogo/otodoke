@@ -76,6 +76,14 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 定期便の案内など `other_purchase` は荷物を作らない。予定日を過ぎても届いた連絡がない荷物は「届いたか分からない荷物」に畳む
 - 変更したら `npx tsx scripts/replay.ts`。保存済みの読み取り結果を実際のルールで通す（API は呼ばない。結果は git-ignored の `fixtures/raw/eval/`）
 
+## 受け取り済み（`parcels.received_at`）
+
+- `status = 'delivered'` は「配達完了（メールか手）」のまま。「本人が受け取ったと言った」は別に `received_at` で持つ（null = 言っていない）。一覧の「配達済み」の段は delivered で received_at が null のもの、「受け取り済み」のページ（`/app/delivered`）は received_at があって cancelled でないもの
+- メールの処理（`pipeline.ts`・`match/`）は received_at を書かない。合流・統合（`receivedAfterMerge`）は、どちらかに入っていれば残す
+- DB のトリガー `parcels_received_at`（本人のセッション＝ `current_user = 'authenticated'` が delivered にしたとき now() を入れ、delivered から他へ変わったら誰でも null にする）が、received_at を知らない古い iOS のスワイプを受ける。Web は status と received_at を同じ更新で明示して書く
+- 配達済みのまま 14 日たつと「要確認」に入る（`needsCheck`）。自動では受け取り済みにしない
+- `STATUS_LABEL`（`format.ts`）は iOS が写して照合テストで固定しているので、delivered の語は「届いた」のまま。Web の画面は `parcelStatusLabel` で出し分ける。iOS が追いつくとき（ビルド 14）に両方そろえて変える
+
 ## メールのふるいと費用（`src/lib/screen.ts`）
 
 - 店の許可リストにしない。文面だけで判定し、迷ったら通す（知らない店で買っても動くため）

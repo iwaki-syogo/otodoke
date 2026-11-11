@@ -101,10 +101,10 @@ describe("markNotDelivered: where the parcel goes back to", () => {
     expect(statusOf(BARE)).toBe("ordered");
   });
 
-  it("writes the status and nothing else", async () => {
+  it("writes the status and received_at (cleared) and nothing else", async () => {
     await markNotDelivered(TRACKED);
     expect(updates()).toHaveLength(1);
-    expect(updates()[0].values).toEqual({ status: "shipped" });
+    expect(updates()[0].values).toEqual({ status: "shipped", received_at: null });
     const row = db.find("parcels", TRACKED)!;
     expect(row.tracking_number).toBe("123456789012");
     expect(row.carrier).toBe("佐川急便");
@@ -216,12 +216,14 @@ describe("markNotDelivered: fails without writing", () => {
 });
 
 describe("markNotDelivered: the existing undo keeps working", () => {
-  it("leaves markDelivered and restoreStatuses as they were", async () => {
+  it("marks a parcel received and puts it back with the undo, received_at included", async () => {
     db.find("parcels", BARE)!.status = "shipped";
     expect(await actions.markDelivered([BARE])).toBe(1);
     expect(statusOf(BARE)).toBe("delivered");
-    await actions.restoreStatuses([{ id: BARE, status: "shipped" }]);
+    expect(db.find("parcels", BARE)!.received_at).not.toBeNull();
+    await actions.restoreStatuses([{ id: BARE, status: "shipped", received_at: null }]);
     expect(statusOf(BARE)).toBe("shipped");
+    expect(db.find("parcels", BARE)!.received_at).toBeNull();
   });
 });
 
@@ -287,10 +289,10 @@ describe("parcel page", () => {
     expect(notDeliveredButtons(await render(TRACKED))).toHaveLength(0);
   });
 
-  // [Review D2-1] The swipe's button shows only while swiping: the page offers 「届いた」 to everyone.
-  const deliveredButtons = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "button" && textOf(n).trim() === "届いた");
+  // [Review D2-1] The swipe's button shows only while swiping: the page offers 「受け取った」 to everyone who has not said so.
+  const deliveredButtons = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "button" && textOf(n).trim() === "受け取った");
 
-  it.each(["ordered", "shipped", "out_for_delivery", "attempted", "unknown"])("offers 「届いた」 on a %s parcel, styled like 編集", async (status) => {
+  it.each(["ordered", "shipped", "out_for_delivery", "attempted", "unknown"])("offers 「受け取った」 on a %s parcel, styled like 編集", async (status) => {
     db.find("parcels", TRACKED)!.status = status;
     const found = deliveredButtons(await render(TRACKED));
     expect(found).toHaveLength(1);
@@ -298,8 +300,22 @@ describe("parcel page", () => {
     expect(found[0].attrs.disabled).toBeUndefined();
   });
 
-  it.each(["delivered", "cancelled"])("does not offer 「届いた」 on a %s parcel", async (status) => {
-    db.find("parcels", TRACKED)!.status = status;
+  it("does not offer 「受け取った」 on a cancelled parcel", async () => {
+    db.find("parcels", TRACKED)!.status = "cancelled";
     expect(deliveredButtons(await render(TRACKED))).toHaveLength(0);
+  });
+
+  it("offers both 「受け取った」 and 「届いていない」 on a delivered parcel not yet received", async () => {
+    const root = await render(TRACKED);
+    expect(deliveredButtons(root)).toHaveLength(1);
+    expect(notDeliveredButtons(root)).toHaveLength(1);
+  });
+
+  it("offers only 「受け取っていない」 on a received parcel", async () => {
+    db.find("parcels", TRACKED)!.received_at = "2026-11-02T00:00:00Z";
+    const root = await render(TRACKED);
+    expect(findAll(root, (n) => n.tag === "button" && textOf(n).trim() === "受け取っていない")).toHaveLength(1);
+    expect(deliveredButtons(root)).toHaveLength(0);
+    expect(notDeliveredButtons(root)).toHaveLength(0);
   });
 });

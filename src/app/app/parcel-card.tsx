@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { faceToFace, faceToFaceAssumed, type ParcelRow } from "@/lib/match";
-import { STATUS_LABEL, formatWindow, relativeDateJa, todayJst, yen } from "@/lib/format";
+import { formatWindow, parcelStatusLabel, relativeDateJa, todayJst, yen } from "@/lib/format";
 
 const STATUS_STYLE: Record<string, string> = {
   ordered: "bg-neutral-100 text-neutral-700",
@@ -12,10 +12,12 @@ const STATUS_STYLE: Record<string, string> = {
   unknown: "bg-neutral-100 text-neutral-500",
 };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, receivedAt = null }: { status: string; receivedAt?: string | null }) {
+  // 受け取り済み is a delivered parcel the person has said they have: quieter than 配達済み, which still waits for them.
+  const style = status === "delivered" && receivedAt ? "bg-neutral-100 text-neutral-600" : (STATUS_STYLE[status] ?? STATUS_STYLE.unknown);
   return (
-    <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status] ?? STATUS_STYLE.unknown}`}>
-      {STATUS_LABEL[status] ?? status}
+    <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${style}`}>
+      {parcelStatusLabel(status, receivedAt)}
     </span>
   );
 }
@@ -60,7 +62,7 @@ export function ParcelCard({ parcel, showAmount = false }: { parcel: ParcelRow; 
           <p className="truncate text-xs text-neutral-500">{parcel.shop}</p>
           <p className="mt-0.5 line-clamp-2 text-[15px] font-medium leading-snug">{parcel.title ?? "品名の記載なし"}</p>
         </div>
-        <StatusBadge status={parcel.status} />
+        <StatusBadge status={parcel.status} receivedAt={parcel.received_at} />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
         {when ? (

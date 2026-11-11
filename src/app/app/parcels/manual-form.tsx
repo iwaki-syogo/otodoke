@@ -21,7 +21,7 @@ import { createManualParcel, deleteManualParcel, updateManualParcel } from "./ma
 const STATUS_CHOICES: Record<string, string> = {
   ordered: "注文済み",
   shipped: "発送済み",
-  delivered: "届いた",
+  delivered: "受け取り済み",
 };
 /** Statuses only a mail sets: offered while the parcel is there, so it saves back unchanged. */
 const KEPT_STATUSES: readonly string[] = [...MANUAL_CARRIED_STATUSES, MANUAL_CANCELLED];

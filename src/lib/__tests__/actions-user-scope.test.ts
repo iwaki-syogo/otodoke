@@ -23,7 +23,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 const { setCategory } = await import("@/app/app/category-actions");
 const parcelActions = await import("@/app/app/parcel-actions");
-const { markDelivered, restoreStatuses } = parcelActions;
+const { markDelivered, restoreStatuses, markNotReceived } = parcelActions;
 // Added for [Feedback 3]; read through the module so the other tests run before it exists.
 const markNotDelivered = (id: string) => (parcelActions as unknown as { markNotDelivered: (id: string) => Promise<{ ok: boolean }> }).markNotDelivered(id);
 
@@ -53,8 +53,7 @@ describe("markDelivered and restoreStatuses", () => {
   });
 
   it("put back only the signed-in user's parcels", async () => {
-    db.find("parcels", MINE)!.status = "delivered";
-    db.find("parcels", THEIRS)!.status = "delivered";
+    for (const id of [MINE, THEIRS]) Object.assign(db.find("parcels", id)!, { status: "delivered", received_at: "2026-11-02T00:00:00Z" });
     await restoreStatuses([
       { id: MINE, status: "shipped" },
       { id: THEIRS, status: "shipped" },
@@ -98,5 +97,35 @@ describe("markNotDelivered", () => {
     expect(await markNotDelivered(MINE)).toMatchObject({ ok: false });
     expect(db.callsOn("parcels", "update")).toHaveLength(0);
     expect(db.find("parcels", MINE)!.status).toBe("delivered");
+  });
+});
+
+describe("markNotReceived", () => {
+  const received = (id: string) => Object.assign(db.find("parcels", id)!, { status: "delivered", received_at: "2026-11-02T00:00:00Z" });
+
+  it("puts back only the signed-in user's parcel", async () => {
+    received(MINE);
+    received(THEIRS);
+    expect(await markNotReceived(THEIRS)).toMatchObject({ ok: false });
+    expect(db.find("parcels", THEIRS)!.received_at).not.toBeNull();
+    expect(await markNotReceived(MINE)).toEqual({ ok: true });
+    expect(db.find("parcels", MINE)!.received_at).toBeNull();
+    expect(db.find("parcels", THEIRS)!.received_at).not.toBeNull();
+  });
+
+  it("names the user's id on every read and update", async () => {
+    received(MINE);
+    received(THEIRS);
+    await markNotReceived(THEIRS);
+    await markNotReceived(MINE);
+    expect(db.callsOn("parcels", "update").length).toBeGreaterThanOrEqual(1);
+    expect(db.callsOn("parcels").every((q) => q.filters.some((f) => f.method === "eq" && f.args[0] === "user_id" && f.args[1] === USER.id))).toBe(true);
+  });
+
+  it("writes nothing when nobody is signed in", async () => {
+    received(MINE);
+    mocks.state.user = null;
+    expect(await markNotReceived(MINE)).toMatchObject({ ok: false });
+    expect(db.callsOn("parcels", "update")).toHaveLength(0);
   });
 });

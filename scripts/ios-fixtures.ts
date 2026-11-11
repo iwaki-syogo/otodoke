@@ -115,6 +115,10 @@ function atNoonJst<T>(today: string, fn: () => T): T {
 const USER = "00000000-0000-4000-8000-0000000000aa";
 
 function parcel(id: string, over: Partial<ParcelRow>): ParcelRow {
+  // The iOS app (build 13) knows only the old meaning of delivered: arrived, off the list. A delivered
+  // row here is a received one (received_at set) so the Web answers as that app does; a row that is
+  // delivered and not received is the Web's new 配達済み, which the app does not have yet.
+  const received_at = over.status === "delivered" ? "2026-11-01T00:00:00+00:00" : null;
   return {
     id,
     user_id: USER,
@@ -139,6 +143,7 @@ function parcel(id: string, over: Partial<ParcelRow>): ParcelRow {
     needs_review: false,
     requires_presence: null,
     presence_evidence: null,
+    received_at,
     total_amount: null,
     created_at: "2026-10-01T00:00:00+00:00",
     updated_at: "2026-10-01T00:00:00.123456+00:00",
@@ -1155,7 +1160,9 @@ const expected = {
   },
 };
 
-const text = `${JSON.stringify(expected, null, 2)}\n`;
+// received_at is the Web's: the app (build 13) does not have the column, so the rows it reads here
+// leave it out. The answers above were worked out with it (see parcel()), which is why they are the old ones.
+const text = `${JSON.stringify(expected, (key, value) => (key === "received_at" ? undefined : value), 2)}\n`;
 
 // ---------------------------------------------------------------------------------------------
 // The crypto vectors for iOS (batch 2, task 13). Written outside git; never into web-expected.json.
