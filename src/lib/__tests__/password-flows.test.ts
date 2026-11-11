@@ -522,6 +522,7 @@ describe("finishing a reset", () => {
     expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: true });
     expect(server.log).toEqual(["readMailKey(in use)", "registerMailKey", "readMailKey(id)", "finishReset"]);
     const sent = server.finishReset.mock.calls[0][0];
+    expect(sent).toMatchObject({ expectedUserId: USER, expectedEmailNorm: EMAIL });
     expect(sent.authSecret).toBe(await secretFor(NEW_PASSWORD));
     expect(sent.expectedCurrentKeyId).toBe(old);
     expect(server.registerMailKey.mock.calls.at(-1)![0]).toMatchObject({ expectedCurrentKeyId: old });

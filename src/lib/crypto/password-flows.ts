@@ -393,7 +393,7 @@ async function resetSteps(input: { email: string; userId: string; password: stri
     const expectedCurrentKeyId = current.key?.key_id ?? null;
     const reg = await registerNewKey(master, input.userId, expectedCurrentKeyId, ports);
     if (!reg.ok) return reg;
-    const done = await ports.finishReset({ authSecret: await authSecretHex(master), keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId });
+    const done = await ports.finishReset({ authSecret: await authSecretHex(master), expectedUserId: input.userId, expectedEmailNorm: emailNorm(input.email), keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId });
     if (!done.ok) return { ok: false, code: done.code };
     setTabKey(input.userId, reg.recipient);
     return { ok: true };

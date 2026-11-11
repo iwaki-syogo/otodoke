@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   signIn: vi.fn(),
   updateUser: vi.fn(),
   activate: vi.fn(),
+  checkResetKey: vi.fn(),
   readKey: vi.fn(),
   rewrap: vi.fn(),
   restore: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("@/lib/login-mail-limit", () => ({
   claimLoginMail: mocks.claim,
   releaseLoginMail: mocks.release,
 }));
+vi.mock("@/lib/crypto/reset-key-check", () => ({ checkResetKey: mocks.checkResetKey }));
 vi.mock("@/lib/mail-keys", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/mail-keys")>()),
   activateKey: mocks.activate,
@@ -59,7 +61,7 @@ const NEW = "1".repeat(64);
 const KEY_ID = "a".repeat(32);
 // Values of the forms the key steps take (mail-keys.ts): a 32-byte answer, wraps of 154 bytes (a
 // P-256 PKCS#8 and its tag), a 12-byte IV ("oldivoldivol"), a 16-byte salt ("oldsaltoldsalt12").
-const RESET = { authSecret: NEW, keyId: KEY_ID, challenge: Buffer.alloc(32, 7).toString("base64"), expectedCurrentKeyId: "b".repeat(32) };
+const RESET = { expectedUserId: "user-1", expectedEmailNorm: "someone@example.com", authSecret: NEW, keyId: KEY_ID, challenge: Buffer.alloc(32, 7).toString("base64"), expectedCurrentKeyId: "b".repeat(32) };
 const STORED = { key_id: KEY_ID, public_key: "P".repeat(88), wrapped_private_key: Buffer.from("OLDWRAP".repeat(22)).toString("base64"), wrap_iv: "b2xkaXZvbGRpdm9s", kdf_salt: "b2xkc2FsdG9sZHNhbHQxMg==", kdf_iterations: 600_000 };
 const REWRAP = { keyId: KEY_ID, previousWrappedPrivateKey: STORED.wrapped_private_key, wrappedPrivateKey: Buffer.from("NEWWRAP".repeat(22)).toString("base64"), wrapIv: "bmV3aXZuZXdpdm5l", kdfSalt: "bmV3c2FsdG5ld3NhbHQxMg==", kdfIterations: 600_000 };
 const CHANGE = { currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: REWRAP };
@@ -79,6 +81,7 @@ beforeEach(() => {
   mocks.release.mockResolvedValue(undefined);
   mocks.signIn.mockImplementation(async () => (order.push("signIn"), { data: { user: { id: "user-1" }, session: {} }, error: null }));
   mocks.updateUser.mockImplementation(async () => (order.push("updateUser"), { data: { user: {} }, error: null }));
+  mocks.checkResetKey.mockImplementation(async () => (order.push("checkResetKey"), { ok: true, keyId: KEY_ID }));
   mocks.activate.mockImplementation(async () => (order.push("activate"), { ok: true, keyId: KEY_ID }));
   mocks.readKey.mockImplementation(async () => (order.push("readKey"), { ok: true, key: STORED }));
   mocks.rewrap.mockImplementation(async () => (order.push("rewrap"), { ok: true, keyId: KEY_ID }));
@@ -92,10 +95,10 @@ afterEach(() => {
 });
 
 describe("finishReset", () => {
-  it("sets the new login secret first, then puts the new key in use, on a session from a reset link", async () => {
+  it("checks the pending key before the login secret, then puts it in use on a reset session", async () => {
     session("otp");
     expect(await finishReset(RESET)).toEqual({ ok: true, keyId: KEY_ID });
-    expect(order).toEqual(["updateUser", "activate"]);
+    expect(order).toEqual(["checkResetKey", "updateUser", "activate"]);
     expect(mocks.updateUser).toHaveBeenCalledWith({ password: NEW });
     expect(mocks.activate).toHaveBeenCalledWith({ admin: true }, "user-1", { keyId: KEY_ID, challenge: RESET.challenge, expectedCurrentKeyId: RESET.expectedCurrentKeyId });
   });
@@ -164,12 +167,12 @@ describe("finishReset", () => {
     ["user_keys activate failed: activate_user_key: no matching key is waiting to be activated", "key_not_pending"],
     ["the key did not open its challenge", "key_challenge_failed"],
     ["user_keys lookup failed: connection reset", "key_failed"],
-  ])("answers the activation's code when only the activation fails (%s)", async (error, code) => {
+  ])("refuses invalid pending keys before changing the login secret (%s)", async (error, code) => {
     session("otp");
-    mocks.activate.mockResolvedValue({ ok: false, error });
+    mocks.checkResetKey.mockResolvedValue({ ok: false, error });
     expect(await finishReset(RESET)).toEqual({ ok: false, code });
-    // The new secret was set: calling again is safe (same_password, above).
-    expect(mocks.updateUser).toHaveBeenCalledTimes(1);
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+    expect(mocks.activate).not.toHaveBeenCalled();
   });
 
   it("refuses anything but 64 lowercase hex as the secret, and a password field", async () => {
@@ -177,6 +180,18 @@ describe("finishReset", () => {
     expect(await finishReset({ ...RESET, authSecret: "Tr0ub4dor&3" })).toEqual({ ok: false, code: "invalid_input" });
     expect(await finishReset({ ...RESET, password: "x" } as never)).toEqual({ ok: false, code: "invalid_input" });
     expect(mocks.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("can retry a database activation failure after the prechecks and Auth update passed", async () => {
+    session("otp");
+    mocks.activate.mockResolvedValueOnce({ ok: false, error: "user_keys activate failed: connection reset" });
+    expect(await finishReset(RESET)).toEqual({ ok: false, code: "key_failed" });
+    expect(mocks.updateUser).toHaveBeenCalledTimes(1);
+    // Auth and the key database cannot commit together. A late failure keeps the pending key;
+    // the retry checks it again and accepts Auth's already-set secret.
+    mocks.updateUser.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "same_password" } });
+    expect(await finishReset(RESET)).toEqual({ ok: true, keyId: KEY_ID });
+    expect(mocks.checkResetKey).toHaveBeenCalledTimes(2);
   });
 });
 

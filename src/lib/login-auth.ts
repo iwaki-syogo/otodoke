@@ -34,6 +34,7 @@ import { activateKey, readStoredKey, rewrapKey, type KeyRestore, type KeyResult 
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { TURNSTILE_TOKEN_MAX_LENGTH } from "@/lib/turnstile";
+import { checkResetKey } from "@/lib/crypto/reset-key-check";
 
 /** The path a confirmation or reset mail leads to; /auth/confirm decides by the link's type. */
 const CONFIRM_LANDING = "/auth/confirm?next=%2Fapp";
@@ -273,7 +274,8 @@ async function setLoginSecret(supabase: ServerClient, authSecret: string): Promi
 }
 
 /**
- * The end of a reset (/reset-password): the new login secret first, then the key the browser made
+ * The end of a reset (/reset-password): verify the screen owner and the pending key first, then
+ * the new login secret, then the key the browser made
  * for it is put in use (the old key is retired under the same lock: activate_user_key_checked).
  * Only on a session from a reset link of the last 15 minutes (auth-session.ts).
  *
@@ -283,19 +285,25 @@ async function setLoginSecret(supabase: ServerClient, authSecret: string): Promi
 export async function finishReset(input: unknown): Promise<FinishResetResult> {
   const parsed = FinishResetInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid_input" };
-  const { authSecret, keyId, challenge, expectedCurrentKeyId } = parsed.data;
+  const { authSecret, keyId, challenge, expectedCurrentKeyId, expectedUserId, expectedEmailNorm } = parsed.data;
   const supabase = await createClient();
   const read = await readCookieSession(supabase);
   if (read.state === "unknown") return { ok: false, code: "network" };
   if (read.state === "signed_out") return { ok: false, code: "signed_out" };
+  // These are equality conditions only: the authenticated session remains the owner of every query.
+  if (read.session.userId !== expectedUserId || !read.session.email || normalizeLoginAddress(read.session.email) !== expectedEmailNorm) return { ok: false, code: "signed_out" };
   if (!isFresh(read.session.amr, "reset")) return { ok: false, code: "reset_expired" };
+
+  const db = createAdminClient();
+  const checked = await checkResetKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId });
+  if (!checked.ok) return { ok: false, code: keyStepCode(checked.error) };
 
   const set = await setLoginSecret(supabase, authSecret);
   if (set === "unknown") return { ok: false, code: "secret_change_unknown" };
   if (set === "signed_out" || set === "rate") return { ok: false, code: set };
   if (set === "refused") return { ok: false, code: "other" };
 
-  const activated = await activateKey(createAdminClient(), read.session.userId, { keyId, challenge, expectedCurrentKeyId });
+  const activated = await activateKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId });
   revalidatePath("/app", "layout");
   if (!activated.ok) {
     const code = keyStepCode(activated.error);
