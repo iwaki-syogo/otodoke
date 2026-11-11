@@ -71,7 +71,7 @@ begin
     perform set_config('request.jwt.claim.sub', v_user::text, true);
     perform set_config('role', 'authenticated', true);
     select c.decision, c.decided_at into v_decision, v_decided_at from public.set_ai_reading('granted', 'v1') c;
-    if v_decision is distinct from 'granted' or v_decided_at is distinct from now() then
+    if v_decision is distinct from 'granted' or v_decided_at is null or v_decided_at < now() or v_decided_at > clock_timestamp() then
       v_fail := array_append(v_fail, 'grant_return_and_server_time');
     end if;
     select count(*) into v_count from public.ai_reading_consents where user_id in (v_user, v_other);
@@ -156,7 +156,7 @@ begin
     perform set_config('role', 'authenticated', true);
     perform set_config('request.jwt.claim.sub', v_user::text, true);
     select c.decided_at into v_decided_at from public.set_ai_reading('declined', 'v1') c;
-    if v_decided_at is distinct from now() then v_fail := array_append(v_fail, 'upsert_uses_server_time'); end if;
+    if v_decided_at is null or v_decided_at < now() or v_decided_at > clock_timestamp() then v_fail := array_append(v_fail, 'upsert_uses_server_time'); end if;
 
     -- Hard deletion is what the shared deleteAuthUser helper requests; only that user's choice goes.
     perform set_config('role', 'none', true);

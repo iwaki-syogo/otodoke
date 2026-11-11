@@ -15,4 +15,5 @@ export const AI_CONSENT_TEXT = {
   sample: "サンプルで試す",
   manual: "手で登録する",
   waiting: "まだ読んでいないメールを読み取る",
+  retainedResults: "すでに読み取った荷物と結果は残ります。設定の「サンプルで試す」にある「すべての荷物を消す」で消せます。",
 } as const;

@@ -5,6 +5,8 @@ import { createClient, getUser } from "@/lib/supabase/server";
 import { ReadingConsent } from "./reading-consent";
 
 export const metadata = { title: AI_CONSENT_TEXT.title };
+// Server Actions inherit the duration of the page that renders the permission form.
+export const maxDuration = 300;
 
 export default async function ReadingPage({ searchParams }: { searchParams?: Promise<{ after?: string; error?: string }> } = {}) {
   const user = await getUser();

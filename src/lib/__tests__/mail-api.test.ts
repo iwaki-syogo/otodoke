@@ -9,7 +9,7 @@ const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const jwt = (sub = "user-1") => `${b64url({ alg: "ES256" })}.${b64url({ sub, amr: [{ method: "otp", timestamp: 1 }] })}.c2ln`;
 const ID = "123e4567-e89b-12d3-a456-426614174000";
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), process: vi.fn(), consent: vi.fn(), rows: { current: [] as unknown[] } }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), readAfter: vi.fn(), process: vi.fn(), consent: vi.fn(), rows: { current: [] as unknown[] } }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeingReadError: class MailBeingReadError extends Error {} }));
@@ -21,6 +21,7 @@ vi.mock("@/lib/supabase/admin", () => {
   chain.limit = () => Promise.resolve({ data: mocks.rows.current, error: null });
   return { createAdminClient: () => chain };
 });
+vi.mock("@/lib/ai-consent-run", () => ({ runReadAfterConsent: mocks.readAfter }));
 vi.mock("@/lib/mail-run", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/mail-run")>();
   return { ...actual, runMarkWronglyDropped: mocks.mark, runReadWaitingMail: mocks.read };
@@ -45,14 +46,16 @@ async function call(step: Step, { token, body = GOOD[step], raw }: { token?: str
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
-  for (const fn of [mocks.getUser, mocks.mark, mocks.read, mocks.process]) fn.mockReset();
+  for (const fn of [mocks.getUser, mocks.mark, mocks.read, mocks.readAfter, mocks.process]) fn.mockReset();
   mocks.consent.mockReset().mockResolvedValue({ data: { decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" }, error: null });
   mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1", email: "me@example.com" } }, error: null });
   mocks.mark.mockResolvedValue({ ok: true, outcome: "remembered" });
   mocks.read.mockResolvedValue({ ok: true, read: 3, overLimit: false, unavailable: false });
+  mocks.readAfter.mockResolvedValue({ ok: true, read: 0, overLimit: false, unavailable: false });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
@@ -125,6 +128,66 @@ describe("mark-parcel", () => {
 });
 
 describe("read-waiting", () => {
+  it("passes the request start from before authentication and body reading to the automatic reader", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = Date.parse("2026-11-12T00:00:01Z");
+    vi.setSystemTime(start);
+    mocks.getUser.mockImplementationOnce(async () => {
+      vi.setSystemTime(start + 100_000);
+      return { data: { user: { id: "user-1", email: "me@example.com" } }, error: null };
+    });
+    const stamp = "2026-11-12T00:00:00.123456Z";
+    const request = new Request("https://otodoke.app/api/mail/read-waiting", { method: "POST", headers: { authorization: `Bearer ${jwt()}`, "content-type": "application/json" }, body: JSON.stringify({ after_consent: stamp }) });
+    vi.spyOn(request, "text").mockImplementationOnce(async () => {
+      vi.setSystemTime(start + 150_001);
+      return JSON.stringify({ after_consent: stamp });
+    });
+    mocks.readAfter.mockResolvedValueOnce({ ok: false, stage: "read", message: "ai_consent_backlog_time_limit", read: 0, overLimit: false, unavailable: false, onlyBusy: false });
+    const response = await routes["read-waiting"].POST(request);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, code: "read_failed", read: 0 });
+    expect(mocks.readAfter.mock.calls[0].slice(1)).toEqual(["user-1", stamp, start]);
+    expect(Date.now() - start).toBe(150_001);
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("after_consent routes to the one-shot reader with the token user's raw microsecond timestamp", async () => {
+    const stamp = "2026-11-12T00:00:00.123456+00:00";
+    mocks.readAfter.mockResolvedValue({ ok: true, read: 4, overLimit: false, unavailable: false });
+    expect(await call("read-waiting", { body: { after_consent: stamp } })).toEqual({ status: 200, json: { ok: true, read: 4, over_limit: false, busy: false, stopped: false }, cache: "no-store" });
+    expect(mocks.readAfter).toHaveBeenCalledTimes(1);
+    expect(mocks.readAfter.mock.calls[0].slice(1)).toEqual(["user-1", stamp, expect.any(Number)]);
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("valid old and offset timestamps have no age cutoff; a stale or duplicate claim is a successful no-op", async () => {
+    for (const stamp of ["1900-01-01T00:00:00Z", "2026-11-12T09:00:00.123456+09:00", "2026-11-12T00:00:00+15:59"]) {
+      expect(await call("read-waiting", { body: { after_consent: stamp } })).toEqual({ status: 200, json: { ok: true, read: 0, over_limit: false, busy: false, stopped: false }, cache: "no-store" });
+      expect(mocks.readAfter.mock.calls.at(-1)?.slice(1)).toEqual(["user-1", stamp, expect.any(Number)]);
+    }
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("a malformed or out-of-range after_consent is invalid_input before either reading path starts", async () => {
+    for (const stamp of [null, 123, "", "not-a-date", "2026-11-12", "2026-11-12T00:00:00", "2026-02-30T00:00:00Z", "0000-01-01T00:00:00Z", "2026-11-12T00:00:00+16:00"]) {
+      expect(await call("read-waiting", { body: { after_consent: stamp } })).toEqual({ status: 400, json: { ok: false, code: "invalid_input" }, cache: "no-store" });
+    }
+    expect(mocks.readAfter).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("automatic reading retains the caller and consent checks, and reports read failures and daily limits as before", async () => {
+    const body = { after_consent: "2026-11-12T00:00:00.123456Z" };
+    expect((await call("read-waiting", { body, token: null })).status).toBe(401);
+    mocks.consent.mockResolvedValueOnce({ data: { decision: "declined" }, error: null });
+    expect((await call("read-waiting", { body })).status).toBe(403);
+    expect(mocks.readAfter).not.toHaveBeenCalled();
+    mocks.readAfter.mockResolvedValueOnce({ ok: false, stage: "read", read: 1, overLimit: false, unavailable: false, onlyBusy: false, message: "fixed failure" });
+    expect(await call("read-waiting", { body })).toMatchObject({ status: 500, json: { ok: false, code: "read_failed", read: 1 } });
+    mocks.readAfter.mockResolvedValueOnce({ ok: true, read: 2, overLimit: true, unavailable: false });
+    expect(await call("read-waiting", { body })).toMatchObject({ status: 200, json: { ok: true, read: 2, over_limit: true } });
+  });
+
   it("403 ai_consent_required for an unanswered or declined choice, and 503 unavailable for a failed consent read", async () => {
     for (const data of [null, { decision: "declined" }]) {
       mocks.consent.mockResolvedValue({ data, error: null });

@@ -39,6 +39,21 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_consent_read_runs: {
+        Row: {
+          consent_decided_at: string
+          user_id: string
+        }
+        Insert: {
+          consent_decided_at: string
+          user_id: string
+        }
+        Update: {
+          consent_decided_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_reading_consents: {
         Row: {
           decided_at: string
@@ -504,6 +519,10 @@ export type Database = {
           p_user_limit: number
         }
         Returns: string
+      }
+      claim_ai_reading_backlog: {
+        Args: { p_decided_at: string; p_user_id: string }
+        Returns: boolean
       }
       claim_claude_call_v2: {
         Args: {

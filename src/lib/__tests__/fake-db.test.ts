@@ -64,4 +64,23 @@ describe("FakeDb", () => {
     ]);
     expect(db.find("parcels", "a")).toBeUndefined();
   });
+
+  it("compares ISO timestamp instants with microseconds and offsets, while ordinary numbers and names keep their ordering", async () => {
+    const db = new FakeDb({
+      emails: [
+        { id: "before", created_at: "2026-11-12T00:00:00.123455Z" },
+        { id: "shorter_precision", created_at: "2026-11-12T00:00:00.123Z" },
+        { id: "same_offset", created_at: "2026-11-12T09:00:00.123456+09:00" },
+        { id: "after", created_at: "2026-11-12T00:00:00.123457Z" },
+      ],
+      numbers: [{ id: "two", value: 2 }, { id: "ten", value: 10 }],
+      names: [{ id: "two", value: "item-2" }, { id: "ten", value: "item-10" }],
+    });
+    const dates = await db.from("emails").select("id").lte("created_at", "2026-11-12T00:00:00.123456+00:00");
+    expect((dates.data as Array<{ id: string }>).map((r) => r.id)).toEqual(["before", "shorter_precision", "same_offset"]);
+    const numbers = await db.from("numbers").select("id").lte("value", 3);
+    expect((numbers.data as Array<{ id: string }>).map((r) => r.id)).toEqual(["two"]);
+    const names = await db.from("names").select("id").order("value");
+    expect((names.data as Array<{ id: string }>).map((r) => r.id)).toEqual(["ten", "two"]);
+  });
 });

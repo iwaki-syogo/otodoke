@@ -50,18 +50,31 @@ export type ReadWaitingResult =
   // onlyBusy: every failure was another read taking the same mail (MailBeingReadError), none was a real one.
   | { ok: false; stage: "lookup" | "read"; message: string; read: number; overLimit: boolean; unavailable: boolean; onlyBusy: boolean };
 
+export interface ReadWaitingOptions {
+  /** Automatic reading: only mail held for consent that had arrived by this server choice. */
+  consentDecidedAt?: string;
+  /** Automatic requests stop between mails before their request budget is exhausted. */
+  deadlineAt?: number;
+  /** The shared whole-mail allowance includes both bounded Claude calls and its DB work. */
+  minimumMailBudgetMs?: number;
+}
+
 /** Read up to 20 waiting mails; stops when today's allowance runs out. `read` counts the mails processed (every outcome but over_limit). */
-export async function runReadWaitingMail(db: AdminClient, userId: string): Promise<ReadWaitingResult> {
+export async function runReadWaitingMail(db: AdminClient, userId: string, options: ReadWaitingOptions = {}): Promise<ReadWaitingResult> {
   const started = Date.now();
-  const { data, error } = await db
+  let query = db
     .from("emails")
     .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
     .eq("user_id", userId)
     .eq("body_state", "plain")
-    .or(UNREAD_FILTER())
-    .order("sent_at", { ascending: true })
-    .limit(20);
-  if (error) return { ok: false, stage: "lookup", message: error.message, read: 0, overLimit: false, unavailable: false, onlyBusy: false };
+    .or(UNREAD_FILTER());
+  if (options.consentDecidedAt !== undefined) {
+    // A grant starts the mail which waited for it, not unrelated failures, samples, or later mail.
+    // The ordinary manual path keeps its existing unread set and may retry all of those failures.
+    query = query.in("error", ["ai_consent_required", "ai_consent_unknown"]).lte("created_at", options.consentDecidedAt);
+  }
+  const { data, error } = await query.order("sent_at", { ascending: true }).limit(20);
+  if (error || data === null) return { ok: false, stage: "lookup", message: error?.message ?? "waiting_mail_lookup_failed", read: 0, overLimit: false, unavailable: false, onlyBusy: false };
 
   let failure: string | null = null;
   let realFailure = false;
@@ -73,6 +86,9 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
   let samples: Map<string, DemoEntry> | null = null;
   for (const m of data) {
     if (Date.now() - started > MAIL_REQUEST_BUDGET_MS - MAIL_READ_BUDGET_MS) break;
+    if (options.deadlineAt !== undefined && Date.now() + (options.minimumMailBudgetMs ?? 0) > options.deadlineAt) {
+      return { ok: false, stage: "read", message: "ai_consent_backlog_time_limit", read, overLimit, unavailable, onlyBusy: false };
+    }
     try {
       const file = sampleFileOf(m.provider_email_id);
       let outcome;
@@ -117,6 +133,9 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
       // One unreadable mail must not hold back the ones after it.
       failure = err instanceof Error ? err.message : String(err);
       if (!(err instanceof MailBeingReadError)) realFailure = true;
+      // A single automatic start must not keep spending after its first failure or conflict.
+      // Manual reading retains its old behaviour of continuing past one unreadable mail.
+      if (options.consentDecidedAt !== undefined) break;
     }
   }
   if (failure) return { ok: false, stage: "read", message: failure, read, overLimit, unavailable, onlyBusy: !realFailure };

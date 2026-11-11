@@ -142,6 +142,7 @@ describe("every row of a user's goes with the auth user", () => {
 
   it("these are the tables that hold a user's rows (the list in the deletion's notes)", () => {
     expect([...new Set(userColumns.map((c) => c.table))].sort()).toEqual([
+      "ai_consent_read_runs",
       "ai_reading_consents",
       "claude_call_claims",
       "claude_usage_daily",
@@ -162,6 +163,12 @@ describe("every row of a user's goes with the auth user", () => {
     expect(cascades(choice!)).toBe(true);
     const helper = readFileSync(path.join(root, "src/lib/account-deletion.ts"), "utf8");
     expect(helper).toContain("admin.auth.admin.deleteUser(userId, false)");
+  });
+
+  it("the last automatic-reading claim goes with the account too", () => {
+    const run = userColumns.find((c) => c.table === "ai_consent_read_runs" && c.column === "user_id");
+    expect(run).toBeDefined();
+    expect(cascades(run!)).toBe(true);
   });
 
   it("every other table is one that holds nothing of a user's", () => {

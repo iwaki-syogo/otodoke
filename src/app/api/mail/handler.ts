@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { readingAllowed } from "@/lib/ai-consent";
+import { runReadAfterConsent } from "@/lib/ai-consent-run";
 import { readBearerSession } from "@/lib/auth-session";
 import { isScreenEventId, runMarkWronglyDropped, runReadWaitingMail } from "@/lib/mail-run";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -45,7 +46,13 @@ async function body(request: Request): Promise<unknown> {
 }
 
 const MarkBody = z.object({ id: z.string().refine(isScreenEventId) }).strict();
-const ReadBody = z.object({}).strict();
+// Preserve the server's original fractional seconds for the atomic claim; never normalize to
+// a JS Date (milliseconds). There is no age cutoff: an old valid token is a harmless claim miss.
+const ReadBody = z.object({ after_consent: z.iso.datetime({ offset: true }).refine((value) => {
+  // PostgreSQL has no year zero and accepts numeric timezone offsets only below 16 hours.
+  const offsetHour = value.match(/[+-](\d{2}):\d{2}$/)?.[1];
+  return !value.startsWith("0000-") && (offsetHour === undefined || Number(offsetHour) < 16);
+}).optional() }).strict();
 
 async function caller(request: Request): Promise<{ userId: string; email: string | null } | Response> {
   const read = await readBearerSession(request.headers.get("authorization"));
@@ -75,9 +82,11 @@ export async function markParcelStep(request: Request): Promise<Response> {
 }
 
 export async function readWaitingStep(request: Request): Promise<Response> {
+  const requestStartedAt = Date.now();
   const who = await caller(request);
   if (who instanceof Response) return who;
-  if (!ReadBody.safeParse(await body(request)).success) return failure("invalid_input");
+  const parsed = ReadBody.safeParse(await body(request));
+  if (!parsed.success) return failure("invalid_input");
 
   let done;
   try {
@@ -85,7 +94,9 @@ export async function readWaitingStep(request: Request): Promise<Response> {
     const allowed = await readingAllowed(db, who.userId);
     if (allowed === "unknown") return failure("unavailable");
     if (allowed !== "granted") return failure("ai_consent_required");
-    done = await runReadWaitingMail(db, who.userId);
+    done = parsed.data.after_consent === undefined
+      ? await runReadWaitingMail(db, who.userId)
+      : await runReadAfterConsent(db, who.userId, parsed.data.after_consent, requestStartedAt);
   } catch (thrown) {
     console.error("[mail-api] read-waiting threw:", thrown instanceof Error ? thrown.name : typeof thrown);
     return failure("read_failed");

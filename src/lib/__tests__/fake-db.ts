@@ -120,8 +120,20 @@ function isNil(v: unknown): boolean {
   return v === null || v === undefined;
 }
 
+/** PostgreSQL compares timestamptz instants, retaining microseconds unlike JavaScript Date. */
+function instantMicros(value: unknown): bigint | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return null;
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis)) return null;
+  const belowMillis = (value.match(/\.(\d+)/)?.[1] ?? "").padEnd(6, "0").slice(3, 6);
+  return BigInt(millis) * BigInt(1000) + BigInt(belowMillis);
+}
+
 function compare(a: unknown, b: unknown): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
+  const timeA = instantMicros(a);
+  const timeB = instantMicros(b);
+  if (timeA !== null && timeB !== null) return timeA < timeB ? -1 : timeA > timeB ? 1 : 0;
   const x = String(a);
   const y = String(b);
   return x < y ? -1 : x > y ? 1 : 0;
@@ -300,6 +312,7 @@ export class FakeDb {
     this.rpcCalls.push({ name, args });
     if (name === "store_mail_run") return Promise.resolve(this.storeMailRun(args as StoreArgs));
     if (name === "mail_run_write") return this.mailRunWrite(args as OwnedArgs);
+    if (name === "claim_ai_reading_backlog") return Promise.resolve(this.claimAiReadingBacklog(args as { p_user_id: string; p_decided_at: string }));
     if (name === "activate_user_key") return Promise.resolve(this.activateUserKey(args as { p_user_id: string; p_key_id: string; p_challenge_hash: string }));
     if (name === "activate_user_key_checked") {
       const a = args as { p_user_id: string; p_key_id: string; p_challenge_hash: string; p_expected_current_key_id: string | null };
@@ -320,6 +333,20 @@ export class FakeDb {
       return Promise.resolve(this.releaseClaudeCall(args as { p_claim_id: number; p_user_id: string }));
     }
     return Promise.resolve({ data: "ok", error: null });
+  }
+
+  /** The grant and journal are checked/written synchronously, like the SQL's row lock and UPSERT. */
+  private claimAiReadingBacklog(a: { p_user_id: string; p_decided_at: string }): Result {
+    const stamp = instantMicros(a.p_decided_at);
+    const consent = this.rows("ai_reading_consents").find((r) => r.user_id === a.p_user_id);
+    if (stamp === null || !consent || consent.decision !== "granted" || instantMicros(consent.decided_at) !== stamp) return { data: false, error: null };
+    const journal = this.rows("ai_consent_read_runs");
+    const claimed = journal.find((r) => r.user_id === a.p_user_id);
+    if (claimed && instantMicros(claimed.consent_decided_at) === stamp) return { data: false, error: null };
+    const value = { user_id: a.p_user_id, consent_decided_at: a.p_decided_at };
+    if (claimed) Object.assign(claimed, value);
+    else journal.push(value);
+    return { data: true, error: null };
   }
 
   private storeMailRun(a: StoreArgs): Result {
