@@ -34,7 +34,7 @@ enum SettingsMailText {
     /// trouble/page.tsx: the button while it works
     static let readBusy = "読み取っています…"
     /// settings-errors.ts: SETTINGS_ERROR_MESSAGES.read_failed
-    static let readFailed = "読み取れなかったメールがあります。少し時間をおいて、もう一度お試しください。"
+    static let readFailed = "読み取れなかったメールがあります。時間をおいてお試しください。"
     /// settings-errors.ts: UNKNOWN_SETTINGS_ERROR
     static let unknownFailure = "うまくいきませんでした。もう一度お試しください。"
 
