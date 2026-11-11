@@ -35,6 +35,22 @@ enum SettingsMailText {
     static let readBusy = "読み取っています…"
     /// settings-errors.ts: SETTINGS_ERROR_MESSAGES.read_failed
     static let readFailed = "読み取れなかったメールがあります。時間をおいてお試しください。"
+    /// read-notices.ts: READ_UNAVAILABLE_NOTICE (after 「読み取る」: reading is stopped)
+    static let readUnavailableNotice = "メールの読み取りは停止中です。"
+    /// read-notices.ts: READ_OVER_LIMIT_NOTICE (after 「読み取る」: the daily allowance ran out)
+    static let readOverLimitNotice = "今日の読み取り上限に達しました。残りは明日の0時から読み取れます。"
+
+    // MARK: the reasons under 「未読のメールが N 通あります」 (read-notices.ts)
+
+    /// read-notices.ts: READ_STOPPED_REASON
+    static let readStoppedReason = "メールの読み取りは停止中です。荷物を手で登録しますか？"
+    /// read-notices.ts: READ_STOPPED_BUTTON
+    static let readStoppedButton = "荷物を登録"
+    /// read-notices.ts: READ_OVER_LIMIT_REASON
+    static let readOverLimitReason = "今日の読み取り上限に達しました。明日の0時から読み取れます。"
+    /// read-notices.ts: READ_FAILED_REASON
+    static let readFailedReason = "読み取れなかったメールがあります。時間をおいて読み取りますか？"
+
     /// settings-errors.ts: UNKNOWN_SETTINGS_ERROR
     static let unknownFailure = "うまくいきませんでした。もう一度お試しください。"
 

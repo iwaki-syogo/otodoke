@@ -7,6 +7,8 @@ import SwiftUI
 
 struct SettingsStatusRows: View {
     let model: SettingsModel
+    /// 「荷物を登録」 (shown while reading is stopped): opens the form of a parcel typed in by hand.
+    var register: () -> Void = {}
     @Environment(\.openURL) private var openURL
 
     /// The view of 「うまく届かないとき」; the approval card is drawn through `approvalSection` by 「メールの転送」.
@@ -24,9 +26,16 @@ struct SettingsStatusRows: View {
         case let .loaded(n)? where n > 0:
             VStack(alignment: .leading, spacing: 4) {
                 SettingsParts.heading(model.unreadHeading ?? "")
-                Text("1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。")
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Only the reasons that apply (trouble/page.tsx): stopped, then the limit, then a failure. When the
+                // counts could not be read no reason is stated.
+                if case let .loaded(reasons)? = model.unreadReasons {
+                    if reasons.stopped > 0 {
+                        reasonText(SettingsMailText.readStoppedReason)
+                        registerButton
+                    }
+                    if reasons.overLimit > 0 { reasonText(SettingsMailText.readOverLimitReason) }
+                    if reasons.failed > 0 { reasonText(SettingsMailText.readFailedReason) }
+                }
                 ReadWaitingButton(model: model.mailActions)
                     .padding(.top, 8)
                 if let note = model.mailActions.readNote {
@@ -50,6 +59,29 @@ struct SettingsStatusRows: View {
         case nil:
             EmptyView()
         }
+    }
+
+    private func reasonText(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The Web's link to /app/parcels/new: here it opens the form in the app.
+    private var registerButton: some View {
+        Button {
+            register()
+        } label: {
+            Text(SettingsMailText.readStoppedButton)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
     }
 
     @ViewBuilder

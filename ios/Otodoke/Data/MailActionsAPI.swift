@@ -1,7 +1,8 @@
 // The Web's two mail endpoints, so 「これは荷物」 and 「読み取る」 finish inside the app (no Safari):
 //   POST /api/mail/mark-parcel   { "id": "<screen_events.id>" }  -> 200 { ok: true, outcome }
-//   POST /api/mail/read-waiting  { }                             -> 200 { ok: true, read, over_limit, busy }
-// (docs/api/mail.md; over_limit and busy are not failures and the Web says nothing for them: the app only reads again)
+//   POST /api/mail/read-waiting  { }                             -> 200 { ok: true, read, over_limit, busy, stopped }
+// (docs/api/mail.md; none of them is a failure. `stopped` and `over_limit` are said as the Web says them; busy: the app only reads
+//  again. A server without `stopped` is an older one: it is told nothing of, as before)
 // The same shape as the sample endpoints (docs/api/demo.md): POST, JSON, `Authorization: Bearer <access token>`
 // with no freshness rule, `Cache-Control: no-store`; a failure is `{ ok: false, code }`. A request is never sent
 // again by the client: a second press is a second request the person made.
@@ -41,10 +42,18 @@ enum MailAPIFailure: Error, Equatable, Sendable {
     case unknownResult
 }
 
+/// What a 200 of read-waiting said that the person is told.
+struct ReadWaitingResult: Equatable, Sendable {
+    /// Reading is stopped on the server (`stopped: true`): trying again does not help.
+    var stopped = false
+    /// The daily allowance ran out (`over_limit: true`), the rest keep waiting.
+    var overLimit = false
+}
+
 protocol MailActionsAPI: Sendable {
     func markParcel(id: String, accessToken: String) async throws(MailAPIFailure) -> MarkParcelOutcome
     /// Reads up to 20 waiting mails with Claude on the server: it takes a while (MailActionsClient.readTimeout).
-    func readWaiting(accessToken: String) async throws(MailAPIFailure)
+    func readWaiting(accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult
 }
 
 struct MailActionsClient: MailActionsAPI {
@@ -71,8 +80,17 @@ struct MailActionsClient: MailActionsAPI {
         return outcome
     }
 
-    func readWaiting(accessToken: String) async throws(MailAPIFailure) {
-        _ = try await post("read-waiting", [:], timeout: readTimeout, accessToken: accessToken)
+    /// A body without a boolean `stopped` comes from a server that does not know the field: nothing is said then
+    /// (not even the limit), as before. Only JSON `true` / `false` counts (not 1 / 0).
+    func readWaiting(accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult {
+        let answer = try await post("read-waiting", [:], timeout: readTimeout, accessToken: accessToken)
+        guard Self.isJSONBool(answer["stopped"]) else { return ReadWaitingResult() }
+        return ReadWaitingResult(stopped: KeyAPIClient.isJSONTrue(answer["stopped"]), overLimit: KeyAPIClient.isJSONTrue(answer["over_limit"]))
+    }
+
+    private static func isJSONBool(_ value: Any?) -> Bool {
+        guard let number = value as? NSNumber else { return false }
+        return CFGetTypeID(number) == CFBooleanGetTypeID()
     }
 
     /// The connection broke after the request may have gone out: whether the server did the work is not known.

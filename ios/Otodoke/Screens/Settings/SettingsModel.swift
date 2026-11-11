@@ -62,6 +62,9 @@ final class SettingsModel {
     /// The confirmation, or what the badge needs after it, could not be read (the badge says it cannot be checked).
     private(set) var approvalBadgeFailed = false
     private(set) var unread: LoadResult<Int>?
+    /// Why the unread mail waits (stopped, over the limit, failed); read only when some is waiting. .failed or nil:
+    /// no reason is stated (the Web's `reasons` null).
+    private(set) var unreadReasons: LoadResult<UnreadReasons>?
     private(set) var dropped: LoadResult<[DroppedMailRow]>?
     private(set) var isSigningOut = false
 
@@ -187,7 +190,7 @@ final class SettingsModel {
         let reader = self.reader
         let at = now()
 
-        let (panel, readAddress, readConfirmation, readLater, readWaiting, readDropped) = await withTaskCancellationHandler {
+        let (panel, readAddress, readConfirmation, readLater, readWaiting, readDropped, readReasons) = await withTaskCancellationHandler {
             await readAll(reader, at: at)
         } onCancel: {
             signal.raise()
@@ -205,13 +208,15 @@ final class SettingsModel {
         address = readAddress
         applyApproval(readConfirmation, later: readLater)
         unread = readWaiting
+        unreadReasons = readReasons
         dropped = readDropped
         lastApprovalRead = at
     }
 
     /// The reads of load(): each fails on its own.
     private func readAll(_ reader: SettingsReader, at: Date) async -> (
-        KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>
+        KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>,
+        LoadResult<UnreadReasons>?
     ) {
         async let key = reader.currentKey()
         async let confirmation = reader.forwardingConfirmations()
@@ -237,7 +242,11 @@ final class SettingsModel {
         if let pick = confirmationRows.value.flatMap(Self.pickApproval), let at = pick.at {
             later = await reader.arrivedAfter(at)
         }
-        return (panel, readAddress, confirmationRows, later, await waiting, await droppedRows)
+        let waitingResult = await waiting
+        // The reasons are read only when a count was read and some mail waits (the Web's trouble page).
+        var reasons: LoadResult<UnreadReasons>?
+        if case let .loaded(n) = waitingResult, n > 0 { reasons = await reader.unreadReasons(now: at) }
+        return (panel, readAddress, confirmationRows, later, waitingResult, await droppedRows, reasons)
     }
 
     /// signOut of AuthService (the key's four steps are task 16). The spinner shows while it runs.

@@ -1,0 +1,574 @@
+{
+ "note": "Cases of the rule that counts why unread mail waits: readUnreadReasons (src/app/app/settings/settings-reads.ts) and UnreadReasonsRule (ios/Otodoke/Logic/UnreadReasons.swift) must both answer `expected` for the whole `emails` table. Run by src/lib/__tests__/unread-reasons-table.test.ts and UnreadReasonsTests.swift. Made-up rows only.",
+ "cases": [
+  {
+   "name": "empty: no unread mail",
+   "emails": [],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "stopped: one stopped row and nothing read after it",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "a mail read after the stop: the old stopped row is a plain failure",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T11:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "a mail read before the stop does not count as an answer after it",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T09:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "a sample mail read after the stop is not proof that Claude works",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T11:00:00+00:00",
+     "provider_email_id": "demo:sample-1",
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "a forwarding confirmation read after the stop is not proof either",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T11:00:00+00:00",
+     "provider_email_id": null,
+     "classification": "forwarding_confirmation"
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "a real mail older than the sample and the confirmation decides",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T09:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e03",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T11:00:00+00:00",
+     "provider_email_id": "demo:sample-1",
+     "classification": null
+    },
+    {
+     "id": "e04",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T12:00:00+00:00",
+     "provider_email_id": null,
+     "classification": "forwarding_confirmation"
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "a mail with a provider id that only looks like a sample is real",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T11:00:00+00:00",
+     "provider_email_id": "xdemo:1",
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "a mail Claude refused after the stop is an answer",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "failed",
+     "error": "model refused",
+     "created_at": "2026-11-02T11:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 2
+   }
+  },
+  {
+   "name": "a mail Claude refused before the stop is not",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "model refused",
+     "created_at": "2026-11-02T09:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "all three at once",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "over_limit",
+     "error": "user",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e03",
+     "processing_status": "failed",
+     "error": "claude_error",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e04",
+     "processing_status": "failed",
+     "error": "claude_error",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 1,
+    "failed": 2
+   }
+  },
+  {
+   "name": "two stopped rows, the newest one newer than the last read: both are stopped",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T08:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T12:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e03",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 2,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "two stopped rows, the newest older than the last read: both are failures",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T08:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T09:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e03",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 2
+   }
+  },
+  {
+   "name": "the same instant is not after",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T10:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "one millisecond later is after",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00.002+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T10:00:00.001+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "inside one millisecond the stop is not after (the Web reads whole milliseconds)",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00.123999+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T10:00:00.123456+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "inside one millisecond the other way round: not after either",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:00.123456+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T10:00:00.123999+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  },
+  {
+   "name": "the offset is read: 19:00+09:00 is 10:00Z",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "2026-11-02T10:00:01+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T19:00:00+09:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 1,
+    "overLimit": 0,
+    "failed": 0
+   }
+  },
+  {
+   "name": "over the limit only",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "over_limit",
+     "error": "user",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "over_limit",
+     "error": "user",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 2,
+    "failed": 0
+   }
+  },
+  {
+   "name": "failures only (an old raw message, a temporary Claude error)",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "Unexpected token } in JSON",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "failed",
+     "error": "claude_error",
+     "created_at": "2026-11-02T00:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 2
+   }
+  },
+  {
+   "name": "a time that cannot be read makes the stop unproven: not stopped",
+   "emails": [
+    {
+     "id": "e01",
+     "processing_status": "failed",
+     "error": "claude_unavailable",
+     "created_at": "not a time",
+     "provider_email_id": null,
+     "classification": null
+    },
+    {
+     "id": "e02",
+     "processing_status": "processed",
+     "error": null,
+     "created_at": "2026-11-02T09:00:00+00:00",
+     "provider_email_id": null,
+     "classification": null
+    }
+   ],
+   "expected": {
+    "stopped": 0,
+    "overLimit": 0,
+    "failed": 1
+   }
+  }
+ ]
+}

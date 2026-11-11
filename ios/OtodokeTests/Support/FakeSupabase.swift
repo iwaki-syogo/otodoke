@@ -482,6 +482,7 @@ actor FakeSupabase {
 
     private func select(_ request: StubRequest, _ table: String) -> StubReply {
         let wantsCount = prefers(request, "count=exact")
+        if table == "emails", let reasons = unreadReasonsReply(request) { return reasons }
         if table == "emails", !request.query("or").isEmpty {
             // The unread count. The tests check the `or` text itself against StatusRules.unreadFilter.
             let headers = ["Content-Range": wantsCount ? "*/\(unreadEmails)" : "*/*"]
@@ -508,6 +509,42 @@ actor FakeSupabase {
             return .json(200, page[0].anyObject, headers: headers)
         }
         return .json(200, page.map(\.anyObject), headers: headers)
+    }
+
+    /// The two reads of SettingsReader.unreadReasons, answered from the `emails` table (the Web's readUnreadReasons):
+    ///  - the unread rows (`select` has `processing_status` and `error`, no `processing_status=` filter): rows of the user that are
+    ///    over_limit or failed, by id, after `id=gt.` (the `or` text must be StatusRules.unreadFilter's shape);
+    ///  - the newest processed mail (`processing_status=eq.processed`): the `or` text must be the Web's NOT_SAMPLE_NOR_CONFIRMATION
+    ///    (compared by text), and then a sample (provider_email_id like demo:%) and a forwarding confirmation are left out.
+    /// nil for any other emails read (the count, the confirmations ...), which keep their own answers.
+    private func unreadReasonsReply(_ request: StubRequest) -> StubReply? {
+        guard request.method == "GET", request.query("or").count == 1, let or = request.query("or").first else { return nil }
+        let select = request.query("select").first ?? ""
+        let mine = (tables["emails"] ?? []).filter { request.query("user_id").first == "eq.\(Self.me)" && $0["user_id"] == .string(Self.me) }
+        func micros(_ row: Row) -> Int64 { row["created_at"]?.string.flatMap(Instant.micros) ?? 0 }
+        if request.query("processing_status").first == "eq.processed" {
+            guard or == "(\(SettingsReader.notSampleNorConfirmation))" else { return .json(400, ["code": "PGRST100", "message": "unexpected or: \(or)"]) }
+            let candidates = mine.filter { row in
+                row["processing_status"] == .string("processed")
+                    && !(row["provider_email_id"]?.string?.hasPrefix("demo:") ?? false)
+                    && row["classification"]?.string != "forwarding_confirmation"
+            }
+            let newest = candidates.max { micros($0) < micros($1) }
+            return .json(200, newest.map { [["created_at": $0["created_at"]?.string ?? ""]] } ?? [[String: String]]())
+        }
+        guard select.contains("processing_status"), select.contains("error") else { return nil }
+        guard or.hasPrefix("(processing_status.in.(over_limit,failed),and(processing_status.eq.pending,created_at.lt.") else {
+            return .json(400, ["code": "PGRST100", "message": "unexpected or: \(or)"])
+        }
+        let after = request.query("id").first(where: { $0.hasPrefix("gt.") }).map { String($0.dropFirst(3)) }
+        var rows = mine.filter { ["over_limit", "failed"].contains($0["processing_status"]?.string ?? "") }
+        rows.sort { ($0["id"]?.string ?? "") < ($1["id"]?.string ?? "") }
+        if let after { rows = rows.filter { ($0["id"]?.string ?? "") > after } }
+        let page = rows.prefix(request.query("limit").first.flatMap { Int($0) } ?? Self.maxRows)
+        return .json(200, page.map { row -> [String: Any] in
+            ["id": row["id"]?.string ?? "", "processing_status": row["processing_status"]?.string ?? "",
+             "error": row["error"]?.string.map { $0 as Any } ?? NSNull(), "created_at": row["created_at"]?.string ?? ""]
+        })
     }
 
     private func update(_ request: StubRequest, _ table: String) -> StubReply {

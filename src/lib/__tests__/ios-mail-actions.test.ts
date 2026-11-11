@@ -32,6 +32,12 @@ const WEB_SOURCES: { name: string; file: string; around: [string, string] }[] = 
   { name: "readLabel", file: `${WEB}/trouble/page.tsx`, around: ['<PressButton label="', '" busyLabel='] },
   { name: "readBusy", file: `${WEB}/trouble/page.tsx`, around: ['busyLabel="', '" className='] },
   { name: "readFailed", file: "src/lib/read-notices.ts", around: ['READ_FAILED_NOTICE = "', '";'] },
+  { name: "readUnavailableNotice", file: "src/lib/read-notices.ts", around: ['READ_UNAVAILABLE_NOTICE = "', '";'] },
+  { name: "readOverLimitNotice", file: "src/lib/read-notices.ts", around: ['READ_OVER_LIMIT_NOTICE = "', '";'] },
+  { name: "readStoppedReason", file: "src/lib/read-notices.ts", around: ['READ_STOPPED_REASON = "', '";'] },
+  { name: "readStoppedButton", file: "src/lib/read-notices.ts", around: ['READ_STOPPED_BUTTON = "', '";'] },
+  { name: "readOverLimitReason", file: "src/lib/read-notices.ts", around: ['READ_OVER_LIMIT_REASON = "', '";'] },
+  { name: "readFailedReason", file: "src/lib/read-notices.ts", around: ['READ_FAILED_REASON = "', '";'] },
   { name: "unknownFailure", file: "src/lib/settings-errors.ts", around: ['UNKNOWN_SETTINGS_ERROR = "', '";'] },
 ];
 
@@ -94,6 +100,37 @@ describe("the views draw them through the constants, and nothing opens the Web",
     expect(dropped).not.toMatch(/SettingsWeb\.open\(\./);
     expect(rows).toContain("ReadWaitingButton(model: model.mailActions)");
     expect(rows).not.toMatch(/readWaiting|\.markAsParcel/);
+  });
+
+  it("the unread card states only the reasons that apply, through the constants, in the Web's order (stopped, limit, failure)", () => {
+    const stopped = rows.indexOf("SettingsMailText.readStoppedReason");
+    const over = rows.indexOf("SettingsMailText.readOverLimitReason");
+    const failed = rows.indexOf("SettingsMailText.readFailedReason");
+    expect(stopped).toBeGreaterThan(-1);
+    expect(over).toBeGreaterThan(stopped);
+    expect(failed).toBeGreaterThan(over);
+    expect(rows).toContain("SettingsMailText.readStoppedButton");
+    // Each is drawn only for its own count, and only when the counts were read.
+    expect(rows).toMatch(/if case let \.loaded\(reasons\)\? = model\.unreadReasons/);
+    for (const n of ["stopped", "overLimit", "failed"]) expect(rows, n).toContain(`reasons.${n} > 0`);
+    // The sentence the Web took away ("1 日の上限を超えたか、…") is gone, and no reason sentence is typed into the view.
+    expect(rows).not.toContain("1 日の上限を超えたか");
+    expect(rows).not.toContain("保存してあるので");
+    const web = stripTsx(read("src/lib/read-notices.ts"));
+    for (const name of ["READ_STOPPED_REASON", "READ_OVER_LIMIT_REASON", "READ_FAILED_REASON", "READ_STOPPED_BUTTON"]) {
+      const text = web.match(new RegExp(`${name} = "([^"]+)"`))?.[1];
+      expect(text, name).toBeTruthy();
+      expect(rows, name).not.toContain(text!);
+      expect(pages, name).not.toContain(text!);
+    }
+  });
+
+  it("the notice after 「読み取る」 comes from the constants: stopped first, then the limit", () => {
+    expect(model).toContain("SettingsMailText.readUnavailableNotice");
+    expect(model).toContain("SettingsMailText.readOverLimitNotice");
+    expect(model.indexOf("result.stopped")).toBeGreaterThan(-1);
+    expect(model.indexOf("result.stopped")).toBeLessThan(model.indexOf("result.overLimit"));
+    expect(stripComments(read("ios/Otodoke/Data/MailActionsAPI.swift"))).toContain('answer["stopped"]');
   });
 
   it("the buttons draw the labels and the busy words from the constants, with a spinner, and are never disabled", () => {
@@ -184,11 +221,16 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     for (const n of names) expect(client, n).toContain(`case ${n}`);
   });
 
-  it("the 200 of read-waiting carries read, over_limit and busy, which iOS treats as no failure", () => {
-    expect(doc).toContain('"read": 3, "over_limit": false, "busy": false');
-    // The answer of a 200 is not read: nothing in the client names over_limit or busy, so neither can become a failure.
-    expect(client).toContain('_ = try await post("read-waiting"');
-    expect(client).not.toMatch(/over_limit|busy/);
+  it("the 200 of read-waiting carries read, over_limit, busy and stopped; iOS says only stopped and the limit, never a failure", () => {
+    expect(doc).toContain('"read": 3, "over_limit": false, "busy": false, "stopped": false');
+    // The handler sends every field in each of its 200s.
+    expect(handler.match(/Response\.json\(\{ ok: true, read: done\.read, over_limit: done\.overLimit, busy(?:: [^,]+)?, stopped: (true|false) \}/g)?.length).toBe(3);
+    // iOS reads stopped and over_limit (JSON true only); busy is not read, so it can neither become a failure nor a sentence.
+    expect(client).toContain('answer["stopped"]');
+    expect(client).toContain('answer["over_limit"]');
+    expect(client).not.toMatch(/busy/);
+    // A body without a boolean `stopped` is an older server: nothing is said (as before).
+    expect(client).toMatch(/guard Self\.isJSONBool\(answer\["stopped"\]\) else \{ return ReadWaitingResult\(\) \}/);
   });
 
   it("the wait is longer than the Web's 300 seconds, and a timeout is not retried", () => {

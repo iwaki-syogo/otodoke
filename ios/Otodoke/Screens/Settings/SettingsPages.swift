@@ -217,12 +217,14 @@ struct SettingsHandlingPage: View {
 
 struct SettingsDeliveryHelpPage: View {
     let model: SettingsModel
+    /// 「荷物を登録」 under the stopped reason: opens the form of a parcel typed in by hand.
+    var register: () -> Void = {}
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         SettingsParts.page(spacing: 16) {
             // The Web's order (trouble/page.tsx): the mail that waits to be read, then the pitfalls.
-            SettingsStatusRows(model: model)
+            SettingsStatusRows(model: model, register: register)
             VStack(alignment: .leading, spacing: 8) {
                 SettingsParts.heading(DeliveryHelpText.heading)
                 SettingsParts.secondaryText(DeliveryHelpText.lead)

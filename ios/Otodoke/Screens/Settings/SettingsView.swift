@@ -62,7 +62,7 @@ struct SettingsView: View {
         case .key: SettingsKeyPage(model: model)
         case .dropped: SettingsDroppedPage(model: model, expanded: expands, register: register)
         case .handling: SettingsHandlingPage()
-        case .delivery: SettingsDeliveryHelpPage(model: model)
+        case .delivery: SettingsDeliveryHelpPage(model: model, register: register)
         case .sample: SettingsSamplePage(model: model)
         }
     }

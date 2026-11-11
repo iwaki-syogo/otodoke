@@ -85,7 +85,13 @@ final class MailActionsModel {
             return
         }
         do {
-            try await api.readWaiting(accessToken: token)
+            let result = try await api.readWaiting(accessToken: token)
+            // Stopped first (nothing to retry), then the limit (the Web's order); a read that went through says nothing.
+            if result.stopped {
+                setReadNote(SettingsMailText.readUnavailableNotice)
+            } else if result.overLimit {
+                setReadNote(SettingsMailText.readOverLimitNotice)
+            }
         } catch {
             setReadNote(Self.readText(for: error))
         }

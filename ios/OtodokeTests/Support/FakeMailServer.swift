@@ -93,7 +93,7 @@ actor FakeMailServer {
         case "read-waiting":
             guard body.isEmpty else { return Self.failure(400, "invalid_input") }
             await supabase.setUnreadEmails(0)
-            return .json(200, ["ok": true, "read": 3, "over_limit": false, "busy": false], headers: ["Cache-Control": "no-store"])
+            return .json(200, ["ok": true, "read": 3, "over_limit": false, "busy": false, "stopped": false], headers: ["Cache-Control": "no-store"])
         default:
             return .json(404, ["ok": false])
         }

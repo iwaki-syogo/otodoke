@@ -172,6 +172,45 @@ struct SettingsReader: Sendable {
         )
     }
 
+    /// The or() of the Web's NOT_SAMPLE_NOR_CONFIRMATION (settings-reads.ts): (not a sample) and (not a forwarding
+    /// confirmation), written out as the four pairs. Compared by text in the tests.
+    static let notSampleNorConfirmation: String = {
+        let notSample = ["provider_email_id.is.null", "provider_email_id.not.like.\(sampleProviderID)"]
+        let notConfirmation = ["classification.is.null", "classification.neq.forwarding_confirmation"]
+        return notSample.flatMap { a in notConfirmation.map { c in "and(\(a),\(c))" } }.joined(separator: ",")
+    }()
+
+    /// readUnreadReasons of the Web: the unread rows (all pages, by id) and the newest processed mail that is not a
+    /// sample nor a forwarding confirmation. .failed when either read failed: the reason is then not stated.
+    func unreadReasons(now: Date) async -> LoadResult<UnreadReasons> {
+        guard let me = await provider.currentUserID() else { return .failed }
+        var rows: [UnreadReasonRow] = []
+        var after: String?
+        while true {
+            var query = provider.database.from("emails").select("id, processing_status, error, created_at")
+                .eq("user_id", value: me)
+                .or(StatusRules.unreadFilter(now: now))
+            if let after { query = query.gt("id", value: after) }
+            let request = query.order("id", ascending: true).limit(Self.pageSize)
+            guard let page: [UnreadReasonRow] = await Self.decoded(request) else { return .failed }
+            rows.append(contentsOf: page)
+            guard page.count >= Self.pageSize, let last = page.last else { break }
+            after = last.id
+        }
+        struct Stamp: Decodable {
+            let createdAt: String
+            enum CodingKeys: String, CodingKey { case createdAt = "created_at" }
+        }
+        let lastRequest = provider.database.from("emails").select("created_at")
+            .eq("user_id", value: me)
+            .eq("processing_status", value: "processed")
+            .or(Self.notSampleNorConfirmation)
+            .order("created_at", ascending: false)
+            .limit(1)
+        guard let last: [Stamp] = await Self.decoded(lastRequest) else { return .failed }
+        return .loaded(UnreadReasonsRule.count(rows: rows, lastProcessedAt: last.first?.createdAt))
+    }
+
     /// Every dropped screen_event, created_at ↓ (all pages). Read by id (keyset, 1,000 a page, as
     /// ParcelReader.allParcels), then put in the Web's order: created_at ↓, then id ↑ (readAll adds id
     /// as the last order). Any failed page fails the whole read.

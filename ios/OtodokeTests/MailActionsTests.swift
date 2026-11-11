@@ -203,14 +203,38 @@ struct MailActionsTests {
         #expect(request.jsonDictionary?.isEmpty == true)
     }
 
-    @Test func overLimitAndBusyAreNotFailuresAndSayNothing() async throws {
-        for (over, busy) in [(true, false), (false, true)] {
+    @Test func anOlderServerWithoutTheStoppedFieldIsToldNothingOfEvenWhenOverTheLimit() async throws {
+        for (over, busy) in [(true, false), (false, true), (true, true)] {
             let s = try await setUp()
             await s.server.force("read-waiting", .answer(status: 200, ok: true, code: nil, extra: ["over_limit": over, "busy": busy]))
             await s.actions.readWaiting()
-            #expect(s.actions.readNote == nil)
+            #expect(s.actions.readNote == nil, "over \(over) busy \(busy)")
             #expect(s.counter.reloads == 1)
             #expect(await s.server.count("read-waiting") == 1)
+        }
+    }
+
+    @Test func aStoppedAnswerSaysStoppedTheLimitSaysTheLimitAndTheOthersSayNothing() async throws {
+        // (stopped, over_limit, busy) -> the sentence (nil: none). Stopped wins over the limit and over busy.
+        let cases: [(Bool, Bool, Bool, String?)] = [
+            (true, false, false, "メールの読み取りは停止中です。"),
+            (true, true, false, "メールの読み取りは停止中です。"),
+            (true, true, true, "メールの読み取りは停止中です。"),
+            (true, false, true, "メールの読み取りは停止中です。"),
+            (false, true, false, "今日の読み取り上限に達しました。残りは明日の0時から読み取れます。"),
+            (false, true, true, "今日の読み取り上限に達しました。残りは明日の0時から読み取れます。"),
+            (false, false, true, nil),
+            (false, false, false, nil),
+        ]
+        for (stopped, over, busy, text) in cases {
+            let s = try await setUp()
+            await s.server.force("read-waiting", .answer(status: 200, ok: true, code: nil, extra: ["stopped": stopped, "over_limit": over, "busy": busy]))
+            await s.actions.readWaiting()
+            #expect(s.actions.readNote == text, "stopped \(stopped) over \(over) busy \(busy)")
+            // Not a failure: the list is read again, the other tabs are told, and nothing is sent again.
+            #expect(s.counter.reloads == 1)
+            #expect(await s.server.count("read-waiting") == 1)
+            #expect(s.actions.isReading == false)
         }
     }
 

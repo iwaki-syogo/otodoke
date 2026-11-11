@@ -49,12 +49,12 @@ describe("the list draws no cards, the pages hold them", () => {
   it("iOS: the unread card is the first thing of 「うまく届かないとき」, as on the Web, with the none sentence", () => {
     const page = deliveryPage(PAGES);
     expect(page).not.toBe("");
-    expect(page).toMatch(/SettingsParts\.page\(spacing: 16\) \{\s*SettingsStatusRows\(model: model\)/);
+    expect(page).toMatch(/SettingsParts\.page\(spacing: 16\) \{\s*SettingsStatusRows\(model: model(?:, register: register)?\)/);
     expect(WEB_TROUBLE).toContain("未読のメールはありません。");
     expect(WORDS).toContain('static let unreadNone = "未読のメールはありません。"');
     expect(ROWS).toContain("SettingsWebText.unreadNone");
     expect(ROWS).toContain("ReadWaitingButton(model: model.mailActions)");
-    expect(LIST).toContain("SettingsDeliveryHelpPage(model: model)");
+    expect(LIST).toContain("SettingsDeliveryHelpPage(model: model, register: register)");
   });
 
   it("iOS: the row badges say what the Web's say", () => {
@@ -76,9 +76,9 @@ describe("the list draws no cards, the pages hold them", () => {
     const unread = LIST.replace("section(SettingsWebText.mailGroup) {", "unreadSection\n section(SettingsWebText.mailGroup) {");
     expect(unread).not.toBe(LIST);
     expect(cardProblems(unread)).toEqual(["a card is drawn on the list"]);
-    const gone = deliveryPage(PAGES).replace("SettingsStatusRows(model: model)", "");
+    const gone = deliveryPage(PAGES).replace("SettingsStatusRows(model: model, register: register)", "");
     expect(gone).not.toBe(deliveryPage(PAGES));
-    expect(gone).not.toMatch(/SettingsStatusRows\(model: model\)/);
+    expect(gone).not.toMatch(/SettingsStatusRows\(model: model(?:, register: register)?\)/);
     const nobadge = LIST.replace("Self.deliveryBadge(for: model)", "nil");
     expect(nobadge).not.toBe(LIST);
     expect(nobadge).not.toMatch(/case \.delivery: Self\.deliveryBadge/);
