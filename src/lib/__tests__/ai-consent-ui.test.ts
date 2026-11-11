@@ -8,7 +8,7 @@ import { findAll, parseHtml, textOf } from "./html-tree";
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 const ADDRESS = "abcdefghjk@in.example.test";
-const mocks = vi.hoisted(() => ({ db: null as unknown, user: { id: "00000000-0000-4000-8000-00000000000a" } as { id: string } | null, ensure: vi.fn(), revalidate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ db: null as unknown, user: { id: "00000000-0000-4000-8000-00000000000a" } as { id: string } | null, ensure: vi.fn(), revalidate: vi.fn(), readAfter: vi.fn() }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate, revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -19,6 +19,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mocks.db, getUser: async () => mocks.user }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
+vi.mock("@/lib/ai-consent-run", () => ({ runReadAfterConsent: mocks.readAfter }));
 vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: mocks.ensure, inboxEmail: () => ADDRESS }));
 vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: vi.fn() }));
 vi.mock("@/components/wordmark", () => ({ Wordmark: () => "Otodoke" }));
@@ -30,6 +32,7 @@ beforeEach(() => {
   db = new FakeDb({ parcels: [], emails: [], screen_events: [] });
   mocks.db = db;
   mocks.ensure.mockResolvedValue("abcdefghjk");
+  mocks.readAfter.mockResolvedValue({ ok: true, read: 0, overLimit: false, unavailable: false });
 });
 
 function choose(decision: "granted" | "declined") {

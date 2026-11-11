@@ -98,7 +98,7 @@ export default function PrivacyPage() {
       <Section title="メールの扱い">
         <Terms>
           <Term name="読み取りの許可と取り消し">
-            届いたメールを Anthropic の Claude に送る前に、読み取りの許可を求めます。許可しなくても、荷物は手で登録できます。設定の「あなたのメールの扱い」にある「{AI_CONSENT_TEXT.stop}」で、その後の読み取りを止められます。すでに読み取った荷物と結果は残ります。
+            届いたメールを Anthropic の Claude に送る前に、読み取りの許可を求めます。許可しなくても、荷物は手で登録できます。設定の「あなたのメールの扱い」にある「{AI_CONSENT_TEXT.stop}」で、その後の読み取りを止められます。{AI_CONSENT_TEXT.retainedResults}
           </Term>
           <Term name="ふるい">
             届いたメールは、まずサーバーの中の決まりで、広告などを分けます。読み取りを許可している場合だけ、迷うメールと、「これは荷物」で覚えた差出人のメールの件名と本文の初めの部分を Claude Haiku に送って確かめます。読まないと決めたメールの本文は保存しません。

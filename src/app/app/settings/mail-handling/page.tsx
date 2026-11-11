@@ -8,6 +8,8 @@ import { setAiReadingDecision } from "../../reading/actions";
 import { PressButton } from "../press";
 
 export const metadata = { title: "あなたのメールの扱い" };
+// The same permission action may read the waiting mail after a grant.
+export const maxDuration = 300;
 
 export default async function MailHandlingPage() {
   const user = (await getUser())!;

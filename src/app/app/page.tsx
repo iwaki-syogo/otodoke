@@ -18,6 +18,8 @@ import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { ReadingConsent } from "./reading/reading-consent";
 
 export const metadata = { title: "荷物" };
+// The permission form can read the waiting mail within the existing daily allowance.
+export const maxDuration = 300;
 
 type SearchParams = Promise<{ demo?: string | string[]; sample?: string | string[] }>;
 
