@@ -33,13 +33,23 @@ struct ClaudeStoppedScreenshots {
             try await shootManualChanged()
             return
         }
+        // A new database, model and window for every picture: the page reads again when it appears and clears the
+        // "read" sentence when it goes, so one model drawn twice (light, then dark) shows neither the same state nor the sentence.
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let model = try await Self.makeModel(scenario)
+            let image = try await Self.render(SettingsView(model: model, page: .delivery, register: {}), style: style, height: 760)
+            try Self.write(image, "\(scenario.rawValue)-\(style == .dark ? "dark" : "light").png")
+        }
+    }
+
+    private static func makeModel(_ scenario: Scenario) async throws -> SettingsModel {
         let rows: [Row]
         switch scenario {
-        case .reasonsAll: rows = [Self.stopped, Self.over, Self.failed]
-        case .reasonsStopped, .readStopped: rows = [Self.stopped]
-        case .reasonsOverLimit, .readOverLimit: rows = [Self.over]
-        case .reasonsFailed: rows = [Self.failed]
-        case .reasonsUnknown: rows = [Self.stopped]
+        case .reasonsAll: rows = [stopped, over, failed]
+        case .reasonsStopped, .readStopped: rows = [stopped]
+        case .reasonsOverLimit, .readOverLimit: rows = [over]
+        case .reasonsFailed: rows = [failed]
+        case .reasonsUnknown: rows = [stopped]
         case .manualChanged: rows = []
         }
         let fake = FakeSupabase.make()
@@ -48,7 +58,10 @@ struct ClaudeStoppedScreenshots {
         await fake.setUnreadEmails(rows.count)
         let (provider, auth) = try await TestSession.signedIn(fake)
         if scenario == .reasonsUnknown {
-            await fake.fail(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, with: .http(500))
+            // Every read of the unread rows fails (the load, and the reads the page makes when it appears).
+            for nth in 1...6 {
+                await fake.fail(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, nth: nth, with: .http(500))
+            }
         }
         let model = SettingsModel(
             reader: SettingsReader(provider: provider),
@@ -76,11 +89,12 @@ struct ClaudeStoppedScreenshots {
         default:
             break
         }
-        for style in [UIUserInterfaceStyle.light, .dark] {
-            let image = try await Self.render(SettingsView(model: model, page: .delivery, register: {}), style: style, height: 760)
-            try Self.write(image, "\(scenario.rawValue)-\(style == .dark ? "dark" : "light").png")
-        }
+        // The fake servers live as long as the model's provider and mail client hold them.
+        keepAlive.append((fake, server))
+        return model
     }
+
+    nonisolated(unsafe) private static var keepAlive: [(FakeSupabase, FakeMailServer)] = []
 
     /// The edit sheet after 保存 found the parcel changed since the form was opened.
     private func shootManualChanged() async throws {

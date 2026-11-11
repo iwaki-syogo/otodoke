@@ -138,4 +138,30 @@ struct UnreadReasonsTests {
         let failed = try await model(unread: 1, rows: [stopped], failReasons: true)
         #expect(failed.unreadReasons == .failed)
     }
+
+    @Test func aReadThatFailsAfterAStoppedOneDoesNotKeepTheOldReason() async throws {
+        let fake = FakeSupabase.make()
+        await fake.insert("user_keys", [SettingsRows.key(1, keyID: "k1")])
+        await fake.insert("emails", [SettingsRows.mail(1, ["processing_status": "failed", "error": "claude_unavailable", "created_at": "2026-11-02T10:00:00+00:00"])])
+        await fake.setUnreadEmails(1)
+        let (provider, auth) = try await TestSession.signedIn(fake)
+        let model = SettingsModel(
+            reader: SettingsReader(provider: provider),
+            inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
+            auth: auth,
+            inboundDomain: fake.config.inboundDomain,
+            changes: DataChanges(),
+            now: { ISO.date("2026-11-04T03:00:00Z")! }
+        )
+        await model.load()
+        #expect(model.unreadReasons == .loaded(UnreadReasons(stopped: 1, overLimit: 0, failed: 0)))
+        // The second read of the unread rows (the first was the load above) fails: the count is still read (1 waiting), the reason is not stated.
+        await fake.fail(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, nth: 2, with: .http(500))
+        await model.load()
+        #expect(model.unread == .loaded(1))
+        #expect(model.unreadReasons == .failed)
+        // And when it can be read again, the reason is back.
+        await model.load()
+        #expect(model.unreadReasons == .loaded(UnreadReasons(stopped: 1, overLimit: 0, failed: 0)))
+    }
 }
