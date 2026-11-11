@@ -14,6 +14,13 @@ The timestamp in each name here is the planned date to apply or run it (`2026111
 
 Now waiting:
 
+- `20261111100000_claude_call_release.sql` — gives back the allowance of a Claude call that Claude
+  refused (claim_claude_call_v2 / release_claude_call, a new table claude_call_claims, and calls >= 0
+  on claude_usage_daily). Safe to apply any time: the code in production keeps using
+  claim_claude_call, and the code that knows the new functions falls back to it while they are
+  missing. Run `supabase/verify/20261111100000_claude_call_release.before.sql` first (verdict 'OK'),
+  then the file, then `supabase/verify/20261111100000_claude_call_release.sql` (verdict 'OK').
+  Rollback: `supabase/rollback/20261111100000_claude_call_release.down.sql`.
 - `20261106130000_mail_sealed_after_processing.sql` — refuses a read mail left in plaintext. Apply only
   after the sealing code is in production and its verify file says so (see the file's header).
 - `20261114090000_drop_unsealed_plaintext.sql` — decision 7: on 2026-11-14, drop the plaintext subject,

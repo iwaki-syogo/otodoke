@@ -39,6 +39,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      claude_call_claims: {
+        Row: {
+          claimed_at: string
+          day: string
+          id: number
+          released_at: string | null
+          user_id: string
+        }
+        Insert: {
+          claimed_at?: string
+          day: string
+          id?: number
+          released_at?: string | null
+          user_id: string
+        }
+        Update: {
+          claimed_at?: string
+          day?: string
+          id?: number
+          released_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       claude_usage_daily: {
         Row: {
           calls: number
@@ -442,6 +466,17 @@ export type Database = {
         }
         Returns: string
       }
+      claim_claude_call_v2: {
+        Args: {
+          p_global_limit: number
+          p_user_id: string
+          p_user_limit: number
+        }
+        Returns: {
+          claim_id: number
+          verdict: string
+        }[]
+      }
       claim_login_mail: {
         Args: {
           p_email_10m_limit: number
@@ -454,6 +489,10 @@ export type Database = {
           claim_id: number
           verdict: string
         }[]
+      }
+      release_claude_call: {
+        Args: { p_claim_id: number; p_user_id: string }
+        Returns: number
       }
       release_login_mail: {
         Args: { p_claim_id: number; p_email_hash: string }
