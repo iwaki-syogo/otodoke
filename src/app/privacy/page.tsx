@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
+import { PublicPageLinks } from "@/components/public-page-links";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { CONTACT_EMAIL } from "./contact";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
@@ -185,6 +186,7 @@ export default function PrivacyPage() {
       <p className="mt-10 text-xs text-neutral-500">制定日: 2026 年 11 月</p>
       {/* The reading-permission policy's release date. Change it if the release moves. */}
       <p className="mt-1 text-xs text-neutral-500">改定日: 2026 年 11 月 12 日</p>
+      <PublicPageLinks includePrivacy={false} />
     </main>
   );
 }

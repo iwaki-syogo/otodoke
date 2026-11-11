@@ -77,6 +77,15 @@ describe("links to /privacy", () => {
     const footer = ancestorsOf(link).find((n) => n.tag === "footer");
     expect(footer).toBeDefined();
     expect(elementSiblings(link).filter((n) => n.tag === "a").map((a) => a.attrs.href)).toEqual(["https://github.com/iwaki-syogo/otodoke", "/privacy"]);
+    expect(linksTo(root, "/terms").map(textOf)).toEqual(["利用規約"]);
+    expect(linksTo(root, "/support").map(textOf)).toEqual(["サポート"]);
+  });
+
+  it("the privacy policy links to terms and support without signing in", async () => {
+    const Page = (await import("@/app/privacy/page")).default;
+    const root = parseHtml(renderToStaticMarkup(Page()));
+    expect(linksTo(root, "/terms").map(textOf)).toEqual(["利用規約"]);
+    expect(linksTo(root, "/support").map(textOf)).toEqual(["サポート"]);
   });
 
   it("設定 › あなたのメールの扱い: right under 「あなたのメールの扱い」, outside every section", async () => {

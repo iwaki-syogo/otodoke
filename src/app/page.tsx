@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
+import { PublicPageLinks } from "@/components/public-page-links";
 import { getUser } from "@/lib/supabase/server";
 
 const SCREENS = [
@@ -90,6 +91,7 @@ export default async function Home() {
         <Link href="/privacy" className="ml-4 inline-block py-2 underline underline-offset-4">
           プライバシーポリシー
         </Link>
+        <PublicPageLinks includePrivacy={false} />
       </footer>
     </main>
   );

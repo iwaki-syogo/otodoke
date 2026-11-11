@@ -141,7 +141,7 @@ describe("the proxy's own work is unchanged", () => {
   });
 
   it("lets anyone open the public pages and the login link's page", async () => {
-    for (const path of ["/", "/login", "/auth/continue?token_hash=t&type=email", "/auth/turnstile-app"]) {
+    for (const path of ["/", "/terms", "/support", "/login", "/auth/continue?token_hash=t&type=email", "/auth/turnstile-app"]) {
       expect(wentOn(await proxy(request(`https://otodoke.app${path}`))), path).toBe(true);
     }
   });
