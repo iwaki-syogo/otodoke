@@ -55,7 +55,7 @@ const createCall = (snapshot, index, changes = values, firstItems = items) =>
 const updateCall = (snapshot, parcel, version, index, changes, category = null, firstItems = items) =>
   `select 'RESULT:' || row_to_json(r)::text from public.update_mail_parcel(${json(snapshot)},'${parcel}',${quote(version)}::timestamptz,${json(changes)},${category === null ? "null" : json(category)},${json(firstItems)},'${emails[index]}','${runs[index]}') r`;
 const ensureCall = (parcel, version, index, firstItems = items) =>
-  `select 'RESULT:' || row_to_json(r)::text from public.ensure_mail_parcel_items('${parcel}',${quote(version)}::timestamptz,${json(firstItems)},'${emails[index]}','${runs[index]}') r`;
+  `select 'RESULT:' || row_to_json(r)::text from (select * from public.ensure_mail_parcel_items('${parcel}',${quote(version)}::timestamptz,${json(firstItems)},'${emails[index]}','${runs[index]}')) r`;
 const legacyWorker = (index) => ({
   prepare: `create temp table old_candidates as select id from public.parcels where user_id='${user}' and order_number=${quote(values.order_number)};`,
   query: `select 'RESULT:' || jsonb_build_object('legacy_rows',jsonb_array_length(public.mail_run_write('${emails[index]}','${runs[index]}','parcels','insert',${json(values)},'[]')))::text where not exists(select 1 from old_candidates)`,
