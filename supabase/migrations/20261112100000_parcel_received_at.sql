@@ -5,6 +5,13 @@
 -- parcel under 配達済み until the person says 受け取った; only then does it move to 受け取り済み.
 -- received_at holds that statement. null = not said.
 --
+-- parcels.check_dismissed_at (timestamptz null) is the answer 「まだ」 to the question 要確認 asks about a
+-- delivered parcel 14 days after its delivery (and the answer 受け取っていない gives on its own): while it
+-- is set, a delivered parcel is not asked about again and stays under 配達済み. It is the Web's; the
+-- mail processing never writes it. It is cleared when the status leaves delivered (same trigger).
+-- It is NOT cleared when received_at is set: a received parcel is never asked about anyway, and
+-- 受け取っていない sets it again. Leaving it avoids one more rule in the trigger.
+--
 -- The trigger parcels_received_at keeps the two honest for writers that do not know the column
 -- (an app build from before this file), and is never the only thing the app relies on: the
 -- current app writes received_at itself, in the same update as the status.
@@ -15,6 +22,8 @@
 --     A parcel that is no longer delivered cannot have been received.
 --   - The server (service_role: the mail processing) setting 'delivered' leaves received_at as it
 --     is. A mail says "delivered", never "the person has it".
+--   - The same change (delivered to anything else, any role) also clears check_dismissed_at, so an old
+--     build that sends 届いていない (status only) leaves no stale answer behind.
 --   - An update that keeps 'delivered' does not touch received_at: clearing it (受け取っていない)
 --     or setting it is the writer's own.
 --
@@ -69,6 +78,7 @@ do $$
 begin
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name = 'received_at') then
     alter table public.parcels add column received_at timestamptz;
+    alter table public.parcels add column if not exists check_dismissed_at timestamptz;
     -- When this was done: the verify file tells the parcels moved now from those the mail processing delivered since.
     execute format('comment on column public.parcels.received_at is %L', 'added ' || to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'));
     -- Everything delivered so far counts as received. updated_at stays as it is (see the header).
@@ -94,6 +104,7 @@ begin
   -- UPDATE
   if old.status = 'delivered' and new.status is distinct from 'delivered' then
     new.received_at := null;
+    new.check_dismissed_at := null;
   elsif new.status = 'delivered' and old.status is distinct from 'delivered' and new.received_at is null and current_user = 'authenticated' then
     new.received_at := now();
   end if;

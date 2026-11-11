@@ -136,10 +136,11 @@ export function manualCarrierChoice(name: string | null, tracking: string | null
 
 const isReceivedRow = (saved?: Pick<ManualSaved, "status" | "received_at">) => saved?.status === "delivered" && saved.received_at != null;
 
-function receivedColumns(choice: string, saved: ManualSaved | undefined, now: Date): { received_at?: string | null } {
+function receivedColumns(choice: string, saved: ManualSaved | undefined, now: Date): { received_at?: string | null; check_dismissed_at?: string } {
   const wasDelivered = saved?.status === "delivered";
   if (choice === MANUAL_RECEIVED) return isReceivedRow(saved) ? {} : { received_at: now.toISOString() };
-  if (choice === "delivered") return wasDelivered ? (isReceivedRow(saved) ? { received_at: null } : {}) : { received_at: null };
+  // 受け取り済み → 配達済み is the person saying 受け取っていない: 要確認 must not ask at once (as markNotReceived).
+  if (choice === "delivered") return wasDelivered ? (isReceivedRow(saved) ? { received_at: null, check_dismissed_at: now.toISOString() } : {}) : { received_at: null };
   return wasDelivered ? { received_at: null } : {};
 }
 

@@ -12,7 +12,7 @@
 -- `supabase db query --linked -f` returns only the last result, and exits 0 even on an error.
 -- Prints settings and counts only.
 --
---   column_ok          parcels.received_at exists: timestamptz, nullable
+--   column_ok          parcels.received_at and parcels.check_dismissed_at exist: timestamptz, nullable
 --   trigger_ok         parcels_received_at: BEFORE, FOR EACH ROW, INSERT and UPDATE, enabled; its
 --                      function is SECURITY INVOKER with a fixed search_path and never says
 --                      "return old"; parcels_set_updated_at is still on
@@ -35,6 +35,9 @@
 --                        as authenticated: shipped -> delivered with a received_at given keeps that value
 --                        as authenticated: delivered -> shipped, and the status really is shipped
 --                          (an update that came back as the old row would show here)
+--                        check_dismissed_at: set on a delivered parcel it stays through updates that
+--                          keep delivered (and through receiving); it is emptied when the status
+--                          leaves delivered, as authenticated (-> shipped) and as service_role (-> cancelled)
 --
 -- Leaves nothing behind: the block makes its rows on one account (an existing one, or one it
 -- makes), switches the role the way PostgREST does, then undoes all of it by raising the private
@@ -129,6 +132,30 @@ begin
     select received_at into v_at from public.parcels where id = v_p;
     if v_at is distinct from v_given then v_fail := v_fail || format(' auth_given(%s)', v_at); end if;
 
+    -- check_dismissed_at: kept while delivered, emptied when the status leaves delivered (any role)
+    insert into public.parcels (user_id, shop, status, check_dismissed_at) values (v_user, 'verify', 'delivered', v_given) returning id into v_p;
+    set local role service_role;
+    update public.parcels set title = 'again' where id = v_p;
+    reset role;
+    select check_dismissed_at into v_at from public.parcels where id = v_p;
+    if v_at is distinct from v_given then v_fail := v_fail || format(' dismissed_kept(%s)', v_at); end if;
+    set local role authenticated;
+    update public.parcels set received_at = v_given where id = v_p;
+    reset role;
+    select check_dismissed_at into v_at from public.parcels where id = v_p;
+    if v_at is distinct from v_given then v_fail := v_fail || format(' dismissed_kept_on_receive(%s)', v_at); end if;
+    set local role authenticated;
+    update public.parcels set status = 'shipped' where id = v_p;
+    reset role;
+    select check_dismissed_at into v_at from public.parcels where id = v_p;
+    if v_at is not null then v_fail := v_fail || format(' dismissed_auth_back(%s)', v_at); end if;
+    insert into public.parcels (user_id, shop, status, check_dismissed_at) values (v_user, 'verify', 'delivered', v_given) returning id into v_p;
+    set local role service_role;
+    update public.parcels set status = 'cancelled' where id = v_p;
+    reset role;
+    select check_dismissed_at into v_at from public.parcels where id = v_p;
+    if v_at is not null then v_fail := v_fail || format(' dismissed_service_cancel(%s)', v_at); end if;
+
     raise exception using errcode = 'OTRBK', message = 'undo the verify writes';
   exception when sqlstate 'OTRBK' then
     null; -- rolled back
@@ -138,7 +165,7 @@ end $$;
 
 with checks as (
   select
-    exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name = 'received_at' and data_type = 'timestamp with time zone' and is_nullable = 'YES') as column_ok,
+    (select count(*) = 2 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name in ('received_at', 'check_dismissed_at') and data_type = 'timestamp with time zone' and is_nullable = 'YES') as column_ok,
     coalesce((
       select count(*) = 1 and bool_and(
                t.tgenabled = 'O'

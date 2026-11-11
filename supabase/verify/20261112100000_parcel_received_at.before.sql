@@ -5,7 +5,7 @@
 select
   case
     when to_regclass('public.parcels') is not null
-     and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name = 'received_at')
+     and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'parcels' and column_name in ('received_at', 'check_dismissed_at'))
      and exists (select 1 from pg_trigger where tgrelid = 'public.parcels'::regclass and tgname = 'parcels_set_updated_at' and tgenabled = 'O')
     then 'OK' else 'FAILED'
   end as verdict,

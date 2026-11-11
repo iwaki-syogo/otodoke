@@ -27,7 +27,8 @@ describe("manualParcelFields: the four choices", () => {
   });
 
   it("受け取り済み → 配達済み empties received_at", () => {
-    expect(manualParcelFields(input("delivered"), NOW, saved("delivered", R))).toMatchObject({ status: "delivered", received_at: null });
+    // It is the person saying 受け取っていない, so 要確認 is told not to ask at once (as markNotReceived does).
+    expect(manualParcelFields(input("delivered"), NOW, saved("delivered", R))).toMatchObject({ status: "delivered", received_at: null, check_dismissed_at: NOW.toISOString() });
   });
 
   it("the same choice changes nothing about received_at (the stored time stays)", () => {

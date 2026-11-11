@@ -283,6 +283,7 @@ export type Database = {
           carrier: string | null
           category: string | null
           category_source: string | null
+          check_dismissed_at: string | null
           created_at: string
           expected_date: string | null
           expected_date_end: string | null
@@ -312,6 +313,7 @@ export type Database = {
           carrier?: string | null
           category?: string | null
           category_source?: string | null
+          check_dismissed_at?: string | null
           created_at?: string
           expected_date?: string | null
           expected_date_end?: string | null
@@ -341,6 +343,7 @@ export type Database = {
           carrier?: string | null
           category?: string | null
           category_source?: string | null
+          check_dismissed_at?: string | null
           created_at?: string
           expected_date?: string | null
           expected_date_end?: string | null

@@ -144,6 +144,7 @@ function parcel(id: string, over: Partial<ParcelRow>): ParcelRow {
     requires_presence: null,
     presence_evidence: null,
     received_at,
+    check_dismissed_at: null,
     total_amount: null,
     created_at: "2026-10-01T00:00:00+00:00",
     updated_at: "2026-10-01T00:00:00.123456+00:00",
@@ -1160,9 +1161,9 @@ const expected = {
   },
 };
 
-// received_at is the Web's: the app (build 13) does not have the column, so the rows it reads here
+// received_at and check_dismissed_at are the Web's: the app (build 13) does not have the column, so the rows it reads here
 // leave it out. The answers above were worked out with it (see parcel()), which is why they are the old ones.
-const text = `${JSON.stringify(expected, (key, value) => (key === "received_at" ? undefined : value), 2)}\n`;
+const text = `${JSON.stringify(expected, (key, value) => (key === "received_at" || key === "check_dismissed_at" ? undefined : value), 2)}\n`;
 
 // ---------------------------------------------------------------------------------------------
 // The crypto vectors for iOS (batch 2, task 13). Written outside git; never into web-expected.json.

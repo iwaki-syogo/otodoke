@@ -261,7 +261,9 @@ describe("「すべて受け取り済みにする」 (DeliverAll)", () => {
     const view = mount(() => DeliverAll({ items }));
     press(buttonIn(view, "すべて受け取り済みにする"));
     await flush();
-    const confirm = buttonIn(view, "2 件を受け取り済みにする");
+    const confirm = buttonIn(view, "受け取り済みにする");
+    // The words alone, with no count in front.
+    expect(hostText(confirm).trim()).toBe("受け取り済みにする");
     press(confirm);
     press(confirm);
     expect(ctl.markDelivered).toHaveBeenCalledTimes(1);
@@ -281,7 +283,7 @@ describe("「すべて受け取り済みにする」 (DeliverAll)", () => {
     const view = mount(() => DeliverAll({ items }));
     press(buttonIn(view, "すべて受け取り済みにする"));
     await flush();
-    press(buttonIn(view, "2 件を受け取り済みにする"));
+    press(buttonIn(view, "受け取り済みにする"));
     await flush();
     expect(ctl.toast).not.toHaveBeenCalled();
     expect(view.text()).toContain("保存できませんでした。もう一度押してください。");

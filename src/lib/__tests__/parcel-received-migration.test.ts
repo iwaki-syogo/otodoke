@@ -32,6 +32,7 @@ function problemsOf(fn: string): string[] {
   if (!/set search_path = ''/.test(fn)) out.push("no fixed search_path");
   if (/request\.jwt|auth\.role|auth\.jwt/.test(fn) || !fn.includes("current_user")) out.push("does not use current_user");
   if (!/old\.status = 'delivered' and new\.status is distinct from 'delivered'\s*then\s*new\.received_at := null;/.test(fn)) out.push("does not clear received_at on leaving delivered");
+  if (!/new\.received_at := null;\s*new\.check_dismissed_at := null;/.test(fn)) out.push("does not clear check_dismissed_at on leaving delivered");
   // Every place now() is written must have the authenticated check in front of it.
   const sets = [...fn.matchAll(/new\.received_at := now\(\)/g)];
   if (sets.length === 0 || sets.some((m) => !fn.slice(Math.max(0, m.index! - 300), m.index!).includes("current_user = 'authenticated'"))) out.push("now() is not behind the authenticated check");
@@ -53,6 +54,7 @@ describe("the migration", () => {
 
   it("adds a nullable timestamptz column, and only on the run that adds it moves delivered parcels to received", () => {
     expect(MIGRATION).toMatch(/add column received_at timestamptz;/);
+    expect(MIGRATION).toMatch(/add column if not exists check_dismissed_at timestamptz;/);
     expect(MIGRATION).not.toMatch(/received_at timestamptz not null/);
     const block = MIGRATION.match(/do \$\$[\s\S]*?end \$\$;/)![0];
     expect(block).toMatch(/if not exists \(select 1 from information_schema\.columns[^)]*received_at/);
@@ -95,6 +97,9 @@ describe("the migration", () => {
     it("does not clear received_at when the status leaves delivered", () => {
       expect(broken((f) => f.replace("new.received_at := null;", "null;"))).toContain("does not clear received_at on leaving delivered");
     });
+    it("leaves check_dismissed_at behind when the status leaves delivered", () => {
+      expect(broken((f) => f.replace("new.check_dismissed_at := null;", ""))).toContain("does not clear check_dismissed_at on leaving delivered");
+    });
     it("has no fixed search_path", () => {
       expect(broken((f) => f.replace("set search_path = ''", ""))).toContain("no fixed search_path");
     });
@@ -125,6 +130,7 @@ describe("its verify files and rollback", () => {
     expect(sql).toContain("drop trigger if exists parcels_received_at on public.parcels;");
     expect(sql).toContain("drop function if exists public.parcels_received_at();");
     expect(sql).toContain("alter table public.parcels drop column if exists received_at;");
+    expect(sql).toContain("alter table public.parcels drop column if exists check_dismissed_at;");
     expect(sql).toMatch(/set local lock_timeout = '5s';/);
   });
 });

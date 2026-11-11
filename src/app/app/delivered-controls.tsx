@@ -202,7 +202,7 @@ export function DeliverAll({ items }: { items: Marked }) {
           onClick={save}
           className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white"
         >
-          {`${items.length} 件を受け取り済みにする`}
+          受け取り済みにする
         </PendingButton>
         <button type="button" onClick={() => setStep("idle")} disabled={pending} className="rounded-xl border border-neutral-300 px-4 py-3 text-sm disabled:opacity-60">
           やめる

@@ -422,7 +422,7 @@ export function parcelTotal(mails: Extraction[]): number | null {
 /** How long past its date a parcel waits before the user is asked whether it came. */
 export const CHECK_AFTER_DAYS = 14;
 
-type DatedParcel = Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at"> & { received_at?: string | null };
+type DatedParcel = Pick<ParcelRow, "status" | "expected_date" | "expected_date_end" | "last_email_at"> & { received_at?: string | null; check_dismissed_at?: string | null };
 
 /** The last day a parcel may still arrive on time: the end of a window, or the one date. */
 export function lastExpectedDay(p: Pick<ParcelRow, "expected_date" | "expected_date_end">): string | null {
@@ -439,10 +439,13 @@ export function isReceived(p: Pick<ParcelRow, "status"> & { received_at?: string
  * last mail). Most shops send no delivery mail, so these are asked about rather than guessed.
  * A delivered parcel the person has not said they received is asked about the same way, counted
  * from the day of the delivery mail (its expected_date, which a delivery mail sets to the day it
- * came); with no date, the same day as for any parcel. It is never moved on its own.
+ * came); with no date, the same day as for any parcel. It is never moved on its own, and once the
+ * person has answered 「まだ」 (check_dismissed_at) it is not asked about again.
  */
 export function needsCheck(p: DatedParcel, today: string): boolean {
   if (p.status === "cancelled" || isReceived(p)) return false;
+  // 「まだ」: the person was asked about this delivered parcel and answered; never asked again.
+  if (p.status === "delivered" && (p.check_dismissed_at ?? null) !== null) return false;
   const cutoff = addDays(today, -CHECK_AFTER_DAYS);
   const lastDay = lastExpectedDay(p);
   const mailDay = p.last_email_at ? todayJst(new Date(p.last_email_at)) : null;

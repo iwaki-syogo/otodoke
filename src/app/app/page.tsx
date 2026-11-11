@@ -8,6 +8,7 @@ import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
 import { PENDING_GRACE_MS, UNREAD_FILTER } from "@/lib/unread";
 import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
+import { NotYetButton } from "./not-yet-button";
 import { PageLink } from "./page-link";
 import { LOAD_DEMO_LABEL } from "./settings/demo-labels";
 import { readMailSoFar, type MailSoFar } from "./settings/settings-reads";
@@ -140,15 +141,13 @@ function CheckSection({ items }: { items: ParcelRow[] }) {
         <span className="text-sm font-normal text-amber-900">{items.length}</span>
       </h2>
       {notDelivered ? <p className="mt-1 text-sm text-amber-950">お届け予定から 2 週間以上たっても、届いた連絡がない荷物です。届いていますか？</p> : null}
-      {delivered ? <p className="mt-1 text-sm text-amber-950">配達済みから 2 週間以上たっています。受け取りましたか？</p> : null}
+      {delivered ? <p className="mt-1 text-sm text-amber-950">受け取りましたか？</p> : null}
       <div className="mt-3">
         <DeliverAll items={items.map((p) => ({ id: p.id, status: p.status, received_at: p.received_at }))} />
       </div>
       <div className="mt-3 flex flex-col gap-3">
         {shown.map((p) => (
-          <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at}>
-            <ParcelCard parcel={p} />
-          </SwipeToDeliver>
+          <CheckCard key={p.id} parcel={p} />
         ))}
       </div>
       {rest.length > 0 ? (
@@ -156,14 +155,24 @@ function CheckSection({ items }: { items: ParcelRow[] }) {
           <summary className="cursor-pointer text-sm text-amber-900">ほか {rest.length} 件を見る</summary>
           <div className="mt-3 flex flex-col gap-3">
             {rest.map((p) => (
-              <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at}>
-                <ParcelCard parcel={p} />
-              </SwipeToDeliver>
+              <CheckCard key={p.id} parcel={p} />
             ))}
           </div>
         </details>
       ) : null}
     </section>
+  );
+}
+
+/** A card in 要確認. A delivered one also has 「まだ」: it leaves 要確認 and is not asked about again. */
+function CheckCard({ parcel }: { parcel: ParcelRow }) {
+  return (
+    <div>
+      <SwipeToDeliver id={parcel.id} status={parcel.status} receivedAt={parcel.received_at}>
+        <ParcelCard parcel={parcel} />
+      </SwipeToDeliver>
+      {parcel.status === "delivered" ? <NotYetButton id={parcel.id} /> : null}
+    </div>
   );
 }
 

@@ -70,6 +70,7 @@ const PARCEL_DEFAULTS: Row = {
   carrier: null,
   category: null,
   category_source: null,
+  check_dismissed_at: null,
   expected_date: null,
   expected_date_end: null,
   expected_text: null,

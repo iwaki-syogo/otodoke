@@ -303,11 +303,13 @@ describe("受け取った and its undo", () => {
   describe("markNotReceived (受け取っていない)", () => {
     const received = (id: string, over: Row = {}) => Object.assign(db.find("parcels", id)!, { status: "delivered", received_at: R, ...over });
 
-    it("clears received_at only, with the conditions of the other undo actions", async () => {
+    it("clears received_at and answers 「まだ」 for 要確認, with the conditions of the other undo actions", async () => {
       received(ID);
       expect(await (await actions()).markNotReceived(ID)).toEqual({ ok: true });
       const [q]: Query[] = db.callsOn("parcels", "update");
-      expect(q.values).toEqual({ received_at: null });
+      expect(Object.keys(q.values as object).sort()).toEqual(["check_dismissed_at", "received_at"]);
+      expect((q.values as Row).received_at).toBeNull();
+      expect(typeof (q.values as Row).check_dismissed_at).toBe("string");
       const eq = (c: string) => q.filters.filter((f) => f.method === "eq" && f.args[0] === c).map((f) => f.args[1]);
       expect(eq("id")).toEqual([ID]);
       expect(eq("user_id")).toEqual([USER]);
@@ -388,10 +390,13 @@ describe("the parcel list", () => {
 
   it("asks about delivered parcels in words of their own, and keeps the old words for the others", async () => {
     const oldWords = "届いた連絡がない荷物です";
-    const deliveredWords = "配達済みから 2 週間以上たっています。受け取りましたか？";
+    const deliveredWords = "受け取りましたか？";
     seed([old]);
     let text = textOf(await render());
     expect(text).toContain(deliveredWords);
+    // Only that question, no longer sentence before it.
+    expect(text).not.toContain("たっています");
+    expect(text).not.toContain("配達済みから");
     expect(text).not.toContain(oldWords);
     seed([oldShipped]);
     text = textOf(await render());
@@ -510,6 +515,102 @@ describe("the sample does not bring a year of deliveries back to the list", () =
     expect(db.rows("parcels").filter((p) => p.status === "delivered" && p.id !== "p-real").every((p) => p.received_at !== null)).toBe(true);
   });
 }, 60_000);
+
+/* ---------------------------------------------------------------------------------------------- */
+describe("「まだ」 and 「受け取っていない」 do not loop through 要確認", () => {
+  const TODAY = todayJst();
+  const ID = "11111111-1111-4111-8111-111111111111";
+  // A parcel the migration moved to received, delivered long ago (past the 14 days).
+  const migrated = (over: Row = {}) => ({ id: ID, user_id: USER, shop: "テスト店", title: "古い荷物", status: "delivered", received_at: R, check_dismissed_at: null, expected_date: addDays(TODAY, -40), last_email_at: null, updated_at: "2026-11-01T00:00:00.000Z", ...over });
+  let db: FakeDb;
+  beforeEach(() => {
+    db = new FakeDb({ parcels: [migrated()] });
+    mocks.state.db = db;
+    mocks.revalidatePath.mockClear();
+  });
+  const sections = () => parcelSections(db.rows("parcels") as unknown as ParcelRow[], TODAY);
+  const ids = (xs: ParcelRow[]) => xs.map((p) => p.id);
+
+  it("a delivered parcel past 14 days is in 要確認 until the person answers", () => {
+    db.find("parcels", ID)!.received_at = null;
+    expect(ids(sections().toCheck)).toEqual([ID]);
+  });
+
+  it("受け取っていない on an old received parcel: it stays under 配達済み and is not asked about", async () => {
+    expect(sections().arrived).toHaveLength(0);
+    expect(await (await import("@/app/app/parcel-actions")).markNotReceived(ID)).toEqual({ ok: true });
+    expect(ids(sections().arrived)).toEqual([ID]);
+    expect(sections().toCheck).toHaveLength(0);
+  });
+
+  it("まだ in 要確認: it leaves 要確認, stays under 配達済み, and is not asked again", async () => {
+    db.find("parcels", ID)!.received_at = null;
+    expect(ids(sections().toCheck)).toEqual([ID]);
+    expect(await (await import("@/app/app/parcel-actions")).dismissCheck(ID)).toEqual({ ok: true });
+    expect(sections().toCheck).toHaveLength(0);
+    expect(ids(sections().arrived)).toEqual([ID]);
+    // Days later, still not asked.
+    expect(ids(parcelSections(db.rows("parcels") as unknown as ParcelRow[], addDays(TODAY, 30)).arrived)).toEqual([ID]);
+  });
+
+  it("after 受け取った it is received, out of both sections", async () => {
+    db.find("parcels", ID)!.received_at = null;
+    await (await import("@/app/app/parcel-actions")).dismissCheck(ID);
+    await (await import("@/app/app/parcel-actions")).markDelivered([ID]);
+    expect(sections().arrived).toHaveLength(0);
+    expect(sections().toCheck).toHaveLength(0);
+  });
+
+  it("dismissCheck writes check_dismissed_at only, held to the row it read", async () => {
+    db.find("parcels", ID)!.received_at = null;
+    await (await import("@/app/app/parcel-actions")).dismissCheck(ID);
+    const [q]: Query[] = db.callsOn("parcels", "update");
+    expect(Object.keys(q.values as object)).toEqual(["check_dismissed_at"]);
+    const eq = (c: string) => q.filters.filter((f) => f.method === "eq" && f.args[0] === c).map((f) => f.args[1]);
+    expect(eq("user_id")).toEqual([USER]);
+    expect(eq("status")).toEqual(["delivered"]);
+    expect(eq("updated_at")).toEqual(["2026-11-01T00:00:00.000Z"]);
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/app", "layout");
+  });
+
+  it.each([
+    ["a received parcel", { received_at: R }],
+    ["a parcel not delivered", { status: "shipped", received_at: null }],
+    ["a cancelled parcel", { status: "cancelled", received_at: null }],
+  ])("dismissCheck refuses %s without writing", async (_n, over) => {
+    Object.assign(db.find("parcels", ID)!, over);
+    expect(await (await import("@/app/app/parcel-actions")).dismissCheck(ID)).toEqual({ ok: false, error: "更新できませんでした。開き直してください" });
+    expect(db.callsOn("parcels", "update")).toHaveLength(0);
+  });
+
+  it("dismissCheck writes nothing when the parcel changed after it was read, and refuses a bad id", async () => {
+    db.find("parcels", ID)!.received_at = null;
+    db.hooks.push((q, d) => {
+      if (q.table === "parcels" && q.op === "update") d.find("parcels", ID)!.updated_at = d.tick();
+    });
+    expect(await (await import("@/app/app/parcel-actions")).dismissCheck(ID)).toMatchObject({ ok: false });
+    expect(db.find("parcels", ID)!.check_dismissed_at).toBeNull();
+    expect(await (await import("@/app/app/parcel-actions")).dismissCheck("nope")).toMatchObject({ ok: false });
+  });
+
+  it("the cards in 要確認: 「まだ」 on a delivered one only, and the confirm button has no count", async () => {
+    db = new FakeDb({
+      parcels: [
+        migrated({ id: "p-d", received_at: null }),
+        { ...migrated({ id: "p-s", status: "shipped", received_at: null }) },
+      ],
+      emails: [],
+    });
+    mocks.state.db = db;
+    const Page = (await import("@/app/app/page")).default;
+    const root = parseHtml(renderToStaticMarkup(await Page()));
+    const section = findAll(root, (n) => n.tag === "section").find((n) => textOf(n).startsWith("要確認"))!;
+    const notYet = findAll(section, (n) => n.tag === "button" && textOf(n).trim() === "まだ");
+    expect(notYet).toHaveLength(1);
+    expect(textOf(section)).toContain("受け取りましたか？");
+    expect(textOf(section)).not.toContain("2 件");
+  });
+});
 
 /* ---------------------------------------------------------------------------------------------- */
 describe("the 14 days of a delivered parcel count from the later of its date and its last mail", () => {

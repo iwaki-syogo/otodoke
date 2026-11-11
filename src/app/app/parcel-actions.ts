@@ -126,7 +126,9 @@ export async function markNotDelivered(id: string): Promise<{ ok: true } | { ok:
 
 /**
  * The user says a parcel marked as received has not been received (受け取っていない): it goes back to
- * 配達済み, still delivered, with received_at cleared. Only a delivered parcel that has received_at
+ * 配達済み, still delivered, with received_at cleared. check_dismissed_at is set in the same write: the
+ * person has just answered, so 要確認 must not ask again at once (a parcel received long ago, moved to
+ * received by the migration, would come straight back otherwise). Only a delivered parcel that has received_at
  * goes back, and only if it is still the row that was read (same updated_at); otherwise nothing is
  * written and nothing is retried.
  */
@@ -150,7 +152,7 @@ export async function markNotReceived(id: string): Promise<{ ok: true } | { ok: 
 
   const { data, error } = await session.supabase
     .from("parcels")
-    .update({ received_at: null })
+    .update({ received_at: null, check_dismissed_at: new Date().toISOString() })
     .eq("id", parsed.data)
     .eq("user_id", session.userId)
     .eq("status", "delivered")
@@ -158,6 +160,46 @@ export async function markNotReceived(id: string): Promise<{ ok: true } | { ok: 
     .select("id");
   if (error) {
     console.error("markNotReceived:", error.message);
+    return { ok: false, error: NOT_UPDATED };
+  }
+  if (!data || data.length !== 1) return { ok: false, error: NOT_UPDATED };
+  revalidatePath("/app", "layout");
+  return { ok: true };
+}
+
+/**
+ * 「まだ」 on a delivered parcel 要確認 asks about: the parcel leaves 要確認 and stays under 配達済み, and is
+ * not asked about again (check_dismissed_at). Only a delivered parcel not received yet; the update holds
+ * only while the row is as read (same updated_at), otherwise nothing is written and nothing is retried.
+ */
+export async function dismissCheck(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false, error: NOT_UPDATED };
+  const session = await signedIn();
+  if (!session) return { ok: false, error: NOT_UPDATED };
+
+  const { data: row, error: readError } = await session.supabase
+    .from("parcels")
+    .select("status,received_at,updated_at")
+    .eq("id", parsed.data)
+    .eq("user_id", session.userId)
+    .maybeSingle();
+  if (readError) {
+    console.error("dismissCheck:", readError.message);
+    return { ok: false, error: NOT_UPDATED };
+  }
+  if (!row || row.status !== "delivered" || row.received_at !== null) return { ok: false, error: NOT_UPDATED };
+
+  const { data, error } = await session.supabase
+    .from("parcels")
+    .update({ check_dismissed_at: new Date().toISOString() })
+    .eq("id", parsed.data)
+    .eq("user_id", session.userId)
+    .eq("status", "delivered")
+    .eq("updated_at", row.updated_at)
+    .select("id");
+  if (error) {
+    console.error("dismissCheck:", error.message);
     return { ok: false, error: NOT_UPDATED };
   }
   if (!data || data.length !== 1) return { ok: false, error: NOT_UPDATED };
