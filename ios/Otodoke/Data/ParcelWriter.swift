@@ -4,8 +4,8 @@
 //    each kind of change are built inside that function from the change itself, so a caller cannot
 //    leave one out:
 //     1. user_id = me on every write
-//     2. 「受け取った」 never from cancelled (status != cancelled), and only on the version the screen showed
-//     3. back only to a RESTORABLE status, and only from delivered (status = delivered, updated_at as read)
+//     2. 「受け取った」 never from cancelled or an existing receipt, and only on the version the screen showed
+//     3. back only to a RESTORABLE status, and only from delivered with the receipt and updated_at this write returned
 //     4. a category is one of the seven, recorded as the user's (category_source = "user"), and only on
 //        the version the screen showed (updated_at as read): a choice whose answer was lost and that
 //        reaches the server late never overwrites a later choice (CF1)
@@ -43,7 +43,7 @@ struct ParcelVersion: Equatable, Sendable {
     }
 }
 
-/// What 「元に戻す」 needs: the status before, and updated_at as the 「受け取った」 write left it.
+/// What 「元に戻す」 needs: the state before, and the receipt and updated_at the server returned after this write.
 struct UndoToken: Equatable, Sendable {
     let id: String
     let restoreTo: String
@@ -100,7 +100,7 @@ struct ParcelWriter: Sendable {
     }
 
     /// 「受け取った」 on the version shown: status → delivered where id, user_id = me, status != cancelled,
-    /// status = shown.status and updated_at = shown.updatedAt (sent verbatim).
+    /// received_at is null, status = shown.status and updated_at = shown.updatedAt (sent verbatim).
     func markDelivered(_ shown: ParcelVersion, now: Date = Date()) async -> WriteOutcome<UndoToken> {
         await announced(deliver(shown, now: now))
     }
@@ -109,9 +109,13 @@ struct ParcelWriter: Sendable {
         let receivedAt = ManualParcel.isoString(now)
         switch await write(id: shown.id, .deliver(shown, receivedAt: receivedAt)) {
         case let .success(after):
+            // A returned row must confirm a receipt before this operation can offer an undo.
+            // Keep the server's spelling: Postgres may normalize the ISO string we sent.
+            guard after.status == "delivered", let savedReceivedAt = after.receivedAt,
+                  ParcelRules.isReceivedAt(savedReceivedAt) else { return .unknown }
             return .success(UndoToken(id: after.id, restoreTo: shown.status, deliveredUpdatedAt: after.updatedAt,
                                       previousReceivedAt: shown.receivedAt, previousCheckDismissedAt: shown.checkDismissedAt,
-                                      deliveredReceivedAt: receivedAt))
+                                      deliveredReceivedAt: savedReceivedAt))
         case let .notUpdated(reason):
             return .notUpdated(reason)
         case .unknown:
@@ -139,13 +143,15 @@ struct ParcelWriter: Sendable {
     }
 
     /// 「元に戻す」: restore the prior status and receipt (RESTORABLE only), where id, user_id = me, status = delivered
-    /// and updated_at = token.deliveredUpdatedAt.
+    /// received_at = token.deliveredReceivedAt and updated_at = token.deliveredUpdatedAt.
     func undoDelivered(_ token: UndoToken) async -> WriteOutcome<ParcelVersion> {
         await announced(restore(token))
     }
 
     private func restore(_ token: UndoToken) async -> WriteOutcome<ParcelVersion> {
-        await write(id: token.id, .restore(to: token.restoreTo, receivedAt: token.previousReceivedAt, checkDismissedAt: token.previousCheckDismissedAt, deliveredUpdatedAt: token.deliveredUpdatedAt))
+        await write(id: token.id, .restore(to: token.restoreTo, receivedAt: token.previousReceivedAt,
+                                          checkDismissedAt: token.previousCheckDismissedAt,
+                                          deliveredUpdatedAt: token.deliveredUpdatedAt, deliveredReceivedAt: token.deliveredReceivedAt))
     }
 
     func undoDelivered(all tokens: [UndoToken]) async -> [BulkItemResult<ParcelVersion>] {
@@ -513,8 +519,8 @@ struct ParcelWriter: Sendable {
     private enum Change {
         /// status → delivered, on the version shown (never from cancelled).
         case deliver(ParcelVersion, receivedAt: String)
-        /// status → a RESTORABLE status, only from delivered at the updated_at given.
-        case restore(to: String, receivedAt: String?, checkDismissedAt: String?, deliveredUpdatedAt: String)
+        /// status → a RESTORABLE status, only from this write's confirmed receipt and updated_at.
+        case restore(to: String, receivedAt: String?, checkDismissedAt: String?, deliveredUpdatedAt: String, deliveredReceivedAt: String?)
         case notDelivered(to: String, updatedAt: String)
         case notReceived(checkDismissedAt: String?, updatedAt: String)
         case dismissCheck(String, updatedAt: String)
@@ -570,8 +576,9 @@ struct ParcelWriter: Sendable {
         case let .deliver(shown, receivedAt):
             guard StatusRules.restorable.contains(shown.status), !shown.updatedAt.isEmpty else { return .notUpdated(.invalidInput) }
             values = ["status": "delivered", "received_at": receivedAt] as [String: String]
-        case let .restore(to, receivedAt, checkDismissedAt, deliveredUpdatedAt):
+        case let .restore(to, receivedAt, checkDismissedAt, deliveredUpdatedAt, deliveredReceivedAt):
             guard StatusRules.restorable.contains(to), !deliveredUpdatedAt.isEmpty,
+                  ParcelRules.isReceivedAt(deliveredReceivedAt),
                   receivedAt == nil || (to == "delivered" && ParcelRules.isReceivedAt(receivedAt)) else { return .notUpdated(.invalidInput) }
             values = ["status": .text(to), "received_at": ManualParcel.Column(receivedAt),
                       "check_dismissed_at": ManualParcel.Column(to == "delivered" ? checkDismissedAt : nil)] as [String: ManualParcel.Column]
@@ -611,12 +618,15 @@ struct ParcelWriter: Sendable {
             case let .deliver(shown, _):
                 query = query
                     .neq("status", value: "cancelled")
+                    .filter("received_at", operator: "is", value: "null")
                     .eq("status", value: shown.status)
                     .eq("updated_at", value: shown.updatedAt)
-            case let .restore(_, _, _, deliveredUpdatedAt):
+            case let .restore(_, _, _, deliveredUpdatedAt, deliveredReceivedAt):
+                guard let deliveredReceivedAt else { return .notUpdated(.invalidInput) }
                 query = query
                     .eq("status", value: "delivered")
                     .not("received_at", operator: .is, value: "null")
+                    .eq("received_at", value: deliveredReceivedAt)
                     .eq("updated_at", value: deliveredUpdatedAt)
             case let .notDelivered(_, updatedAt), let .notReceived(_, updatedAt):
                 query = query.eq("status", value: "delivered").eq("updated_at", value: updatedAt)
