@@ -8,6 +8,7 @@ import type { Extraction } from "@/lib/extract/schema";
 import { addDays, shiftMonth, todayJst } from "@/lib/format";
 import { buildParcelInsert } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
+import { beginSampleLoad } from "@/lib/sample-generation-db";
 import { screenMail } from "@/lib/screen";
 import { normalizeShop } from "@/lib/shop";
 import { spendByMonth, spendSlices, withEmptyMonths } from "@/lib/spend";
@@ -208,12 +209,13 @@ describe("what the judges see after loading", () => {
     // The load-time estimate made when the history was added: 13 round trips per history mail, 1,247 for
     // all 97 sample mails. A change that makes a mail cost more should look at that again.
     const db = new FakeDb(undefined, Date.now());
+    const sampleDb = await beginSampleLoad(asAdmin(db), USER);
     const entries = await loadDemoEntries(today, now);
     let trips = 0;
     for (const e of entries) {
       const before = db.calls.filter((q) => !q.viaRpc).length + db.rpcCalls.filter((q) => !q.internal).length;
       const input = demoInput(e, USER);
-      const out = await processInboundEmail(asAdmin(db), input.mail, input.options);
+      const out = await processInboundEmail(sampleDb, input.mail, input.options);
       expect(out.kind, e.mail.file).toBe("processed");
       const cost = db.calls.filter((q) => !q.viaRpc).length + db.rpcCalls.filter((q) => !q.internal).length - before;
       if (e.mail.file.startsWith("history/")) expect(cost, e.mail.file).toBeLessThanOrEqual(13);

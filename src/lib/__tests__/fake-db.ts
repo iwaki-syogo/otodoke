@@ -47,6 +47,7 @@ export interface Query {
   mailRun?: { emailId: string; runId: string };
   /** A query simulated inside an RPC, not another HTTP round trip. */
   viaRpc?: boolean;
+  requestHeaders?: Record<string, string>;
 }
 
 export interface Result {
@@ -276,6 +277,12 @@ export class FakeDb {
     for (const [table, rows] of Object.entries(seed)) {
       this.tables[table] = rows.map((r) => ({ ...(DEFAULTS[table] ?? {}), ...r }));
     }
+    for (const row of this.rows("emails")) {
+      if (String(row.provider_email_id ?? "").startsWith("demo:")) {
+        if (row.sample_generation && !this.rows("sample_generations").some((g) => g.user_id === row.user_id)) this.rows("sample_generations").push({ user_id: row.user_id, generation: row.sample_generation });
+        row.sample_generation ??= this.sampleGeneration(String(row.user_id));
+      }
+    }
   }
 
   rows(table: string): Row[] {
@@ -297,9 +304,68 @@ export class FakeDb {
   }
 
   rpc(name: string, args?: unknown): Promise<Result> {
+    const headers: Record<string, string> = {};
+    let done: Promise<Result> | null = null;
+    const run = () => done ??= Promise.resolve().then(() => this.executeRpc(name, args, headers));
+    // PostgrestBuilder starts only when awaited, after request headers have been set.
+    const builder = {
+      setHeader: (key: string, value: string) => { headers[key.toLowerCase()] = value; return builder; },
+      then: <A = Result, B = never>(resolve?: ((value: Result) => A | PromiseLike<A>) | null, reject?: ((reason: unknown) => B | PromiseLike<B>) | null) => run().then(resolve, reject),
+      catch: (reject: (reason: unknown) => unknown) => run().catch(reject),
+      finally: (finish: () => void) => run().finally(finish),
+    };
+    return builder as unknown as Promise<Result>;
+  }
+
+  private sampleGeneration(userId: string): string {
+    let row = this.rows("sample_generations").find((r) => r.user_id === userId);
+    if (!row) { row = { user_id: userId, generation: crypto.randomUUID() }; this.rows("sample_generations").push(row); }
+    return String(row.generation);
+  }
+
+  private sampleFence(userId: unknown, headers: Record<string, string>, required = false): Result | null {
+    const generation = headers["x-otodoke-sample-generation"];
+    const owner = headers["x-otodoke-sample-user"];
+    if (!generation && !owner && !required) return null;
+    if (!generation || owner !== userId || this.rows("sample_generations").find((r) => r.user_id === userId)?.generation !== generation) {
+      return { data: null, error: { code: "55000", message: "sample load was cleared; load it again" } };
+    }
+    return null;
+  }
+
+  private executeRpc(name: string, args: unknown, headers: Record<string, string>): Promise<Result> {
     this.rpcCalls.push({ name, args });
-    if (name === "store_mail_run") return Promise.resolve(this.storeMailRun(args as StoreArgs));
-    if (name === "mail_run_write") return this.mailRunWrite(args as OwnedArgs);
+    if (name === "begin_sample_load") return Promise.resolve({ data: this.sampleGeneration((args as { p_user_id: string }).p_user_id), error: null });
+    if (name === "receive_sample_parcels") {
+      const a = args as { p_user_id: string; p_parcel_ids: string[]; p_received_at: string };
+      const denied = this.sampleFence(a.p_user_id, headers, true);
+      if (denied) return Promise.resolve(denied);
+      const sampleIds = new Set(this.rows("emails").filter((m) => m.user_id === a.p_user_id && String(m.provider_email_id ?? "").startsWith("demo:")).map((m) => m.id));
+      const parcelIds = this.rows("extractions").filter((x) => x.user_id === a.p_user_id && sampleIds.has(x.email_id)).map((x) => x.parcel_id);
+      const query = this.from("parcels").update({ received_at: a.p_received_at }).in("id", a.p_parcel_ids.filter((id) => parcelIds.includes(id))).eq("user_id", a.p_user_id).eq("status", "delivered").is("received_at", null).query;
+      query.requestHeaders = headers;
+      query.viaRpc = true;
+      return Promise.resolve(this.execute(query));
+    }
+    if (name === "clear_all_parcels") {
+      const userId = (args as { p_user_id: string }).p_user_id;
+      const before = structuredClone(this.tables);
+      this.sampleGeneration(userId);
+      const generation = crypto.randomUUID();
+      this.rows("sample_generations").find((r) => r.user_id === userId)!.generation = generation;
+      for (const table of ["parcels", "emails"]) {
+        const result = this.execute(this.from(table).delete().eq("user_id", userId).query);
+        if (result.error) { this.tables = before; return Promise.resolve(result); }
+      }
+      for (const table of ["extractions", "parcel_items"]) this.tables[table] = this.rows(table).filter((r) => r.user_id !== userId);
+      return Promise.resolve({ data: generation, error: null });
+    }
+    if (name === "store_mail_run") {
+      const a = args as StoreArgs;
+      const denied = this.sampleFence(a.p_user_id, headers, String(a.p_columns.provider_email_id ?? "").startsWith("demo:"));
+      return Promise.resolve(denied ?? this.storeMailRun(a, headers));
+    }
+    if (name === "mail_run_write") return this.mailRunWrite(args as OwnedArgs, headers);
     if (name === "activate_user_key") return Promise.resolve(this.activateUserKey(args as { p_user_id: string; p_key_id: string; p_challenge_hash: string }));
     if (name === "activate_user_key_checked") {
       const a = args as { p_user_id: string; p_key_id: string; p_challenge_hash: string; p_expected_current_key_id: string | null };
@@ -322,7 +388,7 @@ export class FakeDb {
     return Promise.resolve({ data: "ok", error: null });
   }
 
-  private storeMailRun(a: StoreArgs): Result {
+  private storeMailRun(a: StoreArgs, headers: Record<string, string> = {}): Result {
     const answer = (verdict: string): Result => ({ data: [{ verdict, email_id: a.p_email_id }], error: null });
     const old = this.rows("emails").find((r) => r.id === a.p_email_id && r.user_id === a.p_user_id);
     if (old?.processing_status === "processed") return answer("duplicate");
@@ -348,13 +414,17 @@ export class FakeDb {
     const q = old ? this.from("emails").update(columns).eq("id",a.p_email_id).eq("user_id",a.p_user_id).eq("processing_status",old.processing_status).eq("created_at",old.created_at) : this.from("emails").insert({ id:a.p_email_id,user_id:a.p_user_id,...columns });
     const query = q.select("id").maybeSingle().query;
     query.viaRpc = true;
+    query.requestHeaders = headers;
     const result = this.execute(query);
     if (result.error?.code === "23505") return answer("busy");
     if (result.error) return result;
     return result.data ? answer("ok") : answer("busy");
   }
 
-  private async mailRunWrite(a: OwnedArgs): Promise<Result> {
+  private async mailRunWrite(a: OwnedArgs, headers: Record<string, string> = {}): Promise<Result> {
+    const mail = this.find("emails", a.p_email_id);
+    const denied = this.sampleFence(mail?.user_id, headers, String(mail?.provider_email_id ?? "").startsWith("demo:"));
+    if (denied) return denied;
     const owner = () => this.rows("emails").find((r) => r.id === a.p_email_id && r.processing_run_id === a.p_run_id && r.processing_status === "pending" && Date.parse(String(r.processing_lease_until)) > Date.now());
     if (!owner()) return { data: null, error: { code: "42501", message: "mail run no longer owns the lease" } };
     if (a.p_operation === "claim") {
@@ -377,6 +447,7 @@ export class FakeDb {
     for (const f of a.p_filters) q = (q as unknown as Record<string,(...v:unknown[])=>FakeQuery>)[f.method](...f.args);
     const query = q.select("*").query;
     query.viaRpc = true;
+    query.requestHeaders = headers;
     query.mailRun = { emailId: a.p_email_id, runId:a.p_run_id };
     return this.execute(query);
   }
@@ -453,6 +524,13 @@ export class FakeDb {
     for (const hook of this.hooks) {
       const answer = hook(q, this);
       if (answer) return answer;
+    }
+    if (q.op !== "select" && ["emails", "parcels", "extractions", "parcel_items"].includes(q.table)) {
+      const rows = q.op === "insert" || q.op === "upsert" ? (Array.isArray(q.values) ? q.values : [q.values]) as Row[] : this.matching(q);
+      for (const row of rows) {
+        const denied = this.sampleFence(row.user_id, q.requestHeaders ?? {}, q.table === "emails" && q.op === "insert" && String(row.provider_email_id ?? "").startsWith("demo:"));
+        if (denied) return denied;
+      }
     }
     if (q.mailRun) {
       const m = this.find("emails",q.mailRun.emailId);
@@ -559,6 +637,7 @@ export class FakeDb {
         updated_at: stamp,
         ...v,
       };
+      if (q.table === "emails" && String(row.provider_email_id ?? "").startsWith("demo:")) row.sample_generation = q.requestHeaders?.["x-otodoke-sample-generation"] ?? null;
       this.rows(q.table).push(row);
       return row;
     });
@@ -611,6 +690,10 @@ export class FakeQuery implements PromiseLike<Result> {
 
   get query(): Query {
     return this.q;
+  }
+  setHeader(name: string, value: string): this {
+    (this.q.requestHeaders ??= {})[name.toLowerCase()] = value;
+    return this;
   }
 
   select(columns = "*", opts: { count?: string; head?: boolean } = {}): this {
