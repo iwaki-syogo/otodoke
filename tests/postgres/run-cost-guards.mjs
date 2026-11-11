@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const migration = "20261113090000_claude_call_global_lock";
 const port = 65440;
+const rounds = Number(process.env.OTODOKE_PG_ROUNDS ?? 10);
 const bin = process.env.OTODOKE_PG_BINDIR ?? "";
 const user = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const users = [1, 2, 3, 4, 5].map(user);
@@ -244,14 +245,14 @@ async function main(negative) {
       ["different users, mixed v1/v2", [0, 1, 2, 3].map((i) => claim(users[i], i % 2 === 0))],
     ];
     for (const [label, queries, existing] of scenarios) {
-      for (let round = 0; round < 10; round++) {
+      for (let round = 0; round < rounds; round++) {
         await reset();
         await sql(`insert into public.claude_usage_daily(user_id,day,calls) values ('${users[4]}', ${day}, 1)${existing ? users.slice(0, 4).map((id) => `,('${id}',${day},0)`).join("") : ""};`);
         const results = await concurrent(queries);
         assert.equal(results.filter((value) => value.split(":")[0] === "ok").length, 1, `${label}, round ${round}: exactly one claim may succeed (${results})`);
         assert.equal(await count(), 2, `${label}, round ${round}: sum must equal the global limit`);
       }
-      console.log(`OK: S1 ${label} (10 rounds, 4 simultaneous requests, one remaining)`);
+      console.log(`OK: S1 ${label} (${rounds} rounds, 4 simultaneous requests, one remaining)`);
     }
 
     for (const legacy of [false, true]) {
@@ -265,7 +266,7 @@ async function main(negative) {
       assert.equal(await count(), 1);
     }
     console.log("OK: S1 personal refusal/new zero-limit row consumes no global allowance (v1/v2)");
-    for (let round = 0; round < 10; round++) {
+    for (let round = 0; round < rounds; round++) {
       await reset();
       const held = taggedResults(await sql(claim(users[4], false, 20, 1)))[0].split(":")[1];
       assert.ok(held, "seed claim id required");
@@ -288,7 +289,7 @@ async function main(negative) {
       assert.equal(releases.filter((r) => r === "1").length, 1);
       assert.equal(await count(), 0);
     }
-    console.log("OK: S1 release/claim and duplicate-release races (10 rounds each)");
+    console.log(`OK: S1 release/claim and duplicate-release races (${rounds} rounds each)`);
 
     const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
     const json = (value) => `${quote(JSON.stringify(value))}::jsonb`;
