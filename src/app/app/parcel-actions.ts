@@ -47,36 +47,55 @@ export async function markDeliveredForUndo(ids: string[]): Promise<{ saved: numb
 
 async function deliver(ids: string[]): Promise<{ saved: number; written: { id: string; received_at: string }[] }> {
   const none = { saved: 0, written: [] };
-  const clean = ids.filter((id) => typeof id === "string" && id.length > 0).slice(0, MAX_AT_ONCE);
+  const clean = [...new Set(ids.filter((id) => typeof id === "string" && id.length > 0))];
   if (clean.length === 0) return none;
   const session = await signedIn();
   if (!session) return none;
   const at = new Date().toISOString();
-  const { data, error } = await session.supabase
-    .from("parcels")
-    .update({ status: "delivered", received_at: at })
-    .in("id", clean)
-    .eq("user_id", session.userId)
-    .neq("status", "cancelled")
-    // Only a parcel not received yet is written: pressing again after a lost answer keeps the first time.
-    .is("received_at", null)
-    .select("id");
-  if (error) throw new Error(error.message);
-  const written = new Set(data.map((row) => row.id));
-  // A parcel left alone because it is already received counts as saved; a cancelled one does not.
-  const rest = clean.filter((id) => !written.has(id));
-  let already = 0;
-  if (rest.length > 0) {
-    const { data: rows, error: readError } = await session.supabase
-      .from("parcels")
-      .select("id,status,received_at")
-      .in("id", rest)
-      .eq("user_id", session.userId);
-    if (readError) throw new Error(readError.message);
-    already = new Set(rows.filter((row) => row.status === "delivered" && row.received_at !== null).map((row) => row.id)).size;
+  const written = new Set<string>();
+  const saved = new Set<string>();
+  try {
+    // Each request and its returned rows stay below the database's response cap.
+    for (let start = 0; start < clean.length; start += MAX_AT_ONCE) {
+      const chunk = clean.slice(start, start + MAX_AT_ONCE);
+      const { data, error } = await session.supabase
+        .from("parcels")
+        .update({ status: "delivered", received_at: at })
+        .in("id", chunk)
+        .eq("user_id", session.userId)
+        .neq("status", "cancelled")
+        // Only a parcel not received yet is written: pressing again after a lost answer keeps the first time.
+        .is("received_at", null)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error("received parcels were not confirmed");
+      for (const row of data) {
+        written.add(row.id);
+        saved.add(row.id);
+      }
+      // A parcel left alone because it is already received counts as saved; a cancelled one does not.
+      const rest = chunk.filter((id) => !written.has(id));
+      if (rest.length > 0) {
+        const { data: rows, error: readError } = await session.supabase
+          .from("parcels")
+          .select("id,status,received_at")
+          .in("id", rest)
+          .eq("user_id", session.userId);
+        if (readError) throw new Error(readError.message);
+        if (!rows) throw new Error("received parcels could not be checked");
+        for (const row of rows) if (row.status === "delivered" && row.received_at !== null) saved.add(row.id);
+      }
+    }
+  } catch (error) {
+    // Keep the confirmed progress and its undo after a later request fails. Unconfirmed writes
+    // are never added: the caller compares saved with the full request and shows a partial result.
+    if (saved.size === 0) throw error;
+    console.error("markDelivered:", error instanceof Error ? error.message : String(error));
+  } finally {
+    // An unanswered write may have reached the database too: redraw even when no result was confirmed.
+    revalidatePath("/app", "layout");
   }
-  revalidatePath("/app", "layout");
-  return { saved: written.size + already, written: [...written].map((id) => ({ id, received_at: at })) };
+  return { saved: saved.size, written: [...written].map((id) => ({ id, received_at: at })) };
 }
 
 /** leftReceived: at least one parcel asked for was not put back (it changed since, or was refused). */
@@ -89,15 +108,18 @@ type RestoreResult = { leftReceived: boolean };
  * changed or received again since stays.
  */
 export async function restoreStatuses(items: { id: string; status: string; received_at?: string | null; written_at: string }[]): Promise<RestoreResult> {
-  const asked = new Set(items.slice(0, MAX_AT_ONCE).map((it) => it.id).filter((id) => typeof id === "string"));
-  let restored = 0;
+  const asked = new Set(items.map((it) => it.id).filter((id) => typeof id === "string"));
+  const restored = new Set<string>();
+  const accepted = new Set<string>();
   const clean: { id: string; status: string; received_at: string | null; written_at: string }[] = [];
-  for (const it of items.slice(0, MAX_AT_ONCE)) {
+  for (const it of items) {
     const previous = PreviousReceivedAt.safeParse(it.received_at ?? null);
     const written = WrittenAt.safeParse(it.written_at);
     if (typeof it.id !== "string" || !RESTORABLE.includes(it.status) || !previous.success || !written.success) continue;
     // Back to not-received only makes sense as delivered; a received_at on any other status is refused.
     if (previous.data !== null && it.status !== "delivered") continue;
+    if (accepted.has(it.id)) continue;
+    accepted.add(it.id);
     clean.push({ id: it.id, status: it.status, received_at: previous.data, written_at: written.data });
   }
   if (clean.length === 0) return { leftReceived: asked.size > 0 };
@@ -110,21 +132,30 @@ export async function restoreStatuses(items: { id: string; status: string; recei
     group.ids.push(it.id);
     groups.set(key, group);
   }
-  for (const { status, received_at, written_at, ids } of groups.values()) {
-    const { data, error } = await session.supabase
-      .from("parcels")
-      .update({ status, received_at })
-      .in("id", ids)
-      .eq("user_id", session.userId)
-      .eq("status", "delivered")
-      // Exactly what the press being undone wrote: a later receive of the same parcel is not taken back.
-      .eq("received_at", written_at)
-      .select("id");
-    if (error) throw new Error(error.message);
-    restored += new Set(data.map((row) => row.id)).size;
+  try {
+    for (const { status, received_at, written_at, ids } of groups.values()) {
+      for (let start = 0; start < ids.length; start += MAX_AT_ONCE) {
+        const { data, error } = await session.supabase
+          .from("parcels")
+          .update({ status, received_at })
+          .in("id", ids.slice(start, start + MAX_AT_ONCE))
+          .eq("user_id", session.userId)
+          .eq("status", "delivered")
+          // Exactly what the press being undone wrote: a later receive of the same parcel is not taken back.
+          .eq("received_at", written_at)
+          .select("id");
+        if (error) throw new Error(error.message);
+        if (!data) throw new Error("restored parcels were not confirmed");
+        for (const row of data) restored.add(row.id);
+      }
+    }
+  } catch (error) {
+    if (restored.size === 0) throw error;
+    console.error("restoreStatuses:", error instanceof Error ? error.message : String(error));
+  } finally {
+    revalidatePath("/app", "layout");
   }
-  revalidatePath("/app", "layout");
-  return { leftReceived: restored < asked.size };
+  return { leftReceived: restored.size < asked.size };
 }
 
 const NOT_UPDATED = "更新できませんでした。開き直してください";
