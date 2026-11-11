@@ -47,7 +47,7 @@ export async function markDelivered(ids: string[]): Promise<number> {
 }
 
 /** leftReceived: at least one parcel asked for was not put back (it changed since, or was refused). */
-export type RestoreResult = { leftReceived: boolean };
+type RestoreResult = { leftReceived: boolean };
 
 /**
  * Undo: puts parcels marked by hand back to the status and received_at each had before (the

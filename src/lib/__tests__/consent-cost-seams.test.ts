@@ -3,7 +3,7 @@ import { AiReadingNotAllowedError, requireAiReadingConsent } from "@/lib/ai-cons
 import { MAIL_LEASE_MS } from "@/lib/unread";
 import { withMailRun } from "@/lib/mail-run-db";
 import { FakeDb } from "./fake-db";
-import { OTHER, USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Seams between the reading-permission check (feature/ai-consent) and the cost guards
