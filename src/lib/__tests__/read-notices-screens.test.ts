@@ -77,8 +77,10 @@ describe("読み取る: where each result goes", () => {
     mocks.read.mockResolvedValue(result({ unavailable: true }));
     expect(await run()).toEqual([settingsErrorPath("read_unavailable")]);
     mocks.redirect.mockReset();
-    mocks.read.mockResolvedValue(result({ ok: false, stage: "read", message: "x", overLimit: true, unavailable: true, onlyBusy: false }));
+    mocks.read.mockResolvedValue(result({ ok: false, stage: "read", message: "REAL-FAILURE-MESSAGE", overLimit: true, unavailable: true, onlyBusy: false }));
     expect(await run()).toEqual([settingsErrorPath("read_unavailable")]);
+    // The real failure is not shown, but it stays in the server log.
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).toContain("REAL-FAILURE-MESSAGE");
   });
 
   it("a failure -> read_failed (before the limit)", async () => {
@@ -144,9 +146,40 @@ describe("うまく届かないとき: only the reasons that apply", () => {
     expect(text).not.toContain(READ_FAILED_REASON);
   });
 
-  it("the reason counts could not be read -> the count is shown but no reason is stated", async () => {
+  const PROCESSED = (n: number, created_at: string, over: Row = {}) => row(n, { processing_status: "processed", error: null, created_at, provider_email_id: `re_${n}`, classification: "order", ...over });
+
+  it("a mail was read after the stop: the old stopped row is a failure, not the stopped sentence", async () => {
+    const { text } = await troubleText([row(1, { processing_status: "failed", error: "claude_unavailable", created_at: "2026-11-01T00:00:00Z" }), PROCESSED(2, "2026-11-02T00:00:00Z")]);
+    expect(text).toContain(READ_FAILED_REASON);
+    expect(text).not.toContain(READ_STOPPED_REASON);
+  });
+
+  it("negative control: the stop is newer than the last mail read -> the stopped sentence", async () => {
+    const { text } = await troubleText([row(1, { processing_status: "failed", error: "claude_unavailable", created_at: "2026-11-03T00:00:00Z" }), PROCESSED(2, "2026-11-02T00:00:00Z")]);
+    expect(text).toContain(READ_STOPPED_REASON);
+    expect(text).not.toContain(READ_FAILED_REASON);
+  });
+
+  it("a sample mail or a Gmail confirmation read later does not end the stop (Claude was not used for them)", async () => {
+    const { text } = await troubleText([
+      row(1, { processing_status: "failed", error: "claude_unavailable", created_at: "2026-11-01T00:00:00Z" }),
+      PROCESSED(2, "2026-11-02T00:00:00Z", { provider_email_id: "demo:sample/a" }),
+      PROCESSED(3, "2026-11-02T00:00:00Z", { classification: "forwarding_confirmation" }),
+    ]);
+    expect(text).toContain(READ_STOPPED_REASON);
+  });
+
+  it("the unread rows could not be read -> the count is shown but no reason is stated", async () => {
     const { text } = await troubleText([STOPPED(1)], (db) => {
-      db.hooks.push((q) => (q.table === "emails" && q.head && q.filters.some((f) => f.method === "eq") ? { data: null, error: { message: "boom" } } : undefined));
+      db.hooks.push((q) => (q.table === "emails" && q.op === "select" && !q.head && String(q.columns).includes("error") ? { data: null, error: { message: "boom" } } : undefined));
+    });
+    expect(text).toContain("未読のメールが 1 通あります");
+    for (const reason of [READ_STOPPED_REASON, READ_OVER_LIMIT_REASON, READ_FAILED_REASON]) expect(text).not.toContain(reason);
+  });
+
+  it("the last processed mail could not be read -> no reason is stated either", async () => {
+    const { text } = await troubleText([STOPPED(1)], (db) => {
+      db.hooks.push((q) => (q.table === "emails" && q.filters.some((f) => f.method === "eq" && f.args[1] === "processed") ? { data: null, error: { message: "boom" } } : undefined));
     });
     expect(text).toContain("未読のメールが 1 通あります");
     for (const reason of [READ_STOPPED_REASON, READ_OVER_LIMIT_REASON, READ_FAILED_REASON]) expect(text).not.toContain(reason);

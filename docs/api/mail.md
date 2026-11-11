@@ -46,14 +46,14 @@ Request: `{}` (an empty body is accepted too).
 failure. **Do not retry automatically** on a timeout or on `read_failed` (every attempt can spend Claude calls);
 reload the list and let the user press again.
 
-Answer: `200 { "ok": true, "read": 3, "over_limit": false, "busy": false, "unavailable": false }`.
+Answer: `200 { "ok": true, "read": 3, "over_limit": false, "busy": false, "stopped": false }`.
 - `read`: the number of mails processed (every outcome except `over_limit`).
 - `over_limit: true`: the allowance ran out and the rest keep waiting.
 - `busy: true`: another read of the same account is holding some of the mails (not a failure; that read
   finishes them). Reload the list later.
-- `unavailable: true`: reading is stopped on the server (it cannot be used at all, so trying again does not
+- `stopped: true`: reading is stopped on the server (it cannot be used at all, so trying again does not
   help). The read ended at the first such mail and the rest keep waiting; this is a 200, not `read_failed`,
-  and it wins over a failure earlier in the same run. A client that does not know the field can ignore it:
+  and it wins over a failure earlier in the same run. (The name is `stopped`, not `unavailable`: that is already the `code` of the 503.) A client that does not know the field can ignore it:
   the other fields keep their names, types and meaning. Say it to the person as stopped, not as a failure.
 
 A real failure answers `500 { "ok": false, "code": "read_failed", "read": 1 }`; `read` is how many were processed

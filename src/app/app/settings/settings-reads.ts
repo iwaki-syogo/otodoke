@@ -1,6 +1,7 @@
 import type { createClient } from "@/lib/supabase/server";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
+import { readAll } from "@/lib/supabase/read-all";
 import { UNREAD_FILTER } from "@/lib/unread";
 
 /**
@@ -33,23 +34,45 @@ export async function readUnreadCount(supabase: Supabase, where: string): Promis
 }
 
 /**
- * Why mail is waiting, as counts among the unread: `stopped` (Claude cannot be used: the row's
- * error is the code claude_unavailable) and `overLimit` (the daily allowance). The rest of the
- * waiting mail is a failure. null when either count could not be read: the reason is then unknown.
+ * Why mail is waiting, counted by hand from one read of the unread rows: `stopped` (Claude cannot
+ * be used), `overLimit` (the daily allowance) and `failed` (the rest).
+ *
+ * A row marked claude_unavailable counts as stopped only while nothing was read after it: the
+ * newest such row must be newer than the newest processed mail. Otherwise Claude works again and
+ * the old rows are plain failures. The time compared is created_at on both sides: it is set when
+ * a mail is stored and set again when a read takes the row over (src/lib/pipeline.ts), so it is
+ * when Claude was last tried for that row. Sample mails and Gmail's forwarding confirmation are
+ * "processed" without Claude, so they do not count as proof that Claude works.
+ * null when either read failed: the reason is then unknown.
  */
-export async function readUnreadReasons(supabase: Supabase, where: string): Promise<{ stopped: number; overLimit: number } | null> {
-  const head = { count: "exact", head: true } as const;
-  const [stopped, overLimit] = await Promise.all([
-    supabase.from("emails").select("id", head).or(UNREAD_FILTER()).eq("error", "claude_unavailable"),
-    supabase.from("emails").select("id", head).or(UNREAD_FILTER()).eq("processing_status", "over_limit"),
-  ]);
-  for (const [what, r] of [["stopped", stopped], ["over limit", overLimit]] as const) {
-    if (r.error || r.count === null) {
-      console.error(`${where} (unread ${what} count):`, r.error?.message ?? "no count");
-      return null;
-    }
+export async function readUnreadReasons(supabase: Supabase, where: string): Promise<{ stopped: number; overLimit: number; failed: number } | null> {
+  let rows: Array<{ processing_status: string; error: string | null; created_at: string }>;
+  try {
+    rows = await readAll(() =>
+      supabase.from("emails").select("id, processing_status, error, created_at", { count: "exact" }).or(UNREAD_FILTER()),
+    );
+  } catch (err) {
+    console.error(`${where} (unread rows):`, err instanceof Error ? err.message : err);
+    return null;
   }
-  return { stopped: stopped.count ?? 0, overLimit: overLimit.count ?? 0 };
+  const { data: lastRead, error } = await supabase
+    .from("emails")
+    .select("created_at")
+    .eq("processing_status", "processed")
+    .or(`provider_email_id.is.null,provider_email_id.not.like.${SAMPLE_PROVIDER_ID}`)
+    .or("classification.is.null,classification.neq.forwarding_confirmation")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error(`${where} (last processed):`, error.message);
+    return null;
+  }
+  const unavailableRows = rows.filter((r) => r.error === "claude_unavailable");
+  const newestStop = unavailableRows.reduce((latest, r) => (r.created_at > latest ? r.created_at : latest), "");
+  const stopped = unavailableRows.length > 0 && (!lastRead || newestStop > lastRead.created_at) ? unavailableRows.length : 0;
+  const overLimit = rows.filter((r) => r.processing_status === "over_limit").length;
+  return { stopped, overLimit, failed: rows.length - stopped - overLimit };
 }
 
 /** How many confirmation mails are looked through: a forged one without Google's link must not hide the real one. */

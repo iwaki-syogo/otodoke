@@ -7,6 +7,37 @@ import { claudeFailure } from "@/lib/extract/claude-error";
 
 const apiError = (status: number, type: string, message: string) => APIError.generate(status, { type: "error", error: { type, message } }, message, new Headers());
 
+const OWN_LIMIT = "You have reached your specified API usage limits. You will regain access on 2027-01-01 at 00:00 UTC.";
+const WORKSPACE_LIMIT = "You have reached your specified workspace API usage limits. You will regain access on 2027-01-01 at 00:00 UTC.";
+/** The tier monthly limit: a 429 whose body carries error.details.error_code, with no retry-after. */
+const tierLimit = () => APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "x", details: { error_code: "enforced_spend_limit_reached" } } }, "x", new Headers());
+
+describe("spend limits are a stop too", () => {
+  it("the own limit and the workspace limit (400), in the body form and in the message-only form", () => {
+    for (const text of [OWN_LIMIT, WORKSPACE_LIMIT]) {
+      expect(claudeFailure(apiError(400, "invalid_request_error", text)), text).toEqual({ code: "claude_unavailable", unbilled: true });
+      // Without a parsed body the SDK message is "<status> <text>".
+      expect(claudeFailure(APIError.generate(400, undefined, text, new Headers())), text).toEqual({ code: "claude_unavailable", unbilled: true });
+    }
+  });
+
+  it("the tier monthly limit (429 with error_code enforced_spend_limit_reached)", () => {
+    expect(claudeFailure(tierLimit())).toEqual({ code: "claude_unavailable", unbilled: true });
+  });
+
+  it("negative control: an ordinary 429 with retry-after (no error_code) stays temporary", () => {
+    const err = APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "Number of request tokens has exceeded your rate limit" } }, "x", new Headers({ "retry-after": "20" }));
+    expect(claudeFailure(err)).toEqual({ code: "claude_error", unbilled: true });
+    const other = APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "x", details: { error_code: "something_else" } } }, "x", new Headers());
+    expect(claudeFailure(other)).toEqual({ code: "claude_error", unbilled: true });
+  });
+
+  it("negative control: a 400 that only mentions usage limits, not as its opening, is not a stop", () => {
+    expect(claudeFailure(apiError(400, "invalid_request_error", "messages.0: You have reached your specified API usage limits is not valid here"))).toEqual({ code: "claude_error", unbilled: true });
+    expect(claudeFailure(apiError(400, "invalid_request_error", "Check your API usage limits"))).toEqual({ code: "claude_error", unbilled: true });
+  });
+});
+
 describe("claudeFailure", () => {
   it("credit gone, a refused key, a missing model: unavailable, and the call was not billed", () => {
     const creditOut = apiError(400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API.");

@@ -25,7 +25,6 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
   const waiting = await readUnreadCount(supabase, "settings trouble");
   // The reasons are told only from counts that were read; when they were not, no reason is stated.
   const reasons = waiting !== null && waiting > 0 ? await readUnreadReasons(supabase, "settings trouble") : null;
-  const failed = waiting !== null && reasons ? waiting - reasons.stopped - reasons.overLimit : 0;
 
   return (
     <SubPage title="うまく届かないとき">
@@ -43,7 +42,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
             </>
           ) : null}
           {reasons && reasons.overLimit > 0 ? <p className="mt-1 text-sm leading-6">{READ_OVER_LIMIT_REASON}</p> : null}
-          {failed > 0 ? <p className="mt-1 text-sm leading-6">{READ_FAILED_REASON}</p> : null}
+          {reasons && reasons.failed > 0 ? <p className="mt-1 text-sm leading-6">{READ_FAILED_REASON}</p> : null}
           <form action={readWaitingMail} className="mt-3">
             <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
           </form>

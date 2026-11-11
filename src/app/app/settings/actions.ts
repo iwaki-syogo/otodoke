@@ -41,7 +41,11 @@ export async function readWaitingMail(): Promise<void> {
 
   revalidatePath("/app", "layout");
   // Stopped first (nothing to retry), then a real failure, then the daily limit; else all was read.
-  if (done.unavailable) redirect(settingsErrorPath("read_unavailable"));
+  if (done.unavailable) {
+    // A real failure in the same run is not shown (the stop is), but it stays in the server log.
+    if (!done.ok) console.error("readWaitingMail:", done.message);
+    redirect(settingsErrorPath("read_unavailable"));
+  }
   if (!done.ok) {
     console.error("readWaitingMail:", done.message);
     redirect(settingsErrorPath("read_failed"));
