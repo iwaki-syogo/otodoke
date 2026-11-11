@@ -6,12 +6,26 @@ import { CopyButton } from "@/components/copy-button";
 import { ForwardingGuides } from "../forwarding-guide";
 import { readActiveKey, readConfirmUrl } from "../settings-reads";
 import { LoggedInAs, SubPage } from "../sub-page";
+import Link from "next/link";
+import { readAiReadingConsent } from "@/lib/ai-consent";
+import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 
 export const metadata = { title: "メールの転送" };
 
 export default async function ForwardingPage() {
   const user = (await getUser())!;
   const supabase = await createClient();
+  const consent = await readAiReadingConsent(supabase, user.id);
+  if (consent !== "granted") {
+    return (
+      <SubPage title="メールの転送">
+        {consent === "unknown" ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{AI_CONSENT_TEXT.readFailed}</p> : null}
+        <Link href={consent === "unknown" ? "/app/settings/forwarding" : "/app/reading?after=welcome"} className="inline-flex min-h-12 items-center justify-center rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">{consent === "unknown" ? AI_CONSENT_TEXT.retry : AI_CONSENT_TEXT.start}</Link>
+        <Link href="/app/parcels/new" className="inline-flex min-h-11 items-center text-sm text-neutral-600 underline underline-offset-4">{AI_CONSENT_TEXT.manual}</Link>
+        <Link href="/app/settings/demo" className="inline-flex min-h-11 items-center text-sm text-neutral-600 underline underline-offset-4">{AI_CONSENT_TEXT.sample}</Link>
+      </SubPage>
+    );
+  }
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.

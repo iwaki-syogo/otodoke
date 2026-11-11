@@ -14,6 +14,12 @@ const USER = "00000000-0000-4000-8000-00000000000a";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
+// These existing UI scenarios begin after the person has allowed reading.
+vi.mock("@/lib/ai-consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-consent")>()),
+  readAiReadingConsent: async () => "granted",
+}));
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
@@ -75,7 +81,7 @@ describe("links to /privacy", () => {
 
   it("設定 › あなたのメールの扱い: right under 「あなたのメールの扱い」, outside every section", async () => {
     const Page = (await import("@/app/app/settings/mail-handling/page")).default;
-    const root = parseHtml(renderToStaticMarkup(Page()));
+    const root = parseHtml(renderToStaticMarkup(await Page()));
     const link = policyLink(root);
     expect(ancestorsOf(link).some((n) => n.tag === "section")).toBe(false);
     // The page's h1 says the title; the section does not repeat it as an h2.

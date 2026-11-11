@@ -14,6 +14,12 @@ import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
 const USER = "00000000-0000-4000-8000-00000000000a";
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
+// These existing UI scenarios begin after the person has allowed reading.
+vi.mock("@/lib/ai-consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-consent")>()),
+  readAiReadingConsent: async () => "granted",
+}));
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
@@ -218,7 +224,7 @@ describe("[L3] the could-not-read boxes say what could not be read", () => {
 
 describe("[L5] 「あなたのメールの扱い」 has one heading", () => {
   it("the page has the h1 and no h2 of the same words; the component keeps its h2 by default", async () => {
-    const root = parseHtml(renderToStaticMarkup((await import("@/app/app/settings/mail-handling/page")).default()));
+    const root = parseHtml(renderToStaticMarkup(await (await import("@/app/app/settings/mail-handling/page")).default()));
     expect(findAll(root, (n) => n.tag === "h1").map(textOf)).toEqual(["あなたのメールの扱い"]);
     expect(findAll(root, (n) => n.tag === "h2")).toEqual([]);
     const { MailHandling } = await import("@/app/app/settings/mail-handling");

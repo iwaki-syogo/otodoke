@@ -13,19 +13,36 @@ import { PageLink } from "./page-link";
 import { LOAD_DEMO_LABEL } from "./settings/demo-labels";
 import { readMailSoFar, type MailSoFar } from "./settings/settings-reads";
 import { ParcelCard } from "./parcel-card";
+import { readAiReadingConsent } from "@/lib/ai-consent";
+import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
+import { ReadingConsent } from "./reading/reading-consent";
 
 export const metadata = { title: "荷物" };
 
-type SearchParams = Promise<{ demo?: string | string[] }>;
+type SearchParams = Promise<{ demo?: string | string[]; sample?: string | string[] }>;
 
 export default async function ParcelsPage({ searchParams }: { searchParams?: SearchParams } = {}) {
   // Only a fixed marker is read: the sample load leaves ?demo=busy when another load is running.
-  const sampleBusy = (await searchParams)?.demo === "busy";
+  const params = await searchParams;
+  const sampleBusy = params?.demo === "busy";
+  const tryingSample = params?.sample === "1";
   const user = await getUser();
   if (!user) redirect("/login");
   // Old plaintext mail is sealed in the background, bounded; nothing to do without a key or plaintext.
   scheduleSealRemaining(user.id);
   const supabase = await createClient();
+  const consent = await readAiReadingConsent(supabase, user.id);
+  // Trying the precomputed sample is a choice of view, never a grant to send real mail to Claude.
+  if (consent === "undecided" && !tryingSample) return <ReadingConsent />;
+  const readingGranted = consent === "granted";
+  const permissionNotice = consent === "unknown" ? (
+    <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+      <p>{AI_CONSENT_TEXT.readFailed}</p>
+      <Link href="/app" className="mt-2 inline-flex min-h-11 items-center underline underline-offset-4">{AI_CONSENT_TEXT.retry}</Link>
+    </div>
+  ) : tryingSample && consent === "undecided" ? (
+    <Link href="/app/reading" className="inline-flex min-h-11 items-center text-sm text-sky-700 underline underline-offset-4">{AI_CONSENT_TEXT.title}</Link>
+  ) : null;
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
   // and never stands in for the list. The links to the received and cancelled pages carry no
   // count; the number is seen after opening the page.
@@ -62,7 +79,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
     </div>
   );
 
-  const waitingNotice = waiting ? (
+  const waitingNotice = readingGranted && waiting ? (
     <Link href="/app/settings/trouble" className="block rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
       まだ読んでいないメールが {waiting} 通あります。この一覧は最新ではないかもしれません。
     </Link>
@@ -89,6 +106,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
     return (
       <div className="flex flex-col gap-4">
         {addLink}
+        {permissionNotice}
         {sampleBusyNotice}
         {waitingNotice}
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
@@ -101,9 +119,17 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
     return (
       <div className="flex flex-col gap-4">
         {addLink}
+        {permissionNotice}
         {sampleBusyNotice}
         {waitingNotice}
-        <EmptyState mail={await mailSoFar(supabase, user.id)} />
+        {readingGranted ? <EmptyState mail={await mailSoFar(supabase, user.id)} /> : (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="text-5xl">📬</p>
+            <h2 className="mt-4 text-lg font-bold">まだ荷物がありません</h2>
+            <Link href="/app/parcels/new" className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white">{AI_CONSENT_TEXT.manual}</Link>
+            <Link href="/app/settings/demo" className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-neutral-300 px-5 py-3 text-sm font-medium">{AI_CONSENT_TEXT.sample}</Link>
+          </div>
+        )}
         {pageLinks}
       </div>
     );
@@ -113,6 +139,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
     <DeliveredToastProvider>
     <div className="flex flex-col gap-8">
       {addLink}
+      {permissionNotice}
       {sampleBusyNotice}
       {waitingNotice}
       <Section title="配達済み" count={arrived.length} items={arrived} swipe />

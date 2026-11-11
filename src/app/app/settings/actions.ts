@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { runClearAllParcels, runLoadDemo } from "@/lib/demo-run";
 import { isScreenEventId, runMarkWronglyDropped, runReadWaitingMail } from "@/lib/mail-run";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getUser } from "@/lib/supabase/server";
+import { createClient, getUser } from "@/lib/supabase/server";
 import { settingsErrorPath } from "@/lib/settings-errors";
+import { readAiReadingConsent } from "@/lib/ai-consent";
 
 /**
  * Feed the anonymized demo mails through the real pipeline for the signed-in user.
@@ -25,6 +26,9 @@ export async function loadDemo(): Promise<void> {
     redirect(settingsErrorPath("demo_failed", `&demo=${loaded.processed}`));
   }
   // The list shows a one-line note for this; the other load is still going.
+  const consent = await readAiReadingConsent(await createClient(), user.id);
+  // The sample's saved readings send no mail to Claude and never record a permission choice.
+  if (consent !== "granted") redirect(loaded.busy ? "/app?sample=1&demo=busy" : "/app?sample=1");
   redirect(loaded.busy ? "/app?demo=busy" : "/app");
 }
 

@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
     throw new Error(`NEXT_REDIRECT ${to}`);
   },
 }));
-vi.mock("@/lib/supabase/server", () => ({ getUser: async () => ({ id: USER, email: "qa@example.com" }) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mocks.db, getUser: async () => ({ id: USER, email: "qa@example.com" }) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 vi.mock("@/lib/extract/extract", () => ({ extractEmail: mocks.extract }));
 
@@ -65,6 +65,7 @@ describe("readWaitingMail with a sample mail left pending", () => {
     mocks.db = db;
     expect(await run(readWaitingMail)).toEqual(["/app/settings/trouble"]);
     expect(mocks.extract).not.toHaveBeenCalled();
+    expect(db.rows("ai_reading_consents")).toHaveLength(0);
     expect(db.callsOn("emails", "insert")).toHaveLength(0);
     expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2")).toHaveLength(0);
     expect(db.rows("emails")).toHaveLength(1);
@@ -95,6 +96,8 @@ describe("readWaitingMail with a sample mail left pending", () => {
     const db = newDb([
       { ...stuck, provider_email_id: "re_ordinary", message_id: "<ordinary@example.test>", from_address: "orders@shop.example.test", subject: "ご注文ありがとうございます", processing_status: "over_limit" },
     ]);
+    // This control is a real-mail read by a person who has explicitly allowed it.
+    db.rows("ai_reading_consents").push({ user_id: USER, decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" });
     mocks.db = db;
     await run(readWaitingMail);
     expect(mocks.extract).toHaveBeenCalledTimes(1);

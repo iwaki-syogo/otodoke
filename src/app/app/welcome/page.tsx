@@ -1,5 +1,6 @@
 import { RefreshUntilApproval } from "@/components/refresh-until-approval";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CopyButton } from "@/components/copy-button";
 import { ApprovalFilterCopy, FoldCard, GuideCardBody, VideoCredit } from "@/components/forwarding-steps";
 import { FORWARDING_GUIDES, FORWARDING_TITLE, type ForwardingGuide } from "@/lib/forwarding-guide";
@@ -7,6 +8,8 @@ import { ensureInboxAddress, inboxEmail } from "@/lib/inbox";
 import { AFTER_WELCOME_PATH, WELCOME } from "@/lib/onboarding";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { readActiveKey, readConfirmUrl } from "../settings/settings-reads";
+import { readAiReadingConsent } from "@/lib/ai-consent";
+import { ReadingConsent } from "../reading/reading-consent";
 
 export const metadata = { title: FORWARDING_TITLE };
 
@@ -31,6 +34,10 @@ function GuideCard({ guide }: { guide: ForwardingGuide }) {
 export default async function WelcomePage() {
   const user = (await getUser())!;
   const supabase = await createClient();
+  const consent = await readAiReadingConsent(supabase, user.id);
+  if (consent === "undecided") redirect("/app/reading?after=welcome");
+  if (consent === "declined") redirect("/app");
+  if (consent === "unknown") return <ReadingConsent unknown after="welcome" />;
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.

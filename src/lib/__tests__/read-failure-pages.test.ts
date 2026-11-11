@@ -21,6 +21,12 @@ const LOAD_FAILED = "読み込めませんでした";
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
+// These existing UI scenarios begin after the person has allowed reading.
+vi.mock("@/lib/ai-consent", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai-consent")>()),
+  readAiReadingConsent: async () => "granted",
+}));
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(),

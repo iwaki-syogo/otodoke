@@ -97,7 +97,7 @@ describe("/privacy: the page", () => {
     expect(textOf(root)).toContain("制定日: 2026 年 11 月");
     // The page promises the day of a change (ポリシーを変えるとき): the password sign-in changed it.
     expect(textOf(section(root, "ポリシーを変えるとき"))).toContain("変えた日を書きます");
-    expect(textOf(root)).toContain("改定日: 2026 年 11 月 7 日");
+    expect(textOf(root)).toContain("改定日: 2026 年 11 月 12 日");
   });
 
   it("is named for the tab too", async () => {
@@ -119,6 +119,7 @@ describe("/privacy: what it says", () => {
       "ログインのメールアドレス",
       "パスワード",
       "転送されたメール",
+      "読み取りの許可",
       "荷物の情報と根拠の行",
       "読まなかったメールの件名と差出人のドメイン",
       "「これは荷物」で覚えた差出人",
@@ -128,6 +129,7 @@ describe("/privacy: what it says", () => {
       "cookie",
     ]);
     const said = Object.fromEntries(list);
+    expect(said["読み取りの許可"]).toContain("選択と、選んだ日時、画面の文の版を記録します");
     // No login link any more: the address gets the confirmation and reset mails.
     expect(said["ログインのメールアドレス"]).toBe("確認や再設定のメールを送り、あなたのアカウントを見分けるために使います。");
     // password-v1: the browser splits the password in two and sends only the login value.
@@ -184,7 +186,10 @@ describe("/privacy: what it says", () => {
   it("tells how a mail is screened, read, sealed and backed up, and what is not sealed", async () => {
     const part = section(await render(), "メールの扱い");
     const said = Object.fromEntries(terms(part));
-    expect(said["ふるい"]).toContain("迷うメールと、「これは荷物」で覚えた差出人のメールだけ、件名と本文の初めの部分を Claude Haiku に送って確かめます");
+    expect(said["ふるい"]).toContain("読み取りを許可している場合だけ、迷うメールと、「これは荷物」で覚えた差出人のメールの件名と本文の初めの部分を Claude Haiku に送って確かめます");
+    expect(said["読み取りの許可と取り消し"]).toContain("届いたメールを Anthropic の Claude に送る前に、読み取りの許可を求めます");
+    expect(said["読み取りの許可と取り消し"]).toContain("設定の「あなたのメールの扱い」にある「読み取りをやめる」");
+    expect(said["読み取りの許可と取り消し"]).toContain("すでに読み取った荷物と結果は残ります");
     expect(said["Claude での読み取り"]).toContain("読み取る数秒のあいだ、サーバーと Claude API がメールの中身を扱います");
     expect(said["保存と暗号化"]).toContain("あなたのパスワードでしか開けない形に暗号化して保存します");
     expect(said["保存と暗号化"]).toContain("暗号化したメールは、運営者もデータベースからは読めません");
