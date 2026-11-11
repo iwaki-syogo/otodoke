@@ -11,7 +11,8 @@
 //        reaches the server late never overwrites a later choice (CF1)
 //     5. a typed-in parcel's edit (manualEdit): source = manual and the updated_at the form was opened with
 //  - INSERT (createManual): one typed-in parcel as the signed-in user (user_id = me, source = manual).
-//    A duplicate id (23505) is settled by reading the row: it is mine and made by an earlier send, so it is a success and nothing is written.
+//    A duplicate id (23505) is settled by reading the row (see settleDuplicate): the same is a success; one nobody touched
+//    (updated_at == created_at) is written over, on that updated_at, through `write` (manualEdit); one a mail joined is not written.
 //  - DELETE (deleteManual): id, user_id = me and source = manual, always.
 // updated_at is sent exactly as it was read (a String; supabase-swift percent-encodes its "+").
 // No automatic retries (PostgREST's retryEnabled is false), and a result that is unknown is never
@@ -213,9 +214,9 @@ struct ParcelWriter: Sendable {
             response = try await provider.database.from("parcels").insert(mine).select("id").execute()
         } catch {
             // The same id sent again after a lost answer: that parcel is already there, made by the first send.
-            // The stored row is read and, being mine, counted as made; it is not written over (a mail may have joined it).
+            // The stored row is read: the same is made; one nobody touched is written over with what is typed now; one a mail joined is not.
             if let id = mine.id, let failure = error as? PostgrestError, failure.code == "23505" {
-                return await announced(await settleDuplicate(id: id, me: me))
+                return await announced(await settleDuplicate(of: mine, id: id, me: me))
             }
             return await announced(Self.outcome(of: error))
         }
@@ -226,27 +227,88 @@ struct ParcelWriter: Sendable {
         return await announced(.success(created.id))
     }
 
-    /// 23505 on an insert that carried an id: the row with that id (mine, typed in) is read as the signed-in user.
-    /// It is there because an earlier send of this form made it (its answer was lost), and since then a mail may have
-    /// joined it (a tracking number, a later status). It is a success and NOTHING is written: writing the form over it
-    /// would set those back. (What was typed after the lost answer is not written either.) Not readable: unknown, so the
-    /// form says it could not be confirmed and the list is read again.
-    private func settleDuplicate(id: String, me: String) async -> WriteOutcome<String> {
+    /// The columns of a new typed-in parcel that its form sets, and the two times (read back to compare).
+    private struct StoredNew: Decodable {
+        let title: String?
+        let shop: String?
+        let orderedAt: String?
+        let expectedDate: String?
+        let totalAmount: Int?
+        let category: String?
+        let categorySource: String?
+        let trackingNumber: String?
+        let carrier: String?
+        let requiresPresence: Bool?
+        let status: String
+        let createdAt: String
+        let updatedAt: String
+
+        enum CodingKeys: String, CodingKey {
+            case title, shop, category, carrier, status
+            case orderedAt = "ordered_at"
+            case expectedDate = "expected_date"
+            case totalAmount = "total_amount"
+            case categorySource = "category_source"
+            case trackingNumber = "tracking_number"
+            case requiresPresence = "requires_presence"
+            case createdAt = "created_at"
+            case updatedAt = "updated_at"
+        }
+    }
+
+    /// 23505 on an insert that carried an id: the row with that id (mine, typed in) is read as the signed-in user. An
+    /// earlier send of this form made it (its answer was lost). Then:
+    ///  - the row is what this form says: a success, nothing is written;
+    ///  - it differs and updated_at == created_at: nobody touched it since it was made (the insert sends neither, so both are the
+    ///    one now() of the insert, init.sql:61-62; every later update moves updated_at on, init.sql:95-102), so what is typed
+    ///    now is written over it, on that updated_at (0 rows: someone just did, `.notUpdated(.conflict)`);
+    ///  - it differs and updated_at != created_at: a mail (or the Web) joined it. Nothing is written, `.notUpdated(.conflict)`:
+    ///    the parcel exists, and opening it again shows it.
+    /// Not readable: unknown, so the form says it could not be confirmed and the list is read again.
+    private func settleDuplicate(of row: ManualParcelRow, id: String, me: String) async -> WriteOutcome<String> {
         guard Self.isUUID(id) else { return .notUpdated(.invalidInput) }
+        let stored: StoredNew
         do {
             let response = try await provider.database.from("parcels")
-                .select("id")
+                .select("title,shop,ordered_at,expected_date,total_amount,category,category_source,tracking_number,carrier,requires_presence,status,created_at,updated_at")
                 .eq("id", value: id)
                 .eq("user_id", value: me)
                 .eq("source", value: "manual")
                 .execute()
-            let rows = try JSONDecoder().decode([Inserted].self, from: response.data)
+            let rows = try JSONDecoder().decode([StoredNew].self, from: response.data)
             // Not there for me although the id is taken: it is not mine, so this is not a success.
             guard rows.count <= 1 else { return .unknown }
-            guard rows.first != nil else { return .notUpdated(.failed) }
-            return .success(id)
+            guard let found = rows.first else { return .notUpdated(.failed) }
+            stored = found
         } catch {
             return .unknown
+        }
+        let same = stored.title == row.title && stored.shop == row.shop && stored.orderedAt == row.orderedAt
+            && stored.expectedDate == row.expectedDate && stored.totalAmount == row.totalAmount
+            && stored.category == row.category && stored.categorySource == row.categorySource
+            && stored.trackingNumber == row.trackingNumber && stored.carrier == row.carrier
+            && stored.requiresPresence == row.requiresPresence && stored.status == row.status
+        if same { return .success(id) }
+        // A mail joined it: not the form's to write over.
+        guard stored.updatedAt == stored.createdAt else { return .notUpdated(.conflict) }
+        let columns: [String: ManualParcel.Column] = [
+            "title": .text(row.title),
+            "shop": .text(row.shop),
+            "shop_key": .text(row.shopKey),
+            "ordered_at": .text(row.orderedAt),
+            "expected_date": ManualParcel.Column(row.expectedDate),
+            "total_amount": ManualParcel.Column(row.totalAmount),
+            "category": ManualParcel.Column(row.category),
+            "category_source": ManualParcel.Column(row.categorySource),
+            "tracking_number": ManualParcel.Column(row.trackingNumber),
+            "carrier": ManualParcel.Column(row.carrier),
+            "requires_presence": ManualParcel.Column(row.requiresPresence),
+            "status": .text(row.status),
+        ]
+        switch await write(id: id, .manualEdit(columns, updatedAt: stored.updatedAt)) {
+        case .success: return .success(id)
+        case let .notUpdated(reason): return .notUpdated(reason)
+        case .unknown: return .unknown
         }
     }
 
@@ -254,8 +316,8 @@ struct ParcelWriter: Sendable {
 
     /// The two text columns the edit compares with the form (ManualParcel.Saved does not carry them).
     private struct StoredNames: Decodable {
-        let title: String
-        let shop: String
+        let title: String?
+        let shop: String?
     }
 
     enum ManualEditOutcome: Equatable, Sendable {

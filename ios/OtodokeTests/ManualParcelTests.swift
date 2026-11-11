@@ -311,7 +311,7 @@ struct ManualParcelTests {
         #expect(await fake.row("parcels", id: m.newID) != nil)
     }
 
-    @Test func aFormChangedAfterALostAnswerAndPressedAgainIsASuccessThatWritesNothing() async throws {
+    @Test func aFormChangedAfterALostAnswerAndPressedAgainWritesOverWhatNobodyTouched() async throws {
         let fake = FakeSupabase.make()
         let (writer, _) = try await writer(fake)
         await fake.fail("POST", "parcels", with: .applyThenDrop(.networkConnectionLost))
@@ -319,14 +319,19 @@ struct ManualParcelTests {
         m.input.title = "最初の品名"
         await m.submit()
         #expect(m.error == ManualParcelText.unknown && !m.isSaved)
-        // The first send had made the parcel. Pressed again with another title: the parcel is there, so it is made (the
-        // sheet closes and the list shows it); the stored row is never written over.
+        // The first send had made the parcel and nobody touched it since (updated_at == created_at). Changed, and pressed
+        // again: the changed content is what is kept.
         m.input.title = "変えた品名"
         await m.submit()
         #expect(m.isSaved && m.error == nil)
         #expect(await fake.rows("parcels").count == 1)
-        #expect(await fake.row("parcels", id: m.newID)?["title"]?.string == "最初の品名")
-        #expect(await fake.requests("PATCH", "parcels").isEmpty)
+        #expect(await fake.row("parcels", id: m.newID)?["title"]?.string == "変えた品名")
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
+        // Unchanged and pressed again is a success that writes nothing more.
+        var same = try row { $0.title = "変えた品名" }
+        same.id = m.newID
+        #expect(await writer.createManual(same) == .success(m.newID))
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
     }
 
     @Test func aMailThatJoinedTheParcelAfterALostAnswerIsNotSetBackByPressingAgain() async throws {
@@ -339,18 +344,34 @@ struct ManualParcelTests {
         #expect(await writer.createManual(mine) == .unknown)
         // A shipping mail joined it: a tracking number, and the status moved on.
         await fake.touch("parcels", id: Rows.id(9), ["status": "shipped", "tracking_number": "1234567890123", "carrier": "日本郵便"])
-        // Pressed again with the same form: a success, and nothing of the mail is set back.
-        #expect(await writer.createManual(mine) == .success(Rows.id(9)))
+        // Pressed again, with the same form and with a changed title: changed, and nothing of the mail is set back.
+        #expect(await writer.createManual(mine) == .notUpdated(.conflict))
+        mine.title = "変えた品名"
+        #expect(await writer.createManual(mine) == .notUpdated(.conflict))
         let stored = try #require(await fake.row("parcels", id: Rows.id(9)))
         #expect(stored["tracking_number"]?.string == "1234567890123")
         #expect(stored["carrier"]?.string == "日本郵便")
         #expect(stored["status"]?.string == "shipped")
+        #expect(stored["title"]?.string == "最初の品名")
         #expect(await fake.requests("PATCH", "parcels").isEmpty)
-        // And with a changed title too: still nothing is written.
-        mine.title = "変えた品名"
-        #expect(await writer.createManual(mine) == .success(Rows.id(9)))
-        #expect(await fake.row("parcels", id: Rows.id(9))?["title"]?.string == "最初の品名")
-        #expect(await fake.requests("PATCH", "parcels").isEmpty)
+    }
+
+    @Test func theFormSaysChangedAndReadsAgainWhenAMailJoinedTheParcelAfterALostAnswer() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        await fake.fail("POST", "parcels", with: .applyThenDrop(.networkConnectionLost))
+        let reloads = Counter()
+        let m = model(save: { await writer.createManual($0) }, reloads: reloads)
+        m.input.title = "最初の品名"
+        await m.submit()
+        #expect(m.error == ManualParcelText.unknown)
+        await fake.touch("parcels", id: m.newID, ["status": "shipped"])
+        let before = reloads.value
+        m.input.title = "変えた品名"
+        await m.submit()
+        #expect(m.error == ManualParcelText.changed && !m.isSaved)
+        #expect(reloads.value == before + 1)
+        #expect(await fake.row("parcels", id: m.newID)?["title"]?.string == "最初の品名")
     }
 
     @Test func aDuplicateThatCannotBeReadIsUnknown() async throws {

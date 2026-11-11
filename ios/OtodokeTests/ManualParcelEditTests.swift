@@ -347,6 +347,77 @@ struct ManualParcelEditTests {
         #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "元")
     }
 
+    @Test func aParcelWithNoTitleCanStillBeEdited() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow(1, ["title": nil])
+        await fake.insert("parcels", [original])
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original) { $0.shop = "新しい店" }, openedUpdatedAt: opened(original)) == .saved)
+        let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
+        #expect(stored["title"]?.string == "新しい本" && stored["shop"]?.string == "新しい店")
+    }
+
+    @Test func aStoredNullTitleIsADifferenceOnAnOldVersionAndNeverTheSame() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow(1, ["title": nil])
+        await fake.insert("parcels", [original])
+        await fake.touch("parcels", id: Rows.id(1), ["status": "shipped"])
+        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original) { $0.shop = "店" }, openedUpdatedAt: opened(original))
+        #expect(outcome == .changed)
+        #expect(await fake.requests("PATCH", "parcels").isEmpty)
+        // The check itself: null is never equal to a typed text, text equal to text is.
+        let s = saved()
+        let columns = try self.columns(s)
+        #expect(ManualParcel.writesNothing(columns, saved: s, title: nil, shop: "店") == false)
+        #expect(ManualParcel.writesNothing(columns, saved: s, title: "本", shop: nil) == false)
+        #expect(ManualParcel.writesNothing(columns, saved: s, title: "本", shop: "店") == true)
+    }
+
+    /// A tracking number the automatic choice names, and the name it gives.
+    private func autoCarrier() throws -> (number: String, name: String) {
+        for number in ["123456789012", "1234567890123", "123456789012345", "1234-5678-9012", "1Z999AA10123456784", "JP1234567890JP", "RR123456789JP"] {
+            if let name = ManualParcel.carrierName(.auto, tracking: number) { return (number, name) }
+        }
+        throw Failure()
+    }
+
+    private struct Failure: Error {}
+
+    @Test func aNamedCarrierChangedToAutomaticThatComesToTheSameCarrierKeepsTheTrackingUrl() async throws {
+        let (number, name) = try autoCarrier()
+        let s = saved { $0.trackingNumber = number; $0.carrier = name }
+        let cols = try columns(s) { $0.carrier = "auto" }
+        #expect(cols["tracking_number"] == nil && cols["carrier"] == nil && cols["tracking_url"] == nil)
+        // A carrier that is really another one is still a difference.
+        let other = try columns(s) { $0.carrier = ManualParcel.carrierChoice(name, tracking: number) == "yamato" ? "japanpost" : "yamato" }
+        #expect(other["carrier"] != nil && other["tracking_url"] == .null)
+    }
+
+    @Test func aSaveWithTheCarrierSetToAutomaticWhoseAnswerIsLostIsSavedWhenPressedAgain() async throws {
+        let (number, name) = try autoCarrier()
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow(1, ["tracking_number": .string(number), "carrier": .string(name)])
+        await fake.insert("parcels", [original])
+        let m = ManualParcelModel(
+            editing: try Rows.parcelRow(original),
+            update: { await writer.updateManual(id: $0, input: $1, openedUpdatedAt: $2) },
+            delete: { await writer.deleteManual(id: $0) },
+            stillThere: { true }, userID: { FakeSupabase.me }, reload: {}
+        )
+        m.input.title = "新しい本"
+        m.input.carrier = "auto"
+        await fake.fail("PATCH", "parcels", with: .applyThenDrop(.networkConnectionLost))
+        await m.submit()
+        #expect(m.error == ManualParcelText.unknown && !m.isSaved)
+        await m.submit()
+        #expect(m.isSaved && m.error == nil)
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
+        // The tracking URL the mail had put there was never dropped.
+        #expect(await fake.row("parcels", id: Rows.id(1))?["tracking_url"]?.string == "https://example.com/t")
+    }
+
     @Test func aFailedUpdateIsFailedAndALostAnswerIsUnknown() async throws {
         let fake = FakeSupabase.make()
         let (writer, changes) = try await writer(fake)

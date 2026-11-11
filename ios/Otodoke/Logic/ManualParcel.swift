@@ -335,12 +335,13 @@ enum ManualParcel {
             let number = Carriers.normalizeTracking(v.tracking)
             let trackingNumber: String? = number.isEmpty ? nil : number
             let storedNumber = Carriers.normalizeTracking(saved.trackingNumber ?? "")
-            let trackingKept = (storedNumber.isEmpty ? nil : storedNumber) == trackingNumber
-                && carrierChoice(saved.carrier, tracking: saved.trackingNumber) == v.carrier
+            // The carrier is compared by the name the form would write, so "a named carrier" and "automatic" that come to the
+            // same carrier are not a difference (the tracking URL is then kept).
+            let formCarrier = v.carrier == keepCarrier ? saved.carrier : carrierName(ManualCarrier(rawValue: v.carrier) ?? .auto, tracking: trackingNumber)
+            let trackingKept = (storedNumber.isEmpty ? nil : storedNumber) == trackingNumber && formCarrier == saved.carrier
             if !trackingKept {
-                let carrier = v.carrier == keepCarrier ? saved.carrier : carrierName(ManualCarrier(rawValue: v.carrier) ?? .auto, tracking: trackingNumber)
                 columns["tracking_number"] = Column(trackingNumber)
-                columns["carrier"] = Column(carrier)
+                columns["carrier"] = Column(formCarrier)
                 columns["tracking_url"] = .null
             }
             let presence = v.presence.requiresPresence
@@ -356,11 +357,12 @@ enum ManualParcel {
     /// Whether writing `columns` (the result of checkEdit) would change nothing that is stored: every column the form
     /// always sends equals what is stored, and no other column is there (those are written only on a difference).
     /// shop_key is not compared (the edit always sends "other").
-    static func writesNothing(_ columns: [String: Column], saved: Saved, title: String, shop: String) -> Bool {
+    static func writesNothing(_ columns: [String: Column], saved: Saved, title: String?, shop: String?) -> Bool {
         for (key, value) in columns {
             switch key {
-            case "title": guard value == .text(title) else { return false }
-            case "shop": guard value == .text(shop) else { return false }
+            // A stored null is a difference (never "the same"): the safe side.
+            case "title": guard let title, value == .text(title) else { return false }
+            case "shop": guard let shop, value == .text(shop) else { return false }
             case "shop_key": continue
             case "total_amount": guard value == Column(saved.totalAmount) else { return false }
             case "status": guard value == .text(saved.status) else { return false }

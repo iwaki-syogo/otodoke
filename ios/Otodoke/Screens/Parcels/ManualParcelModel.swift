@@ -5,10 +5,14 @@
 //  - the write surely did not happen: the Web's words, the form keeps what was typed;
 //  - the result is unknown (the answer was lost): the screen is read again and the form says it could
 //    not be confirmed. The form stays open, and pressing again is safe by how each write is made:
-//    a new parcel is sent with the id the form made when it was opened (the first send having made it
-//    answers 23505: the stored row is read and, when what is typed now differs, written over with it),
-//    an edit is conditioned on the updated_at the form was opened with (after the first send went through
-//    the stored updated_at has moved, so the second save answers 「changed」 and writes nothing), a delete of a parcel that is gone answers 0 rows and the parcel is read to see.
+//    a new parcel is sent with the id the form made when it was opened. The first send having made it answers
+//    23505, and the stored row is read: the same as the form is a success; one nobody has touched since
+//    (updated_at == created_at) is written over with what is typed now; one a mail joined is not written
+//    and says 「changed」 (the parcel exists, opening it again shows it).
+//    An edit is conditioned on the updated_at the form was opened with: when the first send went through the
+//    stored updated_at has moved, so the second save is a success if the form says exactly what is stored
+//    (nothing is written), and 「changed」 (nothing written) if anything differs.
+//    A delete of a parcel that is gone answers 0 rows and the parcel is read to see.
 // A second press while one is on its way is ignored (the button shows the spinner, it is not disabled).
 
 import Foundation
@@ -168,8 +172,14 @@ final class ManualParcelModel: Identifiable {
             case .success:
                 isSaved = true
                 await reload()
-            case .notUpdated:
-                error = ManualParcelText.failed
+            case let .notUpdated(reason):
+                if reason == .conflict {
+                    // The parcel exists but a mail joined it since the lost answer: nothing was written.
+                    error = ManualParcelText.changed
+                    await reload()
+                } else {
+                    error = ManualParcelText.failed
+                }
             case .unknown:
                 // Read again to see; pressing again sends the same id, so it cannot make a second parcel.
                 error = ManualParcelText.unknown

@@ -596,9 +596,11 @@ actor FakeSupabase {
         for object in objects {
             var row = object.mapValues(JSONValue.init(any:))
             if row["id"] == nil { row["id"] = .string(UUID().uuidString.lowercased()) }
-            if row["created_at"] == nil { row["created_at"] = .string(nextTimestamp()) }
-            // The database default (now()): the version a later conditioned write is read at.
-            if row["updated_at"] == nil { row["updated_at"] = .string(nextTimestamp()) }
+            // The database defaults (now() for both, init.sql:61-62): one instant, so created_at == updated_at until a
+            // later update moves updated_at on (the version a later conditioned write is read at).
+            let inserted = nextTimestamp()
+            if row["created_at"] == nil { row["created_at"] = .string(inserted) }
+            if row["updated_at"] == nil { row["updated_at"] = .string(inserted) }
             for column in uniqueColumns[table] ?? [] {
                 if let value = row[column], rows.contains(where: { $0[column] == value }) {
                     return .json(409, [
