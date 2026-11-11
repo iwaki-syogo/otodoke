@@ -232,3 +232,66 @@ describe("reading started by the grant goes through the cost guards", () => {
     expect(db.find("emails", "w-1")).toMatchObject({ processing_status: "pending", processing_run_id: "other-run", text_body: "ご注文番号 TEST-1" });
   });
 });
+
+describe("B5 x cost guards x reading permission: a clear is not undone by a read already running", () => {
+  const SAMPLE_USER = "00000000-0000-4000-8000-00000000000a";
+  const DECIDED = "2026-11-12T00:00:00.123456Z";
+
+  it("a sample load goes through the lease and capacity RPCs, takes no paid allowance, and stops at the unread ceiling", async () => {
+    const { runLoadDemo } = await import("@/lib/demo-run");
+    vi.stubEnv("OTODOKE_UNREAD_USER_MAIL_LIMIT", "1000");
+    vi.stubEnv("OTODOKE_UNREAD_GLOBAL_MAIL_LIMIT", "1000");
+    vi.stubEnv("OTODOKE_UNREAD_USER_BYTE_LIMIT", "100000000");
+    vi.stubEnv("OTODOKE_UNREAD_GLOBAL_BYTE_LIMIT", "1000000000");
+    const db = new FakeDb();
+    expect((await runLoadDemo(() => asAdmin(db), SAMPLE_USER)).ok).toBe(true);
+    expect(db.rpcCalls.some((c) => c.name === "store_mail_run")).toBe(true);
+    expect(db.rpcCalls.some((c) => c.name === "mail_run_write")).toBe(true);
+    expect(db.rpcCalls.filter((c) => /claim_claude_call/.test(c.name))).toEqual([]);
+    // At the ceiling the same load fails and keeps one notice, as for real mail.
+    vi.stubEnv("OTODOKE_UNREAD_USER_MAIL_LIMIT", "1");
+    const full = new FakeDb({ emails: [{ id: "u1", user_id: SAMPLE_USER, processing_status: "failed", error: "x", body_state: "plain", subject: "a", from_address: "a@b.test", text_body: "x", created_at: "2026-11-01T00:00:00Z" }] });
+    expect((await runLoadDemo(() => asAdmin(full), SAMPLE_USER)).ok).toBe(false);
+    expect(full.rows("emails").filter((r) => String(r.provider_email_id ?? "").startsWith("demo:"))).toEqual([]);
+  });
+
+  it("an unread sample left by an interrupted load is resumed with its stored generation (without a clear), through the lease RPCs", async () => {
+    const { runLoadDemo } = await import("@/lib/demo-run");
+    vi.stubEnv("OTODOKE_UNREAD_USER_MAIL_LIMIT", "1000");
+    vi.stubEnv("OTODOKE_UNREAD_GLOBAL_MAIL_LIMIT", "1000");
+    vi.stubEnv("OTODOKE_UNREAD_USER_BYTE_LIMIT", "100000000");
+    vi.stubEnv("OTODOKE_UNREAD_GLOBAL_BYTE_LIMIT", "1000000000");
+    const db = new FakeDb();
+    expect((await runLoadDemo(() => asAdmin(db), SAMPLE_USER)).ok).toBe(true);
+    Object.assign(db.rows("emails")[0], { processing_status: "pending", processing_run_id: null, processing_lease_until: null, created_at: "2020-01-01T00:00:00Z" });
+    const calls = db.rpcCalls.length;
+    expect(await runReadWaitingMail(asAdmin(db), SAMPLE_USER)).toMatchObject({ ok: true, read: 1 });
+    expect(db.rpcCalls.slice(calls).some((c) => c.name === "store_mail_run")).toBe(true);
+    expect(db.rows("emails")[0].processing_status).toBe("processed");
+  });
+
+  it("a clear after a real waiting mail started its automatic read: the late result writes nothing back", async () => {
+    const { runClearAllParcels } = await import("@/lib/demo-run");
+    const { runReadAfterConsent } = await import("@/lib/ai-consent-run");
+    const db = new FakeDb({
+      ai_reading_consents: [{ user_id: SAMPLE_USER, decision: "granted", decided_at: DECIDED, text_version: "v1" }],
+      emails: [{
+        id: "w-1", user_id: SAMPLE_USER, processing_status: "failed", error: "ai_consent_required", body_state: "plain",
+        provider_email_id: "provider-1", message_id: "<w-1@example.test>", from_address: "orders@new-shop.test", from_name: null,
+        subject: "ご注文ありがとうございます", sent_at: "2026-11-01T00:00:01Z", text_body: "ご注文番号 TEST-1", html_body: null, created_at: "2026-11-01T00:00:00.000000Z",
+      }],
+    });
+    let release!: (value: ReturnType<typeof precomputed>) => void;
+    mocks.extract.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const reading_ = runReadAfterConsent(asAdmin(db), SAMPLE_USER, DECIDED);
+    await vi.waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(1));
+    expect(await runClearAllParcels(asAdmin(db), SAMPLE_USER)).toBeNull();
+    expect(db.rows("emails")).toHaveLength(0);
+    release(precomputed(order));
+    expect((await reading_).ok).toBe(false);
+    expect(db.rows("emails")).toHaveLength(0);
+    expect(db.rows("parcels")).toHaveLength(0);
+    expect(db.rows("extractions")).toHaveLength(0);
+    expect(db.rows("parcel_items")).toHaveLength(0);
+  });
+});
