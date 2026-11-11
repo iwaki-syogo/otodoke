@@ -4,7 +4,7 @@ import Foundation
 
 enum StatusRules {
     /// RESTORABLE: the statuses a parcel may be put back to (and so the only ones it may be marked from).
-    static let restorable: [String] = ["ordered", "shipped", "out_for_delivery", "attempted", "unknown"]
+    static let restorable: [String] = ["ordered", "shipped", "out_for_delivery", "attempted", "unknown", "delivered"]
 
     /// PENDING_GRACE_MS in seconds.
     static let pendingGrace: TimeInterval = 3 * 60

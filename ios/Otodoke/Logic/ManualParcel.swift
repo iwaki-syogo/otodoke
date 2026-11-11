@@ -47,7 +47,7 @@ enum ManualPresence: String, CaseIterable, Sendable {
 
 /// MANUAL_STATUSES: what the form offers for a new parcel.
 enum ManualStatus: String, CaseIterable, Sendable {
-    case ordered, shipped, delivered
+    case ordered, shipped, delivered, received
 }
 
 /// What the form holds, as strings (the Web's form values).
@@ -78,7 +78,8 @@ struct ManualParcelInput: Equatable, Sendable {
         case true?: ManualPresence.face.rawValue
         case false?: ManualPresence.drop.rawValue
         }
-        status = ManualParcel.editableStatuses.contains(parcel.status) ? parcel.status : ManualStatus.ordered.rawValue
+        status = ParcelRules.isReceived(parcel) ? ManualStatus.received.rawValue
+            : (ManualParcel.editableStatuses.contains(parcel.status) ? parcel.status : ManualStatus.ordered.rawValue)
     }
 
     init() {}
@@ -112,6 +113,7 @@ struct ManualParcelRow: Encodable, Equatable, Sendable {
     var status: String
     var source = "manual"
     var lastEmailAt: String
+    var receivedAt: String? = nil
 
     private enum Keys: String, CodingKey {
         case id, userId = "user_id", title, shop, shopKey = "shop_key", orderedAt = "ordered_at"
@@ -121,6 +123,7 @@ struct ManualParcelRow: Encodable, Equatable, Sendable {
         case categorySource = "category_source", trackingNumber = "tracking_number", carrier
         case trackingUrl = "tracking_url", requiresPresence = "requires_presence"
         case presenceEvidence = "presence_evidence", status, source, lastEmailAt = "last_email_at"
+        case receivedAt = "received_at"
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -150,6 +153,7 @@ struct ManualParcelRow: Encodable, Equatable, Sendable {
         try c.encode(status, forKey: .status)
         try c.encode(source, forKey: .source)
         try c.encode(lastEmailAt, forKey: .lastEmailAt)
+        try c.encodeIfPresent(receivedAt, forKey: .receivedAt)
     }
 }
 
@@ -242,8 +246,10 @@ enum ManualParcel {
                 trackingNumber: trackingNumber,
                 carrier: carrierName(ManualCarrier(rawValue: v.carrier) ?? .auto, tracking: trackingNumber),
                 requiresPresence: v.presence.requiresPresence,
-                status: v.status,
-                lastEmailAt: isoString(now)
+                status: v.status == ManualStatus.received.rawValue ? "delivered" : v.status,
+                lastEmailAt: isoString(now),
+                receivedAt: v.status == ManualStatus.received.rawValue ? isoString(now)
+                    : (v.status == ManualStatus.delivered.rawValue ? ParcelRules.receivedAtNone : nil)
             ))
         }
     }
@@ -262,6 +268,9 @@ enum ManualParcel {
         var carrier: String?
         var requiresPresence: Bool?
         var updatedAt: String
+        var receivedAt: String? = nil
+        var expectedDateEnd: String? = nil
+        var lastEmailAt: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case status, category, carrier
@@ -271,6 +280,9 @@ enum ManualParcel {
             case trackingNumber = "tracking_number"
             case requiresPresence = "requires_presence"
             case updatedAt = "updated_at"
+            case receivedAt = "received_at"
+            case expectedDateEnd = "expected_date_end"
+            case lastEmailAt = "last_email_at"
         }
     }
 
@@ -307,7 +319,7 @@ enum ManualParcel {
     /// what may be typed. A column the form leaves as it is stored is not written: the category stays
     /// automatic, a date keeps its range, time and wording, a number and carrier keep the tracking URL,
     /// a way of receiving keeps its evidence, an order date left empty keeps the stored one.
-    static func checkEdit(_ input: ManualParcelInput, saved: Saved) -> EditResult {
+    static func checkEdit(_ input: ManualParcelInput, saved: Saved, now: Date = Date()) -> EditResult {
         var statuses = Set(ManualStatus.allCases.map(\.rawValue) + carriedStatuses)
         if saved.status == cancelled { statuses.insert(cancelled) }
         let carriers = Set(ManualCarrier.allCases.map(\.rawValue) + [keepCarrier])
@@ -320,7 +332,7 @@ enum ManualParcel {
                 "shop": .text(v.shop),
                 "shop_key": .text("other"),
                 "total_amount": Column(v.amount),
-                "status": .text(v.status),
+                "status": .text(v.status == ManualStatus.received.rawValue ? "delivered" : v.status),
             ]
             let category: String? = v.category.isEmpty ? nil : v.category
             if saved.category != category {
@@ -351,6 +363,26 @@ enum ManualParcel {
             // An order date left empty keeps the stored one; a column that comes out as it is stored is not written.
             let ordered: String? = v.ordered.isEmpty ? saved.orderedAt : v.ordered
             if ordered != saved.orderedAt { columns["ordered_at"] = Column(ordered) }
+            let wasDelivered = saved.status == "delivered"
+            let wasReceived = wasDelivered && ParcelRules.isReceivedAt(saved.receivedAt)
+            if v.status == ManualStatus.received.rawValue {
+                if !wasReceived { columns["received_at"] = .text(isoString(now)) }
+            } else if v.status == ManualStatus.delivered.rawValue {
+                if !wasDelivered {
+                    columns["received_at"] = .text(ParcelRules.receivedAtNone)
+                } else if wasReceived {
+                    columns["received_at"] = .null
+                    // A date changed by this save loses its range; use the values this same write leaves.
+                    let dateKept = saved.expectedDate == expected
+                    if ParcelRules.deliveryNeedsCheck(expectedDate: expected,
+                                                     expectedDateEnd: dateKept ? saved.expectedDateEnd : nil,
+                                                     lastEmailAt: saved.lastEmailAt, today: Format.todayJst(now: now)) {
+                        columns["check_dismissed_at"] = .text(isoString(now))
+                    }
+                }
+            } else if wasDelivered {
+                columns["received_at"] = .null
+            }
             return .valid(columns)
         }
     }
@@ -367,6 +399,13 @@ enum ManualParcel {
             case "shop_key": continue
             case "total_amount": guard value == Column(saved.totalAmount) else { return false }
             case "status": guard value == .text(saved.status) else { return false }
+            case "received_at": guard value == Column(saved.receivedAt) else { return false }
+            case "ordered_at": guard value == Column(saved.orderedAt) else { return false }
+            case "tracking_number":
+                let number = Carriers.normalizeTracking(saved.trackingNumber ?? "")
+                guard value == Column(number.isEmpty ? nil : number) else { return false }
+            case "carrier": guard value == Column(saved.carrier) else { return false }
+            case "tracking_url": continue
             case "requires_presence": guard value == Column(saved.requiresPresence) else { return false }
             default: return false
             }

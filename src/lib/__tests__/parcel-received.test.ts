@@ -853,8 +853,8 @@ describe("the words", () => {
     expect(parcelStatusLabel("cancelled", null)).toBe("キャンセル");
   });
 
-  it("leaves STATUS_LABEL as the iOS app (build 13) copies it", () => {
-    expect(STATUS_LABEL.delivered).toBe("届いた");
+  it("shares the delivered label with iOS build 14", () => {
+    expect(STATUS_LABEL.delivered).toBe("配達済み");
   });
 
   it("keeps the old words off every screen", () => {

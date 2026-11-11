@@ -5,7 +5,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { amazonOrderTrackingUrl, identifyCarrier, normalizeTracking, trackingLinkFor } from "@/lib/carriers";
 import { CATEGORIES, UNCATEGORIZED_LABEL, categoryColor, categoryLabel, isCategory } from "@/lib/category";
 import { RELEVANCE_LABEL, STATUS_LABEL, formatDateJa, formatDateTimeJa, formatWindow, relativeDateJa, todayJst, yen } from "@/lib/format";
-import { faceToFace, isLate, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
+import { faceToFace, isLate, isReceivedAt, lastExpectedDay, needsCheck, type ParcelRow } from "@/lib/match";
+import { ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor } from "@/lib/manual-parcel";
 import { parcelSections } from "@/lib/parcel-sections";
 import { isHttpsUrl } from "@/lib/safe-url";
 import { decodeEntities, htmlToText, stripInvisible } from "@/lib/text/html-to-text";
@@ -36,17 +37,11 @@ function run(tz: string): string {
 
 /** Every column of public.parcels. Rows in the fixture are whole rows, so Swift decodes them as ParcelRow. */
 const PARCEL_COLUMNS = [
-  "carrier", "category", "category_source", "created_at", "expected_date", "expected_date_end", "expected_text",
+  "carrier", "category", "category_source", "check_dismissed_at", "received_at", "created_at", "expected_date", "expected_date_end", "expected_text",
   "expected_window_end", "expected_window_start", "id", "last_email_at", "needs_review", "order_number", "ordered_at",
   "presence_evidence", "requires_presence", "shop", "shop_key", "source", "status", "title", "total_amount",
   "tracking_number", "tracking_url", "updated_at", "user_id",
 ];
-
-/**
- * The rows in the file carry no received_at (the app, build 13, has no such column); the script worked
- * its answers out with a delivered row as a received one, the old meaning of delivered. Done the same here.
- */
-const asApp = (p: ParcelRow): ParcelRow => ({ ...p, received_at: p.status === "delivered" ? "2026-11-01T00:00:00+00:00" : null });
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,7 +84,7 @@ describe("scripts/ios-fixtures.ts output", () => {
     expect(Object.keys(fx).sort()).toEqual(
       // iOS batch 2, task 4: calendar, spend, shop, month and forwarding (src/lib/__tests__/ios-fixtures-m1.test.ts).
       // iOS batch 2, task 13: delivered (src/lib/__tests__/ios-fixtures-m2.test.ts).
-      ["generatedBy", "format", "match", "sections", "undelivered", "unread", "carriers", "safeUrl", "category", "text", "calendar", "spend", "shop", "month", "forwarding", "delivered"].sort(),
+      ["generatedBy", "format", "match", "sections", "undelivered", "unread", "carriers", "safeUrl", "category", "text", "calendar", "spend", "shop", "month", "forwarding", "delivered", "received"].sort(),
     );
     expect(fx.generatedBy).toBe("scripts/ios-fixtures.ts");
     expect(Object.keys(fx.format).sort()).toEqual(
@@ -119,7 +114,7 @@ describe("scripts/ios-fixtures.ts output", () => {
     for (const k of ["lastExpectedDay", "needsCheck", "isLate", "faceToFace"]) fields(fx.match[k], ["parcel", "out"], ["today"]);
     for (const k of ["needsCheck", "isLate"]) for (const c of fx.match[k]) expect(typeof c.today).toBe("string");
     fields(fx.sections, ["today", "parcels", "out"]);
-    for (const c of fx.sections) expect(Object.keys(c.out).sort()).toEqual(["delivering", "ordered", "soon", "toCheck"]);
+    for (const c of fx.sections) expect(Object.keys(c.out).sort()).toEqual(["arrived", "delivering", "ordered", "soon", "toCheck"]);
     fields(fx.undelivered, ["row", "out"]);
     fields(fx.unread, ["now", "out"]);
     fields(fx.carriers.normalizeTracking, ["in", "out"]);
@@ -168,17 +163,31 @@ describe("every out is what the Web's own function answers", () => {
 
   it("match", () => {
     for (const c of fx.match.lastExpectedDay) expect(c.out).toBe(lastExpectedDay(c.parcel));
-    for (const c of fx.match.needsCheck) expect(c.out).toBe(needsCheck(asApp(c.parcel as ParcelRow), c.today));
+    for (const c of fx.match.needsCheck) expect(c.out).toBe(needsCheck(c.parcel as ParcelRow, c.today));
     for (const c of fx.match.isLate) expect(c.out).toBe(isLate(c.parcel, c.today));
     for (const c of fx.match.faceToFace) expect(c.out).toBe(faceToFace(c.parcel));
   });
 
   it("sections", () => {
     for (const c of fx.sections) {
-      const s = parcelSections((c.parcels as ParcelRow[]).map(asApp), c.today);
+      const s = parcelSections(c.parcels as ParcelRow[], c.today);
       const ids = (xs: ParcelRow[]) => xs.map((p) => p.id);
-      expect(c.out).toEqual({ toCheck: ids(s.toCheck), delivering: ids(s.delivering), soon: ids(s.soon), ordered: ids(s.ordered) });
+      expect(c.out).toEqual({ arrived: ids(s.arrived), toCheck: ids(s.toCheck), delivering: ids(s.delivering), soon: ids(s.soon), ordered: ids(s.ordered) });
     }
+  });
+
+  it("received: finite times and all four manual choices use the Web's actual functions", () => {
+    expect(fx.received.at.some((c: Any) => c.value === "-infinity" && !c.out)).toBe(true);
+    for (const c of fx.received.at) expect(c.out).toBe(isReceivedAt(c.value));
+    expect(fx.received.newManual.map((c: Any) => c.input.status)).toEqual(["ordered", "shipped", "delivered", "received"]);
+    for (const c of fx.received.newManual) expect(c.out).toEqual(manualParcelRow(ManualParcelSchema.parse(c.input), new Date(c.now)));
+    for (const c of fx.received.editManual) expect(c.out).toEqual(manualParcelFields(manualParcelSchemaFor(c.saved.status, c.saved.total_amount).parse(c.input), new Date(c.now), c.saved));
+    const parcels = fx.sections.flatMap((c: Any) => c.parcels);
+    expect(parcels.some((p: Any) => p.status === "delivered" && p.received_at === null)).toBe(true);
+    expect(parcels.some((p: Any) => isReceivedAt(p.received_at))).toBe(true);
+    expect(parcels.some((p: Any) => p.check_dismissed_at !== null)).toBe(true);
+    expect(fx.sections.some((c: Any) => c.out.arrived.length > 0)).toBe(true);
+    expect(fx.sections.some((c: Any) => c.parcels.some((p: Any) => p.status === "delivered" && c.out.toCheck.includes(p.id)))).toBe(true);
   });
 
   it("undelivered and unread", () => {

@@ -48,6 +48,8 @@ struct ParcelRow: Codable, Equatable, Identifiable, Sendable {
     var totalAmount: Int?
     var createdAt: String
     var updatedAt: String
+    var receivedAt: String? = nil
+    var checkDismissedAt: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -76,6 +78,8 @@ struct ParcelRow: Codable, Equatable, Identifiable, Sendable {
         case totalAmount = "total_amount"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case receivedAt = "received_at"
+        case checkDismissedAt = "check_dismissed_at"
     }
 }
 
@@ -135,6 +139,8 @@ struct ExtractionWithEmail: Decodable, Equatable, Sendable {
     var confidence: Double?
     var createdAt: String
     var notes: String?
+    var relevance: String? = nil
+    var relevanceEvidence: String? = nil
     var email: EmailSummary?
 
     private enum CodingKeys: String, CodingKey {
@@ -146,7 +152,8 @@ struct ExtractionWithEmail: Decodable, Equatable, Sendable {
     }
 
     private enum ResultKeys: String, CodingKey {
-        case notes
+        case notes, relevance
+        case relevanceEvidence = "relevance_evidence"
     }
 
     init(from decoder: Decoder) throws {
@@ -158,6 +165,8 @@ struct ExtractionWithEmail: Decodable, Equatable, Sendable {
         // result is free-form JSON: only a string `notes` inside an object counts.
         if let result = try? c.nestedContainer(keyedBy: ResultKeys.self, forKey: .result) {
             notes = try? result.decodeIfPresent(String.self, forKey: .notes)
+            relevance = try? result.decodeIfPresent(String.self, forKey: .relevance)
+            relevanceEvidence = try? result.decodeIfPresent(String.self, forKey: .relevanceEvidence)
         } else {
             notes = nil
         }
