@@ -26,8 +26,9 @@ async function signedIn() {
 /**
  * The user says they received these parcels (受け取った). Runs with the user's own session, so
  * row-level security limits it to their parcels. Writes status and received_at together (the
- * database trigger would fill received_at too, but this does not rely on it). Answers how many
- * rows changed.
+ * database trigger would fill received_at too, but this does not rely on it). A parcel that is
+ * already received is not written again (its received_at stays) and counts as saved. Answers how
+ * many parcels are received now.
  */
 export async function markDelivered(ids: string[]): Promise<number> {
   const clean = ids.filter((id) => typeof id === "string" && id.length > 0).slice(0, MAX_AT_ONCE);
@@ -40,10 +41,25 @@ export async function markDelivered(ids: string[]): Promise<number> {
     .in("id", clean)
     .eq("user_id", session.userId)
     .neq("status", "cancelled")
+    // Only a parcel not received yet is written: pressing again after a lost answer keeps the first time.
+    .is("received_at", null)
     .select("id");
   if (error) throw new Error(error.message);
+  const written = new Set(data.map((row) => row.id));
+  // A parcel left alone because it is already received counts as saved; a cancelled one does not.
+  const rest = clean.filter((id) => !written.has(id));
+  let already = 0;
+  if (rest.length > 0) {
+    const { data: rows, error: readError } = await session.supabase
+      .from("parcels")
+      .select("id,status,received_at")
+      .in("id", rest)
+      .eq("user_id", session.userId);
+    if (readError) throw new Error(readError.message);
+    already = new Set(rows.filter((row) => row.status === "delivered" && row.received_at !== null).map((row) => row.id)).size;
+  }
   revalidatePath("/app", "layout");
-  return data.length;
+  return written.size + already;
 }
 
 /** leftReceived: at least one parcel asked for was not put back (it changed since, or was refused). */

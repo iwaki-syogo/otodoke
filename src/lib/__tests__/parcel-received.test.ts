@@ -344,18 +344,36 @@ describe("受け取った and its undo", () => {
   });
 
   describe("pressing 受け取った again after the answer was lost (the first save had worked)", () => {
-    it("is answered as saved (1), the parcel stays received, and received_at moves to the second press", async () => {
+    it("is answered as saved (1), the parcel stays received, and received_at stays the first time", async () => {
       const { markDelivered } = await actions();
       expect(await markDelivered([ID])).toBe(1);
       const first = String(db.find("parcels", ID)!.received_at);
       // The row the page was opened with, and the one a retry sees, differ in updated_at; the action takes only the id.
       db.find("parcels", ID)!.updated_at = "2026-11-12T00:00:05.000Z";
       await new Promise((resolve) => setTimeout(resolve, 5));
+      const updates = writes(db, "update").length;
       expect(await markDelivered([ID])).toBe(1);
-      expect(db.find("parcels", ID)).toMatchObject({ status: "delivered" });
-      const second = String(db.find("parcels", ID)!.received_at);
-      expect(Date.parse(second)).toBeGreaterThan(Date.parse(first));
+      expect(writes(db, "update").length).toBe(updates + 1); // the guarded update ran and matched nothing
+      expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: first });
       expect(db.rows("parcels").filter((r) => r.id === ID)).toHaveLength(1);
+    });
+
+    it("a batch with one already received and one new: both are saved, only the new one gets a time", async () => {
+      const { markDelivered } = await actions();
+      await markDelivered([ID]);
+      const first = String(db.find("parcels", ID)!.received_at);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(await markDelivered([ID, ID2])).toBe(2);
+      expect(db.find("parcels", ID)!.received_at).toBe(first);
+      expect(db.find("parcels", ID2)!.received_at).not.toBeNull();
+    });
+
+    it("the undo after a repeated press still puts back what the first press replaced", async () => {
+      const { markDelivered, restoreStatuses } = await actions();
+      await markDelivered([ID]);
+      await markDelivered([ID]);
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }])).toEqual({ leftReceived: false });
+      expect(db.find("parcels", ID)).toMatchObject({ status: "shipped", received_at: null });
     });
 
     it("never un-receives, and a parcel cancelled meanwhile is answered 0 (the screen shows its retry text, not success)", async () => {
