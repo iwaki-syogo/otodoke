@@ -236,7 +236,7 @@ begin
     when 'parcel_items' then v_allow := array['user_id','parcel_id','name','quantity','unit_price','evidence'];
     when 'parcels' then v_allow := array['user_id','shop','shop_key','order_number','title','status','ordered_at','expected_date','expected_date_end','expected_text',
       'expected_window_start','expected_window_end','carrier','tracking_number','tracking_url','requires_presence','presence_evidence','total_amount',
-      'needs_review','last_email_at','category','category_source','source','check_dismissed_at'];
+      'needs_review','last_email_at','category','category_source','source','check_dismissed_at','received_at'];
     else raise exception 'unsupported mail table' using errcode = '22023';
   end case;
   v_where := format('t.user_id = %L::uuid', v_mail.user_id);

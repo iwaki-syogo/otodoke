@@ -10,6 +10,16 @@
  * saves in between) or return a result to answer the query itself (to inject an error).
  */
 
+import { readFileSync } from "node:fs";
+
+/** Read the real gateway contract so pipeline tests cannot silently accept an SQL-rejected column. */
+const mailRunSql = readFileSync(new URL("../../../supabase/migrations/20261113090000_claude_call_global_lock.sql", import.meta.url), "utf8");
+export const MAIL_RUN_ALLOWED_COLUMNS = new Map(
+  [...mailRunSql.matchAll(/when '(emails|extractions|parcel_items|parcels)' then[\s\S]*?v_allow := array\[([\s\S]*?)\];/g)]
+    .map((match) => [match[1], new Set([...match[2].matchAll(/'([^']+)'/g)].map((column) => column[1]))] as const),
+);
+if (MAIL_RUN_ALLOWED_COLUMNS.size !== 4) throw new Error("fake-db: could not read all mail gateway column allowlists");
+
 export type Row = Record<string, unknown>;
 
 export interface Filter {
@@ -351,6 +361,14 @@ export class FakeDb {
       const result = await this.rpc(a.p_table,a.p_values);
       this.rpcCalls[this.rpcCalls.length-1].internal = true;
       return result;
+    }
+    const allowed = MAIL_RUN_ALLOWED_COLUMNS.get(a.p_table);
+    if (!allowed) return { data: null, error: { code: "22023", message: "unsupported mail table" } };
+    if (a.p_operation === "insert" || a.p_operation === "update") {
+      const rows = Array.isArray(a.p_values) ? a.p_values : [a.p_values];
+      if (rows.some((row) => Object.keys(row).some((column) => !allowed.has(column)))) {
+        return { data: null, error: { code: "22023", message: "unsupported mail column" } };
+      }
     }
     let q = this.from(a.p_table);
     if (a.p_operation === "insert") q = q.insert(a.p_values);

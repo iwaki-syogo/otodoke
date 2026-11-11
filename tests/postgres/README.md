@@ -10,11 +10,11 @@ node tests/postgres/run-cost-guards.mjs
 node tests/postgres/run-cost-guards.mjs --negative-control
 ```
 
-`--self-test` は DB を起動しません。verdict が無い出力、FAILED、終了コード 0 の SQL エラー、異常終了、タイムアウトを試験台本が成功扱いしないことを確かめます。
+`--self-test` は DB を起動しません。verdict が無い出力、FAILED、終了コード 0 の SQL エラー、異常終了、タイムアウトを試験台本が成功扱いしないことと、migration 選別の前後の境界を確かめます。
 
 引数なしの実行は、`.vitest/pg/` の新しい一時ディレクトリにデータを作り、127.0.0.1 の専用ポート 65440 だけで待ち受けます。このポートが既に使われていたら開始しません。Unix ソケットも `.vitest/pg/` に置きます。終了時と SIGINT・SIGTERM 時は、そのデータディレクトリのサーバーを止め、待ち受けが無くなったことを確かめます。調査用のデータとログは git-ignored の `.vitest/pg/` に残します。
 
-DB の準備では `bootstrap.sql` が Supabase の `auth.users`・`auth.uid()`・3 つのロールだけを作ります。アプリのテーブルと関数は、受け取り済み版までの本物の migration を順に適用します。Homebrew の標準 PostgreSQL に同梱されない pg_cron を使う `20261106180000_screen_events_daily_purge.sql` だけは、対象外として明示的にスキップします。したがって、この試験で cron・Supabase Auth・PostgREST の実物が確認されたとは扱いません。
+DB の準備では `bootstrap.sql` が Supabase の `auth.users`・`auth.uid()`・3 つのロールだけを作ります。アプリのテーブルと関数は、対象の `20261113090000_claude_call_global_lock.sql` より前の本物の migration をすべて順に適用します。統合後の枝に直し (C) の `20261112180000` があれば、それも対象より先に読み込みます。対象自身と後続の migration は準備から除外します。Homebrew の標準 PostgreSQL に同梱されない pg_cron を使う `20261106180000_screen_events_daily_purge.sql` だけは、対象外として明示的にスキップします。したがって、この試験で cron・Supabase Auth・PostgREST の実物が確認されたとは扱いません。
 
 新 migration の before verify、2 回適用、verify を実行してから、次の挙動を確かめます。
 
@@ -22,6 +22,7 @@ DB の準備では `bootstrap.sql` が Supabase の `auth.users`・`auth.uid()`�
 - S1: 個人上限 0 の新規行、個人上限到達時の拒否が全体枠を使わないこと。release と取得の競合、同じ claim の同時 release をそれぞれ 10 回確認します。
 - I2: 個人・全体の件数と UTF-8 バイト数の同時上限、Claude 上限到達中の継続受信、繰り返した拒否でメール本文や通知行が増え続けないこと、読み取り完了後の受信再開、通知を本人だけが読んで消せることを確認します。
 - I3: 作成から 181 秒相当でも有効な lease を奪えないこと、先行結果が残ること、失効後の回収、古い実行 ID による emails・extractions・parcels・parcel_items の変更と Claude 枠の取得拒否、現在の実行 ID の更新と枠取得、日時フィルタの UTC 表記を確認します。
+- 既存の荷物統合が渡す `status` と `received_at` を gateway 経由で更新し、受け取り時刻の実保存値を確認します。未知の列を渡す変更は引き続き拒否されることも確認します。
 - anon・authenticated によるサーバー用関数の実行拒否と、service_role による枠取得・通知更新を確認します。
 - 最後に rollback を 2 回実行し、旧 release の verify、新 migration の再適用と verify を確認します。
 

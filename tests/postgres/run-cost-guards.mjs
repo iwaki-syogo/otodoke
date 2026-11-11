@@ -23,6 +23,11 @@ export function taggedResults(output) {
   return output.split(/\r?\n/).filter((line) => line.startsWith("RESULT:")).map((line) => line.slice(7));
 }
 
+/** Include every dependency present in the integrated branch, but never the target or later files. */
+export function priorMigrations(names) {
+  return names.filter((name) => name.endsWith(".sql") && name < `${migration}.sql`).sort();
+}
+
 function cleanEnvironment(scratch) {
   // Explicit connection arguments and empty local config paths prevent inherited service files
   // or password files from selecting a remote database or reading account credentials.
@@ -72,12 +77,18 @@ async function selfTest() {
     assert.throws(() => requireVerdict(output, "negative verdict"));
   }
   assert.deepEqual(taggedResults("\nRESULT:ok:12\nRESULT:global_limit:\n"), ["ok:12", "global_limit:"]);
+  assert.deepEqual(priorMigrations([
+    `${migration}.sql`, "20261113100000_future.sql", "20261112180000_source_boundary.sql",
+    "20261112100000_parcel_received_at.sql", "20261106180000_screen_events_daily_purge.sql", "notes.md",
+  ]), [
+    "20261106180000_screen_events_daily_purge.sql", "20261112100000_parcel_received_at.sql", "20261112180000_source_boundary.sql",
+  ]);
   const dummy = (source, options = {}) => runCommand(process.execPath, ["-e", source], options);
   await dummy("process.stdout.write('OK\\n')");
   await assert.rejects(dummy("process.stderr.write('ERROR: SQL failed\\n'); process.exit(0)"), /SQL failed/);
   await assert.rejects(dummy("process.stdout.write('FAILED\\n'); process.exit(1)"), /failed/);
   await assert.rejects(dummy("setTimeout(() => {}, 10000)", { timeout: 20 }), /SIGTERM/);
-  console.log("OK: runner self-test (verdict, SQL-error-with-exit-zero, failed exit, timeout)");
+  console.log("OK: runner self-test (verdict, migration dependency boundaries, SQL-error-with-exit-zero, failed exit, timeout)");
 }
 
 async function main(negative) {
@@ -190,7 +201,7 @@ async function main(negative) {
     assert.equal((await sql("show listen_addresses;")).trim(), "127.0.0.1");
     assert.equal(Number((await sql("show port;")).trim()), port);
     await file("tests/postgres/bootstrap.sql");
-    const migrations = (await readdir(path.join(root, "supabase/migrations"))).filter((name) => name.endsWith(".sql") && name <= "20261112100000_\uffff").sort();
+    const migrations = priorMigrations(await readdir(path.join(root, "supabase/migrations")));
     for (const name of migrations) {
       // Homebrew's vanilla server has no pg_cron. Its screen-event schedule is unrelated to
       // the cost functions, mail storage and leases tested here; all other files are unmodified.
@@ -354,6 +365,12 @@ async function main(negative) {
     const changed = JSON.parse((await sql(`select public.mail_run_write('${email}', '${nextRun}', 'parcels', 'update', ${json({ title: "Owned update" })}, ${json([{ method: "eq", args: ["id", parcel] }, { method: "eq", args: ["updated_at", updated] }])});`)).trim());
     assert.equal(changed.length, 1, "timestamp filters must compare instants, including ISO UTC Z format");
     assert.equal(changed[0].title, "Owned update");
+    const receivedAt = "2026-11-02T12:34:56.000Z";
+    const carried = JSON.parse((await sql(`select public.mail_run_write('${email}', '${nextRun}', 'parcels', 'update', ${json({ status: "delivered", received_at: receivedAt })}, ${json([{ method: "eq", args: ["id", parcel] }])});`)).trim());
+    assert.equal(carried.length, 1, "the existing received parcel merge payload must be allowed");
+    assert.equal(Date.parse(carried[0].received_at), Date.parse(receivedAt));
+    assert.equal((await sql(`select received_at = '${receivedAt}'::timestamptz and status = 'delivered' from public.parcels where id = '${parcel}';`)).trim(), "t", "the carried received_at must be stored, not silently discarded");
+    await assert.rejects(sql(`select public.mail_run_write('${email}', '${nextRun}', 'parcels', 'update', ${json({ unsupported_mail_column: true })}, '[]'::jsonb);`), /22023|unsupported mail column/i, "unknown columns must remain rejected");
     console.log("OK: I3 live 181-second lease, expired-run recovery, stale-owner refusal, current-owner mutation, typed timestamp filter");
 
     await sql(`select public.mail_run_write('${email}', '${nextRun}', 'emails', 'update', ${json({ processing_status: "processed", body_state: "dropped", text_body: null })}, '[]'::jsonb);`);
