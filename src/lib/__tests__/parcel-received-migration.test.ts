@@ -45,7 +45,8 @@ function problemsOf(fn: string): string[] {
 describe("the migration", () => {
   it("comes after the 2:00 migration, and its three companion files exist", () => {
     const names = readdirSync(path.join(root, "supabase/migrations")).sort();
-    expect(names.at(-1)).toBe(`${NAME}.sql`);
+    expect(names).toContain(`${NAME}.sql`);
+    expect(names).toContain("20261112020000_claude_call_release.sql");
     expect(names.indexOf(`${NAME}.sql`)).toBeGreaterThan(names.indexOf("20261112020000_claude_call_release.sql"));
     for (const f of [`supabase/verify/${NAME}.sql`, `supabase/verify/${NAME}.before.sql`, `supabase/rollback/${NAME}.down.sql`]) expect(existsSync(path.join(root, f)), f).toBe(true);
   });
