@@ -1,11 +1,9 @@
-// The 設定 tab: a list of items, each opening its own page (メールの転送 / パスワードとメールの鍵 / 読まなかった
-// メール / あなたのメールの扱い / うまく届かないとき / サンプルで試す), then 「Web で開く」, who is signed in and
-// signing out. As on the Web the list draws no cards: what needs an answer shows as a badge on its row
-// (承認待ち, 未設定, 未読 N, a count that could not be read) and the card itself is inside the page it belongs to.
-// The pages hold what the long screen used to (SettingsPages, SettingsKeyPage).
-// 「読み取る」, 「これは荷物」 (and 「荷物を登録する」 under it) and the samples finish in the app (MailActionsModel,
-// DemoModel); making the key is signing in again. Only changing the password, deleting the account, the privacy
-// policy and 「Web で開く」 open the Web (SettingsModel.webLink). Only https pages are opened.
+// The settings tab groups rows for mail and the account. Each native page holds its own content;
+// rows show badges for pending approval, missing setup, unread mail, or a count that could not be read.
+// The account group shows the signed-in address, sign-out, the privacy policy and account deletion.
+// Registration, mail actions, samples, password changes and account deletion finish in the app.
+// Making the first key is part of signing in again. The privacy policy is the only SettingsWebAction;
+// it opens the full policy over https. There is no general Web-version entry in the settings list.
 
 import SwiftUI
 

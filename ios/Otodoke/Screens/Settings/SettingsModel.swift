@@ -5,7 +5,7 @@
 import Foundation
 import Observation
 
-/// What the settings screen opens on the Web (task.md's 「Web で開く」 list).
+/// The full privacy policy is the only settings action that opens a Web page.
 enum SettingsWebAction: CaseIterable, Equatable, Sendable {
     /// 「プライバシーポリシー」
     case privacy
@@ -31,7 +31,7 @@ final class SettingsModel {
         "前の鍵で暗号化したメールが \(n) 通あります。開けませんが、荷物は残っています。"
     }
 
-    /// The page each action opens: https://otodoke.app/… as task.md lists it.
+    /// The full privacy policy's https page; account operations use native models and APIs.
     static func webLink(_ action: SettingsWebAction) -> URL {
         switch action {
         case .privacy: WebLink.privacy

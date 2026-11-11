@@ -1,6 +1,6 @@
-// The passphrase field (SecureField, no autocorrection or capitalization) with the button, 「開いています…」
-// while it opens, the message under the field, and the help (「Web でログイン」 in Safari, 「ログインし直す」).
-// Every word comes from UnlockModel / FaceIDText / LoginText (no other text
+// The password field (SecureField, no autocorrection or capitalization), its progress and error message,
+// and native help: key recovery in a sheet, or signing out to sign in again.
+// Every word comes from UnlockModel / FaceIDText / LoginText / PasswordChangeText (no other text
 // is added; a vitest checks there is no Japanese literal here). The passphrase lives only in this view's state
 // and is cleared after every submit (opened or not) and when the app goes to the background (SEC-N4).
 
@@ -65,7 +65,7 @@ struct UnlockView: View {
             }
             switch model.shownHelp {
             case .webLogin?:
-                // The key does not open with this password: the Web's login (Safari); nothing else is asked here.
+                // The key did not open with the login password: offer the native recovery sheet.
                 Text(LoginText.keyNotOpened)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
