@@ -33,6 +33,8 @@ const VERIFY = [
   "supabase/verify/20261106180000_screen_events_daily_purge.after-first-run.sql",
   "supabase/verify/20261106170000_issued_inbox_local_parts.sql",
   "supabase/verify/20261106190000_claude_usage_keeps_deleted_calls.sql",
+  "supabase/verify/20261111100000_claude_call_release.before.sql",
+  "supabase/verify/20261111100000_claude_call_release.sql",
   "supabase/verify/20261107090000_retire_passphrase_keys.before.sql",
   "supabase/verify/20261107090000_retire_passphrase_keys.after.sql",
 ];
@@ -182,5 +184,41 @@ describe("supabase/pending/README.md names every file waiting there", () => {
     expect(files.length).toBeGreaterThanOrEqual(3);
     const readme = read("supabase/pending/README.md");
     for (const file of files) expect(readme, file).toContain(`\`${file}\``);
+  });
+});
+
+describe("20261111100000 claude_call_release: waits in pending, leaves the old claim alone", () => {
+  const sql = withoutComments(read("supabase/pending/20261111100000_claude_call_release.sql"));
+
+  it("is not in migrations/ (db push would apply it), and its rollback and verify files exist", () => {
+    expect(readdirSync(path.join(root, "supabase/migrations")).filter((f) => f.includes("claude_call_release"))).toEqual([]);
+    expect(existsSync(path.join(root, "supabase/rollback/20261111100000_claude_call_release.down.sql"))).toBe(true);
+    expect(existsSync(path.join(root, "supabase/verify/20261111100000_claude_call_release.sql"))).toBe(true);
+  });
+
+  it("never touches claim_claude_call, and both new functions are security definer with an empty search_path for service_role only", () => {
+    expect(sql).not.toMatch(/(create|drop|alter)\s+(or replace\s+)?function\s+public\.claim_claude_call\s*\(/i);
+    for (const fn of ["claim_claude_call_v2", "release_claude_call"]) {
+      expect(sql).toMatch(new RegExp(`function public\\.${fn}\\([^)]*\\)[\\s\\S]*?security definer\\s+set search_path = ''`));
+      expect(sql).toMatch(new RegExp(`revoke all on function public\\.${fn}\\([^)]*\\) from public, anon, authenticated`));
+      expect(sql).toMatch(new RegExp(`grant execute on function public\\.${fn}\\([^)]*\\) to service_role`));
+    }
+  });
+
+  it("releases only a row not yet released, and only for the user who claimed it (the rule that makes a release once-only)", () => {
+    expect(sql).toMatch(/where id = p_claim_id and user_id = p_user_id and released_at is null/);
+  });
+
+  it("the table is closed to anon and authenticated, and the count cannot go negative", () => {
+    expect(sql).toMatch(/enable row level security/);
+    expect(sql).toMatch(/revoke all on public\.claude_call_claims from public, anon, authenticated/);
+    expect(sql).toMatch(/check \(calls >= 0\)/);
+  });
+
+  it("the rollback drops both functions, the table and the check, each only if present", () => {
+    const down = withoutComments(read("supabase/rollback/20261111100000_claude_call_release.down.sql"));
+    for (const drop of ["drop function if exists public.release_claude_call", "drop function if exists public.claim_claude_call_v2", "drop table if exists public.claude_call_claims", "drop constraint if exists claude_usage_daily_calls_nonneg"]) {
+      expect(down).toContain(drop);
+    }
   });
 });

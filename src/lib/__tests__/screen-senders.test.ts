@@ -21,7 +21,7 @@ vi.mock("@/lib/extract/triage", () => ({ isPurchaseMail: mocks.isPurchaseMail })
 
 const { processInboundEmail } = await import("@/lib/pipeline");
 
-const claims = (db: FakeDb) => db.rpcCalls.filter((c) => c.name === "claim_claude_call").length;
+const claims = (db: FakeDb) => db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2").length;
 
 /** An ad the free rules drop and are sure about (not borderline): no order label, an unsubscribe note. */
 function ad(i: number, from = "news@mall.example.test"): InboundEmail {

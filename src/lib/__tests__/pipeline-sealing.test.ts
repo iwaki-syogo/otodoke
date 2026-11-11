@@ -150,7 +150,7 @@ describe("pipeline: unread mail stays plaintext so it can be read again", () => 
     await keyedUser(db);
     db.rpc = (name: string, args?: unknown) => {
       db.rpcCalls.push({ name, args });
-      return Promise.resolve({ data: "user_limit", error: null });
+      return Promise.resolve({ data: [{ verdict: "user_limit", claim_id: null }], error: null });
     };
     const out = await processInboundEmail(asAdmin(db), realMail({ subject: "【テスト店】ご注文の商品を発送しました" }));
     expect(out.kind).toBe("over_limit");

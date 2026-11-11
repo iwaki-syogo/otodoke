@@ -18,21 +18,20 @@ const SYSTEM = `メール 1 通が、受信者自身の買い物の連絡かど�
 「ご注文ありがとうございました」と書いてあっても、注文番号も商品名も金額もなく、ギフトや特典を勧めているだけなら広告なので false です。
 それ以外で迷ったら true にしてください。`;
 
-/** True when the mail should go on to full reading. Any API failure counts as true: losing a parcel is worse. */
+/**
+ * True when the mail should go on to full reading. A failed call is NOT swallowed here: it throws,
+ * and the caller (the pipeline's second look) keeps the mail, gives the allowance back when Claude
+ * refused the call, and stops when Claude is unavailable.
+ */
 export async function isPurchaseMail(mail: { subject: string; text: string | null; html: string | null }): Promise<boolean> {
-  try {
-    const client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
-    const body = emailBodyText(mail.text, mail.html).slice(0, TRIAGE_CHARS);
-    const response = await client.messages.parse({
-      model: TRIAGE_MODEL,
-      max_tokens: 100,
-      system: SYSTEM,
-      messages: [{ role: "user", content: `件名: ${mail.subject}\n\n${body}` }],
-      output_config: { format: zodOutputFormat(Verdict) },
-    });
-    return response.parsed_output?.about_this_persons_purchase ?? true;
-  } catch (err) {
-    console.error("triage failed, keeping the mail:", err instanceof Error ? err.message : err);
-    return true;
-  }
+  const client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
+  const body = emailBodyText(mail.text, mail.html).slice(0, TRIAGE_CHARS);
+  const response = await client.messages.parse({
+    model: TRIAGE_MODEL,
+    max_tokens: 100,
+    system: SYSTEM,
+    messages: [{ role: "user", content: `件名: ${mail.subject}\n\n${body}` }],
+    output_config: { format: zodOutputFormat(Verdict) },
+  });
+  return response.parsed_output?.about_this_persons_purchase ?? true;
 }

@@ -44,6 +44,8 @@ export interface Result {
 
 export type Hook = (q: Query, db: FakeDb) => Result | void;
 
+type ClaimArgs = { p_user_id: string; p_user_limit: number; p_global_limit: number };
+
 export interface RpcCall {
   name: string;
   args: unknown;
@@ -289,7 +291,60 @@ export class FakeDb {
       if ((current?.key_id ?? null) !== a.p_expected_current_key_id) return Promise.resolve({ data: null, error: { message: "activate_user_key: the key in use changed" } });
       return Promise.resolve(this.activateUserKey(a));
     }
+    if (name === "claim_claude_call") return Promise.resolve(this.claimClaudeCall(args as ClaimArgs, false));
+    if (name === "claim_claude_call_v2" || name === "release_claude_call") {
+      // Before supabase/pending/20261111100000_claude_call_release.sql is applied (or after its rollback).
+      if (this.claudeReleaseMissing) return Promise.resolve({ data: null, error: { code: "PGRST202", message: `Could not find the function public.${name} in the schema cache` } });
+      if (name === "claim_claude_call_v2") return Promise.resolve(this.claimClaudeCall(args as ClaimArgs, true));
+      return Promise.resolve(this.releaseClaudeCall(args as { p_claim_id: number; p_user_id: string }));
+    }
     return Promise.resolve({ data: "ok", error: null });
+  }
+
+  /** True: claim_claude_call_v2 and release_claude_call do not exist yet (PostgREST answers PGRST202). */
+  claudeReleaseMissing = false;
+  /** The clock the Claude allowance reads (now() in the functions). A test moves it across midnight. */
+  claudeNow: () => number = () => Date.now();
+
+  private jstDay(): string {
+    return new Date(this.claudeNow() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  }
+
+  /**
+   * supabase/pending/20261111100000_claude_call_release.sql: claim_claude_call and claim_claude_call_v2
+   * count the same row by the same rule (the day in Asia/Tokyo, the app-wide sum first, then the
+   * person's row); v2 also records a claim and answers `[{ verdict, claim_id }]`. The real functions
+   * are exercised on Postgres; this mirrors their rules.
+   */
+  private claimClaudeCall(a: ClaimArgs, v2: boolean): Result {
+    const day = this.jstDay();
+    const usage = this.rows("claude_usage_daily");
+    const answer = (verdict: string, claimId: number | null): Result => ({ data: v2 ? [{ verdict, claim_id: claimId }] : verdict, error: null });
+    if (usage.filter((r) => r.day === day).reduce((n, r) => n + Number(r.calls), 0) >= a.p_global_limit) return answer("global_limit", null);
+    let row = usage.find((r) => r.user_id === a.p_user_id && r.day === day);
+    if (!row) {
+      row = { user_id: a.p_user_id, day, calls: 1 };
+      usage.push(row);
+    } else if (Number(row.calls) < a.p_user_limit) {
+      row.calls = Number(row.calls) + 1;
+    } else {
+      return answer("user_limit", null);
+    }
+    if (!v2) return answer("ok", null);
+    const id = this.rows("claude_call_claims").reduce((n, r) => Math.max(n, Number(r.id)), 0) + 1;
+    this.rows("claude_call_claims").push({ id, user_id: a.p_user_id, day, claimed_at: new Date(this.claudeNow()).toISOString(), released_at: null });
+    return answer("ok", id);
+  }
+
+  /** release_claude_call: once per claim, to the claim's own day, never below 0; 0 when there is nothing to give back. */
+  private releaseClaudeCall(a: { p_claim_id: number; p_user_id: string }): Result {
+    const claim = this.rows("claude_call_claims").find((r) => r.id === a.p_claim_id && r.user_id === a.p_user_id && isNil(r.released_at));
+    if (!claim) return { data: 0, error: null };
+    claim.released_at = new Date(this.claudeNow()).toISOString();
+    const row = this.rows("claude_usage_daily").find((r) => r.user_id === a.p_user_id && r.day === claim.day);
+    if (!row || Number(row.calls) <= 0) return { data: 0, error: null };
+    row.calls = Number(row.calls) - 1;
+    return { data: 1, error: null };
   }
 
   /**

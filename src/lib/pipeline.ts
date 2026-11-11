@@ -3,6 +3,7 @@ import { readAll } from "@/lib/supabase/read-all";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
 import { ClaudeUnavailableError, claudeFailure } from "@/lib/extract/claude-error";
+import { claimClaudeCall, type ClaudeClaim } from "@/lib/claude-usage";
 import {
   isParcelRelevant,
   buildParcelInsert,
@@ -19,7 +20,6 @@ import {
   type ParcelUpdate,
 } from "@/lib/match";
 import { categoryForTwins, type TwinCategory } from "@/lib/match/category";
-import { env } from "@/lib/env";
 import { forwardingConfirmUrl, isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
 import type { MailPlaintext } from "@/lib/crypto/envelope";
@@ -120,11 +120,14 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 
   // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
+  // Set when the cheap check found Claude stopped: the mail is kept, and not read (see below).
+  let claudeStoppedAtScreen = false;
   if (!isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
     if (!screen.pass) {
-      const keep = await secondLook(db, mail, screen);
-      if (keep) {
+      const look = await secondLook(db, mail, screen);
+      claudeStoppedAtScreen = look.stopped;
+      if (look.keep) {
         await logScreenEvent(db, mail, "rescued", screen.reason);
       } else {
         // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
@@ -217,22 +220,27 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
 
+  // The cheap check found Claude stopped: reading would fail the same way, so stop here with the
+  // mail kept (failed / claude_unavailable), as a stop in the reading itself does below.
+  if (claudeStoppedAtScreen) {
+    const { error } = await db.from("emails").update({ processing_status: "failed", error: "claude_unavailable" }).eq("id", emailRow.id);
+    if (error) throw new Error(`emails update failed: ${error.message}`);
+    throw new ClaudeUnavailableError("claude is unavailable");
+  }
+
   // 1.5. Take one paid call from today's allowance. Over the limit, the mail is kept to read later.
+  let claim: ClaudeClaim | null = null;
   if (!options.precomputed) {
-    const { OTODOKE_USER_DAILY_LIMIT, OTODOKE_GLOBAL_DAILY_LIMIT } = env();
-    const { data: claim, error: claimError } = await db.rpc("claim_claude_call", {
-      p_user_id: mail.userId,
-      p_user_limit: OTODOKE_USER_DAILY_LIMIT,
-      p_global_limit: OTODOKE_GLOBAL_DAILY_LIMIT,
-    });
-    if (claimError) {
-      await db.from("emails").update({ processing_status: "failed", error: claimError.message }).eq("id", emailRow.id);
-      throw new Error(`claim_claude_call failed: ${claimError.message}`);
+    try {
+      claim = await claimClaudeCall(db, mail.userId);
+    } catch (err) {
+      await db.from("emails").update({ processing_status: "failed", error: err instanceof Error ? err.message : String(err) }).eq("id", emailRow.id);
+      throw err;
     }
-    if (claim !== "ok") {
-      const { error } = await db.from("emails").update({ processing_status: "over_limit", error: claim }).eq("id", emailRow.id);
+    if (claim.verdict !== "ok") {
+      const { error } = await db.from("emails").update({ processing_status: "over_limit", error: claim.verdict }).eq("id", emailRow.id);
       if (error) throw new Error(`emails update failed: ${error.message}`);
-      return { kind: "over_limit", emailId: emailRow.id, limit: claim };
+      return { kind: "over_limit", emailId: emailRow.id, limit: claim.verdict };
     }
   }
 
@@ -243,6 +251,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     const message = err instanceof Error ? err.message : String(err);
     // A failed Claude call leaves only a fixed code in the row; the raw message stays in the server log.
     if (failure) console.error("pipeline: claude call failed:", failure.code, message);
+    // Claude refused the call (it answered with an error status): nothing was billed, so the allowance comes back.
+    if (failure?.unbilled) await claim?.release();
     await db.from("emails").update({ processing_status: "failed", error: failure ? failure.code : message }).eq("id", emailRow.id);
     if (failure?.code === "claude_unavailable") throw new ClaudeUnavailableError("claude is unavailable");
     throw err;
@@ -259,18 +269,28 @@ function plaintextOf(mail: InboundEmail): MailPlaintext {
  * a sender the user marked 「これは荷物」. A mark never skips the check: anyone can write a From
  * line, and a shop sends its ads from the same domain as its notices.
  */
-async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<boolean> {
-  if (!screen.borderline && !(await senderMarked(db, mail))) return false;
+async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<{ keep: boolean; stopped: boolean }> {
+  if (!screen.borderline && !(await senderMarked(db, mail))) return { keep: false, stopped: false };
 
-  const { OTODOKE_USER_DAILY_LIMIT, OTODOKE_GLOBAL_DAILY_LIMIT } = env();
-  const { data: claim, error } = await db.rpc("claim_claude_call", {
-    p_user_id: mail.userId,
-    p_user_limit: OTODOKE_USER_DAILY_LIMIT,
-    p_global_limit: OTODOKE_GLOBAL_DAILY_LIMIT,
-  });
   // Over the limit or unable to tell: keep it. The next step stores it as unread instead of losing it.
-  if (error || claim !== "ok") return true;
-  return isPurchaseMail(mail);
+  let claim: ClaudeClaim;
+  try {
+    claim = await claimClaudeCall(db, mail.userId);
+  } catch {
+    return { keep: true, stopped: false };
+  }
+  if (claim.verdict !== "ok") return { keep: true, stopped: false };
+
+  try {
+    return { keep: await isPurchaseMail(mail), stopped: false };
+  } catch (err) {
+    // A failed check keeps the mail: losing a parcel is worse. Claude refused the call, so the
+    // allowance comes back; and when Claude is stopped, the mail is not read either (stopped).
+    const failure = claudeFailure(err);
+    console.error("triage failed, keeping the mail:", failure ? failure.code : err instanceof Error ? err.message : err);
+    if (failure?.unbilled) await claim.release();
+    return { keep: true, stopped: failure?.code === "claude_unavailable" };
+  }
 }
 
 /**

@@ -166,7 +166,7 @@ describe("a mail stating 合計 3,000,000,000円 goes through the webhook once",
     const again = await processInboundEmail(asAdmin(db), orderMail());
     expect(again.kind).toBe("duplicate");
     expect(sdk.calls).toHaveLength(1);
-    expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call")).toHaveLength(1);
+    expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2")).toHaveLength(1);
   });
 
   it("writes item prices and counts the columns can hold", async () => {

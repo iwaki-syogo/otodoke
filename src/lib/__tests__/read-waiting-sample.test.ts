@@ -66,7 +66,7 @@ describe("readWaitingMail with a sample mail left pending", () => {
     expect(await run(readWaitingMail)).toEqual(["/app/settings/trouble"]);
     expect(mocks.extract).not.toHaveBeenCalled();
     expect(db.callsOn("emails", "insert")).toHaveLength(0);
-    expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call")).toHaveLength(0);
+    expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2")).toHaveLength(0);
     expect(db.rows("emails")).toHaveLength(1);
     expect(db.rows("emails")[0]).toMatchObject({ processing_status: "processed", body_state: "plain" });
     expect(db.rows("emails")[0].text_body).not.toBeNull();

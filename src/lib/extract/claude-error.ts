@@ -6,7 +6,7 @@ import { APIConnectionError, APIError } from "@anthropic-ai/sdk";
  *    Trying again does not help, so the reads stop and the mail is kept.
  *  - claude_error: probably temporary (rate limit, server trouble, a broken connection).
  * `unbilled`: the call was refused or never reached Claude, so the allowance taken for it can be
- * given back. Nothing reads it yet: the second batch (giving the allowance back) will. A broken connection may have been served, so it is not unbilled.
+ * given back (src/lib/claude-usage.ts, used by the pipeline). A broken connection may have been served, so it is not unbilled.
  */
 export type ClaudeFailure = { code: "claude_unavailable" | "claude_error"; unbilled: boolean };
 
