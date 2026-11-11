@@ -34,6 +34,17 @@ export async function readUnreadCount(supabase: Supabase, where: string): Promis
 }
 
 /**
+ * Not a sample mail (id starts with demo:) and not Gmail's forwarding confirmation: both are
+ * "processed" without Claude. One or() of and() groups over single conditions, the shape
+ * postgrest-js documents (.or('id.gt.3,and(id.eq.1,name.eq.Luke)')): (A or B) and (C or D) written
+ * out as the four pairs. A nested or() inside and(), and two or() calls side by side, are not
+ * shown in the PostgREST or postgrest-js documentation, so they are not relied on.
+ */
+const NOT_SAMPLE = [`provider_email_id.is.null`, `provider_email_id.not.like.${SAMPLE_PROVIDER_ID}`];
+const NOT_CONFIRMATION = [`classification.is.null`, `classification.neq.forwarding_confirmation`];
+const NOT_SAMPLE_NOR_CONFIRMATION = NOT_SAMPLE.flatMap((a) => NOT_CONFIRMATION.map((c) => `and(${a},${c})`)).join(",");
+
+/**
  * Why mail is waiting, counted by hand from one read of the unread rows: `stopped` (Claude cannot
  * be used), `overLimit` (the daily allowance) and `failed` (the rest).
  *
@@ -42,7 +53,8 @@ export async function readUnreadCount(supabase: Supabase, where: string): Promis
  * the old rows are plain failures. The time compared is created_at on both sides: it is set when
  * a mail is stored and set again when a read takes the row over (src/lib/pipeline.ts), so it is
  * when Claude was last tried for that row. Sample mails and Gmail's forwarding confirmation are
- * "processed" without Claude, so they do not count as proof that Claude works.
+ * "processed" without Claude, so they do not count as proof that Claude works. A row that Claude
+ * refused ("model refused") does: Claude answered.
  * null when either read failed: the reason is then unknown.
  */
 export async function readUnreadReasons(supabase: Supabase, where: string): Promise<{ stopped: number; overLimit: number; failed: number } | null> {
@@ -59,8 +71,7 @@ export async function readUnreadReasons(supabase: Supabase, where: string): Prom
     .from("emails")
     .select("created_at")
     .eq("processing_status", "processed")
-    .or(`provider_email_id.is.null,provider_email_id.not.like.${SAMPLE_PROVIDER_ID}`)
-    .or("classification.is.null,classification.neq.forwarding_confirmation")
+    .or(NOT_SAMPLE_NOR_CONFIRMATION)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -68,9 +79,12 @@ export async function readUnreadReasons(supabase: Supabase, where: string): Prom
     console.error(`${where} (last processed):`, error.message);
     return null;
   }
+  const at = (iso: string) => Date.parse(iso);
   const unavailableRows = rows.filter((r) => r.error === "claude_unavailable");
-  const newestStop = unavailableRows.reduce((latest, r) => (r.created_at > latest ? r.created_at : latest), "");
-  const stopped = unavailableRows.length > 0 && (!lastRead || newestStop > lastRead.created_at) ? unavailableRows.length : 0;
+  const newestStop = Math.max(-Infinity, ...unavailableRows.map((r) => at(r.created_at)));
+  // Proof that Claude answered after the stop: a mail it read, or one it refused ("model refused" is its answer).
+  const answered = Math.max(lastRead ? at(lastRead.created_at) : -Infinity, ...rows.filter((r) => r.error === "model refused").map((r) => at(r.created_at)));
+  const stopped = unavailableRows.length > 0 && newestStop > answered ? unavailableRows.length : 0;
   const overLimit = rows.filter((r) => r.processing_status === "over_limit").length;
   return { stopped, overLimit, failed: rows.length - stopped - overLimit };
 }

@@ -169,6 +169,25 @@ describe("うまく届かないとき: only the reasons that apply", () => {
     expect(text).toContain(READ_STOPPED_REASON);
   });
 
+  const STOP_AT = (iso: string) => row(1, { processing_status: "failed", error: "claude_unavailable", created_at: iso });
+
+  it("a processed mail with no provider id and no classification is proof that Claude works again", async () => {
+    const { text } = await troubleText([STOP_AT("2026-11-01T00:00:00Z"), PROCESSED(2, "2026-11-02T00:00:00Z", { provider_email_id: null, classification: null })]);
+    expect(text).toContain(READ_FAILED_REASON);
+    expect(text).not.toContain(READ_STOPPED_REASON);
+  });
+
+  it("a mail Claude refused after the stop is proof too: the failed sentence, not the stopped one", async () => {
+    const { text } = await troubleText([STOP_AT("2026-11-01T00:00:00Z"), row(2, { processing_status: "failed", error: "model refused", created_at: "2026-11-02T00:00:00Z" })]);
+    expect(text).toContain(READ_FAILED_REASON);
+    expect(text).not.toContain(READ_STOPPED_REASON);
+  });
+
+  it("negative control: only a temporary Claude error after the stop is no proof -> still the stopped sentence", async () => {
+    const { text } = await troubleText([STOP_AT("2026-11-01T00:00:00Z"), row(2, { processing_status: "failed", error: "claude_error", created_at: "2026-11-02T00:00:00Z" })]);
+    expect(text).toContain(READ_STOPPED_REASON);
+  });
+
   it("the unread rows could not be read -> the count is shown but no reason is stated", async () => {
     const { text } = await troubleText([STOPPED(1)], (db) => {
       db.hooks.push((q) => (q.table === "emails" && q.op === "select" && !q.head && String(q.columns).includes("error") ? { data: null, error: { message: "boom" } } : undefined));
