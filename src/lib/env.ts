@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mailStorageSchema } from "@/lib/mail-storage";
 
 /**
  * Environment access for server code. Values are read lazily so that a missing
@@ -27,7 +28,7 @@ const schema = z.object({
   OTODOKE_USER_DAILY_LIMIT: z.coerce.number().int().positive().default(30),
   /** Paid Claude calls across all users per JST day: the app-side stop before the Console spend limit. */
   OTODOKE_GLOBAL_DAILY_LIMIT: z.coerce.number().int().positive().default(300),
-});
+}).extend(mailStorageSchema.shape);
 
 export type Env = z.infer<typeof schema>;
 

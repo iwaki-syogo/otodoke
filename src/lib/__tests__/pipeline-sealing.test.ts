@@ -148,7 +148,9 @@ describe("pipeline: unread mail stays plaintext so it can be read again", () => 
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
     const db = new FakeDb();
     await keyedUser(db);
+    const rpc = db.rpc.bind(db);
     db.rpc = (name: string, args?: unknown) => {
+      if (name !== "claim_claude_call_v2") return rpc(name, args);
       db.rpcCalls.push({ name, args });
       return Promise.resolve({ data: [{ verdict: "user_limit", claim_id: null }], error: null });
     };

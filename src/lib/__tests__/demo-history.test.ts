@@ -211,11 +211,11 @@ describe("what the judges see after loading", () => {
     const entries = await loadDemoEntries(today, now);
     let trips = 0;
     for (const e of entries) {
-      const before = db.calls.length + db.rpcCalls.length;
+      const before = db.calls.filter((q) => !q.viaRpc).length + db.rpcCalls.filter((q) => !q.internal).length;
       const input = demoInput(e, USER);
       const out = await processInboundEmail(asAdmin(db), input.mail, input.options);
       expect(out.kind, e.mail.file).toBe("processed");
-      const cost = db.calls.length + db.rpcCalls.length - before;
+      const cost = db.calls.filter((q) => !q.viaRpc).length + db.rpcCalls.filter((q) => !q.internal).length - before;
       if (e.mail.file.startsWith("history/")) expect(cost, e.mail.file).toBeLessThanOrEqual(13);
       trips += cost;
     }

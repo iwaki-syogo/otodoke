@@ -111,3 +111,18 @@ export async function clearAllParcels(formData: FormData): Promise<void> {
   }
   redirect("/app/settings/demo?cleared=1");
 }
+
+/** Dismiss only the notice the person saw; a newer rejection stays visible. */
+export async function dismissIntakeNotice(formData: FormData): Promise<void> {
+  const user = await getUser();
+  if (!user) redirect("/login");
+  const at = String(formData.get("limited_at") ?? "");
+  if (!Number.isFinite(Date.parse(at))) redirect(settingsErrorPath("read_failed"));
+  const { error } = await createAdminClient().from("mail_intake_notices").delete().eq("user_id", user.id).eq("limited_at", at);
+  if (error) {
+    console.error("dismissIntakeNotice:", error.message);
+    redirect(settingsErrorPath("read_failed"));
+  }
+  revalidatePath("/app", "layout");
+  redirect("/app/settings/trouble");
+}

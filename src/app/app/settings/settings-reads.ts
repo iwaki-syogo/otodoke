@@ -2,7 +2,7 @@ import type { createClient } from "@/lib/supabase/server";
 import { forwardingConfirmUrl } from "@/lib/forwarding";
 import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import { readAll } from "@/lib/supabase/read-all";
-import { UNREAD_FILTER } from "@/lib/unread";
+import { WAITING_MAIL_FILTER as UNREAD_FILTER } from "@/lib/unread";
 
 /**
  * The reads the 設定 pages share. Plain functions (not a "use server" file), each told apart on
@@ -201,4 +201,11 @@ export async function readApprovalBadge(supabase: Supabase, userId: string, wher
   const later = await countArrivedAfter(supabase, userId, where, confirmation.at);
   if (later === null) return { waiting: false, failed: true };
   return { waiting: later <= 0, failed: false };
+}
+
+/** Fixed-size intake notice. A failed read remains unknown, never "no rejection". */
+export async function readIntakeNotice(supabase: Supabase, where: string): Promise<{ at: string | null; failed: boolean }> {
+  const { data, error } = await supabase.from("mail_intake_notices").select("limited_at").maybeSingle();
+  if (error) console.error(`${where} (intake notice):`, error.message);
+  return { at: data?.limited_at ?? null, failed: Boolean(error) };
 }

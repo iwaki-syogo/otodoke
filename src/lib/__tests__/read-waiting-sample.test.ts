@@ -43,7 +43,7 @@ const stuckSample = async () => {
   const probe = newDb();
   mocks.db = probe;
   await run(loadDemo);
-  return { ...probe.rows("emails")[0], processing_status: "pending", body_state: "plain", created_at: OLD };
+  return { ...probe.rows("emails")[0], processing_status: "pending", processing_run_id: null, processing_lease_until: null, body_state: "plain", created_at: OLD };
 };
 
 beforeEach(() => {

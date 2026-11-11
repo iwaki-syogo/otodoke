@@ -2,11 +2,11 @@ import Link from "next/link";
 import { FoldCard, PitfallBody } from "@/components/forwarding-steps";
 import { FORWARDING_PITFALLS, PITFALLS_HEADING, PITFALLS_LEAD } from "@/lib/forwarding-guide";
 import { createClient } from "@/lib/supabase/server";
-import { READ_FAILED_REASON, READ_OVER_LIMIT_REASON, READ_STOPPED_BUTTON, READ_STOPPED_REASON } from "@/lib/read-notices";
+import { READ_FAILED_REASON, READ_OVER_LIMIT_REASON, READ_STOPPED_BUTTON, READ_STOPPED_REASON, READ_STORAGE_LIMIT_NOTICE, READ_STORAGE_LIMIT_REASON, READ_STORAGE_NOTICE_FAILED } from "@/lib/read-notices";
 import { settingsErrorMessage } from "@/lib/settings-errors";
-import { readWaitingMail } from "../actions";
+import { dismissIntakeNotice, readWaitingMail } from "../actions";
 import { PressButton } from "../press";
-import { readUnreadCount, readUnreadReasons } from "../settings-reads";
+import { readIntakeNotice, readUnreadCount, readUnreadReasons } from "../settings-reads";
 import { RowCard, RowLink } from "../settings-row";
 import { SubPage } from "../sub-page";
 
@@ -24,10 +24,21 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
   // A count that failed is told apart from none: by null, never by 0.
   const waiting = await readUnreadCount(supabase, "settings trouble");
   // The reasons are told only from counts that were read; when they were not, no reason is stated.
+  const intake = await readIntakeNotice(supabase, "settings trouble");
   const reasons = waiting !== null && waiting > 0 ? await readUnreadReasons(supabase, "settings trouble") : null;
 
   return (
     <SubPage title="うまく届かないとき">
+      {intake.failed ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{READ_STORAGE_NOTICE_FAILED}</p> : intake.at ? (
+        <section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
+          <p>{READ_STORAGE_LIMIT_NOTICE}</p>
+          <p className="mt-1">{READ_STORAGE_LIMIT_REASON}</p>
+          <form action={dismissIntakeNotice} className="mt-3">
+            <input type="hidden" name="limited_at" value={intake.at} />
+            <PressButton label="確認しました" busyLabel="確認しています…" className="rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium" />
+          </form>
+        </section>
+      ) : null}
       {waiting === null ? (
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">未読のメールの数を読み込めませんでした</p>
       ) : waiting > 0 ? (

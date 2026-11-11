@@ -34,6 +34,9 @@ export interface Query {
   single: "single" | "maybeSingle" | null;
   count: string | null;
   head: boolean;
+  mailRun?: { emailId: string; runId: string };
+  /** A query simulated inside an RPC, not another HTTP round trip. */
+  viaRpc?: boolean;
 }
 
 export interface Result {
@@ -44,11 +47,15 @@ export interface Result {
 
 export type Hook = (q: Query, db: FakeDb) => Result | void;
 
+type StoreArgs = { p_user_id: string; p_email_id: string; p_run_id: string; p_columns: Row; p_expected_created_at: string | null; p_limits: { user_count:number; global_count:number; user_bytes:number; global_bytes:number } };
+type OwnedArgs = { p_email_id:string; p_run_id:string; p_table:string; p_operation:string; p_values:Row; p_filters:Filter[] };
+
 type ClaimArgs = { p_user_id: string; p_user_limit: number; p_global_limit: number };
 
 export interface RpcCall {
   name: string;
   args: unknown;
+  internal?: boolean;
 }
 
 /** to-many: children whose `fk` points at the parent's id. to-one: the row the parent's `fk` points at. */
@@ -94,7 +101,7 @@ const PARCEL_DEFAULTS: Row = {
 
 const DEFAULTS: Record<string, Row> = {
   parcels: PARCEL_DEFAULTS,
-  emails: { classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
+  emails: { processing_run_id: null, processing_lease_until: null, classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
   extractions: { parcel_id: null, confidence: null },
   parcel_items: { quantity: null, unit_price: null, evidence: null },
 };
@@ -281,6 +288,8 @@ export class FakeDb {
 
   rpc(name: string, args?: unknown): Promise<Result> {
     this.rpcCalls.push({ name, args });
+    if (name === "store_mail_run") return Promise.resolve(this.storeMailRun(args as StoreArgs));
+    if (name === "mail_run_write") return this.mailRunWrite(args as OwnedArgs);
     if (name === "activate_user_key") return Promise.resolve(this.activateUserKey(args as { p_user_id: string; p_key_id: string; p_challenge_hash: string }));
     if (name === "activate_user_key_checked") {
       const a = args as { p_user_id: string; p_key_id: string; p_challenge_hash: string; p_expected_current_key_id: string | null };
@@ -303,6 +312,57 @@ export class FakeDb {
     return Promise.resolve({ data: "ok", error: null });
   }
 
+  private storeMailRun(a: StoreArgs): Result {
+    const answer = (verdict: string): Result => ({ data: [{ verdict, email_id: a.p_email_id }], error: null });
+    const old = this.rows("emails").find((r) => r.id === a.p_email_id && r.user_id === a.p_user_id);
+    if (old?.processing_status === "processed") return answer("duplicate");
+    if (old?.processing_status === "pending" && Date.parse(String(old.processing_lease_until ?? new Date(Date.parse(String(old.created_at)) + 180_000).toISOString())) > Date.now()) return answer("busy");
+    if ((old?.created_at ?? null) !== a.p_expected_created_at) return answer("busy");
+    const bytes = (r: Row) => ["subject","from_address","from_name","text_body","html_body"].reduce((n,k) => n + Buffer.byteLength(String(r[k] ?? ""), "utf8"),0);
+    const unread = this.rows("emails").filter((r) => r.id !== a.p_email_id && r.body_state === "plain" && r.processing_status !== "processed");
+    const own = unread.filter((r) => r.user_id === a.p_user_id);
+    let reason: string | null = null;
+    if (a.p_columns.processing_status !== "processed" && (a.p_columns.body_state ?? "plain") === "plain" && (!old || bytes(a.p_columns) > bytes(old))) {
+      if (own.length + 1 > a.p_limits.user_count || own.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.user_bytes) reason = "user_storage_limit";
+      else if (unread.length + 1 > a.p_limits.global_count || unread.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.global_bytes) reason = "global_storage_limit";
+    }
+    if (reason) {
+      const notice = this.rows("mail_intake_notices").find((r) => r.user_id === a.p_user_id);
+      const values = { user_id: a.p_user_id, reason, limited_at: new Date().toISOString() };
+      if (notice) Object.assign(notice,values); else this.rows("mail_intake_notices").push(values);
+      return answer(reason);
+    }
+    if (!old && a.p_columns.provider_email_id && this.rows("emails").some((r) => r.user_id === a.p_user_id && r.provider_email_id === a.p_columns.provider_email_id)) return answer("busy");
+    const now = new Date().toISOString();
+    const columns = { ...a.p_columns, processing_run_id: a.p_run_id, processing_lease_until: new Date(Date.now()+360_000).toISOString(), created_at: now };
+    const q = old ? this.from("emails").update(columns).eq("id",a.p_email_id).eq("user_id",a.p_user_id).eq("processing_status",old.processing_status).eq("created_at",old.created_at) : this.from("emails").insert({ id:a.p_email_id,user_id:a.p_user_id,...columns });
+    const query = q.select("id").maybeSingle().query;
+    query.viaRpc = true;
+    const result = this.execute(query);
+    if (result.error?.code === "23505") return answer("busy");
+    if (result.error) return result;
+    return result.data ? answer("ok") : answer("busy");
+  }
+
+  private async mailRunWrite(a: OwnedArgs): Promise<Result> {
+    const owner = () => this.rows("emails").find((r) => r.id === a.p_email_id && r.processing_run_id === a.p_run_id && r.processing_status === "pending" && Date.parse(String(r.processing_lease_until)) > Date.now());
+    if (!owner()) return { data: null, error: { code: "42501", message: "mail run no longer owns the lease" } };
+    if (a.p_operation === "claim") {
+      const result = await this.rpc(a.p_table,a.p_values);
+      this.rpcCalls[this.rpcCalls.length-1].internal = true;
+      return result;
+    }
+    let q = this.from(a.p_table);
+    if (a.p_operation === "insert") q = q.insert(a.p_values);
+    else if (a.p_operation === "update") q = q.update(a.p_values);
+    else q = q.delete();
+    for (const f of a.p_filters) q = (q as unknown as Record<string,(...v:unknown[])=>FakeQuery>)[f.method](...f.args);
+    const query = q.select("*").query;
+    query.viaRpc = true;
+    query.mailRun = { emailId: a.p_email_id, runId:a.p_run_id };
+    return this.execute(query);
+  }
+
   /** True: claim_claude_call_v2 and release_claude_call do not exist yet (PostgREST answers PGRST202). */
   claudeReleaseMissing = false;
   /** The clock the Claude allowance reads (now() in the functions). A test moves it across midnight. */
@@ -323,6 +383,7 @@ export class FakeDb {
     const usage = this.rows("claude_usage_daily");
     const answer = (verdict: string, claimId: number | null): Result => ({ data: v2 ? [{ verdict, claim_id: claimId }] : verdict, error: null });
     if (usage.filter((r) => r.day === day).reduce((n, r) => n + Number(r.calls), 0) >= a.p_global_limit) return answer("global_limit", null);
+    if (a.p_user_limit <= 0) return answer("user_limit", null);
     let row = usage.find((r) => r.user_id === a.p_user_id && r.day === day);
     if (!row) {
       row = { user_id: a.p_user_id, day, calls: 1 };
@@ -374,6 +435,10 @@ export class FakeDb {
     for (const hook of this.hooks) {
       const answer = hook(q, this);
       if (answer) return answer;
+    }
+    if (q.mailRun) {
+      const m = this.find("emails",q.mailRun.emailId);
+      if (!m || m.processing_run_id !== q.mailRun.runId || m.processing_status !== "pending" || !m.processing_lease_until || Date.parse(String(m.processing_lease_until)) <= Date.now()) return { data:null,error:{code:"42501",message:"mail run no longer owns the lease"} };
     }
     switch (q.op) {
       case "select":
