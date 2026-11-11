@@ -134,7 +134,7 @@ final class ManualParcelModel: Identifiable {
     /// Nothing may close the sheet while a write is on its way.
     var isBusy: Bool { isSending || isDeleting }
 
-    /// 状態's choices: the Web's three, and the one a mail set while the parcel is there.
+    /// 状態's choices: the Web's four, and the one a mail set while the parcel is there.
     var statusChoices: [(value: String, name: String)] {
         ManualParcelText.statusChoices(keeping: editing?.status ?? "")
     }

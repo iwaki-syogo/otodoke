@@ -40,6 +40,16 @@ struct GeneratedKey: Sendable {
 }
 
 enum KeyGeneration {
+    /// Keep the same key pair, use fresh salt/IV, and prove the saved form opens with the new master.
+    static func rewrap(stored: StoredKeyRow, opener: Data, next: Data, userID: String) throws(CryptoError) -> PasswordRewrap {
+        let recipient = try PasswordV1.openStoredKey(stored, master: opener, userID: userID)
+        let made = try row(privateKey: recipient.privateKey, master: next, userID: userID, kdfSalt: KeyWrap.randomBytes(16), iv: KeyWrap.randomIV())
+        let wrapped = StoredKeyRow(keyId: made.row.keyID, publicKey: made.row.publicKey, wrappedPrivateKey: made.row.wrappedPrivateKey, wrapIv: made.row.wrapIv, kdfSalt: made.row.kdfSalt, kdfIterations: PasswordV1.iterations)
+        let reopened = try PasswordV1.openStoredKey(wrapped, master: next, userID: userID)
+        guard reopened.keyID == stored.keyId, reopened.publicKey == recipient.publicKey else { throw .keyMismatch }
+        return PasswordRewrap(stored: stored, row: made.row)
+    }
+
     /// A new private key, a random kdf_salt (16 bytes) and a random IV (12 bytes). .badID unless userID is a
     /// lowercase UUID.
     static func generate(master: Data, userID: String) throws(CryptoError) -> GeneratedKey {

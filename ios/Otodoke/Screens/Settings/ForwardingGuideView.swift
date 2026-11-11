@@ -3,6 +3,7 @@
 // and the Gmail filter text with its copy button. The words are ForwardingGuideText's.
 
 import SwiftUI
+import AVKit
 
 /// The numbered round badge the steps share (here and on 「うまく届かないとき」).
 struct StepBadge: View {
@@ -51,6 +52,8 @@ struct ForwardingGuideView: View {
     typealias T = ForwardingGuideText
     @Environment(\.openURL) private var openURL
     @State private var opened: Set<String>
+    @State private var videoURL: VideoURL?
+    private struct VideoURL: Identifiable { let id = UUID(); let url: URL }
     /// Only the folding cards of the mail services (the first guide after registering shows nothing around them).
     private let servicesOnly: Bool
 
@@ -79,6 +82,7 @@ struct ForwardingGuideView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .sheet(item: $videoURL) { video in ForwardingVideoPlayer(url: video.url) }
     }
 
     private func binding(_ id: String) -> Binding<Bool> {
@@ -179,15 +183,25 @@ struct ForwardingGuideView: View {
         return (number, AnyView(GmailFilterBox()))
     }
 
-    /// The video opens in Safari (https and otodoke.app only); it is not played in the app.
+    /// A trusted same-origin video plays in a native sheet; no browser is opened.
     private func openVideo(_ video: T.Video) {
         guard let url = ForwardingGuideVideo.url(path: video.path) else { return }
-        SettingsWeb.openPage(url, openURL)
+        videoURL = VideoURL(url: url)
     }
 
     private func open(_ url: String) {
         guard let url = URL(string: url) else { return }
         SettingsWeb.openPage(url, openURL)
+    }
+}
+
+private struct ForwardingVideoPlayer: View {
+    @State private var player: AVPlayer
+    init(url: URL) { _player = State(initialValue: AVPlayer(url: url)) }
+    var body: some View {
+        VideoPlayer(player: player)
+            .onAppear { player.play() }
+            .onDisappear { player.pause() }
     }
 }
 

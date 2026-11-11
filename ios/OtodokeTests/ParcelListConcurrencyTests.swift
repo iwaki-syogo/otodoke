@@ -108,7 +108,7 @@ struct ParcelListConcurrencyTests {
         #expect(await fake.count("PATCH", "parcels") == 1)
         await model.markDelivered(id: Rows.id(1)) // now it writes
         #expect(await fake.count("PATCH", "parcels") == 2)
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
     }
 
     @Test func deliverAllLeavesOutARowNotYetConfirmed() async throws {
@@ -148,7 +148,7 @@ struct ParcelListConcurrencyTests {
         #expect(await waitFor { await listReads(fake) == 3 })
         #expect(await waitFor { await model.rows.contains { $0.id == Rows.id(1) && $0.status == "delivered" } })
         #expect(!isOpen(model, 1))
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.refreshFailed == false)
     }
 
@@ -219,14 +219,14 @@ struct ParcelListConcurrencyTests {
         #expect(await waitFor { await fake.count("PATCH", "parcels") == 2 })
         #expect(model.isUndoing == true)
         await model.markDelivered(id: Rows.id(2))
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         // 「戻しています…」 belongs to A's toast, not B's.
         #expect(model.isUndoing == false)
         gate.open()
         await undoA.value
         #expect(await status(fake, 1) == "shipped")
         #expect(isOpen(model, 1))
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         // B's 「元に戻す」 still works.
         await model.undo()
         #expect(await status(fake, 2) == "shipped")
@@ -246,7 +246,7 @@ struct ParcelListConcurrencyTests {
         await model.markDelivered(id: Rows.id(2))
         gate.open()
         await undoA.value
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         await model.undo()
         #expect(await status(fake, 2) == "shipped")
         #expect(await status(fake, 1) == "delivered")
@@ -279,7 +279,7 @@ struct ParcelListConcurrencyTests {
         await model.load()
         await fake.fail("PATCH", "parcels", nth: 2, with: .applyThenDrop(.networkConnectionLost))
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "3 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.deliverAllMessage == nil)
         #expect(model.sections.toCheck.isEmpty)
         // 「元に戻す」 puts back only the rows whose write was answered.
@@ -296,7 +296,7 @@ struct ParcelListConcurrencyTests {
         await model.load()
         await fake.fail("PATCH", "parcels", with: .applyThenDrop(.networkConnectionLost))
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "1 件を受取済にしました", canUndo: false))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: false))
         #expect(await fake.count("PATCH", "parcels") == 1)
     }
 
@@ -314,7 +314,7 @@ struct ParcelListConcurrencyTests {
         gate.open()
         await task.value
         #expect(model.deliverAllProgress == nil)
-        #expect(model.toast == ListToast(text: "3 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
     }
 
     // MARK: N5

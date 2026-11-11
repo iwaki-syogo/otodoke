@@ -46,19 +46,17 @@ function openers(sources: { file: string; src: string }[]): string[] {
     .sort();
 }
 
-const ALLOWED_WEBLINKS = ["app", "base", "privacy", "settingsDelete", "settingsPassword"];
+const ALLOWED_WEBLINKS = ["base", "privacy"];
 const ALLOWED_OPENERS = [
   "Auth/LoginView.swift", // 「パスワードを忘れた」
   "Auth/TurnstileView.swift", // UIApplication.shared.open: the page the Turnstile check asks to open in a new window
-  "Screens/Detail/ParcelDetailView.swift", // Link(destination: amazon): the Amazon order page, a kind of tracking page
   "Screens/Detail/TrackingLinkView.swift", // the carrier's tracking page
   "Screens/Settings/ForwardingGuideView.swift", // the guide's video and links
-  "Screens/Settings/SettingsKeyPage.swift", // 「パスワードを変える」
+  "Screens/Settings/MailHandlingView.swift", // public source is shown in an in-app Safari sheet
   "Screens/Settings/SettingsPages.swift", // the privacy policy, the Gmail approval link
   "Screens/Settings/SettingsParts.swift", // SettingsWeb itself (the one place a settings button hands a page to openURL)
   "Screens/Settings/SettingsStatusRows.swift", // the Gmail approval link
   "Screens/Settings/SettingsView.swift", // 「Web で開く」, privacy, 「アカウントの削除」
-  "Screens/Shared/UnlockView.swift", // 「Web でログイン」 when the key does not open
 ].sort();
 
 describe("the iOS app opens the Web only for the things that must be there", () => {
@@ -67,10 +65,10 @@ describe("the iOS app opens the Web only for the things that must be there", () 
     for (const name of webLinksUsed(SOURCES)) expect(ALLOWED_WEBLINKS, name).toContain(name);
   });
 
-  it("the settings actions that open the Web are exactly the four", () => {
+  it("the only settings action that opens the Web is the privacy policy", () => {
     const model = read("ios/Otodoke/Screens/Settings/SettingsModel.swift");
     const enumBody = model.match(/enum SettingsWebAction[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? "";
-    expect([...enumBody.matchAll(/\bcase (\w+)/g)].map((m) => m[1]).sort()).toEqual(["changePassphrase", "deleteAccount", "openWeb", "privacy"]);
+    expect([...enumBody.matchAll(/\bcase (\w+)/g)].map((m) => m[1]).sort()).toEqual(["privacy"]);
   });
 
   it("only the allowed files open a URL", () => {

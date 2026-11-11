@@ -323,6 +323,10 @@ final class KeySetup {
         lastOutcome = .addressMismatch
     }
 
+    func noteRecovered(keyID: String) {
+        lastOutcome = .opened(keyID: keyID)
+    }
+
     /// S2: the steps with the server stop only for a sign-out or another account (not for the background).
     private func sessionIsCurrent(_ stamp: UnlockStamp) -> Bool {
         store.session.isCurrent(stamp.session)

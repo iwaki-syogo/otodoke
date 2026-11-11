@@ -9,6 +9,9 @@ import Foundation
 struct ListPreview {
     enum Scenario: String {
         case list, empty, failed, toast, saving, many, bottom
+        case receivedList = "received-list"
+        case receivedDetail = "received-detail"
+        case receivedCheck = "received-check"
         /// The delivered / cancelled page with made-up parcels (the number by the heading).
         case deliveredPage = "delivered-page"
         case cancelledPage = "cancelled-page"
@@ -27,6 +30,7 @@ struct ListPreview {
         case loginSent = "login-sent"
         /// The first screen (the two buttons) before the login.
         case welcome
+        case accountDelete = "account-delete"
         /// The waiting screen after making an account.
         case loginWaiting = "login-waiting"
     }
@@ -42,6 +46,16 @@ struct ListPreview {
 
     /// True for the first-screen scenario.
     var showsWelcome: Bool { scenario == .welcome }
+
+    @MainActor
+    func accountDeletionModel() -> AccountDeletionModel? {
+        guard scenario == .accountDelete else { return nil }
+        return AccountDeletionModel(api: PreviewDeletion(), accessToken: { nil }, completed: {})
+    }
+
+    private struct PreviewDeletion: AccountDeleting {
+        func deleteAccount(accessToken: String) async throws(AccountAPIFailure) { throw .unauthorized }
+    }
 
     /// An auth service that reaches nothing (the first-screen scenario's buttons open LoginView).
     @MainActor
@@ -59,7 +73,9 @@ struct ListPreview {
         let today = Format.todayJst(now: Date())
         let model = DeliveredModel(reader: StatusListReader(provider: Self.provider()), changes: nil)
         let rows = (1...7).map { n in
-            Self.row(n, shop: n % 2 == 0 ? "見本ストア" : "サンプル書店", title: "架空の品物 \(n)", status: "delivered", date: CivilDate.addDays(today, -n * 9))
+            var row = Self.row(n, shop: n % 2 == 0 ? "見本ストア" : "サンプル書店", title: "架空の品物 \(n)", status: "delivered", date: CivilDate.addDays(today, -n * 9))
+            row.receivedAt = ISO8601DateFormatter().string(from: Date())
+            return row
         }
         model.debugShow(parcels: rows)
         return model
@@ -102,12 +118,13 @@ struct ListPreview {
     /// For the detail scenario: a detail model filled with made-up data (nothing is read).
     @MainActor
     func detailModelMaker() -> ((String) -> ParcelDetailModel)? {
-        guard scenario == .detail else { return nil }
+        guard scenario == .detail || scenario == .receivedDetail else { return nil }
         let provider = Self.provider()
         let today = Format.todayJst(now: Date())
         return { id in
             let model = ParcelDetailModel(id: id, reader: ParcelReader(provider: provider), writer: ParcelWriter(provider: provider), today: { today })
             var row = Self.rows(today: today).first { $0.id == id } ?? Self.rows(today: today)[0]
+            if scenario == .receivedDetail { row.id = id; row.status = "delivered"; row.receivedAt = nil }
             row.carrier = "ヤマト運輸"
             row.trackingNumber = "1234-5678-9012"
             row.orderNumber = "A-0001-TEST"
@@ -127,6 +144,9 @@ struct ListPreview {
                               fromText: "サンプル書店 <shop@example.com>", confidenceText: "確信度 93%", body: "ご注文内容\n架空の本 上下巻セット", notes: nil),
                 TimelineEntry(id: Self.id(202), label: "発送", dateText: "11/3(火) 09:45", subject: "商品を発送しました",
                               fromText: "shop@example.com", confidenceText: "確信度 88%", body: "伝票番号 1234-5678-9012", notes: "お届け日は発送メールから"),
+                TimelineEntry(id: Self.id(203), label: "配達完了", dateText: "11/4(水) 12:00", subject: "お届け完了",
+                              fromText: "shop@example.com", confidenceText: nil, body: "玄関前へのお届けが完了しました。", notes: nil,
+                              deliveryEvidence: "玄関前へのお届けが完了しました。", evidenceAt: "2026-11-04T03:00:00Z"),
             ]
             model.debugShow(parcel: row, items: items, timeline: timeline)
             // A delete here goes through (nothing is sent), so the screen check can see the sheet close and the page go back.
@@ -159,6 +179,14 @@ struct ListPreview {
         switch scenario {
         case .list, .detail, .deliveredPage, .cancelledPage, .login, .loginSignUp, .loginError, .loginSent, .loginWaiting, .welcome:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
+        case .receivedList, .receivedDetail:
+            var delivered = Self.row(30, shop: "サンプル書店", title: "架空の本 上下巻セット", status: "delivered", date: CivilDate.addDays(today, -1), presence: true)
+            delivered.lastEmailAt = ISO8601DateFormatter().string(from: Date())
+            model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
+        case .receivedCheck:
+            var delivered = Self.row(31, shop: "見本ストア", title: "架空のマグカップ", status: "delivered", date: CivilDate.addDays(today, -20), presence: true)
+            delivered.lastEmailAt = CivilDate.addDays(today, -20) + "T00:00:00Z"
+            model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
         case .empty:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
         case .emptyReceived, .emptyApproval:
@@ -177,7 +205,7 @@ struct ListPreview {
             model.debugShow(
                 rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded,
                 saving: [Self.id(2)], checking: [Self.id(2)],
-                toast: ListToast(text: "3 件を受取済にしました", canUndo: true), toastNote: ParcelListModel.cannotUndoNote(1)
+                toast: ListToast(text: ParcelListModel.savedText, canUndo: true), toastNote: ParcelListModel.cannotUndoNote(1)
             )
         case .saving:
             model.debugShow(rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded, saving: [Self.id(2)])
@@ -200,7 +228,7 @@ struct ListPreview {
 
     /// Made-up parcels, one or more in every section.
     static func rows(today: String) -> [ParcelRow] {
-        [
+        var rows = [
             row(1, shop: "サンプル書店", title: "架空の本 上下巻セット", status: "out_for_delivery", date: today,
                 window: ("14:00:00", "16:00:00"), presence: true),
             row(2, shop: "Amazon.co.jp", title: "USB-C ケーブル 2 本入り（1m・急速充電対応・とても長い品名の例）", status: "shipped",
@@ -214,6 +242,8 @@ struct ListPreview {
             row(7, shop: "見本ストア", title: "架空のマグカップ", status: "shipped", date: CivilDate.addDays(today, -20)),
             row(8, shop: "テスト書房", title: "架空の雑誌", status: "delivered", date: CivilDate.addDays(today, -2)),
         ]
+        rows[7].receivedAt = ISO8601DateFormatter().string(from: Date())
+        return rows
     }
 
     static func row(

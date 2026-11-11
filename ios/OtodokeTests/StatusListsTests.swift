@@ -29,6 +29,7 @@ struct StatusListsTests {
     static func delivered(_ n: Int, _ over: Row = [:]) -> Row {
         var row = over
         row["status"] = row["status"] ?? "delivered"
+        if row["status"] == "delivered" { row["received_at"] = row["received_at"] ?? "2026-11-01T12:00:00Z" }
         return Rows.parcel(n, row)
     }
 
@@ -99,9 +100,9 @@ struct StatusListsTests {
     // MARK: the delivered page
 
     @Test func theWords() {
-        #expect(DeliveredModel.title == "届いた荷物")
+        #expect(DeliveredModel.title == "受け取り済み")
         #expect(DeliveredModel.failedText == "読み込めませんでした")
-        #expect(DeliveredModel.emptyText == "届いた荷物はありません")
+        #expect(DeliveredModel.emptyText == "受け取り済みの荷物はありません")
         #expect(DeliveredModel.noMatchText == "見つかりません")
         #expect(DeliveredModel.searchPlaceholder == "品名・店名")
         #expect(DeliveredModel.clearText == "クリア")

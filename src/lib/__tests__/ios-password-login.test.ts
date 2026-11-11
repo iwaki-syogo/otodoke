@@ -138,8 +138,6 @@ const APP_OWN_WORDS: Record<string, string> = {
   forgotPassword: "パスワードを忘れた",
   resendConfirmation: "確認のメールをもう一度送る",
   // The key does not open, or was never made.
-  webLoginPrompt: "Web でログインしてください。",
-  openWebLogin: "Web でログイン",
   noKeyYet: "メールの鍵がまだできていません。ログインし直すと作れます。",
   signInAgain: "ログインし直す",
 };
@@ -199,10 +197,10 @@ describe("the Web's words", () => {
     expect(m?.[1]).toBe("https://otodoke.app/login/forgot");
   });
 
-  it("「Web でログイン」 is the Web's login page, over https", () => {
+  it("key recovery no longer names a Web login URL", () => {
     const src = read("ios/Otodoke/Auth/LoginText.swift");
-    const m = src.match(/^\s*static let webLoginURL\s*=\s*URL\(string:\s*"([^"]+)"\)!/m);
-    expect(m?.[1]).toBe("https://otodoke.app/login");
+    expect(src).not.toContain("webLoginURL");
+    expect(read("ios/Otodoke/Crypto/PasswordManagement.swift")).toContain('static let openAnother = "ほかのパスワードで開く"');
   });
 });
 
@@ -321,12 +319,13 @@ describe("the login screen", () => {
 describe("the unlock: a key that does not open, a key never made", () => {
   const view = () => stripComments(read("ios/Otodoke/Screens/Shared/UnlockView.swift"));
 
-  it("shows the help of model.shownHelp: 「Web でログイン」 in Safari, 「ログインし直す」 through the model", () => {
+  it("offers key recovery and sign-in again inside the app", () => {
     const src = view();
     expect(src).toMatch(/model\.shownHelp/);
-    expect(src).toMatch(/LoginText\.keyNeedsWebLogin/);
-    expect(src).toMatch(/openURL\(LoginText\.webLoginURL\)/);
-    expect(src).toMatch(/LoginText\.openWebLogin/);
+    expect(src).toMatch(/LoginText\.keyNotOpened/);
+    expect(src).toMatch(/PasswordRecoveryView\(model: recovery/);
+    expect(src).toMatch(/PasswordChangeText\.openAnother/);
+    expect(src).not.toMatch(/openURL|WebLink/);
     expect(src).toMatch(/LoginText\.signInAgain/);
     expect(src).toMatch(/model\.signInAgain\(\)/);
     expect(src).not.toMatch(/SFSafariViewController|WKWebView|ASWebAuthenticationSession/);

@@ -99,17 +99,45 @@ struct ParcelDetailView: View {
                 .lineLimit(3)
                 .padding(.top, 4)
             WrappingRow {
-                StatusBadge(status: p.status)
+                StatusBadge(status: p.status, receivedAt: p.receivedAt)
                 PresenceBadge(parcel: p)
                 if f.needsReview { ReviewBadge() }
             }
             .padding(.top, 12)
-            if model.showsNotDelivered {
-                notDeliveredButton
-                    .padding(.top, 12)
+            WrappingRow {
+                if model.showsMarkReceived {
+                    receiptButton("受け取った", action: { await model.markReceived() })
+                }
+                if model.showsNotReceived {
+                    receiptButton("受け取っていない", action: { await model.markNotReceived() })
+                }
+                if model.showsNotDelivered { notDeliveredButton }
+            }
+            .padding(.top, 12)
+            if let error = model.receiptError {
+                Text(error).font(.subheadline).foregroundStyle(OtodokeColor.errorText).padding(.top, 8)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func receiptButton(_ title: String, action: @escaping @MainActor () async -> Void) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            HStack(spacing: 8) {
+                if model.isChangingReceipt { ProgressView().controlSize(.mini) }
+                Text(title)
+            }
+            .font(.subheadline)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+            .overlay(Capsule().stroke(Color(.systemGray3)))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isChangingReceipt || model.isMarkingNotDelivered)
     }
 
     private var notDeliveredButton: some View {
@@ -132,7 +160,7 @@ struct ParcelDetailView: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(model.isMarkingNotDelivered)
+            .disabled(model.isMarkingNotDelivered || model.isChangingReceipt)
             .opacity(model.isMarkingNotDelivered ? 0.6 : 1)
             if let error = model.notDeliveredError {
                 Text(error)
@@ -171,6 +199,9 @@ struct ParcelDetailView: View {
             }
             field("配送") {
                 deliveryValue(p)
+            }
+            if let evidence = model.deliveryEvidence {
+                field("配達完了") { Text("「\(evidence)」") }
             }
             field("注文") {
                 VStack(alignment: .leading, spacing: 2) {
@@ -224,11 +255,10 @@ struct ParcelDetailView: View {
     }
 
     @ViewBuilder private func deliveryValue(_ p: ParcelRow) -> some View {
-        let amazon = model.amazonURL
         VStack(alignment: .leading, spacing: 4) {
             if let carrier = p.carrier {
                 Text(carrier)
-            } else if amazon == nil {
+            } else {
                 Text("メールに記載なし").foregroundStyle(.secondary)
             }
             if let number = p.trackingNumber, !number.isEmpty {
@@ -240,14 +270,6 @@ struct ParcelDetailView: View {
                     if let action = model.tracking {
                         TrackingLinkView(action: action)
                     }
-                }
-            }
-            if let amazon {
-                Link(destination: amazon) {
-                    Text(Carriers.amazonOrderLinkLabel)
-                        .font(.caption.weight(.medium))
-                        .underline()
-                        .foregroundStyle(OtodokeColor.link)
                 }
             }
         }

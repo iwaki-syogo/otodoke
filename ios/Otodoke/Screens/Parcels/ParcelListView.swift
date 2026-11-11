@@ -1,5 +1,5 @@
 // The 荷物 tab (src/app/app/page.tsx): 「＋ 登録」, the unread-mail notice, 要確認 (with
-// 「すべて受取済にする」), 配達中, もうすぐ届く, 注文中, the page links and the swipe hint, in the Web's order.
+// 「すべて受け取り済みにする」), 配達済み, 配達中, もうすぐ届く, 注文中 and the page links, in the Web's order.
 // A left swipe says a parcel has arrived; the toast offers 「元に戻す」 for 6 seconds.
 
 import SwiftUI
@@ -106,19 +106,12 @@ struct ParcelListView<Detail: View>: View {
                     .listRowStyle()
                 pageLinks
             } else {
+                section("配達済み", model.sections.arrived)
                 checkSection
                 section("配達中", model.sections.delivering)
                 section("もうすぐ届く", model.sections.soon)
                 section("注文中", model.sections.ordered, empty: "注文中の荷物はありません")
                 pageLinks
-                if model.showsSwipeHint {
-                    Text("届いた荷物は、左にスワイプして「届いた」にできます")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .listRowStyle(top: 16)
-                }
             }
         }
         .listStyle(.plain)
@@ -183,9 +176,15 @@ struct ParcelListView<Detail: View>: View {
                     Text("要確認").font(.headline)
                     Text("\(items.count)").font(.subheadline).foregroundStyle(Palette.amberText)
                 }
-                Text("お届け予定から 2 週間以上たっても、届いた連絡がない荷物です。届いていますか？")
-                    .font(.subheadline)
-                deliverAll(count: items.count)
+                if items.contains(where: { $0.status != "delivered" }) {
+                    Text("お届け予定から 2 週間以上たっても、届いた連絡がない荷物です。届いていますか？")
+                        .font(.subheadline)
+                }
+                if items.contains(where: { $0.status == "delivered" }) {
+                    Text("受け取りましたか？")
+                        .font(.subheadline)
+                }
+                deliverAll
                     .padding(.top, 8)
             }
             .listRowStyle(top: 22, horizontal: 32, background: AmberBox(top: true, bottom: false))
@@ -222,9 +221,9 @@ struct ParcelListView<Detail: View>: View {
         }
     }
 
-    /// 「すべて受取済にする」, then a second press to confirm (or 「やめる」).
+    /// 「すべて受け取り済みにする」, then a second press to confirm (or 「やめる」).
     @ViewBuilder
-    private func deliverAll(count: Int) -> some View {
+    private var deliverAll: some View {
         VStack(alignment: .leading, spacing: 4) {
             if confirmingDeliverAll || model.isDeliveringAll {
                 HStack(spacing: 8) {
@@ -236,7 +235,7 @@ struct ParcelListView<Detail: View>: View {
                     } label: {
                         HStack(spacing: 6) {
                             if model.isDeliveringAll { ProgressView().tint(.white) }
-                            Text(model.isDeliveringAll ? model.deliverAllProgressText : "\(count) 件を受取済にする")
+                            Text(model.isDeliveringAll ? model.deliverAllProgressText : "受け取り済みにする")
                                 .monospacedDigit()
                         }
                         .font(.subheadline.weight(.bold))
@@ -265,7 +264,7 @@ struct ParcelListView<Detail: View>: View {
                 Button {
                     confirmingDeliverAll = true
                 } label: {
-                    Text("すべて受取済にする")
+                    Text("すべて受け取り済みにする")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(model.deliverAllEnabled ? Palette.emeraldText : .secondary)
                         .frame(maxWidth: .infinity)
@@ -308,7 +307,28 @@ struct ParcelListView<Detail: View>: View {
     @ViewBuilder
     private func card(_ parcel: ParcelRow, inBox: Bool = false, lastInBox: Bool = false) -> some View {
         if inBox {
-            cardRow(parcel).listRowStyle(bottom: lastInBox ? 22 : 6, horizontal: 32, background: AmberBox(top: false, bottom: lastInBox))
+            VStack(alignment: .leading, spacing: 8) {
+                cardRow(parcel)
+                if parcel.status == "delivered" {
+                    Button {
+                        Task { await model.dismissCheck(id: parcel.id) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if model.saving.contains(parcel.id) { ProgressView().controlSize(.mini) }
+                            Text("まだ")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.amberText)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .overlay(Capsule().stroke(Palette.amberBorder))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.saving.contains(parcel.id))
+                    .accessibilityIdentifier("not-yet-\(parcel.id)")
+                }
+            }
+            .listRowStyle(bottom: lastInBox ? 22 : 6, horizontal: 32, background: AmberBox(top: false, bottom: lastInBox))
         } else {
             cardRow(parcel).listRowStyle()
         }
@@ -336,8 +356,8 @@ struct ParcelListView<Detail: View>: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !isSaving {
-                // A parcel whose last 「届いた」 is not known yet is only read again, never sent again.
-                Button(model.unconfirmed.contains(parcel.id) ? "確かめる" : "届いた") {
+                // A parcel whose last 「受け取った」 is not known yet is only read again, never sent again.
+                Button(model.unconfirmed.contains(parcel.id) ? "確かめる" : "受け取った") {
                     Task { await model.markDelivered(id: parcel.id) }
                 }
                 .tint(Palette.emerald)
@@ -347,7 +367,7 @@ struct ParcelListView<Detail: View>: View {
 
     private var pageLinks: some View {
         Group {
-            PageLinkRow(label: "届いた荷物") { path.append(.delivered) }
+            PageLinkRow(label: "受け取り済み") { path.append(.delivered) }
                 .listRowStyle(top: 20)
             PageLinkRow(label: "キャンセルした荷物") { path.append(.cancelled) }
                 .listRowStyle()
@@ -398,7 +418,7 @@ struct ParcelListView<Detail: View>: View {
 
 // MARK: - parts
 
-/// 「保存中…」 over a card whose 「届いた」 is being saved (「確認中…」 while it is only read again).
+/// 「保存中…」 over a card whose 「受け取った」 is being saved (「確認中…」 while it is only read again).
 private struct SavingBadge: View {
     let text: String
 

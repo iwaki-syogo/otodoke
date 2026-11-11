@@ -13,7 +13,7 @@ struct UnlockView: View {
 
     @State private var passphrase = ""
     @FocusState private var focused: Bool
-    @Environment(\.openURL) private var openURL
+    @State private var showsRecovery = false
     @Environment(\.scenePhase) private var scenePhase
 
     /// Face ID / Touch ID when the key will be kept with it; nil when only memory holds it.
@@ -66,14 +66,12 @@ struct UnlockView: View {
             switch model.shownHelp {
             case .webLogin?:
                 // The key does not open with this password: the Web's login (Safari); nothing else is asked here.
-                Text(LoginText.keyNeedsWebLogin)
+                Text(LoginText.keyNotOpened)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button {
-                    openURL(LoginText.webLoginURL)
-                } label: {
-                    Text(LoginText.openWebLogin).font(.subheadline.weight(.medium))
+                if model.recovery != nil {
+                    Button { showsRecovery = true } label: { Text(PasswordChangeText.openAnother).font(.subheadline.weight(.medium)) }
                 }
             case .signInAgain?:
                 Button {
@@ -88,6 +86,9 @@ struct UnlockView: View {
         .onChange(of: scenePhase) { _, phase in
             // SEC-N4: the password typed does not stay in the field while the app is in the background.
             if phase == .background { passphrase = "" }
+        }
+        .sheet(isPresented: $showsRecovery) {
+            if let recovery = model.recovery { PasswordRecoveryView(model: recovery, onOpened: onOpened) }
         }
     }
 

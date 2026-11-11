@@ -44,9 +44,10 @@ describe("the key page with no key signs in again inside the app", () => {
     expect(login).toContain('static let signInAgain = "ログインし直す"');
   });
 
-  it("changing the password still opens the Web", () => {
-    expect(stripComments(key)).toContain('SettingsWeb.open(.changePassphrase, openURL)');
-    expect(stripComments(model)).toMatch(/case \.changePassphrase: WebLink\.settingsPassword/);
+  it("changing the password finishes in the app", () => {
+    expect(stripComments(key)).toContain('PasswordChangeView(model: model.passwordChange)');
+    expect(stripComments(key)).not.toMatch(/openURL|SettingsWeb\.open/);
+    expect(stripComments(model)).toContain("PasswordAccountClient(session: provider.urlSession)");
   });
 
   it("negative control: the Web button, other words, no sign-out or a missing card is caught", () => {
@@ -55,7 +56,7 @@ describe("the key page with no key signs in again inside the app", () => {
     );
     expect(problems(key.replace("Text(LoginText.noKeyYet)", 'Text("別の文")'), model)).toContain("words missing");
     expect(problems(key.replace("await model.signOut()", "await model.pageShown()"), model)).toContain("button does not sign out");
-    expect(problems(key, model.replace("case changePassphrase", "case createPassphrase\n    case changePassphrase"))).toContain("createPassphrase still listed");
+    expect(problems(key, model.replace("case privacy", "case createPassphrase\n    case privacy"))).toContain("createPassphrase still listed");
     expect(problems(key.replace("case .none?:", "case .xx?:"), model)).toEqual(["card not found"]);
   });
 });

@@ -189,11 +189,14 @@ describe("the iOS forwarding guide and the Web data (src/lib/forwarding-guide.ts
     expect(view).not.toMatch(/showsCredit/);
     expect(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).not.toMatch(/showsCredit/);
     // The video row's hint is a fixed sentence, set on the row only.
-    expect(swiftConstants(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).get("openHint")).toBe("Safari で動画を開きます");
+    expect(swiftConstants(stripComments(read("ios/Otodoke/Screens/Settings/ForwardingGuideVideo.swift"))).get("openHint")).toBe("アプリ内で動画を再生します");
     expect(view.match(/\.accessibilityHint\(ForwardingGuideVideo\.openHint\)/g)).toHaveLength(1);
-    // Opened in Safari through the https-only opener; no player is added.
-    expect(view).toMatch(/ForwardingGuideVideo\.url\(path: video\.path\)[\s\S]*SettingsWeb\.openPage\(url, openURL\)/);
-    expect(view).not.toMatch(/AVKit|VideoPlayer|AVPlayer/);
+    // The trusted same-origin video URL opens in the native player, with playback stopped on dismiss.
+    expect(view).toMatch(/ForwardingGuideVideo\.url\(path: video\.path\)[\s\S]*videoURL = VideoURL\(url: url\)/);
+    expect(view).toContain("VideoPlayer(player: player)");
+    expect(view).toContain(".onDisappear { player.pause() }");
+    const opener = view.match(/private func openVideo[\s\S]*?\n    \}/)?.[0] ?? "";
+    expect(opener).not.toContain("SettingsWeb.openPage");
     expect(read("ios/project.yml")).not.toMatch(/AVKit/);
   });
 

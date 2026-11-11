@@ -126,7 +126,7 @@ struct ParcelDetailModelTests {
     }
 
     @Test func badges() {
-        #expect(BadgeText.status("delivered") == "届いた")
+        #expect(BadgeText.status("delivered") == "配達済み")
         #expect(BadgeText.status("attempted") == "不在・再配達")
         #expect(BadgeText.status("zzz") == "zzz")
         #expect(BadgeText.presence(true, compact: true) == "🤝 対面受け取り")
@@ -184,7 +184,7 @@ struct ParcelDetailModelTests {
         #expect(shownParcel(model)?.id == Rows.id(1))
         #expect(model.items?.value?.count == 1)
         #expect(model.timeline?.value?.count == 1)
-        #expect(model.fields?.statusLabel == "届いた")
+        #expect(model.fields?.statusLabel == "配達済み")
         #expect(model.showsNotDelivered == true)
         #expect(model.canEdit == false)
         #expect(model.makeEditForm() == nil)

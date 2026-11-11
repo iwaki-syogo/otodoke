@@ -76,6 +76,15 @@ final class SpendModel {
     @ObservationIgnored private var wasCutOff = false
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
+    @ObservationIgnored private var retired = false
+
+    func clearForSignOut() {
+        retired = true
+        _ = fence.beginRead()
+        cutOff?.raise()
+        parcels = nil; pendingMove = nil; savingCategory = []; categoryErrors = [:]
+        shop = nil; category = .any; readAfterWrites = nil
+    }
 
     init(reader: ParcelReader, writer: ParcelWriter, changes: DataChanges?, today: @escaping @Sendable () -> String) {
         self.reader = reader
@@ -182,6 +191,7 @@ final class SpendModel {
     // MARK: moves
 
     func load() async {
+        guard !retired else { return }
         // A move on the way reads the newer conditions anyway.
         guard pendingMove == nil else { return }
         await read(conditions)
@@ -235,11 +245,12 @@ final class SpendModel {
     /// figures worked out again. Conflict or unknown: read again (never sent again). Failed: the old
     /// category stays, with categoryFailed.
     func setCategory(parcelID id: String, to chosen: ParcelCategory) async {
-        guard !categoryLocked, !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
+        guard !retired, !categoryLocked, !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
         savingCategory.insert(id)
         categoryErrors[id] = nil
         fence.beginWrite()
         let result = await writer.setCategory(ParcelVersion(row), category: chosen)
+        guard !retired else { return }
         savingCategory.remove(id)
         var readAgain = false
         switch result {
@@ -286,7 +297,7 @@ final class SpendModel {
 
     /// One move at a time; a move to what is already shown reads nothing.
     private func go(_ move: SpendMove, _ target: Conditions) async {
-        guard pendingMove == nil, target != conditions else { return }
+        guard !retired, pendingMove == nil, target != conditions else { return }
         pendingMove = move
         await read(target)
         // [Codex #3] Its read came back while a save was on the way: the move stays pending (dimmed)
@@ -301,6 +312,7 @@ final class SpendModel {
     /// Reads for `target` and shows it with the result, unless a newer read began meanwhile. A read
     /// that a save overlapped is read again (once the saves end).
     private func read(_ target: Conditions) async {
+        guard !retired else { return }
         readAfterWrites = nil
         while true {
             let ticket = fence.beginRead()
@@ -313,6 +325,7 @@ final class SpendModel {
             } onCancel: {
                 signal.raise()
             }
+            guard !retired else { return }
             let verdict = fence.verdict(ticket)
             // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
             if verdict == .superseded { return }

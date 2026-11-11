@@ -1,4 +1,4 @@
-// 「届いた荷物」: the heading with the number, the search box, the shop / category / month pickers,
+// 「受け取り済み」: the heading with the number, the search box, the shop / category / month pickers,
 // 「クリア」, the month groups of cards; a parcel opens its detail. As the Web's page.
 
 import SwiftUI
@@ -130,7 +130,7 @@ struct DeliveredView<Detail: View>: View {
 
 // MARK: - shared with the cancelled page
 
-/// 「届いた荷物 1,101」: the page's heading with the number (none when not read or failed).
+/// 「受け取り済み 1,101」: the page's heading with the number (none when not read or failed).
 struct StatusPageHeading: View {
     let title: String
     let count: Int?
@@ -150,7 +150,7 @@ struct StatusPageHeading: View {
     }
 }
 
-/// 「読み込めませんでした」 in the red box, or a grey line (届いた荷物はありません, 見つかりません).
+/// 「読み込めませんでした」 in the red box, or a grey line (受け取り済みの荷物はありません, 見つかりません).
 struct StatusPageMessage: View {
     let text: String
     let isError: Bool

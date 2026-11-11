@@ -1,5 +1,5 @@
 // PageLinkRow: the way to another page at the end of a list (src/app/app/page-link.tsx),
-// 「届いた荷物 ›」: the name and the arrow, no number (the number shows on the page it opens). The whole row is the link.
+// 「受け取り済み ›」: the name and the arrow, no number (the number shows on the page it opens). The whole row is the link.
 
 import SwiftUI
 

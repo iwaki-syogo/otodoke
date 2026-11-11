@@ -7,13 +7,8 @@ import Observation
 
 /// What the settings screen opens on the Web (task.md's 「Web で開く」 list).
 enum SettingsWebAction: CaseIterable, Equatable, Sendable {
-    case changePassphrase
-    /// 「Web で開く」
-    case openWeb
     /// 「プライバシーポリシー」
     case privacy
-    /// 「アカウントの削除」
-    case deleteAccount
 }
 
 @MainActor
@@ -39,10 +34,7 @@ final class SettingsModel {
     /// The page each action opens: https://otodoke.app/… as task.md lists it.
     static func webLink(_ action: SettingsWebAction) -> URL {
         switch action {
-        case .changePassphrase: WebLink.settingsPassword
-        case .openWeb: WebLink.app
         case .privacy: WebLink.privacy
-        case .deleteAccount: WebLink.settingsDelete
         }
     }
 
@@ -82,6 +74,7 @@ final class SettingsModel {
     @ObservationIgnored private var loadsStarted = 0
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
+    @ObservationIgnored private var retired = false
 
     init(
         reader: SettingsReader,
@@ -138,6 +131,46 @@ final class SettingsModel {
         )
     }()
 
+    @ObservationIgnored lazy var accountDeletion: AccountDeletionModel = {
+        let provider = auth.provider
+        let stamp = auth.session.stamp()
+        return AccountDeletionModel(
+            api: AccountAPIClient(session: provider.urlSession),
+            accessToken: { try? await provider.auth.session.accessToken },
+            isCurrent: { [weak auth] in
+                guard let auth, let stamp else { return false }
+                return auth.session.isCurrent(stamp)
+            },
+            completed: { [weak auth] in await auth?.signOut() }
+        )
+    }()
+
+    @ObservationIgnored lazy var passwordChange: PasswordChangeModel = {
+        let provider = auth.provider
+        let stamp = auth.session.stamp()
+        return PasswordChangeModel(
+            keys: MailKeyReader(provider: provider), api: PasswordAccountClient(session: provider.urlSession), deriver: auth.deriver,
+            identity: { [weak auth] in
+                guard let auth, case let .signedIn(id) = auth.state, let email = auth.signedInEmail else { return nil }
+                return (id, email)
+            },
+            isCurrent: { [weak auth] in guard let auth, let stamp else { return false }; return auth.session.isCurrent(stamp) },
+            accessToken: { try? await provider.auth.session.accessToken }, signOut: { [weak auth] in await auth?.signOut() }
+        )
+    }()
+
+    func clearForSignOut() {
+        retired = true
+        _ = fence.beginRead()
+        loadsStarted += 1
+        cutOff?.raise()
+        keyPanel = nil; address = nil; confirmURL = nil; unread = nil; unreadReasons = nil; dropped = nil
+        confirmationFailed = false; approvalWaiting = false; approvalBadgeFailed = false
+        lastApprovalRead = nil
+        passwordChange.clearPasswords()
+        mailActions.clearNotes()
+    }
+
     /// S3: on the card without a key row, why the key step after the sign-in did not make one, and whether
     /// 「ログインし直す」 is offered (it makes the key again). N4: the address mismatch is shown without it.
     var keyStepFailure: (message: String, signInAgain: Bool)? {
@@ -179,6 +212,7 @@ final class SettingsModel {
 
     /// Reads everything again. Each read fails on its own; a newer read drops this one's answers.
     func load() async {
+        guard !retired else { return }
         hasRead = true
         loadsStarted += 1
         loadsRunning += 1
@@ -197,7 +231,7 @@ final class SettingsModel {
         }
 
         // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
-        guard fence.verdict(ticket) == .current else { return }
+        guard !retired, fence.verdict(ticket) == .current else { return }
         // [S1] Cut off (the .task cancelled when the tab is left): the answers are dropped, not shown
         // as failures, and the next appearance reads again.
         guard !Task.isCancelled else {
@@ -301,14 +335,14 @@ final class SettingsModel {
     /// full read began meanwhile (it owns the state), and when the refresh was cancelled (the page was left: a
     /// cut-off read is not a failed read, and it does not count as a read).
     func refreshApproval() async {
-        guard pollsForApproval, loadsRunning == 0 else { return }
+        guard !retired, pollsForApproval, loadsRunning == 0 else { return }
         let started = loadsStarted
         let confirmation = await reader.forwardingConfirmations()
         var later: LoadResult<Int>?
         if !Task.isCancelled, let at = confirmation.value.flatMap(Self.pickApproval)?.at {
             later = await reader.arrivedAfter(at)
         }
-        guard !Task.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else { return }
+        guard !retired, !Task.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else { return }
         lastApprovalRead = now()
         applyApproval(confirmation, later: later)
     }

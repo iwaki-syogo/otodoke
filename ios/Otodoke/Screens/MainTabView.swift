@@ -74,6 +74,21 @@ final class MainScreens {
     let spend: SpendModel
     let settings: SettingsModel
     private let makeDetail: (String) -> ParcelDetailModel
+    private var details: [WeakDetail] = []
+    private var deliveredPages: [WeakDelivered] = []
+    private var cancelledPages: [WeakCancelled] = []
+    private final class WeakDetail {
+        weak var value: ParcelDetailModel?
+        init(_ value: ParcelDetailModel) { self.value = value }
+    }
+    private final class WeakDelivered {
+        weak var value: DeliveredModel?
+        init(_ value: DeliveredModel) { self.value = value }
+    }
+    private final class WeakCancelled {
+        weak var value: CancelledModel?
+        init(_ value: CancelledModel) { self.value = value }
+    }
 
     init(
         changes: DataChanges,
@@ -109,6 +124,7 @@ final class MainScreens {
         )
         // N-1: withKeys false is a View made while signing out: it must not take AuthService.cleanup over.
         if withKeys { screens.attachKeys(auth: auth, parts: keyParts) }
+        if withKeys { auth.clearLoadedData = { [weak screens] in screens?.clearForSignOut() } }
         return screens
     }
 
@@ -122,12 +138,18 @@ final class MainScreens {
 
     /// The delivered page's model, told of the changes.
     func delivered() -> DeliveredModel {
-        DeliveredModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
+        let model = DeliveredModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
+        deliveredPages.removeAll { $0.value == nil }
+        deliveredPages.append(WeakDelivered(model))
+        return model
     }
 
     /// The cancelled page's model, told of the changes.
     func cancelled() -> CancelledModel {
-        CancelledModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
+        let model = CancelledModel(reader: StatusListReader(provider: list.reader.provider), changes: changes)
+        cancelledPages.removeAll { $0.value == nil }
+        cancelledPages.append(WeakCancelled(model))
+        return model
     }
 
     /// A parcel's detail model, told of the changes.
@@ -137,7 +159,17 @@ final class MainScreens {
         // Sealed mail opens with the session's one UnlockModel (task 18).
         model.unlock = unlock
         model.mailKeys = MailKeyReader(provider: model.reader.provider)
+        details.removeAll { $0.value == nil }
+        details.append(WeakDetail(model))
         return model
+    }
+
+    func clearForSignOut() {
+        list.clearForSignOut(); calendar.clearForSignOut(); spend.clearForSignOut(); settings.clearForSignOut()
+        for detail in details { detail.value?.clearForSignOut() }
+        for page in deliveredPages { page.value?.clearForSignOut() }
+        for page in cancelledPages { page.value?.clearForSignOut() }
+        details.removeAll(); deliveredPages.removeAll(); cancelledPages.removeAll()
     }
 }
 

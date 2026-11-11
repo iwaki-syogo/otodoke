@@ -48,7 +48,7 @@ struct ReviewFix2Tests {
         await model.load()
         await fake.fail("PATCH", "parcels", nth: 2, with: .applyThenDrop(.networkConnectionLost))
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "3 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.toastNote == "1 件は元に戻せません")
 
         await model.undo()
@@ -66,7 +66,7 @@ struct ReviewFix2Tests {
         let model = try await makeList(fake)
         await model.load()
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "3 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.toastNote == nil)
         await model.undo()
         #expect(model.toast == nil)
@@ -83,7 +83,7 @@ struct ReviewFix2Tests {
         await model.deliverAll()
         #expect(model.toastNote == "1 件は元に戻せません")
         await model.markDelivered(id: Rows.id(1))
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.toastNote == nil)
         // 「元に戻す」 of the newer toast has nothing left delivered to speak of.
         await model.undo()

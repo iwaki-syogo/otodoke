@@ -41,7 +41,7 @@ struct ParcelListModelExtraTests {
         await fake.fail("PATCH", "parcels", nth: 2, with: .http(500))
         await model.deliverAll()
         #expect(model.deliverAllMessage == "保存できませんでした。もう一度押してください。")
-        #expect(model.toast == ListToast(text: "1 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         // A fresh load clears the message.
         await model.load()
         #expect(model.deliverAllMessage == nil)

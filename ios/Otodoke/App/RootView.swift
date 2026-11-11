@@ -25,6 +25,8 @@ struct RootView: View {
         if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
             if preview.showsWelcome {
                 WelcomeView(auth: preview.previewAuth())
+            } else if let deletion = preview.accountDeletionModel() {
+                NavigationStack { AccountDeletionView(model: deletion, email: nil) }
             } else if let login = preview.makeLoginModel() {
                 LoginView(model: login)
             } else if let page = preview.deliveredPageModel() {

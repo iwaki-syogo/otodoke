@@ -11,7 +11,7 @@ import SwiftUI
 
 /// The pages the list opens.
 enum SettingsPage: Hashable, CaseIterable {
-    case forward, key, dropped, handling, delivery, sample
+    case forward, key, dropped, handling, delivery, sample, deleteAccount
 }
 
 struct SettingsView: View {
@@ -64,6 +64,7 @@ struct SettingsView: View {
         case .handling: SettingsHandlingPage()
         case .delivery: SettingsDeliveryHelpPage(model: model, register: register)
         case .sample: SettingsSamplePage(model: model)
+        case .deleteAccount: AccountDeletionView(model: model.accountDeletion, email: model.signedInEmail)
         }
     }
 
@@ -89,9 +90,7 @@ struct SettingsView: View {
                             Divider().padding(.leading, 58)
                             webRow(.privacy, symbol: "doc.text", title: SettingsWebText.privacyTitle)
                             Divider().padding(.leading, 58)
-                            webRow(.deleteAccount, symbol: "trash", title: SettingsWebText.deleteTitle)
-                            Divider().padding(.leading, 58)
-                            webRow(.openWeb, symbol: "safari", title: SettingsMenuText.webTitle)
+                            row(.deleteAccount)
                         }
                         .modifier(SettingsCard())
                     }
@@ -150,6 +149,7 @@ struct SettingsView: View {
         case .handling: SettingsMenuText.handlingTitle
         case .delivery: SettingsMenuText.deliveryTitle
         case .sample: SettingsMenuText.sampleTitle
+        case .deleteAccount: SettingsWebText.deleteTitle
         }
     }
 
@@ -158,7 +158,7 @@ struct SettingsView: View {
         case .forward: SettingsMenuText.forwardSubtitle
         case .key: SettingsMenuText.keySubtitle
         case .delivery: SettingsMenuText.deliverySubtitle
-        case .dropped, .handling, .sample: nil
+        case .dropped, .handling, .sample, .deleteAccount: nil
         }
     }
 
@@ -170,6 +170,7 @@ struct SettingsView: View {
         case .handling: "lock.shield"
         case .delivery: "questionmark.circle"
         case .sample: "tray.and.arrow.down"
+        case .deleteAccount: "trash"
         }
     }
 

@@ -68,12 +68,14 @@ describe("iOS approval auto refresh keeps the Web's numbers", () => {
     expect(refresh).toContain("reader.forwardingConfirmations()");
     expect(refresh).not.toMatch(/reader\.(currentKey|plainCount|unreadCount|dropped|oldKeyCount)|load\(\)/);
     // M1: a cancelled read writes nothing and does not count as a read; S1: a full read that began meanwhile wins.
-    expect(refresh).toMatch(/guard !Task\.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else \{ return \}\s*lastApprovalRead = now\(\)/);
+    const applyGuard = /guard !retired, !Task\.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else \{ return \}\s*lastApprovalRead = now\(\)/;
+    expect(refresh).toMatch(applyGuard);
     // S2: the card and the badge are decided in one place, used by load() and the refresh.
     expect(refresh).toContain("applyApproval(confirmation, later: later)");
     expect(model.match(/applyApproval\(/g)).toHaveLength(3);
     // Negative control: without the cancellation guard the check is caught.
-    expect(refresh.replace("guard !Task.isCancelled, started", "guard started")).not.toMatch(/guard !Task\.isCancelled, started/);
+    expect(refresh.replaceAll("!Task.isCancelled, ", "")).not.toMatch(applyGuard);
+    expect(refresh.replaceAll("!retired, ", "")).not.toMatch(applyGuard);
     // Negative control: a polls rule without the address would be caught.
     expect(polls.replace("addressCanBeCopied, ", "")).not.toMatch(/addressCanBeCopied/);
   });

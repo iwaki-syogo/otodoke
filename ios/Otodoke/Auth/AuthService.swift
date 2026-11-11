@@ -43,6 +43,8 @@ final class AuthService {
     /// Sign-out's steps ② ③ ④ (the opened key's store). signOut() runs ① (session moves on) and then
     /// cleanup's cancelWork, dropMemory, deleteKeychainKey, in this order.
     @ObservationIgnored var cleanup: (any SignOutCleanup)?
+    /// Clears every screen owned by the current generation before it is released.
+    @ObservationIgnored var clearLoadedData: (@MainActor () -> Void)?
 
     /// password-v1's master (PBKDF2 off the main thread, one at a time). Tests pass a fast KDF.
     @ObservationIgnored let deriver: PasswordV1Deriver
@@ -295,6 +297,8 @@ final class AuthService {
         clearPendingSignIn()
         pendingMismatch = nil
         keyStep = nil
+        clearLoadedData?()
+        clearLoadedData = nil
         signedInPart = nil
         cleanup?.cancelWork()
         cleanup?.dropMemory()
@@ -309,6 +313,18 @@ final class AuthService {
             provider.clearStoredSession()
         }
         publish(nil)
+    }
+
+    /// Reauthenticate this same account for the key-recovery rewrap, without starting another key setup.
+    func authenticateForKeyRecovery(authSecret: String, captchaToken: String?) async throws(LoginFailure) -> String {
+        guard case let .signedIn(userID) = state, let email = signedInEmail else { throw .other }
+        let stamp = session.stamp()
+        do {
+            let result = try await provider.auth.signIn(email: email, password: authSecret, captchaToken: Self.token(captchaToken))
+            guard let stamp, session.isCurrent(stamp), result.user.id.uuidString.lowercased() == userID else { throw LoginFailure.other }
+            return result.accessToken
+        } catch let error as LoginFailure { throw error }
+        catch { throw Self.signInFailure(error) }
     }
 
     /// email_norm (password-v1 step 1): the five ASCII whitespaces off both ends, A-Z made a-z.

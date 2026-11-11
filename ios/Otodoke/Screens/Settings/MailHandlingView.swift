@@ -3,6 +3,7 @@
 // added the item about keeping the key in the Keychain with Face ID (also on the Web and in the README).
 
 import SwiftUI
+import SafariServices
 
 enum MailHandlingText {
     static let heading = "あなたのメールの扱い"
@@ -31,6 +32,7 @@ enum MailHandlingText {
 struct MailHandlingView: View {
     /// False on its own settings page, whose title already says it.
     var showsHeading = true
+    @State private var showsRepository = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -59,9 +61,15 @@ struct MailHandlingView: View {
             .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(.separator)))
         }
+        .environment(\.openURL, OpenURLAction { url in
+            guard url == MailHandlingText.repositoryURL else { return .discarded }
+            showsRepository = true
+            return .handled
+        })
+        .sheet(isPresented: $showsRepository) { RepositoryPage() }
     }
 
-    /// The item with 「公開」 linked to the repository (opens in Safari), underlined as on the Web.
+    /// The item with 「公開」 linked to the repository (an in-app Safari sheet), underlined as on the Web.
     static func linked(_ item: String) -> AttributedString {
         var text = AttributedString(item)
         if let range = text.range(of: MailHandlingText.linkWord) {
@@ -71,4 +79,9 @@ struct MailHandlingView: View {
         }
         return text
     }
+}
+
+private struct RepositoryPage: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: MailHandlingText.repositoryURL) }
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

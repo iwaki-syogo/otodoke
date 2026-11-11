@@ -1,4 +1,4 @@
-// The explainer videos of 「メールの自動転送の設定」: the heading's length and the address that opens in Safari.
+// The explainer videos of 「メールの自動転送の設定」: the heading's length and the native player's address.
 // The length is rounded the way the Web does it (GuideVideo in src/components/forwarding-steps.tsx): to the nearest
 // half minute, never under half a minute. OtodokeTests/ForwardingGuideVideoTests.swift holds a table of the Web's
 // results, and src/lib/__tests__/ios-forwarding-guide.test.ts runs the Web's own two lines to check that table.
@@ -6,8 +6,8 @@
 import Foundation
 
 enum ForwardingGuideVideo {
-    /// The VoiceOver hint of the video row (it opens Safari).
-    static let openHint = "Safari で動画を開きます"
+    /// The VoiceOver hint of the video row (a native player in the app).
+    static let openHint = "アプリ内で動画を再生します"
 
     /// 89 -> "1 分半", 131 -> "2 分", 14 -> "半分".
     static func minutes(seconds: Int) -> String {

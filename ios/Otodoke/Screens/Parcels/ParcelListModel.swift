@@ -8,13 +8,13 @@
 import Foundation
 import Observation
 
-/// The notice at the bottom: 「届いたにしました」/「N 件を受取済にしました」 with 「元に戻す」, or a failure.
+/// The notice at the bottom: 「受け取り済みにしました」/「受け取り済みにしました」 with 「元に戻す」, or a failure.
 struct ListToast: Equatable, Sendable {
     let text: String
     let canUndo: Bool
 }
 
-/// 「保存中… 12/80」 while 「すべて受取済にする」 is sent one row at a time.
+/// 「保存中… 12/80」 while 「すべて受け取り済みにする」 is sent one row at a time.
 struct BulkProgress: Equatable, Sendable {
     let done: Int
     let total: Int
@@ -29,13 +29,13 @@ final class ParcelListModel {
     /// 要確認 shows this many, the rest behind 「ほか N 件を見る」.
     static let toCheckHeadCount = 5
 
-    static let savedText = "届いたにしました"
+    static let savedText = "受け取り済みにしました"
     static let saveFailedText = "保存できませんでした。もう一度スワイプしてください。"
     static let deliverAllFailedText = "保存できませんでした。もう一度押してください。"
     static let undoFailedText = "元に戻せませんでした"
     static let unconfirmedText = "確かめられませんでした"
 
-    /// Under 「N 件を受取済にしました」 when some of them were saved with an unknown answer (Codex-P3):
+    /// Under 「受け取り済みにしました」 when some of them were saved with an unknown answer (Codex-P3):
     /// 「元に戻す」 cannot put those back.
     static func cannotUndoNote(_ n: Int) -> String { "\(n) 件は元に戻せません" }
     /// After 「元に戻す」 on such a toast: the rows put back, and the rows left delivered.
@@ -63,6 +63,8 @@ final class ParcelListModel {
         case stale
     }
 
+    @ObservationIgnored private var retired = false
+
     let reader: ParcelReader
     let writer: ParcelWriter
     /// What has come in so far, read only when the list comes back empty (nil: not read, as in the tests).
@@ -78,14 +80,14 @@ final class ParcelListModel {
     private(set) var rows: [ParcelRow] = []
     /// nil until the first load.
     private(set) var counts: ParcelCounts?
-    /// Ids whose 「届いた」 is being saved (保存中…).
+    /// Ids whose 「受け取った」 is being saved (保存中…).
     private(set) var saving: Set<String> = []
     /// Ids being read again after an unknown result (「確かめる」): 確認中…, nothing is sent.
     private(set) var checking: Set<String> = []
     /// Per-card messages: 保存できませんでした。もう一度スワイプしてください。 / 確かめられませんでした
     private(set) var rowMessages: [String: String] = [:]
     /// Ids whose last write has an unknown result that no read has settled yet (Codex-P3). Nothing is
-    /// written to them (swipe, 「すべて受取済にする」, 「元に戻す」) until a read of the list shows them:
+    /// written to them (swipe, 「すべて受け取り済みにする」, 「元に戻す」) until a read of the list shows them:
     /// a swipe on one only reads the list again.
     private(set) var unconfirmed: Set<String> = []
     private(set) var toast: ListToast?
@@ -96,9 +98,9 @@ final class ParcelListModel {
     /// The toasts (by generation) whose 「元に戻す」 is being sent.
     private(set) var undoingGenerations: Set<Int> = []
     private(set) var isDeliveringAll = false
-    /// How far 「すべて受取済にする」 has got.
+    /// How far 「すべて受け取り済みにする」 has got.
     private(set) var deliverAllProgress: BulkProgress?
-    /// Under 「すべて受取済にする」 when some of them could not be saved.
+    /// Under 「すべて受け取り済みにする」 when some of them could not be saved.
     private(set) var deliverAllMessage: String?
     /// A read again (pull to refresh, back from a detail, after a write) failed: the list shown is
     /// kept, with 「読み込めませんでした」 above it.
@@ -181,8 +183,8 @@ final class ParcelListModel {
     }
     /// Loaded, and no parcel at all.
     var isEmpty: Bool { loadState == .loaded && rows.isEmpty }
-    /// 「届いた荷物は、左にスワイプして「届いた」にできます」 shows when there is an open parcel.
-    var showsSwipeHint: Bool { loadState == .loaded && !sections.open.isEmpty }
+    /// Kept for existing callers; the list no longer shows a swipe hint.
+    var showsSwipeHint: Bool { false }
     var toCheckHead: [ParcelRow] { Array(sections.toCheck.prefix(Self.toCheckHeadCount)) }
     var toCheckRest: [ParcelRow] { Array(sections.toCheck.dropFirst(Self.toCheckHeadCount)) }
     /// 「まだ読んでいないメールが N 通あります。この一覧は最新ではないかもしれません。」 when N > 0.
@@ -190,7 +192,7 @@ final class ParcelListModel {
         guard let n = counts?.unread.value, n > 0 else { return nil }
         return "まだ読んでいないメールが \(n) 通あります。この一覧は最新ではないかもしれません。"
     }
-    /// 「すべて受取済にする」 can be pressed: something to check, and no more than ParcelWriter.maxAtOnce.
+    /// 「すべて受け取り済みにする」 can be pressed: something to check, and no more than ParcelWriter.maxAtOnce.
     var deliverAllEnabled: Bool {
         let n = sections.toCheck.count
         return n > 0 && n <= ParcelWriter.maxAtOnce && !isDeliveringAll
@@ -209,8 +211,11 @@ final class ParcelListModel {
     /// 「読み込めませんでした」, never an empty list; a failed read again keeps the list shown and says
     /// 「読み込めませんでした」 above it. The counts show on their own either way.
     func load() async {
+        guard !retired else { return }
         if loadState == .idle { loadState = .loading }
-        switch await reread() {
+        let outcome = await reread()
+        guard !retired else { return }
+        switch outcome {
         case .applied:
             refreshFailed = false
             rowMessages = rowMessages.filter { saving.contains($0.key) || unconfirmed.contains($0.key) }
@@ -286,7 +291,7 @@ final class ParcelListModel {
     /// The counts are taken as they come (each fails on its own); the rows are replaced only by a
     /// complete read. Settles every unconfirmed id: the list now shows what happened to it.
     private func finishRead(number: Int, generation: Int, list: LoadResult<[ParcelRow]>, counts: ParcelCounts, mail: MailSoFar? = nil) -> ReadOutcome {
-        guard number == readNumber else { return .superseded }
+        guard !retired, number == readNumber else { return .superseded }
         guard generation == writeGeneration, writesInFlight == 0 else { return .stale }
         self.counts = counts
         guard case let .loaded(fresh) = list else {
@@ -322,7 +327,7 @@ final class ParcelListModel {
     private func endWrite() {
         writesInFlight -= 1
         writeGeneration &+= 1
-        if writesInFlight == 0, readAfterWrites {
+        if !retired, writesInFlight == 0, readAfterWrites {
             readAfterWrites = false
             Task { [weak self] in _ = await self?.reread() }
         }
@@ -330,10 +335,10 @@ final class ParcelListModel {
 
     // MARK: 届いた
 
-    /// Left swipe → 「届いた」 on the version shown. On a parcel whose last write is not known yet,
+    /// Left swipe → 「受け取った」 on the version shown. On a parcel whose last write is not known yet,
     /// only reads the list again (never sends again).
     func markDelivered(id: String) async {
-        guard !saving.contains(id), let row = rows.first(where: { $0.id == id }) else { return }
+        guard !retired, !saving.contains(id), let row = rows.first(where: { $0.id == id }) else { return }
         saving.insert(id)
         defer { saving.remove(id) }
 
@@ -348,8 +353,9 @@ final class ParcelListModel {
 
         rowMessages[id] = nil
         beginWrite()
-        let result = await writer.markDelivered(ParcelVersion(row))
+        let result = await writer.markDelivered(ParcelVersion(row), now: now())
         endWrite()
+        guard !retired else { return }
 
         switch result {
         case let .success(token):
@@ -370,20 +376,20 @@ final class ParcelListModel {
             }
             if isOpen(id) {
                 rowMessages[id] = Self.saveFailedText
-            } else if rows.first(where: { $0.id == id })?.status == "delivered" {
+            } else if rows.first(where: { $0.id == id }).map(ParcelRules.isReceived) == true {
                 showToast(ListToast(text: Self.savedText, canUndo: false), undo: [])
             }
         }
     }
 
-    /// 「すべて受取済にする」 on 要確認: one row at a time, each on its version shown, with
+    /// 「すべて受け取り済みにする」 on 要確認: one row at a time, each on its version shown, with
     /// 「保存中… n/N」. The toast counts the rows now delivered by it (an unknown result that the read
     /// shows delivered included), and 「元に戻す」 puts back only the rows whose write was answered.
     /// Rows being swiped, or not yet confirmed, are not sent. The rows it sends are held as being saved
     /// from before the first is sent until their results are shown and read again (CF2): a swipe,
     /// 「確かめる」 or 「元に戻す」 on one of them sends nothing meanwhile.
     func deliverAll() async {
-        guard deliverAllEnabled else { return }
+        guard !retired, deliverAllEnabled else { return }
         isDeliveringAll = true
         defer {
             isDeliveringAll = false
@@ -399,10 +405,11 @@ final class ParcelListModel {
         defer { saving.subtract(held) }
         deliverAllProgress = BulkProgress(done: 0, total: shown.count)
         beginWrite()
-        let results = await writer.markDelivered(all: shown.map(ParcelVersion.init)) { [weak self] done in
+        let results = await writer.markDelivered(all: shown.map(ParcelVersion.init), now: now()) { [weak self] done in
             await self?.setDeliverAllProgress(done: done, total: shown.count)
         }
         endWrite()
+        guard !retired else { return }
 
         var tokens: [UndoToken] = []
         var unsure: [String] = []
@@ -425,7 +432,7 @@ final class ParcelListModel {
                 for id in unsure {
                     if isOpen(id) {
                         failed = true
-                    } else if rows.first(where: { $0.id == id })?.status == "delivered" {
+                    } else if rows.first(where: { $0.id == id }).map(ParcelRules.isReceived) == true {
                         confirmed += 1
                     }
                 }
@@ -433,18 +440,56 @@ final class ParcelListModel {
                 for id in unsure where unconfirmed.contains(id) { rowMessages[id] = Self.unconfirmedText }
             }
         }
+        guard !retired else { return }
         let written = tokens.count + confirmed
         if written > 0 {
             // R1: the rows whose answer was lost are counted, but 「元に戻す」 cannot put them back.
             let canUndo = !tokens.isEmpty
             showToast(
-                ListToast(text: "\(written) 件を受取済にしました", canUndo: canUndo),
+                ListToast(text: Self.savedText, canUndo: canUndo),
                 undo: tokens,
                 note: canUndo && confirmed > 0 ? Self.cannotUndoNote(confirmed) : nil,
                 keeps: canUndo ? confirmed : 0
             )
         }
         if failed { deliverAllMessage = Self.deliverAllFailedText }
+    }
+
+    /// 「まだ」 is a version-checked dismissal, never a receipt. A lost answer is read back before any retry.
+    func dismissCheck(id: String) async {
+        guard !retired, !saving.contains(id), let row = rows.first(where: { $0.id == id }),
+              row.status == "delivered", !ParcelRules.isReceived(row) else { return }
+        saving.insert(id)
+        defer { saving.remove(id) }
+        if unconfirmed.contains(id) {
+            checking.insert(id)
+            defer { checking.remove(id) }
+            if await reread() != .applied, unconfirmed.contains(id) {
+                rowMessages[id] = Self.unconfirmedText
+            }
+            return
+        }
+        rowMessages[id] = nil
+        beginWrite()
+        let result = await writer.dismissCheck(id: id, now: now())
+        endWrite()
+        guard !retired else { return }
+        switch result {
+        case let .success(version):
+            apply(version)
+        case .notUpdated(.conflict):
+            _ = await reread()
+            if sections.toCheck.contains(where: { $0.id == id }) { rowMessages[id] = Self.deliverAllFailedText }
+        case .notUpdated:
+            rowMessages[id] = Self.deliverAllFailedText
+        case .unknown:
+            unconfirmed.insert(id)
+            if await reread() == .applied {
+                if sections.toCheck.contains(where: { $0.id == id }) { rowMessages[id] = Self.deliverAllFailedText }
+            } else if unconfirmed.contains(id) {
+                rowMessages[id] = Self.unconfirmedText
+            }
+        }
     }
 
     private func setDeliverAllProgress(done: Int, total: Int) {
@@ -455,11 +500,11 @@ final class ParcelListModel {
     // MARK: 元に戻す
 
     /// 「元に戻す」 on the toast: each written row back to its status before, only while it is still the
-    /// version 「届いた」 left (a delivery mail in between is never undone). When it is done, only the
+    /// version 「受け取った」 left (a delivery mail in between is never undone). When it is done, only the
     /// toast it was pressed on is changed: a newer toast (another swipe meanwhile) and its 「元に戻す」
     /// stay as they are.
     func undo() async {
-        guard let toast, toast.canUndo, !undoTokens.isEmpty, !isUndoing,
+        guard !retired, let toast, toast.canUndo, !undoTokens.isEmpty, !isUndoing,
               !undoTokens.contains(where: { saving.contains($0.id) })
         else { return }
         let generation = toastGeneration
@@ -474,6 +519,7 @@ final class ParcelListModel {
         beginWrite()
         let results = await writer.undoDelivered(all: sendable)
         endWrite()
+        guard !retired else { return }
 
         var restored = 0
         var notBack: [String] = []
@@ -503,7 +549,8 @@ final class ParcelListModel {
             if await reread() == .applied {
                 // An unknown result the read shows as put back is a success.
                 let allBack = tokens.allSatisfy { token in
-                    rows.first(where: { $0.id == token.id })?.status != "delivered"
+                    guard let row = rows.first(where: { $0.id == token.id }) else { return false }
+                    return row.status == token.restoreTo && row.receivedAt == token.previousReceivedAt
                 }
                 outcome = notBack.isEmpty && allBack ? .done : .failed
             } else {
@@ -513,6 +560,7 @@ final class ParcelListModel {
             outcome = .failed
         }
 
+        guard !retired else { return }
         guard toastGeneration == generation else {
             // A newer toast is up: leave it and its 「元に戻す」 alone; say it on the cards.
             for id in notBack { rowMessages[id] = Self.undoFailedText }
@@ -532,15 +580,44 @@ final class ParcelListModel {
         }
     }
 
+    /// Retires this session's screen and drops every parcel and undo token. In-flight reads cannot revive it.
+    func clearForSignOut() {
+        retired = true
+        readNumber &+= 1
+        writeGeneration &+= 1
+        latestRead?.cancel()
+        latestRead = nil
+        readAfterWrites = false
+        rows = []
+        rowsVersion &+= 1
+        sectionsCache = nil
+        counts = nil
+        mailSoFar = .none
+        mailKnown = false
+        rowMessages = [:]
+        saving = []
+        checking = []
+        unconfirmed = []
+        undoingGenerations = []
+        isDeliveringAll = false
+        deliverAllProgress = nil
+        deliverAllMessage = nil
+        refreshFailed = false
+        loadState = .idle
+        hideToast()
+    }
+
     // MARK: helpers
 
     private func isOpen(_ id: String) -> Bool {
-        sections.open.contains { $0.id == id }
+        guard let row = rows.first(where: { $0.id == id }) else { return false }
+        return row.status != "cancelled" && !ParcelRules.isReceived(row)
     }
 
     private func apply(_ token: UndoToken) {
         guard let i = rows.firstIndex(where: { $0.id == token.id }) else { return }
         rows[i].status = "delivered"
+        rows[i].receivedAt = token.deliveredReceivedAt
         rows[i].updatedAt = token.deliveredUpdatedAt
         rowsVersion &+= 1
     }
@@ -548,11 +625,14 @@ final class ParcelListModel {
     private func apply(_ version: ParcelVersion) {
         guard let i = rows.firstIndex(where: { $0.id == version.id }) else { return }
         rows[i].status = version.status
+        rows[i].receivedAt = version.receivedAt
+        rows[i].checkDismissedAt = version.checkDismissedAt
         rows[i].updatedAt = version.updatedAt
         rowsVersion &+= 1
     }
 
     private func showToast(_ next: ListToast, undo tokens: [UndoToken], note: String? = nil, keeps: Int = 0) {
+        guard !retired else { return }
         toast = next
         toastNote = note
         undoTokens = next.canUndo ? tokens : []

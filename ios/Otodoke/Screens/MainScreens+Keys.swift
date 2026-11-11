@@ -36,6 +36,20 @@ extension MainScreens {
         keySetup = setup
         unlock?.keySetup = setup
         unlock?.signOut = { await auth.signOut() }
+        let generation = auth.session.stamp()
+        unlock?.recovery = PasswordRecoveryModel(
+            keys: reader, api: PasswordAccountClient(session: provider.urlSession), deriver: auth.deriver,
+            identity: { [weak auth] in
+                guard let auth, case let .signedIn(id) = auth.state, let email = auth.signedInEmail else { return nil }
+                return (id, email)
+            },
+            isCurrent: { [weak auth] in guard let auth, let generation else { return false }; return auth.session.isCurrent(generation) },
+            authenticate: { [weak auth] secret, captcha in
+                guard let auth else { throw LoginFailure.other }
+                return try await auth.authenticateForKeyRecovery(authSecret: secret, captchaToken: captcha)
+            },
+            complete: { [weak unlock = unlock] password in await unlock?.recovered(password: password) ?? false }
+        )
         settings.keySetup = setup
         // A3-1: the hand-off is taken now, and again whenever a sign-in of this generation decides one later
         // (whichever comes first, takeSignInSecret answers once: the key step runs once).

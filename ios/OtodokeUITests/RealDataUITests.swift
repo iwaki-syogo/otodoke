@@ -221,7 +221,7 @@ final class RealDataUITests: XCTestCase {
         let order = ["toCheck", "delivering", "soon", "ordered"].flatMap { (expect[$0] as? [String]) ?? [] }
         try checkOrder(app, expected: order, label: label)
         // The page links at the end: the name and the arrow, no number (the pages they open show it).
-        for link in ["届いた荷物", "キャンセルした荷物"] {
+        for link in ["受け取り済み", "キャンセルした荷物"] {
             let shown = pageLinkCount(app, link)
             XCTAssertNil(shown, "\(link) shows no count")
             record("count-\(label)-\(link)", "ui=\(shown.map(String.init) ?? "nil")")
@@ -234,7 +234,7 @@ final class RealDataUITests: XCTestCase {
         let name = "【試験】スワイプする荷物"
         let before = try rows(label: "swipe-before")
         try swipeDelivered(app, name)
-        let toast = element(app, containing: "届いたにしました")
+        let toast = element(app, containing: "受け取り済みにしました")
         XCTAssertTrue(toast.waitForExistence(timeout: 15), "toast")
         let shownAt = Date()
         shoot("swipe-toast")
@@ -257,7 +257,7 @@ final class RealDataUITests: XCTestCase {
         let name = "【試験】トーストが消える荷物"
         let before = try rows(label: "toast-before")
         try swipeDelivered(app, name)
-        let toast = element(app, containing: "届いたにしました")
+        let toast = element(app, containing: "受け取り済みにしました")
         XCTAssertTrue(toast.waitForExistence(timeout: 15), "toast")
         let shownAt = Date()
         XCTAssertTrue(waitGone(toast, 12), "toast goes by itself")
@@ -285,10 +285,10 @@ final class RealDataUITests: XCTestCase {
         XCTAssertEqual(after[name]?["status"], "shipped", "the app's write did not go through")
         XCTAssertEqual(after[name]?["updated_at"], stamp, "updated_at is the other writer's")
         assertUnchanged(before, after, except: [name], "conflict")
-        XCTAssertFalse(element(app, containing: "届いたにしました").exists, "no toast")
+        XCTAssertFalse(element(app, containing: "受け取り済みにしました").exists, "no toast")
         // Read again: the next swipe is on the new version and goes through; then put back.
         try swipeDelivered(app, name)
-        let toast = element(app, containing: "届いたにしました")
+        let toast = element(app, containing: "受け取り済みにしました")
         XCTAssertTrue(toast.waitForExistence(timeout: 15), "saved on the second swipe")
         tapUndo(app, toast)
         XCTAssertTrue(waitGone(toast, 15))
@@ -305,7 +305,7 @@ final class RealDataUITests: XCTestCase {
         let stamp = try XCTUnwrap((set["row"] as? [String: Any])?["updated_at"] as? String)
         try swipeDelivered(app, name)
         XCTAssertTrue(waitGone(app.staticTexts[name], 15), "the cancelled row leaves the list")
-        XCTAssertFalse(element(app, containing: "届いたにしました").exists, "no toast")
+        XCTAssertFalse(element(app, containing: "受け取り済みにしました").exists, "no toast")
         let after = try rows(label: "cancel-after")
         XCTAssertEqual(after[name]?["status"], "cancelled")
         XCTAssertEqual(after[name]?["updated_at"], stamp, "never written by the app")
@@ -318,14 +318,14 @@ final class RealDataUITests: XCTestCase {
         let names = before.keys.filter { $0.hasPrefix("【試験】要確認") }.sorted()
         XCTAssertEqual(names.count, 7)
         scrollToTop(app)
-        let all = app.buttons["すべて受取済にする"]
+        let all = app.buttons["すべて受け取り済みにする"]
         XCTAssertTrue(scrollTo(app, all))
         all.tap()
-        let confirm = app.buttons["\(names.count) 件を受取済にする"]
+        let confirm = app.buttons["受け取り済みにする"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "second press")
         shoot("deliver-all-confirm")
         confirm.tap()
-        let toast = element(app, containing: "\(names.count) 件を受取済にしました")
+        let toast = element(app, containing: "受け取り済みにしました")
         XCTAssertTrue(toast.waitForExistence(timeout: 30), "bulk toast")
         shoot("deliver-all-toast")
         let after = try rows(label: "all-after")
@@ -337,7 +337,7 @@ final class RealDataUITests: XCTestCase {
         for n in names { XCTAssertEqual(back[n]?["status"], before[n]?["status"], n) }
         assertUnchanged(before, back, except: Set(names), "deliver all undo")
         scrollToTop(app)
-        XCTAssertTrue(scrollTo(app, app.buttons["すべて受取済にする"]), "要確認 is back")
+        XCTAssertTrue(scrollTo(app, app.buttons["すべて受け取り済みにする"]), "要確認 is back")
         shoot("deliver-all-undone")
     }
 
@@ -429,7 +429,7 @@ final class RealDataUITests: XCTestCase {
         let card = app.staticTexts[name]
         XCTAssertTrue(scrollTo(app, card), name)
         card.swipeLeft()
-        let arrived = app.buttons["届いた"]
+        let arrived = app.buttons["受け取った"]
         if arrived.waitForExistence(timeout: 3) { arrived.tap() }
     }
 
@@ -574,7 +574,7 @@ final class RealDataUITests: XCTestCase {
         scrollToTop(app)
         var seen = Set<String>()
         var outOfOrder: [String] = []
-        let end = app.staticTexts["届いた荷物"]
+        let end = app.staticTexts["受け取り済み"]
         for step in 0..<60 {
             let onScreen = texts(app)
                 .filter { index[$0.label] != nil }
