@@ -257,9 +257,24 @@ struct ReviewFixM2pwRound2Tests {
             return
         }
         // Control: without it, the app reads its settings (here none: misconfigured, before any Keychain).
-        guard case .misconfigured = AppStart.load(info: [:], environment: [:]) else {
+        guard case .misconfigured = AppStart.load(info: [:], environment: [:], arguments: []) else {
             Issue.record("an app without settings was not misconfigured")
             return
+        }
+    }
+
+    @Test func theScreenCheckNeedsNoSettingsButAnOrdinaryLaunchStillDoes() {
+        // `-otodoke-ui-preview <scenario>` is let in before the settings are checked (no Secrets.xcconfig needed).
+        guard case .ready = AppStart.load(info: [:], environment: [:], arguments: ["-otodoke-ui-preview", "list"]) else {
+            Issue.record("the screen check was stopped for missing settings")
+            return
+        }
+        // Negative controls: no argument, an argument without a scenario, or an unknown scenario is an ordinary launch.
+        for arguments in [[], ["-otodoke-ui-preview"], ["-otodoke-ui-preview", "no-such-scenario"]] as [[String]] {
+            guard case .misconfigured = AppStart.load(info: [:], environment: [:], arguments: arguments) else {
+                Issue.record("an ordinary launch without settings was not misconfigured: \(arguments)")
+                return
+            }
         }
     }
 

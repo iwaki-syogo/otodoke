@@ -34,10 +34,13 @@ enum AppStart {
     case testHost
     #endif
 
-    static func load(info: [String: Any] = Bundle.main.infoDictionary ?? [:], environment: [String: String] = ProcessInfo.processInfo.environment) -> AppStart {
+    static func load(info: [String: Any] = Bundle.main.infoDictionary ?? [:], environment: [String: String] = ProcessInfo.processInfo.environment, arguments: [String] = ProcessInfo.processInfo.arguments) -> AppStart {
         #if DEBUG
         // Unit tests inject their bundle into this app: start nothing (no Keychain, no auth.start(), no Supabase).
         if environment["XCTestConfigurationFilePath"] != nil { return .testHost }
+        // The screen check (`-otodoke-ui-preview <scenario>`) shows made-up data and reaches nothing, so it needs no
+        // settings: it is let in before the settings are checked. A launch without the argument is checked as before.
+        if let preview = ListPreview(arguments: arguments) { return .ready(preview.previewAuth()) }
         #endif
         do {
             let config = try AppConfig.load(info: info)
