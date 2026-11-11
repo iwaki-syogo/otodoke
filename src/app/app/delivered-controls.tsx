@@ -3,14 +3,17 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { PendingButton, usePendingAction } from "@/components/pending-button";
 import { Spinner } from "@/components/spinner";
-import { PARTLY_RESTORED_NOTICE } from "@/lib/format";
+import { CANNOT_UNDO_NOTE, PARTLY_RESTORED_NOTICE } from "@/lib/format";
 import { runUndo } from "@/lib/undo-outcome";
-import { markDelivered, restoreStatuses } from "./parcel-actions";
+import { markDeliveredForUndo, restoreStatuses } from "./parcel-actions";
 
 type Marked = { id: string; status: string; received_at: string | null }[];
+type Undoable = (Marked[number] & { written_at: string })[];
 interface Toast {
   text: string;
-  undo: Marked | null;
+  undo: Undoable | null;
+  /** A second line under the text. */
+  note?: string | null;
 }
 
 const ToastContext = createContext<(t: Toast) => void>(() => {});
@@ -52,7 +55,10 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
       {children}
       {toast ? (
         <div role="status" className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
-          <span>{failed ? "元に戻せませんでした" : toast.text}</span>
+          <span>
+            {failed ? "元に戻せませんでした" : toast.text}
+            {!failed && toast.note ? <span className="mt-0.5 block text-xs text-neutral-300">{toast.note}</span> : null}
+          </span>
           {toast.undo && !failed ? (
             <PendingButton pending={pending} pendingLabel={UNDOING} tone="light" onClick={undo} className="inline-flex shrink-0 items-center gap-1.5 font-bold text-emerald-300">
               元に戻す
@@ -86,8 +92,10 @@ export function SwipeToDeliver({ id, status, receivedAt = null, children }: { id
     startTransition(async () => {
       try {
         // 0: nothing was saved (signed out, or the parcel was cancelled meanwhile). Not received.
-        if ((await markDelivered([id])) === 0) throw new Error("nothing saved");
-        showToast({ text: "受け取り済みにしました", undo: [{ id, status, received_at: receivedAt }] });
+        const done = await markDeliveredForUndo([id]);
+        if (done.saved === 0) throw new Error("nothing saved");
+        // Nothing written (already received on another screen): saved, with no 元に戻す to offer.
+        showToast({ text: "受け取り済みにしました", undo: done.written.length > 0 ? [{ id, status, received_at: receivedAt, written_at: done.written[0].received_at }] : null });
       } catch {
         saving.current = false;
         setState("error");
@@ -180,14 +188,17 @@ export function DeliverAll({ items }: { items: Marked }) {
   const save = () =>
     run(async () => {
       try {
-        const n = await markDelivered(items.map((it) => it.id));
+        const done = await markDeliveredForUndo(items.map((it) => it.id));
         // 0: nothing was saved (signed out, or all cancelled meanwhile).
-        if (n === 0) {
+        if (done.saved === 0) {
           setStep("error");
           return;
         }
         setStep("idle");
-        showToast({ text: "受け取り済みにしました", undo: items });
+        // 元に戻す covers only what this press wrote; the rest (already received) is said in a note.
+        const writtenAt = new Map(done.written.map((w) => [w.id, w.received_at]));
+        const undo = items.flatMap((it) => (writtenAt.has(it.id) ? [{ ...it, written_at: writtenAt.get(it.id)! }] : []));
+        showToast({ text: "受け取り済みにしました", undo: undo.length > 0 ? undo : null, note: undo.length > 0 && undo.length < done.saved ? CANNOT_UNDO_NOTE : null });
       } catch {
         setStep("error");
       }

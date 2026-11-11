@@ -267,6 +267,7 @@ describe("受け取った and its undo", () => {
   const actions = () => import("@/app/app/parcel-actions");
   const ID = "11111111-1111-4111-8111-111111111111";
   const ID2 = "22222222-2222-4222-8222-222222222222";
+  const wa = (id: string) => String(db.find("parcels", id)?.received_at ?? R);
   const READ_AT = "2026-11-01T00:00:00.000Z";
   let db: FakeDb;
   const row = (id: string, over: Row = {}): Row => ({ id, user_id: USER, shop: "テスト店", status: "shipped", received_at: null, tracking_number: null, carrier: null, updated_at: READ_AT, ...over });
@@ -301,8 +302,8 @@ describe("受け取った and its undo", () => {
     const { markDelivered, restoreStatuses } = await actions();
     await markDelivered([ID, ID2]);
     await restoreStatuses([
-      { id: ID, status: "shipped", received_at: null },
-      { id: ID2, status: "delivered", received_at: null },
+      { id: ID, status: "shipped", received_at: null, written_at: wa(ID) },
+      { id: ID2, status: "delivered", received_at: null, written_at: wa(ID2) },
     ]);
     expect(db.find("parcels", ID)).toMatchObject({ status: "shipped", received_at: null });
     // Back to 配達済み: still delivered, not received.
@@ -314,7 +315,7 @@ describe("受け取った and its undo", () => {
     await markDelivered([ID]);
     // 受け取っていない pressed meanwhile: delivered, received_at cleared.
     db.find("parcels", ID)!.received_at = null;
-    await restoreStatuses([{ id: ID, status: "shipped", received_at: null }]);
+    await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: wa(ID) }]);
     expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: null });
   });
 
@@ -322,14 +323,14 @@ describe("受け取った and its undo", () => {
     it("all back: nothing is left received", async () => {
       const { markDelivered, restoreStatuses } = await actions();
       await markDelivered([ID, ID2]);
-      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID2, status: "delivered", received_at: null }])).toEqual({ leftReceived: false });
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: wa(ID) }, { id: ID2, status: "delivered", received_at: null, written_at: wa(ID2) }])).toEqual({ leftReceived: false });
     });
 
     it("one of two no longer fits (the person changed it since): the other goes back, and the answer says one stayed", async () => {
       const { markDelivered, restoreStatuses } = await actions();
       await markDelivered([ID, ID2]);
       db.find("parcels", ID2)!.received_at = null; // 受け取っていない pressed meanwhile
-      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID2, status: "shipped", received_at: null }])).toEqual({ leftReceived: true });
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: wa(ID) }, { id: ID2, status: "shipped", received_at: null, written_at: wa(ID2) }])).toEqual({ leftReceived: true });
       expect(db.find("parcels", ID)).toMatchObject({ status: "shipped", received_at: null });
       expect(db.find("parcels", ID2)).toMatchObject({ status: "delivered", received_at: null });
     });
@@ -337,9 +338,9 @@ describe("受け取った and its undo", () => {
     it("an item the action refuses counts as left, and the same id twice is one parcel", async () => {
       const { markDelivered, restoreStatuses } = await actions();
       await markDelivered([ID]);
-      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID, status: "shipped", received_at: null }])).toEqual({ leftReceived: false });
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: wa(ID) }, { id: ID, status: "shipped", received_at: null, written_at: wa(ID) }])).toEqual({ leftReceived: false });
       await markDelivered([ID]);
-      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }, { id: ID2, status: "cancelled", received_at: null }])).toEqual({ leftReceived: true });
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: wa(ID) }, { id: ID2, status: "cancelled", received_at: null, written_at: wa(ID2) }])).toEqual({ leftReceived: true });
     });
   });
 
@@ -372,7 +373,7 @@ describe("受け取った and its undo", () => {
       const { markDelivered, restoreStatuses } = await actions();
       await markDelivered([ID]);
       await markDelivered([ID]);
-      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null }])).toEqual({ leftReceived: false });
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: wa(ID) }])).toEqual({ leftReceived: false });
       expect(db.find("parcels", ID)).toMatchObject({ status: "shipped", received_at: null });
     });
 
@@ -385,10 +386,48 @@ describe("受け取った and its undo", () => {
     });
   });
 
+  describe("undo only takes back what its own press wrote", () => {
+    it("markDeliveredForUndo names the parcels it wrote, with the time; one already received is saved but not named", async () => {
+      const { markDelivered, markDeliveredForUndo } = await actions();
+      await markDelivered([ID]);
+      const first = String(db.find("parcels", ID)!.received_at);
+      const done = await markDeliveredForUndo([ID, ID2]);
+      expect(done.saved).toBe(2);
+      expect(done.written).toEqual([{ id: ID2, received_at: String(db.find("parcels", ID2)!.received_at) }]);
+      expect(db.find("parcels", ID)!.received_at).toBe(first);
+    });
+
+    it("a press from an old tab on a received parcel writes nothing to undo, and a stale undo cannot clear the earlier time", async () => {
+      const { markDelivered, markDeliveredForUndo, restoreStatuses } = await actions();
+      await markDelivered([ID]);
+      const first = String(db.find("parcels", ID)!.received_at);
+      const done = await markDeliveredForUndo([ID]);
+      expect(done).toEqual({ saved: 1, written: [] });
+      // What an old tab would send if it still offered the undo: the state it saw, with a time this press never wrote.
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: "2026-11-12T00:00:00.000Z" }])).toEqual({ leftReceived: true });
+      expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: first });
+    });
+
+    it("after the same parcel was received again elsewhere (received_at changed), the undo leaves it and says so", async () => {
+      const { markDeliveredForUndo, restoreStatuses } = await actions();
+      const done = await markDeliveredForUndo([ID]);
+      db.find("parcels", ID)!.received_at = "2026-11-12T05:00:00.000Z";
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: done.written[0].received_at }])).toEqual({ leftReceived: true });
+      expect(db.find("parcels", ID)).toMatchObject({ status: "delivered", received_at: "2026-11-12T05:00:00.000Z" });
+    });
+
+    it("the ordinary press and its undo put the parcel back as before", async () => {
+      const { markDeliveredForUndo, restoreStatuses } = await actions();
+      const done = await markDeliveredForUndo([ID]);
+      expect(await restoreStatuses([{ id: ID, status: "shipped", received_at: null, written_at: done.written[0].received_at }])).toEqual({ leftReceived: false });
+      expect(db.find("parcels", ID)).toMatchObject({ status: "shipped", received_at: null });
+    });
+  });
+
   it.each([
-    ["not a time", { id: ID, status: "shipped", received_at: "tomorrow" }],
-    ["a received_at on a status that is not delivered", { id: ID, status: "shipped", received_at: R }],
-    ["a status that cannot be put back to", { id: ID, status: "cancelled", received_at: null }],
+    ["not a time", { id: ID, status: "shipped", received_at: "tomorrow", written_at: R }],
+    ["a received_at on a status that is not delivered", { id: ID, status: "shipped", received_at: R, written_at: R }],
+    ["a status that cannot be put back to", { id: ID, status: "cancelled", received_at: null, written_at: R }],
   ])("the undo refuses %s without writing", async (_name, item) => {
     await (await actions()).markDelivered([ID]);
     const updates = writes(db, "update").length;

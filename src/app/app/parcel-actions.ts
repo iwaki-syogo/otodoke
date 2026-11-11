@@ -13,6 +13,8 @@ const MAX_AT_ONCE = 500;
 
 /** A timestamp the client sends back for an undo: an instant, or null for "not received". */
 const PreviousReceivedAt = z.union([z.null(), z.iso.datetime({ offset: true })]);
+/** The received_at the press being undone wrote: the undo only touches a row that still has exactly it. */
+const WrittenAt = z.iso.datetime({ offset: true });
 
 /** The user's own session, and their id for a condition on top of row-level security. */
 async function signedIn() {
@@ -31,13 +33,28 @@ async function signedIn() {
  * many parcels are received now.
  */
 export async function markDelivered(ids: string[]): Promise<number> {
+  return (await deliver(ids)).saved;
+}
+
+/**
+ * Like markDelivered, and says which parcels this call wrote (with the received_at it wrote). 元に戻す
+ * is offered for those only: a parcel that was already received was not changed, so there is nothing
+ * of this press to take back.
+ */
+export async function markDeliveredForUndo(ids: string[]): Promise<{ saved: number; written: { id: string; received_at: string }[] }> {
+  return await deliver(ids);
+}
+
+async function deliver(ids: string[]): Promise<{ saved: number; written: { id: string; received_at: string }[] }> {
+  const none = { saved: 0, written: [] };
   const clean = ids.filter((id) => typeof id === "string" && id.length > 0).slice(0, MAX_AT_ONCE);
-  if (clean.length === 0) return 0;
+  if (clean.length === 0) return none;
   const session = await signedIn();
-  if (!session) return 0;
+  if (!session) return none;
+  const at = new Date().toISOString();
   const { data, error } = await session.supabase
     .from("parcels")
-    .update({ status: "delivered", received_at: new Date().toISOString() })
+    .update({ status: "delivered", received_at: at })
     .in("id", clean)
     .eq("user_id", session.userId)
     .neq("status", "cancelled")
@@ -59,7 +76,7 @@ export async function markDelivered(ids: string[]): Promise<number> {
     already = new Set(rows.filter((row) => row.status === "delivered" && row.received_at !== null).map((row) => row.id)).size;
   }
   revalidatePath("/app", "layout");
-  return written.size + already;
+  return { saved: written.size + already, written: [...written].map((id) => ({ id, received_at: at })) };
 }
 
 /** leftReceived: at least one parcel asked for was not put back (it changed since, or was refused). */
@@ -68,37 +85,40 @@ type RestoreResult = { leftReceived: boolean };
 /**
  * Undo: puts parcels marked by hand back to the status and received_at each had before (the
  * received_at is null for a parcel that was not received before). Only a parcel that is still as
- * the mark left it (delivered and received) goes back: one the person changed since stays.
+ * the mark left it (delivered, with the received_at that mark wrote) goes back: one the person
+ * changed or received again since stays.
  */
-export async function restoreStatuses(items: { id: string; status: string; received_at?: string | null }[]): Promise<RestoreResult> {
+export async function restoreStatuses(items: { id: string; status: string; received_at?: string | null; written_at: string }[]): Promise<RestoreResult> {
   const asked = new Set(items.slice(0, MAX_AT_ONCE).map((it) => it.id).filter((id) => typeof id === "string"));
   let restored = 0;
-  const clean: { id: string; status: string; received_at: string | null }[] = [];
+  const clean: { id: string; status: string; received_at: string | null; written_at: string }[] = [];
   for (const it of items.slice(0, MAX_AT_ONCE)) {
     const previous = PreviousReceivedAt.safeParse(it.received_at ?? null);
-    if (typeof it.id !== "string" || !RESTORABLE.includes(it.status) || !previous.success) continue;
+    const written = WrittenAt.safeParse(it.written_at);
+    if (typeof it.id !== "string" || !RESTORABLE.includes(it.status) || !previous.success || !written.success) continue;
     // Back to not-received only makes sense as delivered; a received_at on any other status is refused.
     if (previous.data !== null && it.status !== "delivered") continue;
-    clean.push({ id: it.id, status: it.status, received_at: previous.data });
+    clean.push({ id: it.id, status: it.status, received_at: previous.data, written_at: written.data });
   }
   if (clean.length === 0) return { leftReceived: asked.size > 0 };
   const session = await signedIn();
   if (!session) return { leftReceived: true };
-  const groups = new Map<string, { status: string; received_at: string | null; ids: string[] }>();
+  const groups = new Map<string, { status: string; received_at: string | null; written_at: string; ids: string[] }>();
   for (const it of clean) {
-    const key = `${it.status}|${it.received_at ?? ""}`;
-    const group = groups.get(key) ?? { status: it.status, received_at: it.received_at, ids: [] };
+    const key = `${it.status}|${it.received_at ?? ""}|${it.written_at}`;
+    const group = groups.get(key) ?? { status: it.status, received_at: it.received_at, written_at: it.written_at, ids: [] };
     group.ids.push(it.id);
     groups.set(key, group);
   }
-  for (const { status, received_at, ids } of groups.values()) {
+  for (const { status, received_at, written_at, ids } of groups.values()) {
     const { data, error } = await session.supabase
       .from("parcels")
       .update({ status, received_at })
       .in("id", ids)
       .eq("user_id", session.userId)
       .eq("status", "delivered")
-      .not("received_at", "is", null)
+      // Exactly what the press being undone wrote: a later receive of the same parcel is not taken back.
+      .eq("received_at", written_at)
       .select("id");
     if (error) throw new Error(error.message);
     restored += new Set(data.map((row) => row.id)).size;

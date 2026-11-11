@@ -114,6 +114,8 @@ export const DELIVERED_LABEL = "配達済み";
 export const RECEIVED_LABEL = "受け取り済み";
 /** Shown when 元に戻す put back only some of the parcels. No count: the person looks at the list. */
 export const PARTLY_RESTORED_NOTICE = "受け取り済みのままの荷物があります";
+/** A second line of the received toast when some of the parcels pressed are not covered by 元に戻す (the iOS app has the same words). No count. */
+export const CANNOT_UNDO_NOTE = "元に戻せない荷物があります";
 
 export function parcelStatusLabel(status: string, receivedAt: string | null | undefined): string {
   if (status === "delivered") return receivedAt ? RECEIVED_LABEL : DELIVERED_LABEL;

@@ -221,7 +221,7 @@ describe("markNotDelivered: the existing undo keeps working", () => {
     expect(await actions.markDelivered([BARE])).toBe(1);
     expect(statusOf(BARE)).toBe("delivered");
     expect(db.find("parcels", BARE)!.received_at).not.toBeNull();
-    await actions.restoreStatuses([{ id: BARE, status: "shipped", received_at: null }]);
+    await actions.restoreStatuses([{ id: BARE, status: "shipped", received_at: null, written_at: String(db.find("parcels", BARE)!.received_at) }]);
     expect(statusOf(BARE)).toBe("shipped");
     expect(db.find("parcels", BARE)!.received_at).toBeNull();
   });
