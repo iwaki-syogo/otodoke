@@ -47,7 +47,7 @@ beforeEach(() => {
   for (const fn of [mocks.getUser, mocks.mark, mocks.read, mocks.process]) fn.mockReset();
   mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1", email: "me@example.com" } }, error: null });
   mocks.mark.mockResolvedValue({ ok: true, outcome: "remembered" });
-  mocks.read.mockResolvedValue({ ok: true, read: 3, overLimit: false });
+  mocks.read.mockResolvedValue({ ok: true, read: 3, overLimit: false, unavailable: false });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => {
@@ -124,10 +124,23 @@ describe("mark-parcel", () => {
 
 describe("read-waiting", () => {
   it("reads for the token's user and answers the counts", async () => {
-    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 3, over_limit: false, busy: false }, cache: "no-store" });
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 3, over_limit: false, busy: false, unavailable: false }, cache: "no-store" });
     expect(mocks.read.mock.calls[0][1]).toBe("user-1");
-    mocks.read.mockResolvedValue({ ok: true, read: 1, overLimit: true });
+    mocks.read.mockResolvedValue({ ok: true, read: 1, overLimit: true, unavailable: false });
     expect(await call("read-waiting")).toMatchObject({ status: 200, json: { ok: true, read: 1, over_limit: true, busy: false } });
+  });
+
+  it("answers 200 with unavailable:true when Claude is stopped, and keeps every other field as it was (not read_failed)", async () => {
+    mocks.read.mockResolvedValue({ ok: true, read: 2, overLimit: false, unavailable: true });
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 2, over_limit: false, busy: false, unavailable: true }, cache: "no-store" });
+    // Even with an earlier real failure in the same run: the stop is what the person needs to hear.
+    mocks.read.mockResolvedValue({ ok: false, stage: "read", message: "x", read: 1, overLimit: false, unavailable: true, onlyBusy: false });
+    expect(await call("read-waiting")).toMatchObject({ status: 200, json: { ok: true, unavailable: true } });
+  });
+
+  it("negative control: without unavailable a real failure is still 500 read_failed", async () => {
+    mocks.read.mockResolvedValue({ ok: false, stage: "read", message: "x", read: 1, overLimit: false, unavailable: false, onlyBusy: false });
+    expect(await call("read-waiting")).toMatchObject({ status: 500, json: { code: "read_failed" } });
   });
 
   it("accepts an empty body; 400 invalid_input for a field or non-JSON", async () => {
@@ -151,7 +164,7 @@ describe("read-waiting", () => {
     const mail = (n: number) => ({ id: `e${n}`, provider_email_id: `p${n}`, message_id: `<m${n}>`, from_address: "a@b.c", from_name: null, subject: "s", sent_at: "2026-11-01T00:00:00Z", text_body: "t", html_body: null });
     mocks.rows.current = [mail(1), mail(2), mail(3)];
     mocks.process.mockResolvedValueOnce({ kind: "processed" }).mockResolvedValueOnce({ kind: "over_limit", emailId: "e2", limit: "user" }).mockResolvedValue({ kind: "processed" });
-    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: true, busy: false }, cache: "no-store" });
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: true, busy: false, unavailable: false }, cache: "no-store" });
     expect(mocks.process).toHaveBeenCalledTimes(2);
     expect(mocks.process.mock.calls[0][1]).toMatchObject({ userId: "user-1" });
   });
@@ -166,7 +179,7 @@ describe("concurrent read and user scoping (real shared functions, FakeDb)", () 
     mocks.read.mockImplementation((db: never, userId: string) => runReadWaitingMail(db, userId));
     mocks.rows.current = [mail(1, "user-1"), mail(2, "user-1")];
     mocks.process.mockResolvedValueOnce({ kind: "processed" }).mockRejectedValueOnce(new MailBeingReadError("busy"));
-    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: false, busy: true }, cache: "no-store" });
+    expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: false, busy: true, unavailable: false }, cache: "no-store" });
     mocks.process.mockResolvedValueOnce({ kind: "processed" }).mockRejectedValueOnce(new Error("boom"));
     expect(await call("read-waiting")).toEqual({ status: 500, json: { ok: false, code: "read_failed", read: 1 }, cache: "no-store" });
   });

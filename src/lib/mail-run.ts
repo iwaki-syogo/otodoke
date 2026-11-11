@@ -1,5 +1,6 @@
 import { demoInput, loadDemoEntries, type DemoEntry } from "@/lib/demo";
 import { sampleFileOf } from "@/lib/mail-keys";
+import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -44,9 +45,10 @@ export async function runMarkWronglyDropped(db: AdminClient, userId: string, use
 }
 
 export type ReadWaitingResult =
-  | { ok: true; read: number; overLimit: boolean }
+  // unavailable: Claude cannot be used (stopped, not just failing); the loop stopped at that mail.
+  | { ok: true; read: number; overLimit: boolean; unavailable: boolean }
   // onlyBusy: every failure was another read taking the same mail (MailBeingReadError), none was a real one.
-  | { ok: false; stage: "lookup" | "read"; message: string; read: number; overLimit: boolean; onlyBusy: boolean };
+  | { ok: false; stage: "lookup" | "read"; message: string; read: number; overLimit: boolean; unavailable: boolean; onlyBusy: boolean };
 
 /** Read up to 20 waiting mails; stops when today's allowance runs out. `read` counts the mails processed (every outcome but over_limit). */
 export async function runReadWaitingMail(db: AdminClient, userId: string): Promise<ReadWaitingResult> {
@@ -58,12 +60,13 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
     .or(UNREAD_FILTER())
     .order("sent_at", { ascending: true })
     .limit(20);
-  if (error) return { ok: false, stage: "lookup", message: error.message, read: 0, overLimit: false, onlyBusy: false };
+  if (error) return { ok: false, stage: "lookup", message: error.message, read: 0, overLimit: false, unavailable: false, onlyBusy: false };
 
   let failure: string | null = null;
   let realFailure = false;
   let read = 0;
   let overLimit = false;
+  let unavailable = false;
   // A sample mail left pending by an interrupted loadDemo is read the way loadDemo reads it
   // (precomputed, never Claude); the entries are loaded once, only if one is waiting.
   let samples: Map<string, DemoEntry> | null = null;
@@ -103,11 +106,16 @@ export async function runReadWaitingMail(db: AdminClient, userId: string): Promi
       }
       read++;
     } catch (err) {
+      // Claude is stopped: every next mail would fail the same way, so stop here (the mail is kept).
+      if (err instanceof ClaudeUnavailableError) {
+        unavailable = true;
+        break;
+      }
       // One unreadable mail must not hold back the ones after it.
       failure = err instanceof Error ? err.message : String(err);
       if (!(err instanceof MailBeingReadError)) realFailure = true;
     }
   }
-  if (failure) return { ok: false, stage: "read", message: failure, read, overLimit, onlyBusy: !realFailure };
-  return { ok: true, read, overLimit };
+  if (failure) return { ok: false, stage: "read", message: failure, read, overLimit, unavailable, onlyBusy: !realFailure };
+  return { ok: true, read, overLimit, unavailable };
 }

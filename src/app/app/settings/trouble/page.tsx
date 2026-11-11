@@ -1,10 +1,12 @@
+import Link from "next/link";
 import { FoldCard, PitfallBody } from "@/components/forwarding-steps";
 import { FORWARDING_PITFALLS, PITFALLS_HEADING, PITFALLS_LEAD } from "@/lib/forwarding-guide";
 import { createClient } from "@/lib/supabase/server";
+import { READ_FAILED_REASON, READ_OVER_LIMIT_REASON, READ_STOPPED_BUTTON, READ_STOPPED_REASON } from "@/lib/read-notices";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import { readWaitingMail } from "../actions";
 import { PressButton } from "../press";
-import { readUnreadCount } from "../settings-reads";
+import { readUnreadCount, readUnreadReasons } from "../settings-reads";
 import { RowCard, RowLink } from "../settings-row";
 import { SubPage } from "../sub-page";
 
@@ -21,6 +23,9 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
   const supabase = await createClient();
   // A count that failed is told apart from none: by null, never by 0.
   const waiting = await readUnreadCount(supabase, "settings trouble");
+  // The reasons are told only from counts that were read; when they were not, no reason is stated.
+  const reasons = waiting !== null && waiting > 0 ? await readUnreadReasons(supabase, "settings trouble") : null;
+  const failed = waiting !== null && reasons ? waiting - reasons.stopped - reasons.overLimit : 0;
 
   return (
     <SubPage title="うまく届かないとき">
@@ -29,7 +34,16 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
       ) : waiting > 0 ? (
         <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">未読のメールが {waiting} 通あります</h2>
-          <p className="mt-1 text-sm leading-6">1 日の上限を超えたか、読み取りに失敗したメールです。保存してあるので、もう一度読み取れます。</p>
+          {reasons && reasons.stopped > 0 ? (
+            <>
+              <p className="mt-1 text-sm leading-6">{READ_STOPPED_REASON}</p>
+              <Link href="/app/parcels/new" className="mt-2 inline-block rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium">
+                {READ_STOPPED_BUTTON}
+              </Link>
+            </>
+          ) : null}
+          {reasons && reasons.overLimit > 0 ? <p className="mt-1 text-sm leading-6">{READ_OVER_LIMIT_REASON}</p> : null}
+          {failed > 0 ? <p className="mt-1 text-sm leading-6">{READ_FAILED_REASON}</p> : null}
           <form action={readWaitingMail} className="mt-3">
             <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
           </form>

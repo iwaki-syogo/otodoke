@@ -31,7 +31,7 @@ const WEB_SOURCES: { name: string; file: string; around: [string, string] }[] = 
   { name: "register", file: `${WEB}/dropped/page.tsx`, around: ["\n                ", "\n              </Link>"] },
   { name: "readLabel", file: `${WEB}/trouble/page.tsx`, around: ['<PressButton label="', '" busyLabel='] },
   { name: "readBusy", file: `${WEB}/trouble/page.tsx`, around: ['busyLabel="', '" className='] },
-  { name: "readFailed", file: "src/lib/settings-errors.ts", around: ['read_failed: "', '",'] },
+  { name: "readFailed", file: "src/lib/read-notices.ts", around: ['READ_FAILED_NOTICE = "', '";'] },
   { name: "unknownFailure", file: "src/lib/settings-errors.ts", around: ['UNKNOWN_SETTINGS_ERROR = "', '";'] },
 ];
 
@@ -49,6 +49,10 @@ describe("「これは荷物」 and 「読み取る」: the words are the Web's"
     }
   });
 
+  it("the Web's read_failed code says that same sentence (read-notices.ts is the one place)", () => {
+    expect(stripTsx(read("src/lib/settings-errors.ts"))).toContain("read_failed: READ_FAILED_NOTICE,");
+  });
+
   it("every constant of the file is checked (a new sentence needs a Web source)", () => {
     const names = [...src.matchAll(/static let (\w+) = "/g)].map((m) => m[1]).sort();
     expect(names).toEqual(WEB_SOURCES.map((w) => w.name).sort());
@@ -58,8 +62,8 @@ describe("「これは荷物」 and 「読み取る」: the words are the Web's"
     const web = stripTsx(read(`${WEB}/dropped/page.tsx`));
     const changed = constant(src.replace("次から Claude が確認します", "次から確認します"), "rememberedNote")!;
     expect(web.includes("remembered: { ok: true, register: true, text: \"" + changed + '" }')).toBe(false);
-    const readFailed = stripTsx(read("src/lib/settings-errors.ts"));
-    expect(readFailed.includes('read_failed: "' + constant(src.replace("少し時間をおいて", "しばらくして"), "readFailed")! + '",')).toBe(false);
+    const readFailed = stripTsx(read("src/lib/read-notices.ts"));
+    expect(readFailed.includes('READ_FAILED_NOTICE = "' + constant(src.replace("時間をおいて", "しばらくして"), "readFailed")! + '";')).toBe(false);
     // A sentence that stands only in a Web comment is not the Web's.
     expect(stripTsx("// read_failed: \"x\",").includes('read_failed: "x",')).toBe(false);
   });

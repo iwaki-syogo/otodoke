@@ -2,6 +2,7 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import { readAll } from "@/lib/supabase/read-all";
 import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
+import { ClaudeUnavailableError, claudeFailure } from "@/lib/extract/claude-error";
 import {
   isParcelRelevant,
   buildParcelInsert,
@@ -238,8 +239,12 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   try {
     return await understandAndFile(db, mail, emailRow.id, options);
   } catch (err) {
+    const failure = claudeFailure(err);
     const message = err instanceof Error ? err.message : String(err);
-    await db.from("emails").update({ processing_status: "failed", error: message }).eq("id", emailRow.id);
+    // A failed Claude call leaves only a fixed code in the row; the raw message stays in the server log.
+    if (failure) console.error("pipeline: claude call failed:", failure.code, message);
+    await db.from("emails").update({ processing_status: "failed", error: failure ? failure.code : message }).eq("id", emailRow.id);
+    if (failure?.code === "claude_unavailable") throw new ClaudeUnavailableError("claude is unavailable");
     throw err;
   }
 }

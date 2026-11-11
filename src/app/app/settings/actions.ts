@@ -40,10 +40,13 @@ export async function readWaitingMail(): Promise<void> {
   }
 
   revalidatePath("/app", "layout");
+  // Stopped first (nothing to retry), then a real failure, then the daily limit; else all was read.
+  if (done.unavailable) redirect(settingsErrorPath("read_unavailable"));
   if (!done.ok) {
     console.error("readWaitingMail:", done.message);
     redirect(settingsErrorPath("read_failed"));
   }
+  if (done.overLimit) redirect(settingsErrorPath("read_over_limit"));
   redirect("/app/settings/trouble");
 }
 

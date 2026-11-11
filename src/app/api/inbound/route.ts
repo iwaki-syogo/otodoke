@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { requireEnv } from "@/lib/env";
+import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import { processInboundEmail } from "@/lib/pipeline";
 import { scheduleSealRemaining } from "@/lib/seal-later";
 
@@ -108,6 +109,11 @@ export async function POST(request: Request) {
     scheduleSealRemaining(userId, admin());
     return NextResponse.json({ ok: true, outcome: outcome.kind });
   } catch (err) {
+    // Claude is stopped and trying again will not change that: the mail is stored, so answer 200.
+    if (err instanceof ClaudeUnavailableError) {
+      console.error("inbound: claude unavailable, mail kept unread");
+      return NextResponse.json({ ok: true, outcome: "unavailable" });
+    }
     // The message and code only: an error object can carry the request or the mail with it.
     console.error("inbound: processing failed", errorSummary(err));
     // 500 makes Resend retry later, which is what we want for transient failures.

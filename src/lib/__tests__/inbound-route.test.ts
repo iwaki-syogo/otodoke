@@ -276,3 +276,21 @@ describe("sealing the user's older plaintext mail (automatic, once per request)"
     expect(mocks.scheduleSeal).not.toHaveBeenCalled();
   });
 });
+
+describe("Claude is stopped", () => {
+  it("200 with outcome unavailable (the mail is stored; retrying would not help), and the mail is not logged", async () => {
+    const { ClaudeUnavailableError } = await import("@/lib/extract/claude-error");
+    mocks.processInboundEmail.mockImplementation(async () => {
+      throw new ClaudeUnavailableError("claude is unavailable");
+    });
+    expect(await post()).toEqual({ status: 200, body: { ok: true, outcome: "unavailable" } });
+    expect(logged()).not.toContain("注文番号");
+  });
+
+  it("negative control: any other throw is still 500", async () => {
+    mocks.processInboundEmail.mockImplementation(async () => {
+      throw new Error("claude is unavailable");
+    });
+    expect(await post()).toEqual({ status: 500, body: { error: "processing failed" } });
+  });
+});

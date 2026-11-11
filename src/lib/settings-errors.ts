@@ -1,3 +1,5 @@
+import { READ_FAILED_NOTICE, READ_OVER_LIMIT_NOTICE, READ_UNAVAILABLE_NOTICE } from "@/lib/read-notices";
+
 /**
  * What ?error=<code> on the 設定 pages (/app/settings/demo, /trouble, /dropped) may say. The query
  * carries only a code; the words come from here, so a crafted link cannot put its own text on a
@@ -6,7 +8,9 @@
  */
 export const SETTINGS_ERROR_MESSAGES = {
   demo_failed: "サンプルを最後まで読み込めませんでした。もう一度お試しください。",
-  read_failed: "読み取れなかったメールがあります。少し時間をおいて、もう一度お試しください。",
+  read_failed: READ_FAILED_NOTICE,
+  read_unavailable: READ_UNAVAILABLE_NOTICE,
+  read_over_limit: READ_OVER_LIMIT_NOTICE,
   flag_failed: "記録できませんでした。もう一度お試しください。",
   clear_confirm: "「本当に消す」にチェックを入れてください",
   clear_failed: "消せませんでした。もう一度お試しください。",
@@ -23,6 +27,8 @@ export const SETTINGS_ERROR_PAGES: Record<SettingsErrorCode, string> = {
   clear_confirm: "/app/settings/demo",
   clear_failed: "/app/settings/demo",
   read_failed: "/app/settings/trouble",
+  read_unavailable: "/app/settings/trouble",
+  read_over_limit: "/app/settings/trouble",
   flag_failed: "/app/settings/dropped",
 };
 

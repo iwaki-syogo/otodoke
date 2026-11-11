@@ -84,13 +84,18 @@ export async function readWaitingStep(request: Request): Promise<Response> {
     console.error("[mail-api] read-waiting threw:", thrown instanceof Error ? thrown.name : typeof thrown);
     return failure("read_failed");
   }
+  // Claude is stopped: not a failure (nothing the app can retry), so a 200 that says so.
+  if (done.unavailable) {
+    const busy = !done.ok && done.stage === "read" && done.onlyBusy;
+    return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy, unavailable: true }, { status: 200, headers: NO_STORE });
+  }
   if (!done.ok) {
     // Only another read holding the same mail: not a failure, the other read finishes it.
     if (done.stage === "read" && done.onlyBusy) {
-      return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy: true }, { status: 200, headers: NO_STORE });
+      return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy: true, unavailable: false }, { status: 200, headers: NO_STORE });
     }
     console.error("[mail-api] read-waiting failed at:", done.stage);
     return Response.json({ ok: false, code: "read_failed", read: done.read }, { status: STATUS.read_failed, headers: NO_STORE });
   }
-  return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy: false }, { status: 200, headers: NO_STORE });
+  return Response.json({ ok: true, read: done.read, over_limit: done.overLimit, busy: false, unavailable: false }, { status: 200, headers: NO_STORE });
 }

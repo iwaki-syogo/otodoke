@@ -32,6 +32,26 @@ export async function readUnreadCount(supabase: Supabase, where: string): Promis
   return count;
 }
 
+/**
+ * Why mail is waiting, as counts among the unread: `stopped` (Claude cannot be used: the row's
+ * error is the code claude_unavailable) and `overLimit` (the daily allowance). The rest of the
+ * waiting mail is a failure. null when either count could not be read: the reason is then unknown.
+ */
+export async function readUnreadReasons(supabase: Supabase, where: string): Promise<{ stopped: number; overLimit: number } | null> {
+  const head = { count: "exact", head: true } as const;
+  const [stopped, overLimit] = await Promise.all([
+    supabase.from("emails").select("id", head).or(UNREAD_FILTER()).eq("error", "claude_unavailable"),
+    supabase.from("emails").select("id", head).or(UNREAD_FILTER()).eq("processing_status", "over_limit"),
+  ]);
+  for (const [what, r] of [["stopped", stopped], ["over limit", overLimit]] as const) {
+    if (r.error || r.count === null) {
+      console.error(`${where} (unread ${what} count):`, r.error?.message ?? "no count");
+      return null;
+    }
+  }
+  return { stopped: stopped.count ?? 0, overLimit: overLimit.count ?? 0 };
+}
+
 /** How many confirmation mails are looked through: a forged one without Google's link must not hide the real one. */
 const CONFIRMATION_LOOKBACK = 10;
 
