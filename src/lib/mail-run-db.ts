@@ -14,6 +14,9 @@ export function withMailRun(db: AdminClient, emailId: string, runId: string): Ad
     get(target, property) {
       if (property === "rpc") {
         return (name: string, args: Json) => {
+          if (name === "create_mail_parcel" || name === "update_mail_parcel" || name === "ensure_mail_parcel_items") {
+            return Reflect.apply(Reflect.get(target, property), target, [name, { ...(args as object), p_email_id: emailId, p_run_id: runId }]);
+          }
           if (name === "claim_claude_call" || name === "claim_claude_call_v2") {
             return db.rpc("mail_run_write", {
               p_email_id: emailId, p_run_id: runId, p_table: name,

@@ -529,6 +529,19 @@ export type Database = {
           verdict: string
         }[]
       }
+      create_mail_parcel: {
+        Args: { p_snapshot: Json; p_values: Json; p_items: Json; p_email_id?: string; p_run_id?: string }
+        Returns: { verdict: string; parcel_id: string | null }[]
+      }
+      update_mail_parcel: {
+        Args: { p_snapshot: Json; p_parcel_id: string; p_expected_updated_at: string; p_values: Json; p_category: Json; p_items: Json; p_email_id?: string; p_run_id?: string }
+        Returns: { verdict: string; parcel_id: string | null; parcel_row: Json | null }[]
+      }
+      ensure_mail_parcel_items: {
+        Args: { p_parcel_id: string; p_expected_updated_at: string; p_items: Json; p_email_id?: string; p_run_id?: string }
+        Returns: { verdict: string }[]
+      }
+      mail_parcel_snapshot: { Args: { p_user_id: string }; Returns: Json }
       store_mail_run: {
         Args: { p_user_id: string; p_email_id: string; p_run_id: string; p_columns: Json; p_expected_created_at: string | null; p_limits: Json }
         Returns: { verdict: string; email_id: string }[]

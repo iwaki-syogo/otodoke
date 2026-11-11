@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 
 /** Read the real gateway contract so pipeline tests cannot silently accept an SQL-rejected column. */
-const mailRunSql = readFileSync(new URL("../../../supabase/migrations/20261113090000_claude_call_global_lock.sql", import.meta.url), "utf8");
+const mailRunSql = readFileSync(new URL("../../../supabase/migrations/20261113100000_parcel_write_conflicts.sql", import.meta.url), "utf8");
 export const MAIL_RUN_ALLOWED_COLUMNS = new Map(
   [...mailRunSql.matchAll(/when '(emails|extractions|parcel_items|parcels)' then[\s\S]*?v_allow := array\[([\s\S]*?)\];/g)]
     .map((match) => [match[1], new Set([...match[2].matchAll(/'([^']+)'/g)].map((column) => column[1]))] as const),
@@ -57,6 +57,9 @@ export interface Result {
 
 export type Hook = (q: Query, db: FakeDb) => Result | void;
 
+type CreateParcelArgs = { p_email_id:string; p_run_id:string; p_snapshot:Array<{id:string;updated_at:string;item_names:string[]}>;p_values:Row;p_items:Row[] };
+type UpdateParcelArgs = CreateParcelArgs & {p_parcel_id:string;p_expected_updated_at:string;p_category:Row|null};
+type EnsureItemsArgs = { p_email_id:string; p_run_id:string; p_parcel_id:string;p_expected_updated_at:string;p_items:Row[] };
 type StoreArgs = { p_user_id: string; p_email_id: string; p_run_id: string; p_columns: Row; p_expected_created_at: string | null; p_limits: { user_count:number; global_count:number; user_bytes:number; global_bytes:number } };
 type OwnedArgs = { p_email_id:string; p_run_id:string; p_table:string; p_operation:string; p_values:Row; p_filters:Filter[] };
 
@@ -274,7 +277,7 @@ export class FakeDb {
     this.clock = startMs;
     this.tables = {};
     for (const [table, rows] of Object.entries(seed)) {
-      this.tables[table] = rows.map((r) => ({ ...(DEFAULTS[table] ?? {}), ...r }));
+      this.tables[table] = rows.map((r) => ({ ...(DEFAULTS[table] ?? {}), ...(table === "parcels" ? { created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" } : {}), ...r }));
     }
   }
 
@@ -298,6 +301,10 @@ export class FakeDb {
 
   rpc(name: string, args?: unknown): Promise<Result> {
     this.rpcCalls.push({ name, args });
+    if (name === "update_mail_parcel") return Promise.resolve(this.updateMailParcel(args as UpdateParcelArgs));
+    if (name === "create_mail_parcel") return Promise.resolve(this.createMailParcel(args as CreateParcelArgs));
+    if (name === "ensure_mail_parcel_items") return Promise.resolve(this.ensureMailParcelItems(args as EnsureItemsArgs));
+    if (name === "mail_parcel_snapshot") return Promise.resolve({ data: this.parcelSnapshot((args as { p_user_id: string }).p_user_id), error: null });
     if (name === "store_mail_run") return Promise.resolve(this.storeMailRun(args as StoreArgs));
     if (name === "mail_run_write") return this.mailRunWrite(args as OwnedArgs);
     if (name === "activate_user_key") return Promise.resolve(this.activateUserKey(args as { p_user_id: string; p_key_id: string; p_challenge_hash: string }));
@@ -354,6 +361,74 @@ export class FakeDb {
     return result.data ? answer("ok") : answer("busy");
   }
 
+  private activeMail(emailId: string, runId: string) {
+    return this.rows("emails").find((r) => r.id === emailId && r.processing_run_id === runId && r.processing_status === "pending" && Date.parse(String(r.processing_lease_until)) > Date.now());
+  }
+
+  private parcelSnapshot(userId: string) {
+    return this.rows("parcels").filter((p) => p.user_id === userId).map((p) => ({ id:p.id,updated_at:p.updated_at,
+      item_names:this.rows("parcel_items").filter((i) => i.parcel_id===p.id && i.user_id===userId).map((i) => String(i.name)) }));
+  }
+
+  private sameParcelSnapshot(snapshot: CreateParcelArgs["p_snapshot"],userId:string) {
+    const normalize = (rows: Array<{id:unknown;updated_at:unknown;item_names:string[]}>) => rows.map((r) => ({...r,
+      updated_at:typeof r.updated_at === "string" ? new Date(r.updated_at).toISOString() : r.updated_at,
+      item_names:[...r.item_names].sort((x,y) => x<y ? -1 : x>y ? 1 : 0),
+    })).sort((x,y) => String(x.id)<String(y.id) ? -1 : String(x.id)>String(y.id) ? 1 : 0);
+    return Array.isArray(snapshot) && new Set(snapshot.map((r)=>r.id)).size===snapshot.length && JSON.stringify(normalize(snapshot))===JSON.stringify(normalize(this.parcelSnapshot(userId)));
+  }
+
+  private updateMailParcel(a: UpdateParcelArgs): Result {
+    const mail=this.activeMail(a.p_email_id,a.p_run_id);
+    if(!mail) return {data:null,error:{code:"42501",message:"mail run no longer owns the lease"}};
+    const retry=():Result=>({data:[{verdict:"retry",parcel_id:null,parcel_row:null}],error:null});
+    const parcel=this.find("parcels",a.p_parcel_id);
+    if(!this.sameParcelSnapshot(a.p_snapshot,String(mail.user_id)) || !parcel || parcel.user_id!==mail.user_id || Date.parse(String(parcel.updated_at))!==Date.parse(a.p_expected_updated_at)) return retry();
+    const before=structuredClone(this.tables);
+    const values={...a.p_values,...(parcel.category_source==="user"?{}:a.p_category??{})};
+    let saved=parcel;
+    if(Object.keys(values).length) {
+      const result=this.ownedMutation({p_email_id:a.p_email_id,p_run_id:a.p_run_id,p_table:"parcels",p_operation:"update",p_values:values,
+        p_filters:[{method:"eq",args:["id",a.p_parcel_id]},{method:"eq",args:["user_id",mail.user_id]},{method:"eq",args:["updated_at",a.p_expected_updated_at]}]});
+      if(result.error) return result;
+      if(!Array.isArray(result.data)) return {data:null,error:{message:"parcel update returned no saved row"}};
+      if(result.data.length===0) return retry();
+      saved=result.data[0] as Row;
+    }
+    const ensured=this.ensureMailParcelItems({...a,p_expected_updated_at:String(saved.updated_at)});
+    if(ensured.error) {this.tables=before;return ensured;}
+    if((ensured.data as Row[])[0]?.verdict!=="ok") {this.tables=before;return retry();}
+    return {data:[{verdict:"ok",parcel_id:a.p_parcel_id,parcel_row:saved}],error:null};
+  }
+
+  private createMailParcel(a: CreateParcelArgs): Result {
+    const mail = this.activeMail(a.p_email_id,a.p_run_id);
+    if (!mail) return {data:null,error:{code:"42501",message:"mail run no longer owns the lease"}};
+    if (!this.sameParcelSnapshot(a.p_snapshot,String(mail.user_id))) return {data:[{verdict:"retry",parcel_id:null}],error:null};
+    const before = structuredClone(this.tables);
+    const result = this.ownedMutation({ p_email_id:a.p_email_id,p_run_id:a.p_run_id,p_table:"parcels",p_operation:"insert",p_values:a.p_values,p_filters:[] });
+    if (result.error) { this.tables=before; return result; }
+    const parcelId = (result.data as Row[])[0]?.id;
+    if (!parcelId) { this.tables=before; return {data:null,error:{message:"parcel creation returned no saved row"}}; }
+    if (a.p_items.length) {
+      const inserted = this.ownedMutation({ p_email_id:a.p_email_id,p_run_id:a.p_run_id,p_table:"parcel_items",p_operation:"insert",p_values:a.p_items.map((i) => ({...i,parcel_id:parcelId})) as unknown as Row,p_filters:[] });
+      if (inserted.error) { this.tables=before; return inserted; }
+    }
+    return {data:[{verdict:"ok",parcel_id:parcelId}],error:null};
+  }
+
+  private ensureMailParcelItems(a: EnsureItemsArgs): Result {
+    const mail = this.activeMail(a.p_email_id,a.p_run_id);
+    if (!mail) return {data:null,error:{code:"42501",message:"mail run no longer owns the lease"}};
+    const parcel = this.find("parcels",a.p_parcel_id);
+    if (!parcel || parcel.user_id !== mail.user_id || Date.parse(String(parcel.updated_at)) !== Date.parse(a.p_expected_updated_at)) return {data:[{verdict:"retry"}],error:null};
+    if (!this.rows("parcel_items").some((i) => i.parcel_id===a.p_parcel_id && i.user_id===mail.user_id) && a.p_items.length) {
+      const result = this.ownedMutation({p_email_id:a.p_email_id,p_run_id:a.p_run_id,p_table:"parcel_items",p_operation:"insert",p_values:a.p_items.map((i) => ({...i,parcel_id:a.p_parcel_id})) as unknown as Row,p_filters:[]});
+      if (result.error) return result;
+    }
+    return {data:[{verdict:"ok"}],error:null};
+  }
+
   private async mailRunWrite(a: OwnedArgs): Promise<Result> {
     const owner = () => this.rows("emails").find((r) => r.id === a.p_email_id && r.processing_run_id === a.p_run_id && r.processing_status === "pending" && Date.parse(String(r.processing_lease_until)) > Date.now());
     if (!owner()) return { data: null, error: { code: "42501", message: "mail run no longer owns the lease" } };
@@ -362,6 +437,12 @@ export class FakeDb {
       this.rpcCalls[this.rpcCalls.length-1].internal = true;
       return result;
     }
+    return this.ownedMutation(a);
+  }
+
+  private ownedMutation(a: OwnedArgs): Result {
+    const mail = this.activeMail(a.p_email_id,a.p_run_id);
+    if (!mail) return {data:null,error:{code:"42501",message:"mail run no longer owns the lease"}};
     const allowed = MAIL_RUN_ALLOWED_COLUMNS.get(a.p_table);
     if (!allowed) return { data: null, error: { code: "22023", message: "unsupported mail table" } };
     if (a.p_operation === "insert" || a.p_operation === "update") {
@@ -371,7 +452,10 @@ export class FakeDb {
       }
     }
     let q = this.from(a.p_table);
-    if (a.p_operation === "insert") q = q.insert(a.p_values);
+    if (a.p_operation === "insert") {
+      const own = (r: Row) => ({...r,user_id:mail.user_id});
+      q = q.insert(Array.isArray(a.p_values) ? a.p_values.map(own) : own(a.p_values));
+    }
     else if (a.p_operation === "update") q = q.update(a.p_values);
     else q = q.delete();
     for (const f of a.p_filters) q = (q as unknown as Record<string,(...v:unknown[])=>FakeQuery>)[f.method](...f.args);

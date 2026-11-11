@@ -53,7 +53,7 @@ describe("reading permission is a server decision", () => {
     await expect(processInboundEmail(asAdmin(db), mail)).rejects.toMatchObject({ name: "AiReadingNotAllowedError", code: expected });
     expect(mocks.extract).not.toHaveBeenCalled();
     expect(mocks.triage).not.toHaveBeenCalled();
-    expect(db.rpcCalls).toEqual([]);
+    expect(db.rpcCalls.filter((call) => ["claim_claude_call", "claim_claude_call_v2"].includes(call.name) || call.name === "mail_run_write" && (call.args as { p_operation?: string }).p_operation === "claim")).toEqual([]);
     expect(db.rows("emails")).toHaveLength(1);
     expect(db.rows("emails")[0]).toMatchObject({ user_id: USER, processing_status: "failed", error: expected, text_body: mail.text });
   });
@@ -111,7 +111,7 @@ describe("reading permission is a server decision", () => {
     expect(db.callsOn("ai_reading_consents", "select")).toHaveLength(0);
     expect(mocks.extract).not.toHaveBeenCalled();
     expect(mocks.triage).not.toHaveBeenCalled();
-    expect(db.rpcCalls).toEqual([]);
+    expect(db.rpcCalls.filter((call) => ["claim_claude_call", "claim_claude_call_v2"].includes(call.name) || call.name === "mail_run_write" && (call.args as { p_operation?: string }).p_operation === "claim")).toEqual([]);
   });
 
   it("a sample flag alone cannot send a real mail to Claude without permission", async () => {

@@ -1,0 +1,68 @@
+-- One final verdict row. Requires C and A followed by this migration.
+-- All behaviour writes are synthetic and rolled back. Does not send anything.
+do $$
+declare
+  v_user uuid:=gen_random_uuid(); v_mail uuid:=gen_random_uuid(); v_run uuid:=gen_random_uuid();
+  v_parcel uuid; v_old jsonb; v_snapshot jsonb; v_saved jsonb; v_verdict text; v_version timestamptz;
+  v_fail text:=''; v_count bigint;
+  v_values jsonb:='{"shop":"Synthetic shop","order_number":"ORDER-12345678","status":"ordered","total_amount":1000}';
+  v_items jsonb:='[{"name":"Synthetic item","quantity":1,"unit_price":1000,"evidence":"Synthetic"}]';
+begin
+  begin
+    insert into auth.users(id) values(v_user);
+    insert into public.emails(id,user_id,processing_status,processing_run_id,processing_lease_until)
+      values(v_mail,v_user,'pending',v_run,clock_timestamp()+interval '360 seconds');
+    -- Email -> global, just as the owning RPCs. Never day -> global while traffic is live.
+    perform 1 from public.emails e where e.id=v_mail for update;
+    perform pg_catalog.pg_advisory_xact_lock(62803,0);
+    v_snapshot:=public.mail_parcel_snapshot(v_user);
+    select c.verdict,c.parcel_id into v_verdict,v_parcel from public.create_mail_parcel(v_snapshot,v_values,v_items,v_mail,v_run) c;
+    if v_verdict is distinct from 'ok' or v_parcel is null then v_fail:=v_fail||' create'; end if;
+    select count(*) into v_count from public.parcel_items i where i.parcel_id=v_parcel and i.user_id=v_user;
+    if v_count<>1 then v_fail:=v_fail||' initial_items'; end if;
+    select c.verdict into v_verdict from public.create_mail_parcel(v_snapshot,v_values,v_items,v_mail,v_run) c;
+    if v_verdict is distinct from 'retry' then v_fail:=v_fail||' stale_create'; end if;
+    if (select count(*) from public.parcels p where p.user_id=v_user)<>1 then v_fail:=v_fail||' duplicate_created'; end if;
+    v_old:=public.mail_parcel_snapshot(v_user);
+    update public.parcel_items i set name='Changed item' where i.parcel_id=v_parcel;
+    select p.updated_at into v_version from public.parcels p where p.id=v_parcel;
+    select u.verdict into v_verdict from public.update_mail_parcel(v_old,v_parcel,v_version,'{"status":"shipped"}',null,v_items,v_mail,v_run) u;
+    if v_verdict is distinct from 'retry' then v_fail:=v_fail||' changed_items'; end if;
+    v_snapshot:=public.mail_parcel_snapshot(v_user);
+    select u.verdict,u.parcel_row into v_verdict,v_saved from public.update_mail_parcel(v_snapshot,v_parcel,v_version,
+      '{"status":"delivered","received_at":"2026-11-02T00:00:00Z","expected_window_start":"12:34"}',null,v_items,v_mail,v_run) u;
+    if v_verdict is distinct from 'ok' or v_saved->>'status' is distinct from 'delivered'
+      or (v_saved->>'received_at')::timestamptz is distinct from '2026-11-02T00:00:00Z'::timestamptz
+      or (v_saved->>'expected_window_start')::time is distinct from '12:34'::time then v_fail:=v_fail||' typed_update_readback'; end if;
+    select u.verdict into v_verdict from public.update_mail_parcel(public.mail_parcel_snapshot(v_user),v_parcel,v_version-interval '1 microsecond','{"status":"shipped"}',null,'[]',v_mail,v_run) u;
+    if v_verdict is distinct from 'retry' then v_fail:=v_fail||' stale_update'; end if;
+    update public.parcels p set category='beauty',category_source='user' where p.id=v_parcel;
+    v_snapshot:=public.mail_parcel_snapshot(v_user);
+    select p.updated_at into v_version from public.parcels p where p.id=v_parcel;
+    select u.verdict,u.parcel_row into v_verdict,v_saved from public.update_mail_parcel(v_snapshot,v_parcel,v_version,'{}','{"category":"hobby","category_source":"auto"}',v_items,v_mail,v_run) u;
+    if v_verdict is distinct from 'ok' or v_saved->>'category' is distinct from 'beauty' then v_fail:=v_fail||' user_category'; end if;
+    select count(*) into v_count from public.parcel_items i where i.parcel_id=v_parcel;
+    if v_count<>1 then v_fail:=v_fail||' duplicate_items'; end if;
+    update public.emails e set processing_lease_until=clock_timestamp()-interval '1 second' where e.id=v_mail;
+    begin
+      perform public.create_mail_parcel(public.mail_parcel_snapshot(v_user),v_values,v_items,v_mail,v_run);
+      v_fail:=v_fail||' expired_owner';
+    exception when insufficient_privilege then null;
+    end;
+    raise exception using errcode='OTRBK',message='undo parcel verifier writes';
+  exception when sqlstate 'OTRBK' then null;
+  when others then v_fail:=v_fail||' SQLSTATE='||sqlstate||' '||sqlerrm;
+  end;
+  perform set_config('otodoke.verify_parcel_conflicts',case when v_fail='' then 'OK' else 'FAILED:'||v_fail end,false);
+end $$;
+with checks as (
+  select
+    (select count(*)=5 and bool_and(p.prosecdef and p.proconfig=array['search_path=""']
+      and not has_function_privilege('anon',p.oid,'execute') and not has_function_privilege('authenticated',p.oid,'execute')
+      and has_function_privilege('service_role',p.oid,'execute')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname in ('lock_parcel_candidates','mail_parcel_snapshot','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items')) as functions_ok,
+    (select count(*)=2 and bool_and((t.tgtype&1)=0 and (t.tgtype&2)=2 and t.tgenabled='O') from pg_trigger t
+      where t.tgname in ('parcels_candidate_write_lock','parcel_items_candidate_write_lock') and not t.tgisinternal) as statement_locks_ok,
+    coalesce(current_setting('otodoke.verify_parcel_conflicts',true),'FAILED: behaviour did not run') as behaviour
+)
+select case when functions_ok and statement_locks_ok and behaviour='OK' then 'OK' else 'FAILED' end as verdict,checks.* from checks;
