@@ -73,6 +73,8 @@ describe("manualWritesNothing", () => {
     for (const key of ["ordered_at", "tracking_number", "carrier"]) {
       expect(manualWritesNothing(columns(), without(saved(), key))).toBe(false);
     }
+    // An empty number is not "the same" as a number that was not read.
+    expect(manualWritesNothing(columns({ tracking_number: null, carrier: null }), without(saved({ carrier: null }), "tracking_number"))).toBe(false);
   });
 
   it("is false for a column written only on a difference (category, date, evidence)", () => {

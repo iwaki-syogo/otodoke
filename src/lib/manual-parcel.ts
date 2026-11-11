@@ -220,6 +220,7 @@ export function manualWritesNothing(
       case "shop_key":
         break;
       case "ordered_at":
+        // "=== undefined" is for clarity: a column not read never equals the value.
         if (saved.ordered_at === undefined || value !== saved.ordered_at) return false;
         break;
       // The tracking columns come together. Compared by value (not by the choice on the form), so a
@@ -229,6 +230,7 @@ export function manualWritesNothing(
         if (saved.tracking_number === undefined || value !== (normalizeTracking(saved.tracking_number ?? "") || null)) return false;
         break;
       case "carrier":
+        // "=== undefined" is for clarity: a column not read never equals the value.
         if (saved.carrier === undefined || value !== saved.carrier) return false;
         break;
       case "tracking_url":
