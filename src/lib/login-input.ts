@@ -41,6 +41,7 @@ export const FinishResetInputSchema = z
     keyId: KeyActivationSchema.shape.keyId,
     challenge: KeyActivationSchema.shape.challenge,
     expectedCurrentKeyId: KeyActivationSchema.shape.expectedCurrentKeyId,
+    expectedWrappedPrivateKey: KeyRewrapSchema.shape.previousWrappedPrivateKey.optional(),
   })
   .strict();
 export type FinishResetInput = z.infer<typeof FinishResetInputSchema>;

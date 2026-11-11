@@ -156,7 +156,25 @@ describe("the form", () => {
     await press(view);
     await drawn();
     expect(mocks.finish).toHaveBeenCalledTimes(2);
+    expect(mocks.finish.mock.calls[0][1]).toBe(mocks.finish.mock.calls[1][1]);
     expect(mocks.to).toEqual(["/app"]);
+  });
+
+  it("leaving the screen disposes its recovery scope", async () => {
+    mocks.finish.mockResolvedValue({ ok: false, code: "other" });
+    const view = await filled();
+    await press(view);
+    const scope = mocks.finish.mock.calls[0][1];
+    view.unmount();
+    expect(await mocks.real({ email: EMAIL, userId: USER, password: PASSWORD }, scope)).toEqual({ ok: false, code: "signed_out" });
+  });
+
+  it("a replaced pending key has a fresh-page exit instead of an endless same-request retry", async () => {
+    mocks.finish.mockResolvedValue({ ok: false, code: "key_not_pending" });
+    const view = await filled();
+    await press(view);
+    await drawn();
+    expect(view.hosts((h) => h.type === "a").map((h) => [h.props.href, textOfHost(h)])).toContainEqual(["/reset-password", "最初からやり直す"]);
   });
 
   it.each(["reset_expired", "signed_out"] as const)("%s: the words and the way to a new mail, no retry", async (code) => {

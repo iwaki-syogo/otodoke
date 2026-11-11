@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiReadingNotAllowedError, readAiReadingConsent, readingAllowed } from "@/lib/ai-consent";
-import { FakeDb } from "./fake-db";
+import { FakeDb, type RpcCall } from "./fake-db";
 import { OTHER, USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const mocks = vi.hoisted(() => ({ extract: vi.fn(), triage: vi.fn() }));
@@ -15,6 +15,21 @@ const normalMail = () => ({ ...mailOf("2026-11-03T01:00:00Z"), messageId: "<cons
 const screenedMail = () => ({ ...normalMail(), from: "news@mall.example.test", subject: "今週のおすすめ", text: "新着アイテムのご案内。配信停止はこちら" });
 const markSender = (db: FakeDb) => db.rows("screen_events").push({ id: "flag", user_id: USER, decision: "dropped", from_domain: "mall.example.test", flagged_at: "2026-11-12T00:00:00Z", created_at: "2026-11-12T00:00:00Z" });
 
+/** Storage is free; only these known mail writes are permitted without an AI allowance. */
+function assertOnlyFreeMailStorage(calls: RpcCall[]): void {
+  const tables = new Set(["emails", "parcels", "parcel_items", "extractions"]);
+  const operations = new Set(["insert", "update", "delete"]);
+  for (const call of calls) {
+    if (call.name === "store_mail_run") continue;
+    if (call.name === "mail_run_write" && call.args && typeof call.args === "object") {
+      const args = call.args as { p_table?: unknown; p_operation?: unknown };
+      if (typeof args.p_table === "string" && tables.has(args.p_table)
+          && typeof args.p_operation === "string" && operations.has(args.p_operation)) continue;
+    }
+    throw new Error(`AI consent: unexpected RPC ${call.name}`);
+  }
+}
+
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
@@ -24,6 +39,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("reading permission is a server decision", () => {
+  it("the no-allowance contract permits known storage writes", () => {
+    expect(() => assertOnlyFreeMailStorage([
+      { name: "store_mail_run", args: {} },
+      ...["insert", "update", "delete"].map((p_operation) => ({ name: "mail_run_write", args: { p_table: "emails", p_operation } })),
+    ])).not.toThrow();
+  });
+
+  it.each([
+    { name: "claim_claude_call", args: {} },
+    { name: "claim_claude_call_v2", args: {} },
+    { name: "mail_run_write", args: { p_table: "claim_claude_call", p_operation: "claim" } },
+    { name: "mail_run_write", args: { p_table: "claim_claude_call_v2", p_operation: "claim" } },
+    { name: "mail_run_write", args: { p_table: "emails", p_operation: "claim" } },
+    { name: "mail_run_write", args: { p_table: "unknown_table", p_operation: "insert" } },
+    { name: "mail_run_write", args: { p_table: "emails", p_operation: "unknown_operation" } },
+    { name: "mail_run_write", args: null },
+    { name: "unknown_rpc", args: {} },
+  ])("negative control: rejects $name $args", (call) => {
+    expect(() => assertOnlyFreeMailStorage([call])).toThrow(`AI consent: unexpected RPC ${call.name}`);
+  });
+
   it("tells an unanswered choice, declined, granted and a failed lookup apart", async () => {
     const db = new FakeDb();
     expect(await readAiReadingConsent(asAdmin(db), USER)).toBe("undecided");
@@ -54,6 +90,7 @@ describe("reading permission is a server decision", () => {
     expect(mocks.extract).not.toHaveBeenCalled();
     expect(mocks.triage).not.toHaveBeenCalled();
     expect(db.rpcCalls.filter((c) => /claude_call/.test(c.name))).toEqual([]);
+    expect(() => assertOnlyFreeMailStorage(db.rpcCalls)).not.toThrow();
     expect(db.rows("emails")).toHaveLength(1);
     expect(db.rows("emails")[0]).toMatchObject({ user_id: USER, processing_status: "failed", error: expected, text_body: mail.text });
   });
@@ -112,6 +149,7 @@ describe("reading permission is a server decision", () => {
     expect(mocks.extract).not.toHaveBeenCalled();
     expect(mocks.triage).not.toHaveBeenCalled();
     expect(db.rpcCalls.filter((c) => /claude_call/.test(c.name))).toEqual([]);
+    expect(() => assertOnlyFreeMailStorage(db.rpcCalls)).not.toThrow();
   });
 
   it("a sample flag alone cannot send a real mail to Claude without permission", async () => {

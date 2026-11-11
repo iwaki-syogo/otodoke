@@ -520,7 +520,7 @@ describe("finishing a reset", () => {
   it("reads the key in use, registers a new key, reads it back, then finishReset with the new secret and its challenge", async () => {
     const old = await forgotten();
     expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: true });
-    expect(server.log).toEqual(["readMailKey(in use)", "registerMailKey", "readMailKey(id)", "finishReset"]);
+    expect(server.log).toEqual(["readMailKey(in use)", "registerMailKey", "readMailKey(id)", "finishReset", "readMailKey(in use)"]);
     const sent = server.finishReset.mock.calls[0][0];
     expect(sent).toMatchObject({ expectedUserId: USER, expectedEmailNorm: EMAIL });
     expect(sent.authSecret).toBe(await secretFor(NEW_PASSWORD));
@@ -570,7 +570,7 @@ describe("finishing a reset", () => {
     server.before.finishReset = () => ({ ok: false, code: "stale_session" });
     expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "reset_expired" });
     // Other refusals keep their own codes.
-    server.before.registerMailKey = () => ({ ok: false, error: "network" });
+    server.before["readMailKey(in use)"] = () => ({ ok: false, error: "network" });
     expect(await finishPasswordReset({ email: EMAIL, userId: USER, password: NEW_PASSWORD }, server)).toEqual({ ok: false, code: "network" });
   });
 

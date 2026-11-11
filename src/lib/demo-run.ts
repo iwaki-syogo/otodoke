@@ -3,6 +3,7 @@ import { SAMPLE_PROVIDER_ID } from "@/lib/mail-keys";
 import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { readAll } from "@/lib/supabase/read-all";
 import type { AdminClient } from "@/lib/supabase/admin";
+import { beginSampleLoad } from "@/lib/sample-generation-db";
 
 /**
  * The sample load and the reset, as plain functions: shared by the web's Server Actions
@@ -32,13 +33,9 @@ async function receiveSampleParcels(db: AdminClient, userId: string): Promise<vo
   const parcelIds = [...new Set(links.filter((l) => sampleIds.has(l.email_id) && l.parcel_id !== null).map((l) => l.parcel_id as string))];
   const at = new Date().toISOString();
   for (let i = 0; i < parcelIds.length; i += MARK_CHUNK) {
-    const { error } = await db
-      .from("parcels")
-      .update({ received_at: at })
-      .in("id", parcelIds.slice(i, i + MARK_CHUNK))
-      .eq("user_id", userId)
-      .eq("status", "delivered")
-      .is("received_at", null);
+    const { error } = await db.rpc("receive_sample_parcels", {
+      p_user_id: userId, p_parcel_ids: parcelIds.slice(i, i + MARK_CHUNK), p_received_at: at,
+    });
     if (error) throw new Error(`sample parcels: ${error.message}`);
   }
 }
@@ -52,7 +49,7 @@ export async function runLoadDemo(getDb: () => AdminClient, userId: string): Pro
   let processed = 0;
   let otherIsLoading = false;
   try {
-    const db = getDb();
+    const db = await beginSampleLoad(getDb(), userId);
     for (const entry of await loadDemoEntries()) {
       let outcome;
       try {
@@ -82,8 +79,9 @@ export async function runLoadDemo(getDb: () => AdminClient, userId: string): Pro
 
 /** Remove everything `userId` has (used to reset a demo account). Null on success, else the message. */
 export async function runClearAllParcels(db: AdminClient, userId: string): Promise<string | null> {
-  // extractions and parcel_items cascade from parcels / emails.
-  const { error: e1 } = await db.from("parcels").delete().eq("user_id", userId);
-  const { error: e2 } = await db.from("emails").delete().eq("user_id", userId);
-  return e1?.message ?? e2?.message ?? null;
+  // Invalidating the generation and deleting the rows are one transaction. An earlier sample
+  // write either finishes before it and is removed, or observes the new generation and fails.
+  const { data, error } = await db.rpc("clear_all_parcels", { p_user_id: userId });
+  if (error) return error.message;
+  return typeof data === "string" ? null : "clear returned no generation";
 }

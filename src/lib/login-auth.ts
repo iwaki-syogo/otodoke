@@ -281,7 +281,7 @@ async function setLoginSecret(supabase: ServerClient, authSecret: string): Promi
 export async function finishReset(input: unknown): Promise<FinishResetResult> {
   const parsed = FinishResetInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid_input" };
-  const { authSecret, keyId, challenge, expectedCurrentKeyId, expectedUserId, expectedEmailNorm } = parsed.data;
+  const { authSecret, keyId, challenge, expectedCurrentKeyId, expectedUserId, expectedEmailNorm, expectedWrappedPrivateKey } = parsed.data;
   const supabase = await createClient();
   const read = await readCookieSession(supabase);
   if (read.state === "unknown") return { ok: false, code: "network" };
@@ -291,8 +291,13 @@ export async function finishReset(input: unknown): Promise<FinishResetResult> {
   if (!isFresh(read.session.amr, "reset")) return { ok: false, code: "reset_expired" };
 
   const db = createAdminClient();
-  const checked = await checkResetKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId });
+  const checked = await checkResetKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId, expectedWrappedPrivateKey });
   if (!checked.ok) return { ok: false, code: keyStepCode(checked.error) };
+  if (checked.alreadyActive) {
+    revalidatePath("/app", "layout");
+    scheduleSealRemaining(read.session.userId);
+    return { ok: true, keyId: checked.keyId };
+  }
 
   const set = await setLoginSecret(supabase, authSecret);
   if (set === "unknown") return { ok: false, code: "secret_change_unknown" };

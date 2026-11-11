@@ -75,7 +75,17 @@ const slowed = (real: FakeDb, seed = 0): unknown => {
           return proxy;
         };
       }
-      if (prop === "rpc") return async (...args: Parameters<FakeDb["rpc"]>) => { await pause(); return target.rpc(...args); };
+      if (prop === "rpc") return (...args: Parameters<FakeDb["rpc"]>) => {
+        const query = target.rpc(...args);
+        const proxy: object = new Proxy(query, {
+          get(q, p) {
+            if (p === "then") return (ok: never, bad: never) => pause().then(() => q.then(ok, bad));
+            const value = Reflect.get(q, p);
+            return typeof value === "function" ? (...values: unknown[]) => { const out = value.apply(q, values); return out === q ? proxy : out; } : value;
+          },
+        });
+        return proxy;
+      };
       const v = Reflect.get(target, prop) as unknown;
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
     },

@@ -14,10 +14,11 @@
  *   finishPasswordReset   /reset-password: a new key for the new password, then the new login secret
  *
  * From the password the browser makes master once per step (600,000 PBKDF2 rounds), and from it
- * the login secret (sent as the account's password) and the KEK (kept here). master, the login
- * secret and the KEKs live in these functions only and are let go when they return: they are put in
- * no React state and not in tab-key.ts, which keeps only the opened private key (a CryptoKey that
- * cannot be exported).
+ * the login secret (sent as the account's password) and the KEK (kept here). Master and KEKs live
+ * in these functions only. An unfinished reset retains its derived login-secret request in a
+ * screen-scoped WeakMap until disposal; no raw password, master or KEK is retained there. No
+ * secret goes into storage or tab-key.ts, which keeps only the opened private key (a CryptoKey
+ * that cannot be exported).
  *
  * The address: on /login, the one typed (the sign-in is made with it); after the login (opening
  * again, a change, a reset), the session's, which the server pages hand down. Before a first key
@@ -81,10 +82,13 @@ export interface ResetPorts {
  * address_mismatch, other_password_wrong). A sign-in whose key did not open is told with
  * key_not_opened.
  */
-export type FlowCode = LoginCode;
+export type FlowCode = LoginCode | "reset_retry_changed";
+
+export const RESET_RETRY_CHANGED_MESSAGE = "同じ新しいパスワードで、もう一度お試しください。";
 
 /** Web sign-in failures share one prompt; other codes use LOGIN_MESSAGES. */
 export function flowMessage(code: FlowCode): string {
+  if (code === "reset_retry_changed") return RESET_RETRY_CHANGED_MESSAGE;
   if (code === "credentials" || code === "not_confirmed") return SIGN_IN_RETRY_MESSAGE;
   return loginMessage(code);
 }
@@ -147,7 +151,7 @@ async function openRow(row: StoredKey, master: CryptoKey, userId: string): Promi
 
 // ---- Making a key -------------------------------------------------------------------------------------
 
-type Registered = { ok: true; keyId: string; answer: string; recipient: PrivateRecipient } | Failed;
+type Registered = { ok: true; keyId: string; answer: string; recipient: PrivateRecipient; wrappedPrivateKey: string } | Failed;
 
 /**
  * A new key pair wrapped with the KEK of `master` (a new kdf_salt), registered as waiting, read
@@ -155,12 +159,16 @@ type Registered = { ok: true; keyId: string; answer: string; recipient: PrivateR
  * challenge opened: the answer that puts it in use. `expectedCurrentKeyId` is the key in use this
  * step started from (the server refuses when another tab or device has put one in use since).
  */
-async function registerNewKey(master: CryptoKey, userId: string, expectedCurrentKeyId: string | null, ports: Pick<KeyPorts, "readMailKey" | "registerMailKey">): Promise<Registered> {
+async function registerNewKey(master: CryptoKey, userId: string, expectedCurrentKeyId: string | null, ports: Pick<KeyPorts, "readMailKey" | "registerMailKey">, isActive: () => boolean = () => true): Promise<Registered> {
+  if (!isActive()) return { ok: false, code: "signed_out" };
   const salt = newKdfSalt();
   const made = await createWrappedKey(await kekFor(master, salt), salt, userId);
   // Opened again with the KEK made from the salt as it will be stored: a salt mixed up on the
   // way would only show here (and a key that cannot open is never sent).
   if (!(await openRow(rowOf(made), master, userId))) return { ok: false, code: "key_failed" };
+  // Key generation/opening can outlive its screen. Do not send a new registration after disposal;
+  // a request already sent before disposal cannot be recalled by this client-side check.
+  if (!isActive()) return { ok: false, code: "signed_out" };
   const reg = await ports.registerMailKey({
     publicKey: toBase64(made.publicKey),
     wrappedPrivateKey: made.wrapped.wrapped_private_key,
@@ -169,6 +177,7 @@ async function registerNewKey(master: CryptoKey, userId: string, expectedCurrent
     kdfIterations: made.wrapped.kdf_iterations,
     expectedCurrentKeyId,
   });
+  if (!isActive()) return { ok: false, code: "signed_out" };
   if (!reg.ok) return { ok: false, code: keyActionCode(reg.error) };
   if (reg.keyId !== made.keyId) return { ok: false, code: "key_failed" };
 
@@ -183,7 +192,7 @@ async function registerNewKey(master: CryptoKey, userId: string, expectedCurrent
   const recipient = await openRow(row, master, userId);
   if (!recipient) return { ok: false, code: "key_failed" };
   const answer = await openBytes(recipient, challengeAad(userId, reg.keyId), reg.challenge);
-  return { ok: true, keyId: reg.keyId, answer: toBase64(answer), recipient };
+  return { ok: true, keyId: reg.keyId, answer: toBase64(answer), recipient, wrappedPrivateKey: row.wrapped_private_key };
 }
 
 /**
@@ -369,34 +378,101 @@ export async function changePassword(input: { email: string; userId: string; cur
   }
 }
 
-/**
- * The end of a reset (/reset-password), with the session's address: a new key for the new
- * password (registered, read back, its challenge opened), then finishReset sets the new login
- * secret and puts the key in use (the old key is retired: mail sealed to it no longer opens).
- *
- * Safe to run again from the start when it did not go through (a new key replaces the waiting one;
- * a login secret set already is taken as set): the screen's 「もう一度試す」 does that.
- *
- * A session too old for a key step (registerMailKey takes a reset link's session of the last 15
- * minutes) is reset_expired here, never stale_session: whoever resets has no password to log in
- * again with, and the way on is a new reset mail.
- */
-export async function finishPasswordReset(input: { email: string; userId: string; password: string }, ports: ResetPorts): Promise<{ ok: true } | Failed> {
-  const result = await resetSteps(input, ports);
-  return result.ok || result.code !== "stale_session" ? result : { ok: false, code: "reset_expired" };
+/** A screen's unfinished reset request. Only memory, keyed by that screen's stable ports. */
+interface ResetAttempt {
+  userId: string;
+  email: string;
+  authSecret: string | null;
+  request: FinishResetInput | null;
+  running: Promise<{ ok: true } | Failed> | null;
+  disposed: boolean;
+}
+const resets = new WeakMap<ResetPorts, ResetAttempt>();
+const closedResets = new WeakSet<ResetPorts>();
+
+/** Effect setup can run again after cleanup in StrictMode. Never revive the disposed attempt. */
+export function preparePasswordReset(ports: ResetPorts): void {
+  disposePasswordReset(ports);
+  closedResets.delete(ports);
 }
 
-async function resetSteps(input: { email: string; userId: string; password: string }, ports: ResetPorts): Promise<{ ok: true } | Failed> {
+/** Let go of the request and prevent a late answer from restoring a closed screen's key. */
+export function disposePasswordReset(ports: ResetPorts): void {
+  const attempt = resets.get(ports);
+  if (attempt) {
+    attempt.disposed = true;
+    attempt.request = null;
+    attempt.authSecret = null;
+  }
+  resets.delete(ports);
+  closedResets.add(ports);
+}
+
+/**
+ * Finish one screen's reset. An unknown answer keeps the same proven key/challenge for retry;
+ * it never registers another key and retires mail that arrived after the first activation.
+ * The ports identify this operation, and the screen disposes them when it leaves.
+ */
+export async function finishPasswordReset(input: { email: string; userId: string; password: string }, ports: ResetPorts): Promise<{ ok: true } | Failed> {
+  if (closedResets.has(ports)) return { ok: false, code: "signed_out" };
+  const email = emailNorm(input.email);
+  let attempt = resets.get(ports);
+  if (!attempt) {
+    attempt = { userId: input.userId, email, authSecret: null, request: null, running: null, disposed: false };
+    resets.set(ports, attempt);
+  }
+  if (attempt.userId !== input.userId || attempt.email !== email) {
+    disposePasswordReset(ports);
+    return { ok: false, code: "signed_out" };
+  }
+  try {
+    const master = await deriveMaster(input.email, input.password);
+    const authSecret = await authSecretHex(master);
+    if (attempt.disposed) return { ok: false, code: "signed_out" };
+    // An unresolved operation cannot silently become a reset with another password.
+    if (attempt.authSecret && attempt.authSecret !== authSecret) return { ok: false, code: "reset_retry_changed" };
+    if (attempt.running) return attempt.running;
+    attempt.authSecret = authSecret;
+    const scope = attempt;
+    const running = resetSteps(input, ports, scope, master, authSecret).then((result) => result.ok || result.code !== "stale_session" ? result : { ok: false as const, code: "reset_expired" as const });
+    scope.running = running;
+    try { return await running; } finally {
+      scope.running = null;
+      if (!scope.request) scope.authSecret = null;
+    }
+  } catch {
+    return { ok: false, code: "other" };
+  }
+}
+
+async function resetSteps(input: { email: string; userId: string; password: string }, ports: ResetPorts, attempt: ResetAttempt, master: CryptoKey, authSecret: string): Promise<{ ok: true } | Failed> {
   forgetTabKey();
   try {
-    const [master, current] = await Promise.all([deriveMaster(input.email, input.password), ports.readMailKey({ keyId: null })]);
-    if (!current.ok) return { ok: false, code: keyActionCode(current.error) };
-    const expectedCurrentKeyId = current.key?.key_id ?? null;
-    const reg = await registerNewKey(master, input.userId, expectedCurrentKeyId, ports);
-    if (!reg.ok) return reg;
-    const done = await ports.finishReset({ authSecret: await authSecretHex(master), expectedUserId: input.userId, expectedEmailNorm: emailNorm(input.email), keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId });
+    if (!attempt.request) {
+      const current = await ports.readMailKey({ keyId: null });
+      if (attempt.disposed) return { ok: false, code: "signed_out" };
+      if (!current.ok) return { ok: false, code: keyActionCode(current.error) };
+      const expectedCurrentKeyId = current.key?.key_id ?? null;
+      const reg = await registerNewKey(master, input.userId, expectedCurrentKeyId, ports, () => !attempt.disposed);
+      if (attempt.disposed) return { ok: false, code: "signed_out" };
+      if (!reg.ok) return reg;
+      attempt.request = { authSecret, expectedUserId: input.userId, expectedEmailNorm: attempt.email, keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId, expectedWrappedPrivateKey: reg.wrappedPrivateKey };
+    }
+    const request = attempt.request;
+    if (attempt.disposed) return { ok: false, code: "signed_out" };
+    const done = await ports.finishReset(request);
+    if (attempt.disposed) return { ok: false, code: "signed_out" };
     if (!done.ok) return { ok: false, code: done.code };
-    setTabKey(input.userId, reg.recipient);
+    if (done.keyId !== request.keyId) return { ok: false, code: "key_failed" };
+    // Another operation may have changed the key/wrap after the server accepted our request.
+    const current = await ports.readMailKey({ keyId: null });
+    if (attempt.disposed) return { ok: false, code: "signed_out" };
+    if (!current.ok) return { ok: false, code: keyActionCode(current.error) };
+    if (!current.key || current.key.key_id !== request.keyId) return { ok: false, code: "key_in_use_changed" };
+    const recipient = await openRow(current.key, master, input.userId);
+    if (attempt.disposed) return { ok: false, code: "signed_out" };
+    if (!recipient) return { ok: false, code: "key_wrap_changed" };
+    setTabKey(input.userId, recipient);
     return { ok: true };
   } catch {
     return { ok: false, code: "other" };

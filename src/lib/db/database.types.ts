@@ -133,6 +133,7 @@ export type Database = {
           message_id: string | null
           processing_run_id: string | null
           processing_lease_until: string | null
+          sample_generation: string | null
           processing_status: string
           provider_email_id: string | null
           received_at: string
@@ -156,6 +157,7 @@ export type Database = {
           message_id?: string | null
           processing_run_id?: string | null
           processing_lease_until?: string | null
+          sample_generation?: string | null
           processing_status?: string
           provider_email_id?: string | null
           received_at?: string
@@ -179,6 +181,7 @@ export type Database = {
           message_id?: string | null
           processing_run_id?: string | null
           processing_lease_until?: string | null
+          sample_generation?: string | null
           processing_status?: string
           provider_email_id?: string | null
           received_at?: string
@@ -551,6 +554,18 @@ export type Database = {
       store_mail_run: {
         Args: { p_user_id: string; p_email_id: string; p_run_id: string; p_columns: Json; p_expected_created_at: string | null; p_limits: Json }
         Returns: { verdict: string; email_id: string }[]
+      }
+      begin_sample_load: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
+      clear_all_parcels: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
+      receive_sample_parcels: {
+        Args: { p_user_id: string; p_parcel_ids: string[]; p_received_at: string }
+        Returns: undefined
       }
       mail_run_write: {
         Args: { p_email_id: string; p_run_id: string; p_table: string; p_operation: string; p_values: Json; p_filters: Json }

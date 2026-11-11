@@ -5,6 +5,7 @@ import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { MAIL_READ_BUDGET_MS, MAIL_REQUEST_BUDGET_MS, WAITING_MAIL_FILTER as UNREAD_FILTER } from "@/lib/unread";
+import { withSampleGeneration } from "@/lib/sample-generation-db";
 
 /**
  * "This dropped mail was a parcel" and "read the mail that is waiting", as plain functions: shared
@@ -64,7 +65,7 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
   const started = Date.now();
   let query = db
     .from("emails")
-    .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body")
+    .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body, sample_generation")
     .eq("user_id", userId)
     .eq("body_state", "plain")
     .or(UNREAD_FILTER());
@@ -98,7 +99,7 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
         // No sample of that name any more: unreadable, and never a reason to call Claude.
         if (!entry) throw new Error(`sample mail ${file} not found`);
         const input = demoInput(entry, userId);
-        outcome = await processInboundEmail(db, input.mail, { ...input.options, replacesEmailId: m.id });
+        outcome = await processInboundEmail(withSampleGeneration(db, userId, m.sample_generation), input.mail, { ...input.options, replacesEmailId: m.id });
       } else {
         outcome = await processInboundEmail(
           db,
