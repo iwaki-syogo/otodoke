@@ -6,6 +6,9 @@
 -- as before; a refused call then no longer gives its allowance back.
 -- The calls >= 0 check goes too. Every step checks first: run twice, or on a database the file never
 -- reached, it changes nothing the second time. Run the file in one go (psql -f, or supabase db query -f).
+-- Locks: drop table takes an AccessExclusiveLock on auth.users (the table's reference to it goes),
+-- so everything that touches auth.users (sign-in, getUser, sign-up) waits while this transaction
+-- holds it. lock_timeout is 5 s: then this fails, changes nothing, and is run again later.
 
 begin;
 set local lock_timeout = '5s';

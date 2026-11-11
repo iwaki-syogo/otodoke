@@ -21,6 +21,8 @@ const { processInboundEmail } = await import("@/lib/pipeline");
 const { claimClaudeCall } = await import("@/lib/claude-usage");
 
 const apiError = (status: number, type: string, message: string) => APIError.generate(status, { type: "error", error: { type, message } }, message, new Headers());
+const tierLimit = () => APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "x", details: { error_code: "enforced_spend_limit_reached" } } }, "x", new Headers());
+const ownLimit = () => apiError(400, "invalid_request_error", "You have reached your specified API usage limits. You will regain access on 2027-01-01 at 00:00 UTC.");
 const credit = () => apiError(400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API.");
 
 /** An ordinary order mail: passes the free rules, so only the reading claims. */
@@ -128,6 +130,8 @@ describe("seams between the code and the database", () => {
     const claim = await claimClaudeCall(asAdmin(db), USER);
     expect(claim.verdict).toBe("ok");
     expect(rpcs(db, "claim_claude_call")).toHaveLength(1);
+    // Going back to the old function is said in the log, every time.
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("claim_claude_call_v2 is missing"));
     await claim.release();
     expect(rpcs(db, "release_claude_call")).toHaveLength(0);
     expect(used(db)).toBe(1);
@@ -219,11 +223,16 @@ describe("seams between the code and the database", () => {
   });
 });
 
-describe("the reading gives the call back only when Claude refused it", () => {
+describe("the reading gives the call back only when Claude is stopped (claude_unavailable)", () => {
   it.each([
     ["402 (no credit)", () => apiError(402, "billing_error", "x"), true],
-    ["500 (server trouble)", () => apiError(500, "api_error", "x"), true],
-    ["429 (rate limit)", () => apiError(429, "rate_limit_error", "x"), true],
+    ["400 (credit balance too low)", () => credit(), true],
+    ["400 (own spend limit)", () => ownLimit(), true],
+    ["429 (the monthly spend limit of the tier)", () => tierLimit(), true],
+    ["404 (no such model)", () => apiError(404, "not_found_error", "x"), true],
+    ["500 (server trouble: an earlier try of the SDK may have been billed)", () => apiError(500, "api_error", "x"), false],
+    ["529 (overloaded)", () => apiError(529, "overloaded_error", "x"), false],
+    ["429 (an ordinary rate limit)", () => apiError(429, "rate_limit_error", "x"), false],
     ["a broken connection (it may have been served)", () => new APIConnectionError({ message: "socket hang up" }), false],
     ["a reading that does not parse", () => new SyntaxError("Unexpected token } in JSON"), false],
   ])("%s", async (_name, make, given) => {
@@ -251,29 +260,43 @@ describe("the reading gives the call back only when Claude refused it", () => {
   });
 });
 
-describe("the cheap check (second look)", () => {
-  it("Claude refused with an unavailable code: the call comes back, the mail is stored failed / claude_unavailable, and the reading is not tried", async () => {
+describe("the cheap check (second look) never stops the reading by itself", () => {
+  it.each([
+    ["402", () => apiError(402, "billing_error", "x")],
+    ["404 (the cheap model is gone)", () => apiError(404, "not_found_error", "x")],
+    ["403 (no permission for the cheap model)", () => apiError(403, "permission_error", "x")],
+  ])("%s: the call of the check comes back, the mail is kept and read, and a good reading makes it processed", async (_name, make) => {
+    mocks.isPurchaseMail.mockRejectedValue(make());
+    const db = markedDb();
+    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
+    expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
+    expect(rpcs(db, "claim_claude_call_v2")).toHaveLength(2);
+    expect(rpcs(db, "release_claude_call")).toHaveLength(1);
+    // The call of the check came back; the call of the reading is spent.
+    expect(used(db)).toBe(1);
+    expect(db.rows("emails")).toMatchObject([{ processing_status: "processed" }]);
+  });
+
+  it("the cheap check and the reading both 402: it stops at the reading (failed / claude_unavailable), both calls come back", async () => {
     mocks.isPurchaseMail.mockRejectedValue(credit());
+    mocks.extractEmail.mockRejectedValue(credit());
     const db = markedDb();
     await expect(processInboundEmail(asAdmin(db), ad())).rejects.toBeInstanceOf(ClaudeUnavailableError);
     expect(db.rows("emails")).toMatchObject([{ user_id: USER, processing_status: "failed", error: "claude_unavailable" }]);
-    expect(mocks.extractEmail).not.toHaveBeenCalled();
-    expect(rpcs(db, "claim_claude_call_v2")).toHaveLength(1);
+    expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
     expect(used(db)).toBe(0);
   });
 
-  it("a temporary failure (500): the call comes back, the mail is kept and read", async () => {
+  it("a temporary failure (500): the mail is kept and read, and the call of the check is not given back", async () => {
     mocks.isPurchaseMail.mockRejectedValue(apiError(500, "api_error", "x"));
     const db = markedDb();
     expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
     expect(mocks.extractEmail).toHaveBeenCalledTimes(1);
-    // The check's call came back; the reading's call is spent.
-    expect(rpcs(db, "claim_claude_call_v2")).toHaveLength(2);
-    expect(rpcs(db, "release_claude_call")).toHaveLength(1);
-    expect(used(db)).toBe(1);
+    expect(rpcs(db, "release_claude_call")).toHaveLength(0);
+    expect(used(db)).toBe(2);
   });
 
-  it("a broken connection: the mail is kept and read, and the check's call is not given back", async () => {
+  it("a broken connection: the mail is kept and read, and the call of the check is not given back", async () => {
     mocks.isPurchaseMail.mockRejectedValue(new APIConnectionError({ message: "socket hang up" }));
     const db = markedDb();
     expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
@@ -289,12 +312,11 @@ describe("the cheap check (second look)", () => {
     expect(db.rows("emails")).toHaveLength(0);
   });
 
-  it("with the migration not applied: Claude stopped still stops the mail, and the call stays used", async () => {
+  it("with the migration not applied: a 402 of the cheap check does not stop the reading, and no call comes back", async () => {
     mocks.isPurchaseMail.mockRejectedValue(credit());
     const db = markedDb();
     db.claudeReleaseMissing = true;
-    await expect(processInboundEmail(asAdmin(db), ad())).rejects.toBeInstanceOf(ClaudeUnavailableError);
-    expect(db.rows("emails")).toMatchObject([{ processing_status: "failed", error: "claude_unavailable" }]);
-    expect(used(db)).toBe(1);
+    expect((await processInboundEmail(asAdmin(db), ad())).kind).toBe("processed");
+    expect(used(db)).toBe(2);
   });
 });

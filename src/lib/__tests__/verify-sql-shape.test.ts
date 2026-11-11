@@ -213,6 +213,7 @@ describe("20261111100000 claude_call_release: waits in pending, leaves the old c
     expect(sql).toMatch(/enable row level security/);
     expect(sql).toMatch(/revoke all on public\.claude_call_claims from public, anon, authenticated/);
     expect(sql).toMatch(/check \(calls >= 0\)/);
+    expect(sql).toMatch(/revoke all on sequence public\.claude_call_claims_id_seq from public, anon, authenticated/);
   });
 
   it("the rollback drops both functions, the table and the check, each only if present", () => {

@@ -80,7 +80,7 @@ export default function PrivacyPage() {
           <Term name="メールの送信とログインを試した記録">
             送りすぎを防ぐために使います。メールアドレスと接続元の IP アドレスをハッシュ値に変えて、送った時刻と一緒に記録します。ログインを試したときも、続けて試されるのを防ぐため、メールアドレスと接続元の IP アドレスのハッシュ値と日時を記録します。確認や再設定のリンクを使ったときも、混み合うのを防ぐため、接続元の IP アドレスのハッシュ値と日時を記録します。どちらのアドレスも、そのままでは記録しません。1 時間を過ぎた記録は、次に記録するときに消します。
           </Term>
-          <Term name="Claude を使った回数">1 日の上限を守るために、あなたのメールに Claude を使った回数を日ごとに記録します。</Term>
+          <Term name="Claude を使った回数">1 日の上限を守るために、あなたのメールに Claude を使った回数を日ごとに記録します。断られた呼び出しの分を戻せるように、呼び出しごとの時刻も記録します。2 日を過ぎた記録は、次に記録するときに消します。</Term>
           {/* The plans set these periods: Supabase Pro log retention (API & Database) 7 days, Vercel Pro
               runtime logs 1 day (supabase.com/pricing, vercel.com/docs/logs/runtime, checked 2026-11-06).
               Change this and 「最大 7 日間」 under 保存の期間と消し方 when either plan changes. */}

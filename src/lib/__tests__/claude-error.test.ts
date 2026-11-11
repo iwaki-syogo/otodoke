@@ -27,14 +27,14 @@ describe("spend limits are a stop too", () => {
 
   it("negative control: an ordinary 429 with retry-after (no error_code) stays temporary", () => {
     const err = APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "Number of request tokens has exceeded your rate limit" } }, "x", new Headers({ "retry-after": "20" }));
-    expect(claudeFailure(err)).toEqual({ code: "claude_error", unbilled: true });
+    expect(claudeFailure(err)).toEqual({ code: "claude_error", unbilled: false });
     const other = APIError.generate(429, { type: "error", error: { type: "rate_limit_error", message: "x", details: { error_code: "something_else" } } }, "x", new Headers());
-    expect(claudeFailure(other)).toEqual({ code: "claude_error", unbilled: true });
+    expect(claudeFailure(other)).toEqual({ code: "claude_error", unbilled: false });
   });
 
   it("negative control: a 400 that only mentions usage limits, not as its opening, is not a stop", () => {
-    expect(claudeFailure(apiError(400, "invalid_request_error", "messages.0: You have reached your specified API usage limits is not valid here"))).toEqual({ code: "claude_error", unbilled: true });
-    expect(claudeFailure(apiError(400, "invalid_request_error", "Check your API usage limits"))).toEqual({ code: "claude_error", unbilled: true });
+    expect(claudeFailure(apiError(400, "invalid_request_error", "messages.0: You have reached your specified API usage limits is not valid here"))).toEqual({ code: "claude_error", unbilled: false });
+    expect(claudeFailure(apiError(400, "invalid_request_error", "Check your API usage limits"))).toEqual({ code: "claude_error", unbilled: false });
   });
 });
 
@@ -48,12 +48,12 @@ describe("claudeFailure", () => {
   });
 
   it("negative control: a 400 that is not about credit is not unavailable", () => {
-    expect(claudeFailure(apiError(400, "invalid_request_error", "max_tokens must be positive"))).toEqual({ code: "claude_error", unbilled: true });
+    expect(claudeFailure(apiError(400, "invalid_request_error", "max_tokens must be positive"))).toEqual({ code: "claude_error", unbilled: false });
   });
 
-  it("rate limit, server trouble, overload and other statuses: temporary", () => {
+  it("rate limit, server trouble, overload and other statuses: temporary, and not given back (an earlier try of the SDK may have been billed)", () => {
     for (const status of [429, 500, 502, 529, 409, 422]) {
-      expect(claudeFailure(apiError(status, "api_error", "x")), String(status)).toEqual({ code: "claude_error", unbilled: true });
+      expect(claudeFailure(apiError(status, "api_error", "x")), String(status)).toEqual({ code: "claude_error", unbilled: false });
     }
   });
 

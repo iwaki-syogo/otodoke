@@ -120,14 +120,11 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   }
 
   // 0. Ads and newsletters stop here: nothing is stored and Claude is not called.
-  // Set when the cheap check found Claude stopped: the mail is kept, and not read (see below).
-  let claudeStoppedAtScreen = false;
   if (!isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
     if (!screen.pass) {
-      const look = await secondLook(db, mail, screen);
-      claudeStoppedAtScreen = look.stopped;
-      if (look.keep) {
+      const keep = await secondLook(db, mail, screen);
+      if (keep) {
         await logScreenEvent(db, mail, "rescued", screen.reason);
       } else {
         // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
@@ -220,14 +217,6 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
 
   if (isForwardingConfirmation) return { kind: "forwarding_confirmation", emailId: emailRow.id };
 
-  // The cheap check found Claude stopped: reading would fail the same way, so stop here with the
-  // mail kept (failed / claude_unavailable), as a stop in the reading itself does below.
-  if (claudeStoppedAtScreen) {
-    const { error } = await db.from("emails").update({ processing_status: "failed", error: "claude_unavailable" }).eq("id", emailRow.id);
-    if (error) throw new Error(`emails update failed: ${error.message}`);
-    throw new ClaudeUnavailableError("claude is unavailable");
-  }
-
   // 1.5. Take one paid call from today's allowance. Over the limit, the mail is kept to read later.
   let claim: ClaudeClaim | null = null;
   if (!options.precomputed) {
@@ -269,27 +258,28 @@ function plaintextOf(mail: InboundEmail): MailPlaintext {
  * a sender the user marked 「これは荷物」. A mark never skips the check: anyone can write a From
  * line, and a shop sends its ads from the same domain as its notices.
  */
-async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<{ keep: boolean; stopped: boolean }> {
-  if (!screen.borderline && !(await senderMarked(db, mail))) return { keep: false, stopped: false };
+async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenResult): Promise<boolean> {
+  if (!screen.borderline && !(await senderMarked(db, mail))) return false;
 
   // Over the limit or unable to tell: keep it. The next step stores it as unread instead of losing it.
   let claim: ClaudeClaim;
   try {
     claim = await claimClaudeCall(db, mail.userId);
   } catch {
-    return { keep: true, stopped: false };
+    return true;
   }
-  if (claim.verdict !== "ok") return { keep: true, stopped: false };
+  if (claim.verdict !== "ok") return true;
 
   try {
-    return { keep: await isPurchaseMail(mail), stopped: false };
+    return await isPurchaseMail(mail);
   } catch (err) {
-    // A failed check keeps the mail: losing a parcel is worse. Claude refused the call, so the
-    // allowance comes back; and when Claude is stopped, the mail is not read either (stopped).
+    // A failed check keeps the mail: losing a parcel is worse, and the reading goes on (the cheap
+    // model alone may be gone or refused while the reading's model works; if Claude is really
+    // stopped, the reading stops there). A call Claude refused for good gives its allowance back.
     const failure = claudeFailure(err);
     console.error("triage failed, keeping the mail:", failure ? failure.code : err instanceof Error ? err.message : err);
     if (failure?.unbilled) await claim.release();
-    return { keep: true, stopped: failure?.code === "claude_unavailable" };
+    return true;
   }
 }
 

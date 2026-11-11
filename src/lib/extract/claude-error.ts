@@ -5,8 +5,14 @@ import { APIConnectionError, APIError } from "@anthropic-ai/sdk";
  *  - claude_unavailable: the account cannot be used (no credit, a bad or refused key, no such model).
  *    Trying again does not help, so the reads stop and the mail is kept.
  *  - claude_error: probably temporary (rate limit, server trouble, a broken connection).
- * `unbilled`: the call was refused or never reached Claude, so the allowance taken for it can be
- * given back (src/lib/claude-usage.ts, used by the pipeline). A broken connection may have been served, so it is not unbilled.
+ * `unbilled`: the call was refused for good, so the allowance taken for it is given back
+ * (src/lib/claude-usage.ts, used by the pipeline). True only for claude_unavailable: those answers
+ * (402, 401, 403, 404, a billing 400, a spend-limit 400 or 429) are never billed, and a retry does
+ * not turn them into something else. A temporary failure (429 rate limit, 5xx, 529) is NOT
+ * unbilled even though it carries a status: the SDK retries by itself (twice by default), and an
+ * earlier try may have been served and billed before a later one came back 529 or 500. Giving its
+ * allowance back would also let the per-person limit stop limiting retries. A broken connection
+ * may have been served too.
  */
 export type ClaudeFailure = { code: "claude_unavailable" | "claude_error"; unbilled: boolean };
 
@@ -52,9 +58,9 @@ export function claudeFailure(err: unknown): ClaudeFailure | null {
   if (status === 400) {
     const text = bodyMessage(err);
     const stopped = bodyErrorType(err) === "billing_error" || /credit balance/i.test(text) || SPEND_LIMIT_OPENINGS.some((o) => text.startsWith(o));
-    return { code: stopped ? "claude_unavailable" : "claude_error", unbilled: true };
+    return { code: stopped ? "claude_unavailable" : "claude_error", unbilled: stopped };
   }
   // The tier's monthly spend limit is a 429 too, but with no retry-after: told apart by its error code, not by the text.
   if (status === 429 && inner(err)?.details?.error_code === "enforced_spend_limit_reached") return { code: "claude_unavailable", unbilled: true };
-  return { code: "claude_error", unbilled: true };
+  return { code: "claude_error", unbilled: false };
 }

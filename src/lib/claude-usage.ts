@@ -42,6 +42,7 @@ export async function claimClaudeCall(db: AdminClient, userId: string): Promise<
   const { data, error } = await db.rpc("claim_claude_call_v2", args);
   if (error) {
     if (!functionMissing(error)) throw new Error(`claim_claude_call failed: ${error.message}`);
+    console.warn("claude-usage: claim_claude_call_v2 is missing, so the old claim_claude_call is used (a refused call is not given back)");
     const old = await db.rpc("claim_claude_call", args);
     if (old.error) throw new Error(`claim_claude_call failed: ${old.error.message}`);
     return { verdict: asVerdict(old.data), release: nothingToRelease };

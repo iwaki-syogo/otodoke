@@ -10,6 +10,7 @@
 --
 --   table_ok          claude_call_claims exists, row level security on, no privilege for anon /
 --                     authenticated, service_role may read and write
+--   sequence_ok       anon and authenticated may not use the claim table's id sequence
 --   functions_ok      claim_claude_call_v2 and release_claude_call: security definer, search_path '',
 --                     execute for service_role only; claim_claude_call is still there
 --   constraint_ok     claude_usage_daily has calls >= 0, and no row is negative
@@ -115,6 +116,8 @@ with checks as (
       and has_table_privilege('service_role', 'public.claude_call_claims', 'select')
       and has_table_privilege('service_role', 'public.claude_call_claims', 'insert')
       and has_table_privilege('service_role', 'public.claude_call_claims', 'update') as table_ok,
+    not has_sequence_privilege('anon', 'public.claude_call_claims_id_seq', 'usage,select,update')
+      and not has_sequence_privilege('authenticated', 'public.claude_call_claims_id_seq', 'usage,select,update') as sequence_ok,
     (select count(*) = 3 and bool_and(p.prosecdef and p.proconfig = array['search_path=""']
               and not has_function_privilege('anon', p.oid, 'execute')
               and not has_function_privilege('authenticated', p.oid, 'execute')
@@ -126,6 +129,6 @@ with checks as (
     coalesce(current_setting('otodoke.verify_release', true), 'FAILED: the behaviour block did not run') as behaviour
 )
 select
-  case when table_ok and functions_ok and constraint_ok and behaviour = 'OK' then 'OK' else 'FAILED' end as verdict,
+  case when table_ok and sequence_ok and functions_ok and constraint_ok and behaviour = 'OK' then 'OK' else 'FAILED' end as verdict,
   checks.*
 from checks;

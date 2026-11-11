@@ -27,8 +27,12 @@
 -- claude_usage_daily gets calls >= 0. Check first that no row is negative (supabase/verify/
 -- 20261111100000_claude_call_release.before.sql); otherwise this file fails and changes nothing.
 --
--- One transaction of its own. lock_timeout 5 s: adding the check constraint needs a short lock on
--- claude_usage_daily; if it cannot get it this fails, changes nothing, and is run again later.
+-- One transaction of its own. Locks: the new table's reference to auth.users takes a
+-- ShareRowExclusiveLock on auth.users (measured on Postgres 17 when written; re-measured in
+-- the local run of 2026-11-11), so sign-ups and the updates that sign-ins make to auth.users wait
+-- while this transaction holds it; adding the check constraint also needs a short lock on
+-- claude_usage_daily. lock_timeout is 5 s: if a lock cannot be had, this fails, changes nothing,
+-- and is run again later.
 -- Re-runnable.
 -- After applying: supabase/verify/20261111100000_claude_call_release.sql
 -- Rollback:       supabase/rollback/20261111100000_claude_call_release.down.sql
@@ -49,6 +53,8 @@ create index if not exists claude_call_claims_user_idx on public.claude_call_cla
 alter table public.claude_call_claims enable row level security;
 revoke all on public.claude_call_claims from public, anon, authenticated;
 grant select, insert, update, delete on public.claude_call_claims to service_role;
+-- The id sequence: no use for anon or authenticated (the table's revoke does not cover it).
+revoke all on sequence public.claude_call_claims_id_seq from public, anon, authenticated;
 
 do $$
 begin
