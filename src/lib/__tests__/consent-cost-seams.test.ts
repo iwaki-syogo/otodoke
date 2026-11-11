@@ -171,3 +171,64 @@ describe("the webhook keeps both answers", () => {
     expect(db.rows("emails")).toHaveLength(2);
   });
 });
+
+describe("reading started by the grant goes through the cost guards", () => {
+  const DECIDED = "2026-11-12T00:00:00.123456Z";
+  const waitingRow = (n: number) => ({
+    id: `w-${n}`, user_id: USER, processing_status: "failed", error: "ai_consent_required", body_state: "plain",
+    provider_email_id: `provider-${n}`, message_id: `<w-${n}@example.test>`, from_address: "orders@new-shop.test", from_name: null,
+    subject: "ご注文ありがとうございます", sent_at: `2026-11-01T00:00:0${n}Z`, text_body: `ご注文番号 TEST-${n}`, html_body: null, created_at: "2026-11-01T00:00:00.000000Z",
+  });
+  const granted = (n: number) => new FakeDb({
+    ai_reading_consents: [{ ...consent("granted"), decided_at: DECIDED }],
+    emails: Array.from({ length: n }, (_, i) => waitingRow(i + 1)),
+  });
+  const run = async (db: FakeDb) => (await import("@/lib/ai-consent-run")).runReadAfterConsent(asAdmin(db), USER, DECIDED);
+  const paid = (db: FakeDb) => db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2");
+
+  it("does not read a mail twice: a repeated grant response and a later manual read claim each mail once", async () => {
+    const db = granted(2);
+    expect(await run(db)).toMatchObject({ ok: true, read: 2 });
+    expect(await run(db)).toMatchObject({ ok: true, read: 0 });
+    expect(await runReadWaitingMail(asAdmin(db), USER)).toMatchObject({ read: 0 });
+    expect(mocks.extract).toHaveBeenCalledTimes(2);
+    expect(paid(db)).toHaveLength(2);
+    expect(db.rows("emails").every((r) => r.processing_status === "processed")).toBe(true);
+  });
+
+  it("stops at the personal allowance: the mail beyond it waits, and nothing beyond it is claimed", async () => {
+    const db = granted(3);
+    const day = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    const limit = (await import("@/lib/env")).env().OTODOKE_USER_DAILY_LIMIT;
+    db.rows("claude_usage_daily").push({ user_id: USER, day, calls: limit - 1 });
+    expect(await run(db)).toMatchObject({ ok: true, read: 1, overLimit: true });
+    expect(db.rows("emails").map((r) => r.processing_status)).toEqual(["processed", "over_limit", "failed"]);
+    expect(db.rows("emails")[2].error).toBe("ai_consent_required");
+    expect(mocks.extract).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not read after the person withdrew: a late run for the old grant starts nothing", async () => {
+    const db = granted(2);
+    db.rows("ai_reading_consents")[0].decision = "declined";
+    expect(await run(db)).toMatchObject({ ok: true, read: 0 });
+    expect(mocks.extract).not.toHaveBeenCalled();
+    expect(paid(db)).toEqual([]);
+    expect(db.rows("emails").every((r) => r.processing_status === "failed")).toBe(true);
+  });
+
+  it("does not take over a mail another run is reading under a live lease", async () => {
+    const db = granted(1);
+    let taken = false;
+    db.hooks.push((q) => {
+      if (taken || q.table !== "emails" || q.op !== "select" || q.filters.length === 0) return undefined;
+      taken = true;
+      Object.assign(db.find("emails", "w-1")!, { processing_status: "pending", error: null, processing_run_id: "other-run", processing_lease_until: new Date(Date.now() + 360_000).toISOString() });
+      return undefined;
+    });
+    await run(db);
+    expect(taken).toBe(true);
+    expect(mocks.extract).not.toHaveBeenCalled();
+    expect(paid(db)).toEqual([]);
+    expect(db.find("emails", "w-1")).toMatchObject({ processing_status: "pending", processing_run_id: "other-run", text_body: "ご注文番号 TEST-1" });
+  });
+});
