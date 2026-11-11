@@ -343,6 +343,30 @@ describe("受け取った and its undo", () => {
     });
   });
 
+  describe("pressing 受け取った again after the answer was lost (the first save had worked)", () => {
+    it("is answered as saved (1), the parcel stays received, and received_at moves to the second press", async () => {
+      const { markDelivered } = await actions();
+      expect(await markDelivered([ID])).toBe(1);
+      const first = String(db.find("parcels", ID)!.received_at);
+      // The row the page was opened with, and the one a retry sees, differ in updated_at; the action takes only the id.
+      db.find("parcels", ID)!.updated_at = "2026-11-12T00:00:05.000Z";
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(await markDelivered([ID])).toBe(1);
+      expect(db.find("parcels", ID)).toMatchObject({ status: "delivered" });
+      const second = String(db.find("parcels", ID)!.received_at);
+      expect(Date.parse(second)).toBeGreaterThan(Date.parse(first));
+      expect(db.rows("parcels").filter((r) => r.id === ID)).toHaveLength(1);
+    });
+
+    it("never un-receives, and a parcel cancelled meanwhile is answered 0 (the screen shows its retry text, not success)", async () => {
+      const { markDelivered } = await actions();
+      await markDelivered([ID]);
+      db.find("parcels", ID)!.status = "cancelled";
+      expect(await markDelivered([ID])).toBe(0);
+      expect(db.find("parcels", ID)).toMatchObject({ status: "cancelled" });
+    });
+  });
+
   it.each([
     ["not a time", { id: ID, status: "shipped", received_at: "tomorrow" }],
     ["a received_at on a status that is not delivered", { id: ID, status: "shipped", received_at: R }],
