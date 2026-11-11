@@ -19,6 +19,7 @@ enum OnboardingGate {
 /// but are never seen before the landing is known: after a password sign-in the waiting display stays until the
 /// key step has ended, then the guide (the first key was made) or the tabs. Never the tabs first and the guide after.
 enum Landing: Equatable {
+    case consent
     case waiting
     case guide
     /// The sign-in of the waiting screen went through but the key did not open or could not be made: the amber
@@ -28,7 +29,8 @@ enum Landing: Equatable {
 
     /// `fromConfirmation`: the key step was the waiting screen's sign-in. `boxClosed`: the box was left by one of its
     /// two links (it is shown once per signed-in generation, as the guide is).
-    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool, fromConfirmation: Bool = false, boxClosed: Bool = false, gaveUp: Bool = false) -> Landing {
+    static func of(deciding: Bool, outcome: KeySetupOutcome?, guideClosed: Bool, fromConfirmation: Bool = false, boxClosed: Bool = false, gaveUp: Bool = false, needsConsent: Bool = false) -> Landing {
+        if needsConsent { return .consent }
         if deciding { return .waiting }
         // The limit let the landing go before the key step ended: the person is in the tabs already, and nothing comes
         // over them later.
@@ -56,7 +58,8 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                SettingsStatusRows(model: model, register: {}).approvalSection
+                if model.mayShowReadingAddress {
+                    SettingsStatusRows(model: model, register: {}).approvalSection
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsParts.heading(OnboardingText.step1Heading)
                     addressPart
@@ -64,6 +67,9 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsParts.heading(OnboardingText.step2Heading)
                     ForwardingGuideView(servicesOnly: true)
+                }
+                } else {
+                    AIReadingConsentSettingsControl(model: model)
                 }
                 VStack(spacing: 12) {
                     SettingsParts.primaryButton(OnboardingText.doneButton, fullWidth: true, action: finish)
@@ -86,7 +92,7 @@ struct OnboardingView: View {
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .task {
-            await model.load()
+            await model.loadForwardingGuide()
             hasRead = true
         }
     }
@@ -107,12 +113,14 @@ struct OnboardingView: View {
                 case let .loaded(address)?:
                     HStack(spacing: 8) {
                         Text(address)
+                            .accessibilityIdentifier("forwarding-address")
                             .font(model.addressCanBeCopied ? .subheadline.monospaced() : .subheadline)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if model.addressCanBeCopied {
                             CopyButton(text: address)
+                                .accessibilityIdentifier("forwarding-copy")
                         }
                     }
                     .padding(12)

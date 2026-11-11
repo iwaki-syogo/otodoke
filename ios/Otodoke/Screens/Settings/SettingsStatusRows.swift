@@ -86,7 +86,7 @@ struct SettingsStatusRows: View {
 
     @ViewBuilder
     var approvalSection: some View {
-        if let url = model.confirmURL, SettingsModel.isApprovalPage(url) {
+        if model.mayShowReadingAddress, let url = model.confirmURL, SettingsModel.isApprovalPage(url) {
             VStack(alignment: .leading, spacing: 4) {
                 SettingsParts.heading("Gmail の転送を承認してください")
                 Text("Gmail から転送の確認が届いています。承認済みなら、この案内は無視して大丈夫です。")
@@ -94,9 +94,10 @@ struct SettingsStatusRows: View {
                     .fixedSize(horizontal: false, vertical: true)
                 SettingsParts.primaryButton("承認ページを開く") {
                     // [M1] Checked again right before it opens: only Google's page, by Foundation's reading.
-                    guard SettingsModel.isApprovalPage(url) else { return }
+                    guard model.mayShowReadingAddress, SettingsModel.isApprovalPage(url) else { return }
                     SettingsWeb.openPage(url, openURL)
                 }
+                .accessibilityIdentifier("forwarding-approval")
                 .padding(.top, 8)
                 // The Web's ApprovalFilterCopy: the sentence, then the filter text with its copy button (the same box as the Gmail card's).
                 Text(GmailApprovalText.filterNote)

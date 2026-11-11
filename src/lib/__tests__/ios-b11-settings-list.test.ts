@@ -91,11 +91,11 @@ describe("the account card is the Web's, in the Web's order", () => {
     const block = src.match(/const accountRows: Row\[\] = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
     return [...block.matchAll(/id: "([a-z]+)"/g)].map((m) => m[1]);
   };
-  /** What the iOS account section draws, in order (the rows that the Web has, then the Web-only exit). */
+  /** What the iOS account section draws, in order (the Web's rows, with the full privacy policy in an app sheet). */
   const iosOrder = (src: string) => {
     const block = src.match(/section\(SettingsWebText\.accountGroup\) \{([\s\S]*?)\n                    \}\n/)?.[1] ?? "";
-    const names: Record<string, string> = { loginRow: "login", logoutRow: "logout", "webRow(.privacy": "privacy", "row(.deleteAccount": "delete" };
-    return [...block.matchAll(/loginRow|logoutRow|webRow\(\.privacy|row\(\.deleteAccount/g)].map((m) => names[m[0]]);
+    const names: Record<string, string> = { loginRow: "login", logoutRow: "logout", privacyRow: "privacy", "row(.deleteAccount": "delete" };
+    return [...block.matchAll(/loginRow|logoutRow|privacyRow|row\(\.deleteAccount/g)].map((m) => names[m[0]]);
   };
 
   it("the Web's order is read: ログイン中, ログアウト, プライバシーポリシー, アカウントの削除", () => {

@@ -229,6 +229,7 @@ struct SettingsModelTests {
         let (provider, auth) = try await TestSession.signedIn(fake)
         let changes = DataChanges()
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
@@ -590,7 +591,7 @@ struct SettingsModelTests {
     @Test func aKeyStepThatFailedShowsOnTheKeyRow() async throws {
         let w = try await KeyOwnerAndOrderTests.SignInWorld(keyInUse: false)
         try await w.signIn()
-        let screens = MainScreens.live(auth: w.auth)
+        let screens = MainScreens.live(auth: w.auth, readingConsent: .allowedForTests())
         let setup = try #require(screens.keySetup)
         #expect(await waitFor(.seconds(5)) { await MainActor.run { setup.lastOutcome != nil } })
         await screens.settings.onAppear()

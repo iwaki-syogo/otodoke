@@ -178,6 +178,7 @@ struct M2bScreenshots {
         await fake.insert("user_keys", [v.keyRow(userID: FakeSupabase.me)])
         let (provider, auth) = try await TestSession.signedIn(fake)
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 7, count: $0) }),
             auth: auth,

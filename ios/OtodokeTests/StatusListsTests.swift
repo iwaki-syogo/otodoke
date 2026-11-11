@@ -316,7 +316,7 @@ struct StatusListsTests {
     @Test func theTabsMakeTheModelsWithTheSharedChanges() async throws {
         let fake = FakeSupabase.make()
         let (_, auth) = try await TestSession.signedIn(fake)
-        let screens = MainScreens.live(auth: auth)
+        let screens = MainScreens.live(auth: auth, readingConsent: .allowedForTests())
         #expect(screens.delivered().changes === screens.changes)
         #expect(screens.cancelled().changes === screens.changes)
         // The opened key's store and the one UnlockModel (tasks 16 to 19).

@@ -32,6 +32,8 @@ final class MailActionsModel {
     @ObservationIgnored private let api: any MailActionsAPI
     @ObservationIgnored private let accessToken: @MainActor () async -> String?
     @ObservationIgnored private let reload: @MainActor () async -> Void
+    @ObservationIgnored private let mayRead: @MainActor () -> Bool
+    @ObservationIgnored private let requestReadingConsent: @MainActor () -> Void
 
     /// Tells the other tabs 「古くなった」 (ParcelWriter.announceOutsideChange): after 「読み取る」 only, which can add parcels.
     @ObservationIgnored private let announceChange: @MainActor () -> Void
@@ -43,12 +45,16 @@ final class MailActionsModel {
         api: any MailActionsAPI,
         accessToken: @escaping @MainActor () async -> String?,
         reload: @escaping @MainActor () async -> Void,
-        announceChange: @escaping @MainActor () -> Void = {}
+        announceChange: @escaping @MainActor () -> Void = {},
+        mayRead: @escaping @MainActor () -> Bool = { true },
+        requestReadingConsent: @escaping @MainActor () -> Void = {}
     ) {
         self.api = api
         self.accessToken = accessToken
         self.reload = reload
         self.announceChange = announceChange
+        self.mayRead = mayRead
+        self.requestReadingConsent = requestReadingConsent
     }
 
     /// 「これは荷物」 on the row of screen_events `id`.
@@ -76,6 +82,7 @@ final class MailActionsModel {
     /// 「読み取る」: up to 20 waiting mails are read on the server (it takes a while).
     func readWaiting() async {
         guard !isReading else { return }
+        guard mayRead() else { readNote = nil; requestReadingConsent(); return }
         isReading = true
         discardReadNote = false
         readNote = nil
@@ -84,6 +91,7 @@ final class MailActionsModel {
             setReadNote(LoginText.signedOut)
             return
         }
+        guard mayRead() else { requestReadingConsent(); return }
         do {
             let result = try await api.readWaiting(accessToken: token)
             // Stopped first (nothing to retry), then the limit (the Web's order); a read that went through says nothing.
@@ -94,6 +102,10 @@ final class MailActionsModel {
             }
         } catch {
             setReadNote(Self.readText(for: error))
+            if error == .aiConsentRequired || error == .unavailable {
+                requestReadingConsent()
+                return
+            }
         }
         // Parcels may have been added (also by a run that failed or whose result is not known): the other tabs read again.
         announceChange()
@@ -138,6 +150,7 @@ final class MailActionsModel {
         switch failure {
         case .unauthorized: LoginText.signedOut
         case .unknownResult: nil
+        case .aiConsentRequired: nil
         case .invalidInput, .notFound, .markFailed, .unavailable, .readFailed, .network: SettingsMailText.markFailed
         }
     }
@@ -148,7 +161,9 @@ final class MailActionsModel {
         case .readFailed: return SettingsMailText.readFailed
         case .unauthorized: return LoginText.signedOut
         case .unknownResult: return nil
-        case .invalidInput, .notFound, .markFailed, .unavailable, .network: return SettingsMailText.unknownFailure
+        case .aiConsentRequired: return nil
+        case .unavailable: return AIReadingConsentText.readFailed
+        case .invalidInput, .notFound, .markFailed, .network: return SettingsMailText.unknownFailure
         }
     }
 }

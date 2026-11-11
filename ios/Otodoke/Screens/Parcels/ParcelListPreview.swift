@@ -5,6 +5,8 @@
 
 #if DEBUG
 import Foundation
+import Observation
+import SwiftUI
 
 struct ListPreview {
     enum Scenario: String {
@@ -31,6 +33,11 @@ struct ListPreview {
         /// The first screen (the two buttons) before the login.
         case welcome
         case accountDelete = "account-delete"
+        case consentRequired = "consent-required"
+        case consentDenied = "consent-denied"
+        case consentAllowed = "consent-allowed"
+        case consentError = "consent-error"
+        case consentOnboarding = "consent-onboarding"
         /// The waiting screen after making an account.
         case loginWaiting = "login-waiting"
     }
@@ -55,6 +62,52 @@ struct ListPreview {
 
     private struct PreviewDeletion: AccountDeleting {
         func deleteAccount(accessToken: String) async throws(AccountAPIFailure) { throw .unauthorized }
+    }
+
+    @MainActor
+    static func allowedReadingConsent() -> AIReadingConsentModel {
+        makeReadingConsent(decision: .allowed, fails: false, counter: ConsentPreviewCounter())
+    }
+
+    @MainActor
+    private static func makeReadingConsent(decision: AIReadingDecision, fails: Bool, counter: ConsentPreviewCounter, gate: ConsentPreviewLoadGate? = nil) -> AIReadingConsentModel {
+        let session = SessionGeneration()
+        session.follow(userID: "consent-preview")
+        return AIReadingConsentModel(store: ConsentPreviewStore(decision: decision, fails: fails, counter: counter, gate: gate), session: session,
+                                     loadFailureMessage: AIReadingConsentText.readFailed, saveFailureMessage: AIReadingConsentText.saveFailed)
+    }
+
+    /// Uses the real tabs, settings and consent models with local stores only.
+    @MainActor
+    func consentScreens() -> MainScreens? {
+        let decision: AIReadingDecision
+        switch scenario {
+        case .consentRequired, .consentError: decision = .notDetermined
+        case .consentDenied: decision = .denied
+        case .consentAllowed, .consentOnboarding: decision = .allowed
+        default: return nil
+        }
+        let provider = Self.provider(), changes = DataChanges()
+        let reader = ParcelReader(provider: provider), writer = ParcelWriter(provider: provider, changes: changes)
+        let today = Format.todayJst(now: Date())
+        let list = makeModel()
+        let counter = ConsentPreviewCounter()
+        let gate = scenario == .consentOnboarding ? ConsentPreviewLoadGate() : nil
+        let consent = Self.makeReadingConsent(decision: decision, fails: scenario == .consentError, counter: counter, gate: gate)
+        let settings = SettingsModel.live(auth: AuthService(provider: provider), changes: changes, consent: consent)
+        settings.debugConsentFixture = true
+        settings.debugConsentSaveCount = { counter.count }
+        if let gate {
+            settings.debugFirstKeyCreated = true
+            settings.debugConsentIsHoldingLoad = { gate.isHolding }
+            settings.debugConsentFinishLoad = { gate.finish() }
+        }
+        settings.demo = DemoModel(api: ConsentPreviewDemo(), accessToken: { "preview-token" }, changed: {
+            list.debugShow(rows: Self.rows(today: today), counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
+        })
+        return MainScreens(changes: changes, list: list, calendar: CalendarModel(reader: reader, changes: changes, today: { today }),
+                           spend: SpendModel(reader: reader, writer: writer, changes: changes, today: { today }), settings: settings,
+                           detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: { today }) })
     }
 
     /// An auth service that reaches nothing (the first-screen scenario's buttons open LoginView).
@@ -111,7 +164,8 @@ struct ListPreview {
             model.debugShowWaiting(email: "qa@example.com")
         case .list, .empty, .failed, .toast, .saving, .many, .bottom,
              .receivedList, .receivedDetail, .receivedCheck, .deliveredPage, .cancelledPage,
-             .emptyReceived, .emptyApproval, .checking, .detail, .welcome, .accountDelete:
+             .emptyReceived, .emptyApproval, .checking, .detail, .welcome, .accountDelete,
+             .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentOnboarding:
             return nil
         }
         return model
@@ -189,7 +243,7 @@ struct ListPreview {
             var delivered = Self.row(31, shop: "見本ストア", title: "架空のマグカップ", status: "delivered", date: CivilDate.addDays(today, -20), presence: true)
             delivered.lastEmailAt = CivilDate.addDays(today, -20) + "T00:00:00Z"
             model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
-        case .empty, .accountDelete:
+        case .empty, .accountDelete, .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentOnboarding:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
         case .emptyReceived, .emptyApproval:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded,
@@ -270,6 +324,94 @@ struct ListPreview {
         func store(key: String, value: Data) throws { lock.withLock { values[key] = value } }
         func retrieve(key: String) throws -> Data? { lock.withLock { values[key] } }
         func remove(key: String) throws { lock.withLock { _ = values.removeValue(forKey: key) } }
+    }
+}
+
+@MainActor
+@Observable
+private final class ConsentPreviewCounter {
+    var count = 0
+    func recordSave() { count += 1 }
+}
+
+private actor ConsentPreviewStore: AIReadingConsentStoring {
+    var decision: AIReadingDecision
+    let fails: Bool
+    let counter: ConsentPreviewCounter
+    let gate: ConsentPreviewLoadGate?
+    private var loadCount = 0
+
+    init(decision: AIReadingDecision, fails: Bool, counter: ConsentPreviewCounter, gate: ConsentPreviewLoadGate?) {
+        self.decision = decision
+        self.fails = fails
+        self.counter = counter
+        self.gate = gate
+    }
+
+    func load(for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> {
+        loadCount += 1
+        if loadCount > 1 { await gate?.wait() }
+        return fails ? .failed : .loaded(decision)
+    }
+
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> {
+        await counter.recordSave()
+        guard !fails else { return .failed }
+        decision = allowed ? .allowed : .denied
+        return .loaded(decision)
+    }
+}
+
+@MainActor
+@Observable
+private final class ConsentPreviewLoadGate {
+    private(set) var isHolding = false
+    @ObservationIgnored private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        isHolding = true
+        await withCheckedContinuation { continuation = $0 }
+        isHolding = false
+    }
+
+    func finish() { continuation?.resume(); continuation = nil }
+}
+
+private struct ConsentPreviewDemo: DemoAPI {
+    func load(accessToken: String) async -> Result<DemoLoaded, DemoFailure> {
+        .success(DemoLoaded(processed: 1, busy: false))
+    }
+    func clear(accessToken: String) async -> Result<Void, DemoFailure> { .success(()) }
+}
+
+/// The same observable store counter on the prompt and the tabs, without adding visible copy.
+struct ConsentPreviewAccessibility: ViewModifier {
+    let settings: SettingsModel
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let count = settings.debugConsentSaveCount {
+            content
+                .overlay(alignment: .bottomTrailing) {
+                    if let holding = settings.debugConsentIsHoldingLoad {
+                        if holding() {
+                            VStack {
+                                ProgressView().accessibilityIdentifier("consent-onboarding.loading")
+                                Button(ManualParcelText.close) { settings.debugConsentFinishLoad?() }
+                                    .accessibilityIdentifier("consent-onboarding.complete")
+                            }
+                        } else {
+                            Button("確かめる") { Task { await settings.load() } }
+                                .accessibilityIdentifier("consent-onboarding.reload")
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("consent-preview.save-count")
+                .accessibilityValue(String(count()))
+        } else {
+            content
+        }
     }
 }
 #endif

@@ -31,8 +31,10 @@ enum MailAPIFailure: Error, Equatable, Sendable {
     case notFound
     /// 500 (mark-parcel): the database failed.
     case markFailed
-    /// 503: Supabase Auth could not be asked.
+    /// 503: Supabase Auth or the AI-reading permission could not be checked.
     case unavailable
+    /// 403 (read-waiting): the person has not allowed AI reading.
+    case aiConsentRequired
     /// read-waiting: some mail could not be read (`read_failed`).
     case readFailed
     /// The server did not answer (offline, a reset, a refusal that is not the endpoint's JSON).
@@ -136,6 +138,7 @@ struct MailActionsClient: MailActionsAPI {
         case "not_found": throw .notFound
         case "mark_failed": throw .markFailed
         case "unavailable": throw .unavailable
+        case "ai_consent_required": throw .aiConsentRequired
         case "read_failed": throw .readFailed
         default: throw http.statusCode == 200 ? .unknownResult : .network
         }

@@ -93,7 +93,7 @@ struct AccountDeletionTests {
         let fake = FakeSupabase.make()
         await fake.insert("parcels", [Rows.parcel(1, ["status": "shipped"])])
         let (_, auth) = try await TestSession.signedIn(fake)
-        let screens = MainScreens.live(auth: auth, withKeys: false)
+        let screens = MainScreens.live(auth: auth, readingConsent: .allowedForTests(), withKeys: false)
         let keychain = FakeKeychain()
         let service = "test.account-delete." + UUID().uuidString
         let policy = KeyStorePolicy(defaults: scratchDefaults())

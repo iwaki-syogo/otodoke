@@ -39,6 +39,8 @@ final class SettingsModel {
     }
 
     let reader: SettingsReader
+    let readingConsent: AIReadingConsentModel
+    private(set) var requestsReadingConsent = false
 
     private(set) var keyPanel: KeyPanel?
     /// The forwarding address ("local@domain"); read (or made) only when a key row is there.
@@ -75,8 +77,17 @@ final class SettingsModel {
     /// [CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
     @ObservationIgnored private var retired = false
+    @ObservationIgnored private var addressEpoch = 0
+    #if DEBUG
+    @ObservationIgnored var debugConsentFixture = false
+    @ObservationIgnored var debugConsentSaveCount: (@MainActor () -> Int)?
+    @ObservationIgnored var debugFirstKeyCreated = false
+    @ObservationIgnored var debugConsentIsHoldingLoad: (@MainActor () -> Bool)?
+    @ObservationIgnored var debugConsentFinishLoad: (@MainActor () -> Void)?
+    #endif
 
     init(
+        consent: AIReadingConsentModel? = nil,
         reader: SettingsReader,
         inbox: InboxAddressService,
         auth: AuthService,
@@ -90,11 +101,21 @@ final class SettingsModel {
         self.inboundDomain = inboundDomain
         self.mark = ChangeMark(changes)
         self.now = now
+        readingConsent = consent ?? Self.liveReadingConsent(auth: auth)
+        readingConsent.onAddressPermissionChange = { [weak self] allowed in self?.addressPermissionChanged(allowed) }
+    }
+
+    static func liveReadingConsent(auth: AuthService) -> AIReadingConsentModel {
+        AIReadingConsentModel(
+            store: AIReadingConsentClient(provider: auth.provider, isCurrent: { [weak auth] stamp in auth?.session.isCurrent(stamp) == true }),
+            session: auth.session, loadFailureMessage: AIReadingConsentText.readFailed, saveFailureMessage: AIReadingConsentText.saveFailed
+        )
     }
 
     /// The app's model: the signed-in session's provider, the device clock.
-    static func live(auth: AuthService, changes: DataChanges?) -> SettingsModel {
+    static func live(auth: AuthService, changes: DataChanges?, consent: AIReadingConsentModel? = nil) -> SettingsModel {
         let model = SettingsModel(
+            consent: consent,
             reader: SettingsReader(provider: auth.provider),
             inbox: InboxAddressService(provider: auth.provider),
             auth: auth,
@@ -110,6 +131,42 @@ final class SettingsModel {
         )
         return model
     }
+
+    var mayShowReadingAddress: Bool { !requestsReadingConsent && readingConsent.mayShowAddress }
+
+    private func addressPermissionChanged(_ allowed: Bool) {
+        addressEpoch &+= 1
+        if !allowed { clearReadingAddress() }
+    }
+
+    private func clearReadingAddress() {
+        address = nil; confirmURL = nil; confirmationFailed = false
+        approvalWaiting = false; approvalBadgeFailed = false; lastApprovalRead = nil
+    }
+
+    func requestReadingConsent() {
+        guard !retired else { return }
+        requestsReadingConsent = true
+        addressEpoch &+= 1
+        clearReadingAddress()
+    }
+
+    func dismissReadingConsent() { requestsReadingConsent = false }
+
+    @discardableResult
+    func chooseReadingConsent(_ allowed: Bool) async -> Bool {
+        let saved = await readingConsent.choose(allowed)
+        if saved { await readingConsentChoiceSaved() }
+        return saved
+    }
+
+    func readingConsentChoiceSaved() async {
+        requestsReadingConsent = false
+        await loadSettings()
+    }
+
+    /// The first guide shares the consent read already completed by the tabs.
+    func loadForwardingGuide() async { await loadSettings() }
 
     /// 「サンプルで試す」 (set by live()): the sample load and clear-everything, through the Web's endpoints.
     @ObservationIgnored var demo: DemoModel?
@@ -127,7 +184,9 @@ final class SettingsModel {
             api: MailActionsClient(session: provider.urlSession),
             accessToken: { try? await provider.auth.session.accessToken },
             reload: { [weak self] in await self?.load() },
-            announceChange: { [changes = mark.changes] in ParcelWriter.announceOutsideChange(changes) }
+            announceChange: { [changes = mark.changes] in ParcelWriter.announceOutsideChange(changes) },
+            mayRead: { [weak self] in self?.mayShowReadingAddress == true },
+            requestReadingConsent: { [weak self] in self?.requestReadingConsent() }
         )
     }()
 
@@ -161,6 +220,8 @@ final class SettingsModel {
 
     func clearForSignOut() {
         retired = true
+        readingConsent.retire()
+        requestsReadingConsent = false
         _ = fence.beginRead()
         loadsStarted += 1
         cutOff?.raise()
@@ -191,6 +252,7 @@ final class SettingsModel {
 
     /// The address shows only with a key row in use (never when the key could not be read).
     var showsAddress: Bool {
+        guard mayShowReadingAddress else { return false }
         if case .present? = keyPanel { return true }
         return false
     }
@@ -213,6 +275,27 @@ final class SettingsModel {
     /// Reads everything again. Each read fails on its own; a newer read drops this one's answers.
     func load() async {
         guard !retired else { return }
+        await readingConsent.load()
+        await loadSettings()
+    }
+
+    private func loadSettings() async {
+        guard !retired else { return }
+        #if DEBUG
+        if debugConsentFixture {
+            hasRead = true
+            keyPanel = .present(oldKeyCount: .loaded(0))
+            unread = .loaded(0); dropped = .loaded([])
+            if mayShowReadingAddress {
+                address = .loaded("inbox@\(inboundDomain)")
+                confirmURL = URL(string: "https://mail-settings.google.com/mail/vf-preview")
+                approvalWaiting = true
+            } else {
+                clearReadingAddress()
+            }
+            return
+        }
+        #endif
         hasRead = true
         loadsStarted += 1
         loadsRunning += 1
@@ -223,9 +306,10 @@ final class SettingsModel {
         cutOff = signal
         let reader = self.reader
         let at = now()
+        let epoch = addressEpoch
 
         let (panel, readAddress, readConfirmation, readLater, readWaiting, readDropped, readReasons) = await withTaskCancellationHandler {
-            await readAll(reader, at: at)
+            await readAll(reader, at: at, epoch: epoch)
         } onCancel: {
             signal.raise()
         }
@@ -239,21 +323,25 @@ final class SettingsModel {
             return
         }
         keyPanel = panel
-        address = readAddress
-        applyApproval(readConfirmation, later: readLater)
+        if mayShowReadingAddress, epoch == addressEpoch {
+            address = readAddress
+            if let readConfirmation { applyApproval(readConfirmation, later: readLater) }
+        } else {
+            clearReadingAddress()
+        }
         unread = readWaiting
         unreadReasons = readReasons
         dropped = readDropped
-        lastApprovalRead = at
+        if mayShowReadingAddress { lastApprovalRead = at }
     }
 
     /// The reads of load(): each fails on its own.
-    private func readAll(_ reader: SettingsReader, at: Date) async -> (
-        KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>,
+    private func readAll(_ reader: SettingsReader, at: Date, epoch: Int) async -> (
+        KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>?, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>,
         LoadResult<UnreadReasons>?
     ) {
         async let key = reader.currentKey()
-        async let confirmation = reader.forwardingConfirmations()
+        async let confirmation = readConfirmationIfAllowed(reader, epoch: epoch)
         async let waiting = reader.unreadCount(now: at)
         async let droppedRows = reader.dropped()
 
@@ -267,13 +355,13 @@ final class SettingsModel {
             panel = .none
         case let .loaded(row?):
             async let old = reader.oldKeyCount(currentKeyID: row.keyId)
-            readAddress = await readAddressOfKey()
+            readAddress = await readAddressOfKey(epoch: epoch)
             panel = .present(oldKeyCount: await old)
         }
         // What arrived after the confirmation the card shows (the badge's time rule).
         let confirmationRows = await confirmation
         var later: LoadResult<Int>?
-        if let pick = confirmationRows.value.flatMap(Self.pickApproval), let at = pick.at {
+        if mayShowReadingAddress, epoch == addressEpoch, let pick = confirmationRows?.value.flatMap(Self.pickApproval), let at = pick.at {
             later = await reader.arrivedAfter(at)
         }
         let waitingResult = await waiting
@@ -309,6 +397,7 @@ final class SettingsModel {
     /// The card's auto refresh runs only for a person who has an address to forward to and no approval link yet
     /// (a failed read of the confirmation counts as "no link yet", as on the Web).
     var pollsForApproval: Bool {
+        guard mayShowReadingAddress else { return false }
         guard case .present? = keyPanel, addressCanBeCopied, confirmURL == nil else { return false }
         return true
     }
@@ -337,12 +426,13 @@ final class SettingsModel {
     func refreshApproval() async {
         guard !retired, pollsForApproval, loadsRunning == 0 else { return }
         let started = loadsStarted
+        let epoch = addressEpoch
         let confirmation = await reader.forwardingConfirmations()
         var later: LoadResult<Int>?
         if !Task.isCancelled, let at = confirmation.value.flatMap(Self.pickApproval)?.at {
             later = await reader.arrivedAfter(at)
         }
-        guard !retired, !Task.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval else { return }
+        guard !retired, !Task.isCancelled, started == loadsStarted, loadsRunning == 0, pollsForApproval, epoch == addressEpoch else { return }
         lastApprovalRead = now()
         applyApproval(confirmation, later: later)
     }
@@ -356,9 +446,11 @@ final class SettingsModel {
 
     /// "local@domain" of the user's address (made on first use), .failed when it could not be read or made.
     /// With no inbound domain set the Web shows 「受信ドメインがまだ設定されていません。」 in place of the address.
-    private func readAddressOfKey() async -> LoadResult<String> {
+    private func readAddressOfKey(epoch: Int) async -> LoadResult<String>? {
+        guard mayShowReadingAddress, epoch == addressEpoch else { return nil }
         do {
             let local = try await inbox.ensure()
+            guard mayShowReadingAddress, epoch == addressEpoch else { return nil }
             return .loaded(InboxAddressService.email(localPart: local, domain: inboundDomain) ?? SettingsWebText.noInboundDomain)
         } catch {
             return .failed
@@ -367,8 +459,14 @@ final class SettingsModel {
 
     /// The address can be copied (an inbound domain is set).
     var addressCanBeCopied: Bool {
+        guard mayShowReadingAddress else { return false }
         guard case let .loaded(text)? = address else { return false }
         return !inboundDomain.isEmpty && text.hasSuffix("@\(inboundDomain)")
+    }
+
+    private func readConfirmationIfAllowed(_ reader: SettingsReader, epoch: Int) async -> LoadResult<[ForwardingConfirmationRow]>? {
+        guard mayShowReadingAddress, epoch == addressEpoch else { return nil }
+        return await reader.forwardingConfirmations()
     }
 
     /// [M1] The stored value first, then the body, as Forwarding.confirmURL (the Web's WHATWG reading),

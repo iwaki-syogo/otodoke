@@ -11,6 +11,7 @@ private enum Round2 {
     static func settings(_ fake: FakeSupabase, changes: DataChanges = DataChanges()) async throws -> SettingsModel {
         let (provider, auth) = try await TestSession.signedIn(fake)
         return SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,

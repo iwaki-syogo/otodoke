@@ -27,6 +27,8 @@ struct RootView: View {
                 WelcomeView(auth: preview.previewAuth())
             } else if let deletion = preview.accountDeletionModel() {
                 NavigationStack { AccountDeletionView(model: deletion, email: nil) }
+            } else if let screens = preview.consentScreens() {
+                MainTabView(screens: screens)
             } else if let login = preview.makeLoginModel() {
                 LoginView(model: login)
             } else if let page = preview.deliveredPageModel() {

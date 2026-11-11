@@ -14,7 +14,7 @@ enum SettingsPage: Hashable, CaseIterable {
 
 struct SettingsView: View {
     let model: SettingsModel
-    @Environment(\.openURL) private var openURL
+    @State private var showsPrivacy = false
     @State private var ownPath: [SettingsPage]
     /// The stack held by the caller (the tabs open 「メールの転送」 from the empty list); nil: this view's own.
     private let outerPath: Binding<[SettingsPage]>?
@@ -51,6 +51,7 @@ struct SettingsView: View {
                 .navigationDestination(for: SettingsPage.self) { destination($0) }
         }
         .task { await model.onAppear() }
+        .sheet(isPresented: $showsPrivacy) { AIReadingPrivacySheet() }
     }
 
     @ViewBuilder
@@ -59,7 +60,7 @@ struct SettingsView: View {
         case .forward: SettingsForwardPage(model: model, expandsGuide: expands)
         case .key: SettingsKeyPage(model: model)
         case .dropped: SettingsDroppedPage(model: model, expanded: expands, register: register)
-        case .handling: SettingsHandlingPage()
+        case .handling: SettingsHandlingPage(model: model)
         case .delivery: SettingsDeliveryHelpPage(model: model, register: register)
         case .sample: SettingsSamplePage(model: model)
         case .deleteAccount: AccountDeletionView(model: model.accountDeletion, email: model.signedInEmail)
@@ -86,7 +87,7 @@ struct SettingsView: View {
                             Divider().padding(.leading, 58)
                             logoutRow
                             Divider().padding(.leading, 58)
-                            webRow(.privacy, symbol: "doc.text", title: SettingsWebText.privacyTitle)
+                            privacyRow
                             Divider().padding(.leading, 58)
                             row(.deleteAccount)
                         }
@@ -131,10 +132,9 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    /// A row that leaves the app for a Web page (Safari).
-    private func webRow(_ action: SettingsWebAction, symbol: String, title: String, subtitle: String? = nil) -> some View {
-        Button { SettingsWeb.open(action, openURL) } label: {
-            SettingsRow(symbol: symbol, title: title, subtitle: subtitle, badge: nil, trailing: "arrow.up.right", hint: SettingsMenuText.webHint)
+    private var privacyRow: some View {
+        Button { showsPrivacy = true } label: {
+            SettingsRow(symbol: "doc.text", title: SettingsWebText.privacyTitle, subtitle: nil, badge: nil, trailing: "chevron.right")
         }
         .buttonStyle(.plain)
     }

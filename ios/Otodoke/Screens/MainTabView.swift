@@ -73,6 +73,7 @@ final class MainScreens {
     let calendar: CalendarModel
     let spend: SpendModel
     let settings: SettingsModel
+    var readingConsent: AIReadingConsentModel { settings.readingConsent }
     private let makeDetail: (String) -> ParcelDetailModel
     private var details: [WeakDetail] = []
     private var deliveredPages: [WeakDelivered] = []
@@ -109,7 +110,7 @@ final class MainScreens {
 
     /// The app's: the signed-in session's provider; the writer publishes to the DataChanges every
     /// screen reads.
-    static func live(auth: AuthService, keyParts: KeyParts? = nil, withKeys: Bool = true) -> MainScreens {
+    static func live(auth: AuthService, readingConsent: AIReadingConsentModel? = nil, keyParts: KeyParts? = nil, withKeys: Bool = true) -> MainScreens {
         let changes = DataChanges()
         let reader = ParcelReader(provider: auth.provider)
         let writer = ParcelWriter(provider: auth.provider, changes: changes)
@@ -119,7 +120,7 @@ final class MainScreens {
             list: .live(reader: reader, writer: writer, readMail: { await SettingsReader(provider: auth.provider).mailSoFar() }),
             calendar: CalendarModel(reader: reader, changes: changes, today: today),
             spend: SpendModel(reader: reader, writer: writer, changes: changes, today: today),
-            settings: .live(auth: auth, changes: changes),
+            settings: .live(auth: auth, changes: changes, consent: readingConsent),
             detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
         )
         // N-1: withKeys false is a View made while signing out: it must not take AuthService.cleanup over.
@@ -184,6 +185,7 @@ struct MainTabView: View {
     @State private var boxClosed = false
     /// The app went to the background since it was last in front.
     @State private var wasInBackground = false
+    @State private var consentBypassed = false
     @Environment(\.scenePhase) private var scenePhase
 
     /// The signed-in generation's screens (MainScreens.of): the same ones every time this View is made again
@@ -199,12 +201,17 @@ struct MainTabView: View {
         let writer = listModel.writer
         let changes = writer.changes ?? DataChanges()
         let today: @Sendable () -> String = { Format.todayJst(now: Date()) }
+        #if DEBUG
+        let previewConsent: AIReadingConsentModel? = ListPreview.allowedReadingConsent()
+        #else
+        let previewConsent: AIReadingConsentModel? = nil
+        #endif
         self.init(screens: MainScreens(
             changes: changes,
             list: listModel,
             calendar: CalendarModel(reader: reader, changes: changes, today: today),
             spend: SpendModel(reader: reader, writer: writer, changes: changes, today: today),
-            settings: .live(auth: AuthService(provider: reader.provider), changes: changes),
+            settings: .live(auth: AuthService(provider: reader.provider), changes: changes, consent: previewConsent),
             detail: detailModel ?? { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
         ))
     }
@@ -223,6 +230,17 @@ struct MainTabView: View {
                     .tabItem { Label(tab.title, systemImage: tab.systemImage) }
                     .tag(tab)
             }
+        }
+        .task { await screens.settings.load() }
+        .sheet(item: $manualForm) { form in
+            ManualParcelView(model: form) { manualForm = nil }
+        }
+        .sheet(isPresented: Binding(get: { screens.settings.requestsReadingConsent }, set: { if !$0 { screens.settings.dismissReadingConsent() } })) {
+            NavigationStack {
+                AIReadingConsentView(model: screens.readingConsent, onChanged: { await screens.settings.readingConsentChoiceSaved() })
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(ManualParcelText.close) { screens.settings.dismissReadingConsent() } } }
+            }
+            .task { await screens.readingConsent.load() }
         }
         // [N3] The front is the selected tab's top screen.
         .onChange(of: selection, initial: true) { _, tab in
@@ -260,7 +278,10 @@ struct MainTabView: View {
                 guard wasInBackground else { return }
                 wasInBackground = false
                 let refresher = screens.refresher
-                Task { await refresher.sceneBecameActive() }
+                Task {
+                    await screens.settings.load()
+                    if selection != .settings { await refresher.sceneBecameActive() }
+                }
             default:
                 break
             }
@@ -274,6 +295,19 @@ struct MainTabView: View {
         .accessibilityHidden(landing != .tabs)
         .overlay {
             switch landing {
+            case .consent:
+                AIReadingConsentView(model: screens.readingConsent, onChanged: {
+                    await screens.settings.readingConsentChoiceSaved()
+                }, openManual: {
+                    consentBypassed = true
+                    guideClosed = true
+                    route.tab = .parcels
+                    manualForm = ManualParcelModel.live(list: screens.list)
+                }, openSample: {
+                    consentBypassed = true
+                    guideClosed = true
+                    route.showSample()
+                })
             case .waiting:
                 ProgressView()
                     .accessibilityLabel(SettingsMenuText.loadingLabel)
@@ -285,6 +319,7 @@ struct MainTabView: View {
                     route.tab = .parcels
                     guideClosed = true
                 }
+                .accessibilityIdentifier("consent-onboarding.guide")
                 .transition(.identity)
             case .keyBox:
                 KeyBoxView(
@@ -303,16 +338,24 @@ struct MainTabView: View {
                 EmptyView()
             }
         }
+        #if DEBUG
+        .modifier(ConsentPreviewAccessibility(settings: screens.settings))
+        #endif
     }
 
     private var landing: Landing {
-        Landing.of(
+        var outcome = screens.keySetup?.lastOutcome
+        #if DEBUG
+        if screens.settings.debugFirstKeyCreated { outcome = .created(keyID: "preview-key") }
+        #endif
+        return Landing.of(
             deciding: screens.keySetup?.isDeciding == true,
-            outcome: screens.keySetup?.lastOutcome,
-            guideClosed: guideClosed,
+            outcome: outcome,
+            guideClosed: guideClosed || screens.readingConsent.decision == .denied,
             fromConfirmation: screens.keySetup?.lastRunFromConfirmation == true,
             boxClosed: boxClosed,
-            gaveUp: screens.keySetup?.landingGaveUp == true
+            gaveUp: screens.keySetup?.landingGaveUp == true,
+            needsConsent: !consentBypassed && (screens.readingConsent.decision == nil || screens.readingConsent.needsPrompt)
         )
     }
 
@@ -349,9 +392,6 @@ struct MainTabView: View {
         case .settings:
             let settings = screens.settings
             SettingsView(model: settings, path: $route.settingsPath, register: { manualForm = ManualParcelModel.live(list: screens.list) })
-                .sheet(item: $manualForm) { form in
-                    ManualParcelView(model: form) { manualForm = nil }
-                }
                 .shownScreen(.settings, in: .settings, screens.refresher, refresh: { await settings.sceneBecameActive() }, ifStale: { await settings.onAppear() })
         }
     }

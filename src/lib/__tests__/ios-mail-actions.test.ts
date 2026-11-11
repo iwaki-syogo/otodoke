@@ -8,7 +8,10 @@ import { describe, expect, it } from "vitest";
  * SettingsMailText.swift only. A file or sentence that cannot be read is a failure, not a pass.
  */
 const ROOT = path.resolve(__dirname, "../../..");
+// Cross-repository checks can use an immutable snapshot of the Web's actual files before integration.
+const WEB_ROOT = process.env.OTODOKE_CONSENT_WEB_ROOT ?? ROOT;
 const read = (p: string) => (existsSync(path.join(ROOT, p)) ? readFileSync(path.join(ROOT, p), "utf8") : "");
+const readWebContract = (p: string) => readFileSync(path.join(WEB_ROOT, p), "utf8");
 const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"])\/\/.*$/gm, "$1");
 const stripTsx = (src: string) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 
@@ -160,7 +163,19 @@ describe("the views draw them through the constants, and nothing opens the Web",
     expect(model).toMatch(/guard !isReading else \{ return \}/);
     // The flag is set before the first await (no suspension between the guard and the flag).
     expect(model).toMatch(/guard markingID == nil else \{ return \}\s*markingID = id/);
-    expect(model).toMatch(/guard !isReading else \{ return \}\s*isReading = true/);
+    const read = model.match(/func readWaiting\(\) async \{[\s\S]*?\n    \}\n/)?.[0] ?? "";
+    // The synchronous permission gate may return to the choice, before the busy flag or any await.
+    const start = /guard !isReading else \{ return \}\s*guard mayRead\(\) else \{ readNote = nil; requestReadingConsent\(\); return \}\s*isReading = true/;
+    expect(read).toMatch(start);
+    const token = read.indexOf("await accessToken()");
+    const permission = read.indexOf("guard mayRead() else { requestReadingConsent(); return }");
+    expect(token).toBeGreaterThan(read.indexOf("isReading = true"));
+    expect(permission).toBeGreaterThan(token);
+    expect(read.indexOf("api.readWaiting(")).toBeGreaterThan(permission);
+    // Both the busy guard and the two permission gates remain necessary after this source update.
+    expect(read.replace("guard !isReading else { return }", "")).not.toMatch(start);
+    expect(read.replace("guard mayRead() else { readNote = nil; requestReadingConsent(); return }", "")).not.toMatch(start);
+    expect(read.replace("guard mayRead() else { requestReadingConsent(); return }", "")).not.toContain("guard mayRead() else { requestReadingConsent(); return }");
     expect(model).not.toMatch(/retry|again\(/i);
   });
 });
@@ -182,6 +197,7 @@ describe("the calls follow the shape of the sample endpoints (docs/api/demo.md)"
     expect(client).toMatch(/case "mark_failed": throw \.markFailed/);
     expect(client).toMatch(/case "unavailable": throw \.unavailable/);
     expect(client).toMatch(/case "read_failed": throw \.readFailed/);
+    expect(client).toMatch(/case "ai_consent_required": throw \.aiConsentRequired/);
   });
 
   it("a timeout or a cancel is not a failure (the result is not known): the model says nothing and reads again", () => {
@@ -196,9 +212,14 @@ describe("the calls follow the shape of the sample endpoints (docs/api/demo.md)"
 
 describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/api/mail/**)", () => {
   const client = stripComments(read("ios/Otodoke/Data/MailActionsAPI.swift"));
-  const doc = read("docs/api/mail.md");
-  const handler = read("src/app/api/mail/handler.ts");
+  const doc = readWebContract("docs/api/mail.md");
+  const handler = readWebContract("src/app/api/mail/handler.ts");
   const codes = (src: string) => [...src.matchAll(/case "(\w+)": throw \./g)].map((m) => m[1]).sort();
+  const documentedCodes = (src: string) => [...new Set([...src.matchAll(/^\| \d{3} \| `(\w+)` \|/gm)].map((m) => m[1]))].sort();
+  const answeredCodes = (src: string) => {
+    const union = src.match(/export type MailApiCode\s*=\s*([^;]+);/)?.[1] ?? "";
+    return [...union.matchAll(/"(\w+)"/g)].map((m) => m[1]).sort();
+  };
 
   it("the Web has both routes and the doc names both paths", () => {
     expect(existsSync(path.join(ROOT, "src/app/api/mail/mark-parcel/route.ts"))).toBe(true);
@@ -231,6 +252,21 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
         .not.toMatch(/default: throw http\.statusCode == 200 \? \.unknownResult : \.network/);
     }
     for (const c of web) expect(handler, c).toContain(c);
+  });
+
+  it("the codes iOS maps are exactly the codes the Web answers with", () => {
+    // unavailable is documented for both auth and consent lookup failures; it is one response code.
+    const web = documentedCodes(doc);
+    expect(web).toEqual(["ai_consent_required", "invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"]);
+    expect(answeredCodes(handler)).toEqual(web);
+    expect(codes(client)).toEqual(web);
+    for (const c of web) expect(handler, c).toContain(c);
+    expect(handler).toMatch(/ai_consent_required:\s*403/);
+    expect(doc).toMatch(/^\| 403 \| `ai_consent_required` \|/m);
+    // No one source can silently omit the new contract while the others have it.
+    expect(codes(client.replace('case "ai_consent_required": throw .aiConsentRequired', ""))).not.toEqual(web);
+    expect(documentedCodes(doc.replace(/^\| 403 \| `ai_consent_required`[^\n]*\n/gm, ""))).not.toEqual(web);
+    expect(answeredCodes(handler.replace(' | "ai_consent_required"', ""))).not.toEqual(web);
   });
 
   it("the outcomes iOS knows are the Web's four", () => {

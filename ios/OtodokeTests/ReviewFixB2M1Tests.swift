@@ -15,6 +15,7 @@ private enum World {
     static func settings(_ fake: FakeSupabase, changes: DataChanges = DataChanges()) async throws -> SettingsModel {
         let (provider, auth) = try await provider(fake)
         return SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,

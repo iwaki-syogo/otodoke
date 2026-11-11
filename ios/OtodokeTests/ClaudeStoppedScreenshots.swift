@@ -66,6 +66,7 @@ struct ClaudeStoppedScreenshots {
             await fake.failAlways(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, with: .http(500))
         }
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 7, count: $0) }),
             auth: auth,

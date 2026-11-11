@@ -179,6 +179,7 @@ struct ApprovalRefreshModelTests {
         if keyFails { await fake.fail("GET", "user_keys", with: .http(500)) }
         let (provider, auth) = try await TestSession.signedIn(fake)
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
