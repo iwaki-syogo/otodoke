@@ -214,7 +214,7 @@ struct ReceiptUndoOwnershipTests {
         #expect(try await current(fake, 2).receivedAt == "2026-11-04T03:00:01Z")
         #expect(try await current(fake, 3).receivedAt == newToken.deliveredReceivedAt)
         #expect(try await current(fake, 3).updatedAt == newToken.deliveredUpdatedAt)
-        #expect(model.toast == ListToast(text: ParcelListModel.undoFailedText, canUndo: false))
+        #expect(model.toast == ListToast(text: "受け取り済みのままの荷物があります", canUndo: false))
     }
 
     @Test func zeroWrittenRowsNeverOfferOrSendAnUndo() async throws {

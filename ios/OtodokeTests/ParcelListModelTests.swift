@@ -208,7 +208,7 @@ struct ParcelListModelTests {
         #expect(ids(model.sections.soon).contains(Rows.id(1)))
     }
 
-    @Test func undoAfterADeliveryMailReloadsAndSaysItCouldNot() async throws {
+    @Test func undoAfterADeliveryMailReloadsAndSaysAReceiptRemains() async throws {
         let fake = FakeSupabase.make()
         await seed(fake)
         let (model, _) = try await make(fake)
@@ -217,7 +217,7 @@ struct ParcelListModelTests {
         await fake.touch("parcels", id: Rows.id(1), ["status": "delivered"])
         let readsBefore = await listReads(fake)
         await model.undo()
-        #expect(model.toast?.text == Self.undoFailed)
+        #expect(model.toast?.text == "受け取り済みのままの荷物があります")
         #expect(model.toast?.canUndo == false)
         #expect(await listReads(fake) > readsBefore)
         #expect(await status(fake, 1) == "delivered")

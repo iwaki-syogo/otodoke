@@ -363,8 +363,12 @@ final class ParcelListModel {
             showToast(ListToast(text: Self.savedText, canUndo: true), undo: [token])
         case .notUpdated(.conflict):
             // Changed since it was shown (a delivery mail, say): show what is there now, offer no undo.
-            _ = await reread()
-            if isOpen(id) { rowMessages[id] = Self.saveFailedText }
+            if await reread() == .applied,
+               rows.first(where: { $0.id == id }).map(ParcelRules.isReceived) == true {
+                showToast(ListToast(text: Self.savedText, canUndo: false), undo: [])
+            } else if isOpen(id) {
+                rowMessages[id] = Self.saveFailedText
+            }
         case .notUpdated:
             rowMessages[id] = Self.saveFailedText
         case .unknown:
@@ -413,12 +417,12 @@ final class ParcelListModel {
 
         var tokens: [UndoToken] = []
         var unsure: [String] = []
-        var conflicted = false
+        var conflicted: [String] = []
         var failed = false
         for result in results {
             switch result.outcome {
             case let .success(token): tokens.append(token)
-            case .notUpdated(.conflict): conflicted = true
+            case .notUpdated(.conflict): conflicted.append(result.id)
             case .notUpdated: failed = true
             case .unknown: unsure.append(result.id)
             }
@@ -427,10 +431,10 @@ final class ParcelListModel {
         unconfirmed.formUnion(unsure)
 
         var confirmed = 0
-        if conflicted || !unsure.isEmpty || !skipped.isEmpty {
+        if !conflicted.isEmpty || !unsure.isEmpty || !skipped.isEmpty {
             if await reread() == .applied {
-                for id in unsure {
-                    if isOpen(id) {
+                for id in unsure + conflicted {
+                    if isOpen(id), unsure.contains(id) {
                         failed = true
                     } else if rows.first(where: { $0.id == id }).map(ParcelRules.isReceived) == true {
                         confirmed += 1
@@ -525,6 +529,7 @@ final class ParcelListModel {
         var notBack: [String] = []
         var unsure: [String] = []
         var conflicted = false
+        var knownRemaining = false
         for result in results {
             switch result.outcome {
             case let .success(version):
@@ -532,6 +537,10 @@ final class ParcelListModel {
                 restored += 1
             case .notUpdated(.conflict):
                 conflicted = true
+                knownRemaining = true
+                notBack.append(result.id)
+            case .notUpdated(.invalidInput):
+                knownRemaining = true
                 notBack.append(result.id)
             case .notUpdated:
                 notBack.append(result.id)
@@ -541,7 +550,7 @@ final class ParcelListModel {
         }
         unconfirmed.formUnion(unsure)
 
-        enum Outcome { case done, failed, unconfirmed }
+        enum Outcome { case done, partly, failed, unconfirmed }
         let outcome: Outcome
         if notBack.isEmpty && unsure.isEmpty && blocked.isEmpty {
             outcome = .done
@@ -552,12 +561,12 @@ final class ParcelListModel {
                     guard let row = rows.first(where: { $0.id == token.id }) else { return false }
                     return row.status == token.restoreTo && row.receivedAt == token.previousReceivedAt
                 }
-                outcome = notBack.isEmpty && allBack ? .done : .failed
+                outcome = notBack.isEmpty && allBack ? .done : .partly
             } else {
-                outcome = unsure.isEmpty && blocked.isEmpty ? .failed : .unconfirmed
+                outcome = unsure.isEmpty && blocked.isEmpty ? .partly : .unconfirmed
             }
         } else {
-            outcome = .failed
+            outcome = knownRemaining || restored > 0 ? .partly : .failed
         }
 
         guard !retired else { return }
@@ -575,6 +584,8 @@ final class ParcelListModel {
             } else {
                 hideToast()
             }
+        case .partly:
+            showToast(ListToast(text: Self.undoneButKeptText(restored: restored, kept: keeps), canUndo: false), undo: [])
         case .failed: showToast(ListToast(text: Self.undoFailedText, canUndo: false), undo: [])
         case .unconfirmed: showToast(ListToast(text: Self.unconfirmedText, canUndo: false), undo: [])
         }
