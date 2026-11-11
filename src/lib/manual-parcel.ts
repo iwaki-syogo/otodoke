@@ -189,3 +189,48 @@ export function manualParcelFields(v: ManualParcelInput, now: Date, saved?: Manu
 export function manualParcelRow(v: ManualParcelInput, now: Date): ManualParcelColumns {
   return { ...manualParcelFields(v, now), source: "manual", last_email_at: now.toISOString() };
 }
+
+/** What is stored, as far as "does this save change anything" needs it. */
+export type ManualStoredForCompare = {
+  title: string | null;
+  shop: string | null;
+  status: string | null;
+  total_amount: number | null;
+  requires_presence: boolean | null;
+};
+
+/**
+ * Whether writing `columns` (manualParcelFields given what is stored) would change nothing: every
+ * column the edit always sends equals what is stored, and no other column is there (those are
+ * written only on a difference). shop_key is not compared (an edit always sends "other"). A stored
+ * null title or shop counts as a difference, the safe side. The same rule as the iOS app's writesNothing.
+ */
+export function manualWritesNothing(columns: ManualParcelColumns, saved: ManualStoredForCompare & { ordered_at?: string | null }): boolean {
+  for (const [key, value] of Object.entries(columns)) {
+    switch (key) {
+      case "title":
+        if (saved.title === null || value !== saved.title) return false;
+        break;
+      case "shop":
+        if (saved.shop === null || value !== saved.shop) return false;
+        break;
+      case "shop_key":
+        break;
+      case "ordered_at":
+        if (saved.ordered_at === undefined || value !== saved.ordered_at) return false;
+        break;
+      case "total_amount":
+        if (value !== saved.total_amount) return false;
+        break;
+      case "status":
+        if (value !== saved.status) return false;
+        break;
+      case "requires_presence":
+        if (value !== saved.requires_presence) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+  return true;
+}

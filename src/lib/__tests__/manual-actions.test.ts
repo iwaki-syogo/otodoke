@@ -205,6 +205,56 @@ describe("updateManualParcel", () => {
     expect(db.find("parcels", MANUAL_ID)!.title).toBe("メールが直した品名");
   });
 
+  describe("pressing the same form again after a save whose answer was lost", () => {
+    const CHANGED = "更新できませんでした。開き直してください";
+    const updates = () => parcelQueries().filter((q) => q.op === "update");
+
+    it("settles as saved and writes once", async () => {
+      const first = await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      expect(first.redirectedTo).toBe(`/app/parcels/${MANUAL_ID}`);
+      expect(updates()).toHaveLength(1);
+      // The version moved on with the first write; the form still carries the old one.
+      expect(db.find("parcels", MANUAL_ID)!.updated_at).not.toBe("2026-11-01T00:00:00Z");
+      mocks.revalidatePath.mockClear();
+      const again = await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      expect(again.state).toBeUndefined();
+      expect(again.redirectedTo).toBe(`/app/parcels/${MANUAL_ID}`);
+      expect(mocks.revalidatePath).toHaveBeenCalled();
+      expect(updates()).toHaveLength(1);
+    });
+
+    it("says to open it again when a mail added a tracking number after the first save, and writes nothing", async () => {
+      await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      const row = db.find("parcels", MANUAL_ID)!;
+      row.tracking_number = "999988887777";
+      row.updated_at = "2026-11-03T00:00:00Z";
+      const { state, redirectedTo } = await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      expect(redirectedTo).toBeNull();
+      expect(state?.error).toBe(CHANGED);
+      expect(state?.values).toEqual({});
+      expect(updates()).toHaveLength(1);
+      expect(db.find("parcels", MANUAL_ID)!.tracking_number).toBe("999988887777");
+    });
+
+    it("treats a stored null title as a difference", async () => {
+      await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      const row = db.find("parcels", MANUAL_ID)!;
+      row.title = null;
+      row.updated_at = "2026-11-03T00:00:00Z";
+      const { state, redirectedTo } = await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      expect(redirectedTo).toBeNull();
+      expect(state?.error).toBe(CHANGED);
+      expect(updates()).toHaveLength(1);
+    });
+
+    it("puts the changed version before an invalid input", async () => {
+      await run(updateManualParcel, fields({ id: MANUAL_ID }));
+      const { state } = await run(updateManualParcel, fields({ id: MANUAL_ID, expected_date: "2026-02-30" }));
+      expect(state?.error).toBe(CHANGED);
+      expect(updates()).toHaveLength(1);
+    });
+  });
+
   it("refuses a request sent without the version", async () => {
     const withoutVersion = fields({ id: MANUAL_ID });
     delete withoutVersion.updated_at;

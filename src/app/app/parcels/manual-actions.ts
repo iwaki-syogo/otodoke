@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { MANUAL_DELETE_UNCHECKED, ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, type ManualFormState } from "@/lib/manual-parcel";
+import { MANUAL_DELETE_UNCHECKED, ManualParcelSchema, manualParcelFields, manualParcelRow, manualParcelSchemaFor, manualWritesNothing, type ManualFormState } from "@/lib/manual-parcel";
 import { createClient } from "@/lib/supabase/server";
 
 // Parcels typed in by hand. Writes go through the user's own session (row-level security), and
@@ -69,7 +69,7 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
   // what an unchanged field keeps (see manualParcelFields).
   const { data: saved, error: readError } = await session.supabase
     .from("parcels")
-    .select("status, total_amount, category, ordered_at, expected_date, tracking_number, carrier, requires_presence, updated_at")
+    .select("title, shop, status, total_amount, category, ordered_at, expected_date, tracking_number, carrier, requires_presence, updated_at")
     .eq("id", id.data)
     .eq("user_id", session.userId)
     .eq("source", "manual")
@@ -81,12 +81,19 @@ export async function updateManualParcel(_prev: ManualFormState, formData: FormD
   if (!saved) return { error: NOT_FOUND, values };
   // The form carries the updated_at it was opened with (verbatim, as the database wrote it). A
   // parcel a mail updated since then is not overwritten: nothing is written, the page is read again
-  // and the fields start from what is stored now.
-  if (!values.updated_at || values.updated_at !== saved.updated_at) {
+  // and the fields start from what is stored now. The exception: the form already says exactly what
+  // is stored (an earlier press of this form went through and its answer was lost). That is saved,
+  // and nothing is written.
+  const stale = !values.updated_at || values.updated_at !== saved.updated_at;
+  const parsed = manualParcelSchemaFor(saved.status, saved.total_amount).safeParse(values);
+  if (stale) {
+    if (values.updated_at && parsed.success && manualWritesNothing(manualParcelFields(parsed.data, new Date(), saved), saved)) {
+      revalidatePath("/app", "layout");
+      redirect(`/app/parcels/${id.data}`);
+    }
     revalidatePath("/app", "layout");
     return { error: CHANGED, values: {} };
   }
-  const parsed = manualParcelSchemaFor(saved.status, saved.total_amount).safeParse(values);
   if (!parsed.success) return { error: invalid(parsed.error), values };
 
   // Editing keeps when the parcel last heard from a mail; source stays as it is.
