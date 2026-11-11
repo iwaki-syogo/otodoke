@@ -22,7 +22,9 @@ struct RootView: View {
 
     var body: some View {
         #if DEBUG
-        if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
+        if let preview = CategorySavingPreview(arguments: ProcessInfo.processInfo.arguments) {
+            preview
+        } else if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
             if preview.showsWelcome {
                 WelcomeView(auth: preview.previewAuth())
             } else if let deletion = preview.accountDeletionModel() {

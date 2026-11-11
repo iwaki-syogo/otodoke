@@ -30,6 +30,8 @@ struct ShopAmount: Equatable, Sendable {
 final class SpendModel {
     static let failedText = "読み込めませんでした"
     static let categoryFailed = "保存できませんでした"
+    static let categoryNotSaved = "保存されていませんでした。もう一度選んでください。"
+    static let categoryUnconfirmed = "確かめられませんでした"
 
     let reader: ParcelReader
     let writer: ParcelWriter
@@ -45,6 +47,35 @@ final class SpendModel {
     private(set) var savingCategory: Set<String> = []
     /// Per-order message after a failed save (「保存できませんでした」).
     private(set) var categoryErrors: [String: String] = [:]
+    private(set) var categoryEditorID: String?
+    private(set) var categoryEditorOpening = 0
+    private(set) var categoryPicks: [String: ParcelCategory] = [:]
+    private var categorySnapshots: [String: ParcelRow] = [:]
+    @ObservationIgnored private var categoryNeedsRead: Set<String> = []
+    @ObservationIgnored private var categoryOperations: [String: CategoryOperation] = [:]
+
+    @MainActor
+    private final class CategoryOperation {
+        let choice: ParcelCategory
+        let recoveryOnly: Bool
+        var needsConfirmation = false
+        private var result: Bool?
+        private var continuation: CheckedContinuation<Bool, Never>?
+
+        init(choice: ParcelCategory, recoveryOnly: Bool) {
+            self.choice = choice; self.recoveryOnly = recoveryOnly
+        }
+        func finish(_ saved: Bool) {
+            guard result == nil else { return }
+            result = saved
+            continuation?.resume(returning: saved)
+            continuation = nil
+        }
+        func value() async -> Bool {
+            if let result { return result }
+            return await withCheckedContinuation { continuation = $0 }
+        }
+    }
 
     /// What the screen shows: the period and the two filters (the Web's `?m=&c=&s=`).
     private struct Conditions: Equatable {
@@ -82,6 +113,9 @@ final class SpendModel {
         retired = true
         _ = fence.beginRead()
         cutOff?.raise()
+        for operation in categoryOperations.values { operation.finish(false) }
+        categoryOperations.removeAll(); categoryNeedsRead.removeAll(); categorySnapshots.removeAll()
+        categoryEditorID = nil; categoryEditorOpening += 1; categoryPicks.removeAll()
         parcels = nil; pendingMove = nil; savingCategory = []; categoryErrors = [:]
         shop = nil; category = .any; readAfterWrites = nil
     }
@@ -241,47 +275,114 @@ final class SpendModel {
         await go(.shop(nil), Conditions(period: period, category: category, shop: nil))
     }
 
-    /// The chip of an order: written on the version shown. Success: that version is kept and the
-    /// figures worked out again. Conflict or unknown: read again (never sent again). Failed: the old
-    /// category stays, with categoryFailed.
-    func setCategory(parcelID id: String, to chosen: ParcelCategory) async {
-        guard !retired, !categoryLocked, !savingCategory.contains(id), let row = parcels?.value?.first(where: { $0.id == id }) else { return }
+    func openCategoryEditor(_ row: ParcelRow) {
+        guard !retired, !categoryLocked, !savingCategory.contains(row.id) else { return }
+        categorySnapshots[row.id] = row
+        categoryEditorOpening += 1
+        categoryEditorID = row.id
+    }
+
+    func closeCategoryEditor() {
+        guard categoryEditorID.map({ !savingCategory.contains($0) }) ?? true else { return }
+        categoryEditorID = nil
+    }
+
+    func editorCategory(for id: String) -> ParcelCategory? {
+        categorySnapshots[id].flatMap { Spend.categoryOf($0.category) }
+    }
+
+    /// A completed choice is explicit: only a written or re-read user-owned value may close the editor.
+    @discardableResult
+    func setCategory(parcelID id: String, to chosen: ParcelCategory) async -> Bool {
+        guard !retired, !categoryLocked, !savingCategory.contains(id) else { return false }
+        let recoveryOnly = categoryNeedsRead.contains(id) || parcels == .failed
+        let row = parcels?.value?.first(where: { $0.id == id }) ?? categorySnapshots[id]
+        guard recoveryOnly || row != nil else { categoryErrors[id] = Self.categoryFailed; return false }
+        let operation = CategoryOperation(choice: chosen, recoveryOnly: recoveryOnly)
+        categoryOperations[id] = operation
+        categoryPicks[id] = chosen
         savingCategory.insert(id)
         categoryErrors[id] = nil
-        fence.beginWrite()
-        let result = await writer.setCategory(ParcelVersion(row), category: chosen)
-        guard !retired else { return }
-        savingCategory.remove(id)
-        var readAgain = false
-        switch result {
-        case let .success(after):
-            if case var .loaded(rows)? = parcels, let i = rows.firstIndex(where: { $0.id == id }) {
-                rows[i].category = chosen.rawValue
-                rows[i].categorySource = "user"
-                rows[i].status = after.status
-                rows[i].updatedAt = after.updatedAt
-                parcels = .loaded(rows)
+        defer {
+            if categoryOperations[id] === operation {
+                categoryOperations[id] = nil
+                savingCategory.remove(id)
             }
-        case .unknown, .notUpdated(.conflict):
-            readAgain = true
-        case .notUpdated:
-            categoryErrors[id] = Self.categoryFailed
         }
-        fence.endWrite()
-        guard fence.writesInFlight == 0 else {
-            if readAgain, readAfterWrites == nil { readAfterWrites = conditions }
-            return
+
+        if recoveryOnly {
+            // A failed confirmation is recovered by reading only; an old version is never resent.
+            operation.needsConfirmation = true
+            await read(conditions)
+        } else if let row {
+            categorySnapshots[id] = row
+            fence.beginWrite()
+            let result = await writer.setCategory(ParcelVersion(row), category: chosen)
+            fence.endWrite()
+            guard !retired else { return false }
+            switch result {
+            case let .success(after):
+                var saved = row
+                saved.category = chosen.rawValue; saved.categorySource = "user"
+                saved.status = after.status; saved.updatedAt = after.updatedAt
+                categorySnapshots[id] = saved
+                if case var .loaded(rows)? = parcels, let i = rows.firstIndex(where: { $0.id == id }) {
+                    rows[i] = saved
+                    parcels = .loaded(rows)
+                }
+                operation.finish(true)
+            case .unknown, .notUpdated(.conflict):
+                operation.needsConfirmation = true
+            case .notUpdated:
+                categoryErrors[id] = Self.categoryFailed
+                operation.finish(false)
+            }
+            if fence.writesInFlight == 0 {
+                // A move's newer conditions keep priority over the view from before the save.
+                if pendingMove == nil || moveWaitsForSave,
+                   let target = readAfterWrites ?? (hasCategoryConfirmations ? conditions : nil) {
+                    await read(target)
+                }
+                if moveWaitsForSave, readAfterWrites == nil {
+                    moveWaitsForSave = false
+                    pendingMove = nil
+                }
+            } else if hasCategoryConfirmations, readAfterWrites == nil {
+                readAfterWrites = conditions
+            }
         }
-        // A move on the way read before this save ended: its read is stale and reads again itself.
-        guard pendingMove == nil || moveWaitsForSave else { return }
-        // A move waiting for the save: readAfterWrites is its target (newer than what is shown).
-        if let target = readAfterWrites ?? (readAgain ? conditions : nil) {
-            await read(target)
-        }
-        // [Codex #3] The move is shown (or dropped): it is over, unless a newer save holds it again.
-        if moveWaitsForSave, readAfterWrites == nil {
-            moveWaitsForSave = false
-            pendingMove = nil
+        guard !retired else { return false }
+        return await operation.value()
+    }
+
+    private var hasCategoryConfirmations: Bool {
+        categoryOperations.values.contains { $0.needsConfirmation }
+    }
+
+    /// Uses the full successful read before period/filter cuts, never a failed read's old snapshot.
+    private func confirmCategories(_ result: LoadResult<[ParcelRow]>) {
+        switch result {
+        case .failed:
+            for (id, operation) in categoryOperations where operation.needsConfirmation {
+                categoryNeedsRead.insert(id)
+                categoryErrors[id] = Self.categoryUnconfirmed
+                operation.needsConfirmation = false
+                operation.finish(false)
+            }
+        case let .loaded(rows):
+            let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            for id in Array(categorySnapshots.keys) { categorySnapshots[id] = byID[id] }
+            for id in Array(categoryNeedsRead) {
+                categoryNeedsRead.remove(id)
+                if categoryErrors[id] == Self.categoryUnconfirmed { categoryErrors[id] = nil }
+            }
+            for (id, operation) in categoryOperations where operation.needsConfirmation {
+                let confirmed = byID[id]?.category == operation.choice.rawValue && byID[id]?.categorySource == "user"
+                categoryErrors[id] = confirmed ? nil : Self.categoryNotSaved
+                operation.needsConfirmation = false
+                // As on the detail screen, the recovery-only press confirms but never resends or closes.
+                operation.finish(confirmed && !operation.recoveryOnly)
+            }
         }
     }
 
@@ -332,6 +433,7 @@ final class SpendModel {
             // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
             if Task.isCancelled {
                 wasCutOff = true
+                confirmCategories(.failed)
                 return
             }
             switch verdict {
@@ -343,6 +445,7 @@ final class SpendModel {
                 period = target.period
                 category = target.category
                 shop = target.shop
+                confirmCategories(result)
                 switch result {
                 case .failed: parcels = .failed
                 case let .loaded(rows): parcels = .loaded(Self.rows(rows, for: target.period))

@@ -537,10 +537,15 @@ final class ParcelDetailModel {
             guard !retired else { return false }
             if outcome != .applied, isUnconfirmed { categoryError = Self.unconfirmed }
             shownCategory = Self.category(of: row)
-            // The category read is the one shown before: the lost choice had not gone through.
-            // Otherwise the chip now shows what was saved.
-            if outcome == .applied, row != nil, shownCategory == previous, shownCategory != category {
-                categoryError = Self.categoryNotSaved
+            if outcome == .applied {
+                guard let p = row else {
+                    categoryError = Self.categoryNotFound
+                    return false
+                }
+                // This press only reads. A matching automatic category is not a saved user choice.
+                if shownCategory != category || p.categorySource != "user" {
+                    categoryError = Self.categoryNotSaved
+                }
             }
             return false
         }
@@ -598,8 +603,9 @@ final class ParcelDetailModel {
                     return false
                 }
                 shownCategory = Self.category(of: p)
-                if shownCategory != category { categoryError = Self.categoryFailed }
-                return shownCategory == category
+                let saved = shownCategory == category && p.categorySource == "user"
+                if !saved { categoryError = shownCategory == category ? Self.categoryNotSaved : Self.categoryFailed }
+                return saved
             }
             // Neither saved nor not saved is known: the chip keeps the last value read.
             shownCategory = Self.category(of: row) ?? previous

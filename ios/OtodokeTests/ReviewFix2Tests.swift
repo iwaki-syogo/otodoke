@@ -223,7 +223,7 @@ struct ReviewFix2Tests {
         #expect(model.categoryError == nil)
     }
 
-    @Test func choosingTheStoredCategoryAfterAnUnknownSaysNothingMore() async throws {
+    @Test func choosingTheStoredCategoryAfterAnUnknownStillRequiresUserSaving() async throws {
         let (fake, model) = try await seededDetail()
         await fake.fail("PATCH", "parcels", with: .transport(.timedOut))
         await fake.fail("GET", "parcels", nth: 2, with: .http(500))
@@ -231,6 +231,7 @@ struct ReviewFix2Tests {
 
         #expect(await model.setCategory(.food) == false)
         #expect(model.shownCategory == .food)
-        #expect(model.categoryError == nil)
+        #expect(model.categoryError == ParcelDetailModel.categoryNotSaved)
+        #expect(await fake.count("PATCH", "parcels") == 1)
     }
 }

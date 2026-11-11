@@ -11,18 +11,25 @@ struct CategoryChip: View {
     let current: ParcelCategory?
     let isSaving: Bool
     let error: String?
+    /// A stable parent may own presentation when the category change removes this row.
+    var openEditor: (() -> Void)? = nil
     /// Saves the choice; true when it was saved (the sheet then closes).
     let choose: @MainActor (ParcelCategory) async -> Bool
 
     @State private var isOpen = false
     @State private var picked: ParcelCategory?
+    @State private var choiceRequest = 0
     /// Which opening of the sheet is up: a save started in an earlier one never closes a later one.
     @State private var presentation = SheetPresentation()
 
     var body: some View {
         Button {
-            presentation.open()
-            isOpen = true
+            if let openEditor {
+                openEditor()
+            } else {
+                presentation.open()
+                isOpen = true
+            }
         } label: {
             HStack(spacing: 6) {
                 if isSaving {
@@ -48,8 +55,10 @@ struct CategoryChip: View {
         .sheet(isPresented: $isOpen) {
             CategorySheet(current: current, picked: picked, isSaving: isSaving, error: error) { category in
                 picked = category
+                choiceRequest += 1
+                let request = choiceRequest
                 let opening = presentation.current
-                if await choose(category), presentation.isCurrent(opening) { isOpen = false }
+                if await choose(category), request == choiceRequest, presentation.isCurrent(opening) { isOpen = false }
             } close: {
                 isOpen = false
             }
@@ -109,18 +118,21 @@ struct CategorySheet: View {
                     .disabled(isSaving)
                     .opacity(isSaving && picked != category ? 0.6 : 1)
                     .accessibilityAddTraits(category == current ? .isSelected : [])
+                    .accessibilityIdentifier("category-choice.\(category.rawValue)")
                 }
             }
             if let error {
                 Text(error)
                     .font(.subheadline)
                     .foregroundStyle(OtodokeColor.errorText)
+                    .accessibilityIdentifier("category-sheet.error")
             }
             Spacer(minLength: 0)
         }
         .padding(16)
         .presentationDetents([.medium, .large])
         .interactiveDismissDisabled(isSaving)
+        .accessibilityIdentifier("category-sheet")
     }
 }
 
