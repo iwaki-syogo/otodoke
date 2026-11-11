@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
-import { readStoredKey, registerKey } from "@/lib/mail-keys";
+import { activateKey, readStoredKey, registerKey } from "@/lib/mail-keys";
 import { CAPTCHA_ENFORCED, CAPTCHA_NOT_FINISHED_MESSAGE, TURNSTILE_ENFORCED_WAIT_MS, TURNSTILE_WAIT_MS, type TokenField } from "@/lib/turnstile";
 import { CONFIRM_WAIT } from "@/lib/onboarding";
 import { fakeEvent, hostText } from "./element-tree";
@@ -404,7 +404,11 @@ describe("presses Supabase Auth checks no token for: they go at once, with no bo
     const db = new FakeDb();
     actions.readMailKey.mockImplementation((read: unknown) => readStoredKey(asAdmin(db), USER, read));
     actions.registerMailKey.mockImplementation((registration: unknown) => registerKey(asAdmin(db), USER, registration));
-    actions.finishReset.mockImplementation(async (finish: { keyId: string }) => ({ ok: true, keyId: finish.keyId }));
+    actions.finishReset.mockImplementation((finish: unknown) => activateKey(asAdmin(db), USER, {
+      keyId: (finish as { keyId: string }).keyId,
+      challenge: (finish as { challenge: string }).challenge,
+      expectedCurrentKeyId: (finish as { expectedCurrentKeyId: string | null }).expectedCurrentKeyId,
+    }));
     const view = mount(() => ResetForm({ email: EMAIL, userId: USER }));
     type(view, byId("reset-password"), NEW_PASSWORD);
     type(view, byId("reset-password-again"), NEW_PASSWORD);
@@ -412,7 +416,7 @@ describe("presses Supabase Auth checks no token for: they go at once, with no bo
     submit(view);
     await vi.waitFor(() => expect(nav.to).toEqual(["/app"]), AT_ONCE);
     expect(actions.finishReset).toHaveBeenCalledTimes(1);
-    expect(Object.keys(actions.finishReset.mock.calls[0][0]).sort()).toEqual(["authSecret", "challenge", "expectedCurrentKeyId", "expectedEmailNorm", "expectedUserId", "keyId"]);
+    expect(Object.keys(actions.finishReset.mock.calls[0][0]).sort()).toEqual(["authSecret", "challenge", "expectedCurrentKeyId", "expectedEmailNorm", "expectedUserId", "expectedWrappedPrivateKey", "keyId"]);
     expect(widget.token).toBeNull();
   });
 
