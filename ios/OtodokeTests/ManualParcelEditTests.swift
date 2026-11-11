@@ -184,6 +184,8 @@ struct ManualParcelEditTests {
             .merging(over) { _, new in new }
     }
 
+    private func opened(_ row: Row) -> String { row["updated_at"]?.string ?? "" }
+
     private func edited(_ rowValues: Row, _ change: (inout ManualParcelInput) -> Void = { _ in }) throws -> ManualParcelInput {
         var input = ManualParcelInput(editing: try Rows.parcelRow(rowValues))
         input.title = "新しい本"
@@ -196,7 +198,7 @@ struct ManualParcelEditTests {
         let (writer, changes) = try await writer(fake)
         let original = manualRow()
         await fake.insert("parcels", [original])
-        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original))
+        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original))
         #expect(outcome == .saved)
         let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
         #expect(stored["title"]?.string == "新しい本")
@@ -217,7 +219,7 @@ struct ManualParcelEditTests {
         let (writer, _) = try await writer(fake)
         let original = manualRow()
         await fake.insert("parcels", [original])
-        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original) { $0.category = "daily" }) == .saved)
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original) { $0.category = "daily" }, openedUpdatedAt: opened(original)) == .saved)
         let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
         #expect(stored["category"]?.string == "daily" && stored["category_source"]?.string == "user")
     }
@@ -227,7 +229,7 @@ struct ManualParcelEditTests {
         let (writer, _) = try await writer(fake)
         let original = manualRow(1, ["status": "cancelled", "total_amount": 99_000_000])
         await fake.insert("parcels", [original])
-        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original)) == .saved)
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original)) == .saved)
         let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
         #expect(stored["status"]?.string == "cancelled")
         #expect(stored["total_amount"] == .int(99_000_000))
@@ -238,7 +240,7 @@ struct ManualParcelEditTests {
         let (writer, changes) = try await writer(fake)
         let original = manualRow()
         await fake.insert("parcels", [original])
-        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original) { $0.title = "" })
+        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original) { $0.title = "" }, openedUpdatedAt: opened(original))
         #expect(outcome == .invalid(ManualParcelText.titleEmpty))
         #expect(await fake.requests("PATCH", "parcels").isEmpty)
         #expect(changes.version == 0)
@@ -252,7 +254,7 @@ struct ManualParcelEditTests {
         await fake.insert("parcels", [mail, others])
         let input = try edited(manualRow())
         for id in [Rows.id(1), Rows.id(2), Rows.id(3), "not-a-uuid"] {
-            #expect(await writer.updateManual(id: id, input: input) == .notFound, "\(id)")
+            #expect(await writer.updateManual(id: id, input: input, openedUpdatedAt: opened(manualRow())) == .notFound, "\(id)")
         }
         #expect(await fake.requests("PATCH", "parcels").isEmpty)
         #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "品名1")
@@ -266,10 +268,79 @@ struct ManualParcelEditTests {
         await fake.before("PATCH", "parcels") { tables in
             if let i = tables["parcels"]?.firstIndex(where: { $0["id"]?.string == Rows.id(1) }) { tables["parcels"]?[i]["updated_at"] = .string("2026-11-02T00:00:00.000001+00:00") }
         }
-        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original))
+        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original))
         #expect(outcome == .changed)
         #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "元")
         #expect(changes.version == 0)
+    }
+
+    @Test func aParcelUpdatedAfterTheFormWasOpenedIsNotWrittenAndSaysChanged() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, changes) = try await writer(fake)
+        let original = manualRow()
+        await fake.insert("parcels", [original])
+        let opened = opened(original)
+        // A delivery mail updates the parcel after the form was opened and before 保存.
+        await fake.touch("parcels", id: Rows.id(1), ["status": "shipped"])
+        let outcome = await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened)
+        #expect(outcome == .changed)
+        #expect(await fake.requests("PATCH", "parcels").isEmpty)
+        #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "元")
+        #expect(changes.version == 0)
+    }
+
+    @Test func negativeControlNobodyUpdatedTheParcelSoTheEditIsSavedOnTheOpenedVersion() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow()
+        await fake.insert("parcels", [original])
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original)) == .saved)
+        let patch = try #require(await fake.requests("PATCH", "parcels").first)
+        let query = patch.url.query ?? ""
+        #expect(query.contains("updated_at=eq."))
+        #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "新しい本")
+    }
+
+    @Test func writingTheSameValuesAgainIsSavedOnceAndAStaleFormCannotSaveAgain() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow()
+        await fake.insert("parcels", [original])
+        // Nothing typed differs from what is stored: still a save, on the opened version.
+        let same = try edited(original) { $0.title = "元" }
+        #expect(await writer.updateManual(id: Rows.id(1), input: same, openedUpdatedAt: opened(original)) == .saved)
+        // The first save moved updated_at on: the same form (opened before) must not write again.
+        #expect(await writer.updateManual(id: Rows.id(1), input: same, openedUpdatedAt: opened(original)) == .changed)
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
+    }
+
+    @Test func aFormWithoutAnOpenedVersionWritesNothing() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow()
+        await fake.insert("parcels", [original])
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: "") == .changed)
+        #expect(await fake.requests("PATCH", "parcels").isEmpty)
+    }
+
+    @Test func theModelSendsTheVersionTheFormWasOpenedWithAndReadsAgainOnChanged() async throws {
+        let fake = FakeSupabase.make()
+        let (writer, _) = try await writer(fake)
+        let original = manualRow()
+        await fake.insert("parcels", [original])
+        let reloads = Counter()
+        let m = ManualParcelModel(
+            editing: try Rows.parcelRow(original),
+            update: { await writer.updateManual(id: $0, input: $1, openedUpdatedAt: $2) },
+            delete: { await writer.deleteManual(id: $0) },
+            stillThere: { true }, userID: { FakeSupabase.me }, reload: { reloads.bump() }
+        )
+        m.input.title = "新しい本"
+        await fake.touch("parcels", id: Rows.id(1), ["status": "shipped"])
+        await m.submit()
+        #expect(m.error == ManualParcelText.changed && !m.isSaved)
+        #expect(reloads.value == 1)
+        #expect(await fake.row("parcels", id: Rows.id(1))?["title"]?.string == "元")
     }
 
     @Test func aFailedUpdateIsFailedAndALostAnswerIsUnknown() async throws {
@@ -278,10 +349,10 @@ struct ManualParcelEditTests {
         let original = manualRow()
         await fake.insert("parcels", [original])
         await fake.fail("PATCH", "parcels", with: .http(500))
-        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original)) == .failed)
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original)) == .failed)
         #expect(changes.version == 0)
         await fake.fail("PATCH", "parcels", nth: 2, with: .applyThenDrop(.networkConnectionLost))
-        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original)) == .unknown)
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original)) == .unknown)
         #expect(changes.version == 1)
         #expect(await fake.requests("PATCH", "parcels").count == 2)
     }
@@ -292,7 +363,7 @@ struct ManualParcelEditTests {
         let original = manualRow()
         await fake.insert("parcels", [original])
         await fake.fail("GET", "parcels", with: .http(500))
-        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original)) == .failed)
+        #expect(await writer.updateManual(id: Rows.id(1), input: try edited(original), openedUpdatedAt: opened(original)) == .failed)
         #expect(await fake.requests("PATCH", "parcels").isEmpty)
     }
 
@@ -335,7 +406,7 @@ struct ManualParcelEditTests {
     }
 
     private func model(
-        update: @escaping ManualParcelModel.Update = { _, _ in .saved },
+        update: @escaping ManualParcelModel.Update = { _, _, _ in .saved },
         delete: @escaping ManualParcelModel.Delete = { .success($0) },
         stillThere: @escaping ManualParcelModel.StillThere = { true },
         reloads: Counter = Counter(),
@@ -364,7 +435,7 @@ struct ManualParcelEditTests {
             (.unknown, ManualParcelText.unknown),
         ]
         for (outcome, words) in cases {
-            let m = try model(update: { _, _ in outcome })
+            let m = try model(update: { _, _, _ in outcome })
             await m.submit()
             #expect(m.error == words)
             #expect(!m.isSaved && !m.isSending)
@@ -375,7 +446,7 @@ struct ManualParcelEditTests {
     @Test func aSecondPressWhileOneIsOnItsWayIsIgnoredAndCloseIsHeldBack() async throws {
         let gate = Gate()
         let sends = Counter()
-        let m = try model(update: { _, _ in
+        let m = try model(update: { _, _, _ in
             sends.bump()
             await gate.wait()
             return .saved
@@ -391,7 +462,7 @@ struct ManualParcelEditTests {
         #expect(m.deleteCount == 0)
     }
 
-    @Test func pressingSaveAgainAfterALostAnswerThatWentThroughSavesWithNoChange() async throws {
+    @Test func pressingSaveAgainAfterALostAnswerThatWentThroughSaysChangedAndWritesNothingMore() async throws {
         let fake = FakeSupabase.make()
         let (writer, _) = try await writer(fake)
         let original = manualRow()
@@ -399,7 +470,7 @@ struct ManualParcelEditTests {
         let reloads = Counter()
         let m = ManualParcelModel(
             editing: try Rows.parcelRow(original),
-            update: { await writer.updateManual(id: $0, input: $1) },
+            update: { await writer.updateManual(id: $0, input: $1, openedUpdatedAt: $2) },
             delete: { await writer.deleteManual(id: $0) },
             stillThere: { true }, userID: { FakeSupabase.me }, reload: { reloads.bump() }
         )
@@ -407,9 +478,11 @@ struct ManualParcelEditTests {
         await fake.fail("PATCH", "parcels", with: .applyThenDrop(.networkConnectionLost))
         await m.submit()
         #expect(m.error == ManualParcelText.unknown && !m.isSaved)
-        // The first send went through; the form still has the new title, so the second changes nothing else.
+        // The first send went through and moved updated_at on; the form was opened before that, so the second press
+        // writes nothing (the person is told to open it again) and what the first wrote stays.
         await m.submit()
-        #expect(m.isSaved && m.error == nil)
+        #expect(m.error == ManualParcelText.changed && !m.isSaved)
+        #expect(await fake.requests("PATCH", "parcels").count == 1)
         let stored = try #require(await fake.row("parcels", id: Rows.id(1)))
         #expect(stored["title"]?.string == "新しい本")
         #expect(stored["tracking_url"]?.string == "https://example.com/t")
@@ -529,7 +602,7 @@ struct ManualParcelEditTests {
         await fake.insert("parcels", [manualRow(1), Rows.parcel(2, ["source": "mail"])])
         let m = ManualParcelModel(
             editing: try Rows.parcelRow(manualRow(1)),
-            update: { await writer.updateManual(id: $0, input: $1) },
+            update: { await writer.updateManual(id: $0, input: $1, openedUpdatedAt: $2) },
             delete: { await writer.deleteManual(id: $0) },
             stillThere: { nil }, userID: { FakeSupabase.me }, reload: {}
         )

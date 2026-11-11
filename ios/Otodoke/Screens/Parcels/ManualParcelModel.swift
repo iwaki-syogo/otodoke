@@ -7,9 +7,8 @@
 //    not be confirmed. The form stays open, and pressing again is safe by how each write is made:
 //    a new parcel is sent with the id the form made when it was opened (the first send having made it
 //    answers 23505: the stored row is read and, when what is typed now differs, written over with it),
-//    an edit is conditioned on the updated_at it read (after
-//    the first send went through, the form's values are the stored ones and the second save is no
-//    change), a delete of a parcel that is gone answers 0 rows and the parcel is read to see.
+//    an edit is conditioned on the updated_at the form was opened with (after the first send went through
+//    the stored updated_at has moved, so the second save answers 「changed」 and writes nothing), a delete of a parcel that is gone answers 0 rows and the parcel is read to see.
 // A second press while one is on its way is ignored (the button shows the spinner, it is not disabled).
 
 import Foundation
@@ -19,7 +18,7 @@ import Observation
 @Observable
 final class ManualParcelModel: Identifiable {
     typealias Save = @Sendable (ManualParcelRow) async -> WriteOutcome<String>
-    typealias Update = @Sendable (String, ManualParcelInput) async -> ParcelWriter.ManualEditOutcome
+    typealias Update = @Sendable (String, ManualParcelInput, String) async -> ParcelWriter.ManualEditOutcome
     typealias Delete = @Sendable (String) async -> WriteOutcome<String>
     typealias UserID = @Sendable () async -> String?
     /// Whether the parcel is still there: nil when it could not be read.
@@ -68,7 +67,7 @@ final class ManualParcelModel: Identifiable {
         input = .defaults(today: today)
         self.newID = newID
         self.save = save
-        update = { _, _ in .failed }
+        update = { _, _, _ in .failed }
         delete = { _ in .notUpdated(.failed) }
         stillThere = { nil }
         self.userID = userID
@@ -113,7 +112,7 @@ final class ManualParcelModel: Identifiable {
         let id = parcel.id
         return ManualParcelModel(
             editing: parcel,
-            update: { await writer.updateManual(id: $0, input: $1) },
+            update: { await writer.updateManual(id: $0, input: $1, openedUpdatedAt: $2) },
             delete: { await writer.deleteManual(id: $0) },
             stillThere: {
                 switch await reader.parcel(id: id) {
@@ -185,7 +184,8 @@ final class ManualParcelModel: Identifiable {
             return
         }
         sendCount += 1
-        switch await update(parcel.id, typed) {
+        // The version the form was opened with, not one read now: a mail's update in between must not be written over.
+        switch await update(parcel.id, typed, parcel.updatedAt) {
         case .saved:
             isSaved = true
             await reload()

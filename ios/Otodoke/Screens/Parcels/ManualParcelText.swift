@@ -70,7 +70,7 @@ enum ManualParcelText {
     /// The answer was lost: it is not sent again; the list is read again instead. (Not on the Web.)
     static let unknown = "保存できたか、確かめられませんでした。荷物の一覧を見て確かめてください。"
 
-    /// The parcel changed between the read and the write (the Web has no such check). The detail page's words.
+    /// The parcel changed between the read and the write (the updated_at the form was opened with no longer matches; the Web's CHANGED). The detail page's words.
     static let changed = "更新できませんでした。開き直してください"
     /// A delete whose answer was lost and whose parcel could not be read again. (Not on the Web.)
     static let deleteUnknown = "削除できたか、確かめられませんでした。荷物の一覧を見て確かめてください。"

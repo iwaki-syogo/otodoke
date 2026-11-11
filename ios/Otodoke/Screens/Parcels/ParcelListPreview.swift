@@ -133,7 +133,7 @@ struct ListPreview {
             model.debugEditForm = { parcel in
                 ManualParcelModel(
                     editing: parcel,
-                    update: { _, _ in .saved },
+                    update: { _, _, _ in .saved },
                     delete: { .success($0) },
                     stillThere: { false },
                     userID: { "preview" },

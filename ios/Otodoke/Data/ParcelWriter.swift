@@ -322,9 +322,11 @@ struct ParcelWriter: Sendable {
     }
 
     /// updateManualParcel: reads the parcel (id, user_id = me, source = manual), checks the form against
-    /// what is stored, then writes only the columns the form changes where id, user_id, source and the
-    /// updated_at just read all match, `.select("id")`. A lost answer is unknown and not sent again here.
-    func updateManual(id: String, input: ManualParcelInput) async -> ManualEditOutcome {
+    /// what is stored, then writes only the columns the form changes where id, user_id, source and
+    /// `openedUpdatedAt` all match, `.select("id")`. `openedUpdatedAt` is the updated_at the form was opened
+    /// with (as the Web's hidden field carries it): a parcel a mail updated since then is not overwritten
+    /// (nothing is written, `.changed`). A lost answer is unknown and not sent again here.
+    func updateManual(id: String, input: ManualParcelInput, openedUpdatedAt: String) async -> ManualEditOutcome {
         guard Self.isUUID(id) else { return .notFound }
         guard let me = await provider.currentUserID() else { return .failed }
         do {
@@ -347,13 +349,15 @@ struct ParcelWriter: Sendable {
         } catch {
             return .failed
         }
+        // Changed since the form was opened (or no version to compare): nothing is written.
+        guard !openedUpdatedAt.isEmpty, openedUpdatedAt == saved.updatedAt else { return .changed }
         let columns: [String: ManualParcel.Column]
         switch ManualParcel.checkEdit(input, saved: saved) {
         case let .invalid(message): return .invalid(message)
         case let .valid(values): columns = values
         }
-        // The one write (below): on the version just read, as the signed-in user's typed-in parcel.
-        switch await write(id: id, .manualEdit(columns, updatedAt: saved.updatedAt)) {
+        // The one write (below): on the version the form was opened with, as the signed-in user's typed-in parcel.
+        switch await write(id: id, .manualEdit(columns, updatedAt: openedUpdatedAt)) {
         case .success: return await announcedEdit(.saved)
         case let .notUpdated(reason): return reason == .conflict ? .changed : .failed
         case .unknown: return await announcedEdit(.unknown)
