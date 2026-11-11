@@ -30,6 +30,7 @@ import { screenMail, type ScreenResult } from "@/lib/screen";
 import { isRememberableDomain } from "@/lib/screen-senders";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import { withDefaults, type Extraction } from "@/lib/extract/schema";
+import { verifyEvidence } from "@/lib/extract/verify-evidence";
 import type { Json } from "@/lib/db/database.types";
 
 export interface InboundEmail {
@@ -355,7 +356,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
       sentAt: mail.sentAt,
       body: emailBodyText(mail.text, mail.html),
     }));
-  const x = withDefaults(extraction.data);
+  const x = verifyEvidence(withDefaults(extraction.data), mail);
 
   // A refusal says nothing about the mail, so it is kept as unread rather than dropped as unrelated.
   if (extraction.refused) {

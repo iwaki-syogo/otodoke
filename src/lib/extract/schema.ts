@@ -80,7 +80,9 @@ export const OtherOrderSchema = z.object({
   expected_date_end: StrField.describe("この注文の配達予定が範囲なら最後の日 YYYY-MM-DD。範囲でなければ null"),
   expected_text: z.string().nullable().describe("この注文の配達予定の原文表記"),
 });
-export type OtherOrder = z.infer<typeof OtherOrderSchema>;
+/** Added by the local verifier, never requested from the model. */
+export type EvidenceReview = { evidence_review?: string[] };
+export type OtherOrder = z.infer<typeof OtherOrderSchema> & EvidenceReview;
 
 export const ExtractionSchema = z.object({
   relevance: Relevance,
@@ -111,7 +113,7 @@ export const ExtractionSchema = z.object({
   notes: z.string().nullable().describe("抽出で迷った点や読み取れなかった点（日本語、1〜2 文）"),
 });
 
-export type Extraction = z.infer<typeof ExtractionSchema>;
+export type Extraction = Omit<z.infer<typeof ExtractionSchema>, "other_orders"> & EvidenceReview & { other_orders: OtherOrder[] };
 
 const NO_VALUE = { value: null, evidence: null, confidence: 0 };
 
