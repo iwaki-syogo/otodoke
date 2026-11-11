@@ -33,8 +33,8 @@ const VERIFY = [
   "supabase/verify/20261106180000_screen_events_daily_purge.after-first-run.sql",
   "supabase/verify/20261106170000_issued_inbox_local_parts.sql",
   "supabase/verify/20261106190000_claude_usage_keeps_deleted_calls.sql",
-  "supabase/verify/20261111100000_claude_call_release.before.sql",
-  "supabase/verify/20261111100000_claude_call_release.sql",
+  "supabase/verify/20261112020000_claude_call_release.before.sql",
+  "supabase/verify/20261112020000_claude_call_release.sql",
   "supabase/verify/20261107090000_retire_passphrase_keys.before.sql",
   "supabase/verify/20261107090000_retire_passphrase_keys.after.sql",
 ];
@@ -187,13 +187,14 @@ describe("supabase/pending/README.md names every file waiting there", () => {
   });
 });
 
-describe("20261111100000 claude_call_release: waits in pending, leaves the old claim alone", () => {
-  const sql = withoutComments(read("supabase/pending/20261111100000_claude_call_release.sql"));
+describe("20261112020000 claude_call_release: a migration that leaves the old claim alone", () => {
+  const sql = withoutComments(read("supabase/migrations/20261112020000_claude_call_release.sql"));
 
-  it("is not in migrations/ (db push would apply it), and its rollback and verify files exist", () => {
-    expect(readdirSync(path.join(root, "supabase/migrations")).filter((f) => f.includes("claude_call_release"))).toEqual([]);
-    expect(existsSync(path.join(root, "supabase/rollback/20261111100000_claude_call_release.down.sql"))).toBe(true);
-    expect(existsSync(path.join(root, "supabase/verify/20261111100000_claude_call_release.sql"))).toBe(true);
+  it("is in migrations/ (and no longer in pending/), and its rollback and verify files exist", () => {
+    expect(readdirSync(path.join(root, "supabase/migrations")).filter((f) => f.includes("claude_call_release"))).toEqual(["20261112020000_claude_call_release.sql"]);
+    expect(readdirSync(path.join(root, "supabase/pending")).filter((f) => f.includes("claude_call_release"))).toEqual([]);
+    expect(existsSync(path.join(root, "supabase/rollback/20261112020000_claude_call_release.down.sql"))).toBe(true);
+    expect(existsSync(path.join(root, "supabase/verify/20261112020000_claude_call_release.sql"))).toBe(true);
   });
 
   it("never touches claim_claude_call, and both new functions are security definer with an empty search_path for service_role only", () => {
@@ -217,7 +218,7 @@ describe("20261111100000 claude_call_release: waits in pending, leaves the old c
   });
 
   it("the rollback drops both functions, the table and the check, each only if present", () => {
-    const down = withoutComments(read("supabase/rollback/20261111100000_claude_call_release.down.sql"));
+    const down = withoutComments(read("supabase/rollback/20261112020000_claude_call_release.down.sql"));
     for (const drop of ["drop function if exists public.release_claude_call", "drop function if exists public.claim_claude_call_v2", "drop table if exists public.claude_call_claims", "drop constraint if exists claude_usage_daily_calls_nonneg"]) {
       expect(down).toContain(drop);
     }

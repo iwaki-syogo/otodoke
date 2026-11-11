@@ -1,4 +1,19 @@
--- Run right after applying supabase/pending/20261111100000_claude_call_release.sql (moved to migrations/).
+-- Run right after applying supabase/migrations/20261112020000_claude_call_release.sql.
+--
+-- How to apply it, in this order:
+--   1. supabase/verify/20261112020000_claude_call_release.before.sql: verdict 'OK' (no negative count).
+--   2. `supabase db push --dry-run`: this one file must be the only one it lists.
+--   3. `supabase db push`. Not `supabase db query`: migrations and production's schema would differ.
+--   4. This file: verdict 'OK'.
+--   5. With the new code on dev, have Claude read one REAL mail. A sample mail, an ad, or a Gmail
+--      forwarding confirmation makes no claim, so it proves nothing. Then count today's rows
+--      (Japan time):
+--        select count(*) from public.claude_call_claims where day = (now() at time zone 'Asia/Tokyo')::date;
+--      It must be 1 or more. With 0 rows, look in the Vercel Preview logs for
+--      "claim_claude_call_v2 is missing": the code fell back to the old function.
+--   Locks it takes on auth.users: see the header of the migration. Rollback:
+--   supabase/rollback/20261112020000_claude_call_release.down.sql (the code then falls back to the old function by itself).
+--
 -- Returns ONE row; go only if its verdict is 'OK'. No row (an error) counts as FAILED:
 -- `supabase db query --linked -f` returns only the last result, and exits 0 even on an error.
 -- Prints settings and counts only.

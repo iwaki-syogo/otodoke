@@ -8,8 +8,9 @@
 -- How: claim_claude_call_v2 counts exactly as claim_claude_call does (the same day in Asia/Tokyo,
 -- the app-wide sum first, then the person's row, the same upsert), and also writes a row to
 -- claude_call_claims and returns its id. release_claude_call(id, user) marks that row released and
--- takes ONE off the count of the day the claim was made on. The app calls it only when the Claude
--- API itself answered with an error status (so nothing was billed): see src/lib/claude-usage.ts.
+-- takes ONE off the count of the day the claim was made on. The app calls it only when Claude is
+-- stopped (claude_unavailable: no credit, a spend limit, a refused key), which is never billed:
+-- see src/lib/claude-usage.ts.
 --
 -- claim_claude_call is NOT changed and stays in place: code that does not know the new functions
 -- keeps working, and so does the new code before this file is applied (it falls back to it).
@@ -25,7 +26,7 @@
 -- A release after midnight (Asia/Tokyo) gives back to the day the claim was made on.
 --
 -- claude_usage_daily gets calls >= 0. Check first that no row is negative (supabase/verify/
--- 20261111100000_claude_call_release.before.sql); otherwise this file fails and changes nothing.
+-- 20261112020000_claude_call_release.before.sql); otherwise this file fails and changes nothing.
 --
 -- One transaction of its own. Locks: the new table's reference to auth.users takes a
 -- ShareRowExclusiveLock on auth.users (measured on Postgres 17 when written; re-measured in
@@ -34,8 +35,8 @@
 -- claude_usage_daily. lock_timeout is 5 s: if a lock cannot be had, this fails, changes nothing,
 -- and is run again later.
 -- Re-runnable.
--- After applying: supabase/verify/20261111100000_claude_call_release.sql
--- Rollback:       supabase/rollback/20261111100000_claude_call_release.down.sql
+-- After applying: supabase/verify/20261112020000_claude_call_release.sql
+-- Rollback:       supabase/rollback/20261112020000_claude_call_release.down.sql
 
 begin;
 set local lock_timeout = '5s';

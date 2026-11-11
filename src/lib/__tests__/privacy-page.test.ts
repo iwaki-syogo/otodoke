@@ -134,7 +134,7 @@ describe("/privacy: what it says", () => {
     expect(said["パスワード"]).toContain("ブラウザで、ログイン用の値とメールの鍵を開く値の 2 つに分け、ログイン用の値だけをサーバーに送ります");
     expect(said["パスワード"]).toContain("ログイン用の値は、Supabase がハッシュ値に変えて保存します");
     expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("14 日で Otodoke から消えます");
-    // claude_call_claims (20261111100000): one row per call with its time, pruned after 2 days.
+    // claude_call_claims (20261112020000): one row per call with its time, pruned after 2 days.
     expect(said["Claude を使った回数"]).toContain("呼び出しごとの時刻も記録します。この時刻は、2 日を過ぎたものから、次に記録するときに消します。日ごとの回数は残ります。");
     // What login_mail_sends keeps (migration 20261106100000): hashes and the time, pruned after an hour,
     // for the mails and for the sign-ins alike (src/lib/login-mail-limit.ts).

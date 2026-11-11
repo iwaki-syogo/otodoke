@@ -293,7 +293,7 @@ export class FakeDb {
     }
     if (name === "claim_claude_call") return Promise.resolve(this.claimClaudeCall(args as ClaimArgs, false));
     if (name === "claim_claude_call_v2" || name === "release_claude_call") {
-      // Before supabase/pending/20261111100000_claude_call_release.sql is applied (or after its rollback).
+      // Before supabase/migrations/20261112020000_claude_call_release.sql is applied (or after its rollback).
       if (this.claudeReleaseMissing) return Promise.resolve({ data: null, error: { code: "PGRST202", message: `Could not find the function public.${name} in the schema cache` } });
       if (name === "claim_claude_call_v2") return Promise.resolve(this.claimClaudeCall(args as ClaimArgs, true));
       return Promise.resolve(this.releaseClaudeCall(args as { p_claim_id: number; p_user_id: string }));
@@ -311,7 +311,7 @@ export class FakeDb {
   }
 
   /**
-   * supabase/pending/20261111100000_claude_call_release.sql: claim_claude_call and claim_claude_call_v2
+   * supabase/migrations/20261112020000_claude_call_release.sql: claim_claude_call and claim_claude_call_v2
    * count the same row by the same rule (the day in Asia/Tokyo, the app-wide sum first, then the
    * person's row); v2 also records a claim and answers `[{ verdict, claim_id }]`. The real functions
    * are exercised on Postgres; this mirrors their rules.

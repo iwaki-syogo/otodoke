@@ -142,6 +142,7 @@ describe("every row of a user's goes with the auth user", () => {
 
   it("these are the tables that hold a user's rows (the list in the deletion's notes)", () => {
     expect([...new Set(userColumns.map((c) => c.table))].sort()).toEqual([
+      "claude_call_claims",
       "claude_usage_daily",
       "emails",
       "extractions",

@@ -6,8 +6,8 @@ import { FakeDb } from "./fake-db";
 import { OTHER, USER, asAdmin, mailOf, precomputed, reading, sure, item } from "./pipeline-fixtures";
 
 /**
- * Giving back the allowance of a Claude call that Claude refused (supabase/pending/
- * 20261111100000_claude_call_release.sql, src/lib/claude-usage.ts). Made-up mails only.
+ * Giving back the allowance of a Claude call that Claude refused (supabase/migrations/
+ * 20261112020000_claude_call_release.sql, src/lib/claude-usage.ts). Made-up mails only.
  * The SQL itself was run on a local Postgres 17; the fake database mirrors its rules, and the
  * seams between old and new code and database are played here with it.
  */

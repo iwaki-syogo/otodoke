@@ -30,8 +30,8 @@ function asVerdict(value: unknown): ClaudeVerdict {
 
 /**
  * Take one paid Claude call from today's allowance (claim_claude_call_v2, which also records the
- * claim so it can be given back). While the database has no v2 yet (before supabase/pending/
- * 20261111100000_claude_call_release.sql is applied, or after its rollback), the old
+ * claim so it can be given back). While the database has no v2 yet (before supabase/migrations/
+ * 20261112020000_claude_call_release.sql is applied, or after its rollback), the old
  * claim_claude_call is used and release() does nothing. Only a function that is not there falls
  * back; any other database error throws, so "missing" and "broken" are never mixed up.
  */

@@ -1,4 +1,4 @@
--- Undo supabase/pending/20261111100000_claude_call_release.sql (or supabase/migrations/ once it has moved).
+-- Undo supabase/migrations/20261112020000_claude_call_release.sql.
 -- Kept outside supabase/migrations/ so `supabase db push` never picks it up. Run by hand only.
 --
 -- claim_claude_call is untouched by that file and stays. Code that has the new functions in mind
