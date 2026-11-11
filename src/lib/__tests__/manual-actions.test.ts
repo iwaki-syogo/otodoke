@@ -223,6 +223,19 @@ describe("updateManualParcel", () => {
       expect(updates()).toHaveLength(1);
     });
 
+    it("settles a number the automatic choice named (a Japan Post one) as saved, and writes once", async () => {
+      const sent = fields({ id: MANUAL_ID, carrier: "auto", tracking_number: "AB123456789JP" });
+      await run(updateManualParcel, sent);
+      expect(db.find("parcels", MANUAL_ID)!.carrier).toBe("日本郵便");
+      expect(updates()).toHaveLength(1);
+      mocks.revalidatePath.mockClear();
+      const again = await run(updateManualParcel, sent);
+      expect(again.state).toBeUndefined();
+      expect(again.redirectedTo).toBe(`/app/parcels/${MANUAL_ID}`);
+      expect(mocks.revalidatePath).toHaveBeenCalledWith("/app", "layout");
+      expect(updates()).toHaveLength(1);
+    });
+
     it("says to open it again when a mail added a tracking number after the first save, and writes nothing", async () => {
       await run(updateManualParcel, fields({ id: MANUAL_ID }));
       const row = db.find("parcels", MANUAL_ID)!;

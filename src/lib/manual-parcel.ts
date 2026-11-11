@@ -205,7 +205,10 @@ export type ManualStoredForCompare = {
  * written only on a difference). shop_key is not compared (an edit always sends "other"). A stored
  * null title or shop counts as a difference, the safe side. The same rule as the iOS app's writesNothing.
  */
-export function manualWritesNothing(columns: ManualParcelColumns, saved: ManualStoredForCompare & { ordered_at?: string | null }): boolean {
+export function manualWritesNothing(
+  columns: ManualParcelColumns,
+  saved: ManualStoredForCompare & { ordered_at?: string | null; tracking_number?: string | null; carrier?: string | null },
+): boolean {
   for (const [key, value] of Object.entries(columns)) {
     switch (key) {
       case "title":
@@ -218,6 +221,17 @@ export function manualWritesNothing(columns: ManualParcelColumns, saved: ManualS
         break;
       case "ordered_at":
         if (saved.ordered_at === undefined || value !== saved.ordered_at) return false;
+        break;
+      // The tracking columns come together. Compared by value (not by the choice on the form), so a
+      // number the automatic choice named, saved once, reads as the same: the carrier name written is
+      // the stored one. tracking_url is not looked at.
+      case "tracking_number":
+        if (saved.tracking_number === undefined || value !== (normalizeTracking(saved.tracking_number ?? "") || null)) return false;
+        break;
+      case "carrier":
+        if (saved.carrier === undefined || value !== saved.carrier) return false;
+        break;
+      case "tracking_url":
         break;
       case "total_amount":
         if (value !== saved.total_amount) return false;
