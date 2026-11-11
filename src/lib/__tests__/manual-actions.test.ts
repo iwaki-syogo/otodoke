@@ -64,6 +64,8 @@ const fields = (over: Record<string, string> = {}): Record<string, string> => ({
   carrier: "yamato",
   presence: "face",
   status: "shipped",
+  // The version the form was opened with (the seeded rows below carry it).
+  updated_at: "2026-11-01T00:00:00Z",
   ...over,
 });
 
@@ -167,6 +169,48 @@ describe("updateManualParcel", () => {
     expect(updates[0].filters).toContainEqual({ method: "eq", args: ["id", MANUAL_ID] });
     expect(updates[0].returning).toMatch(/\bid\b/);
     expect(mocks.revalidatePath).toHaveBeenCalled();
+  });
+
+  it("writes only where updated_at is still the version the form was opened with", async () => {
+    await run(updateManualParcel, fields({ id: MANUAL_ID }));
+    const update = parcelQueries().find((q) => q.op === "update")!;
+    expect(update.filters).toContainEqual({ method: "eq", args: ["updated_at", "2026-11-01T00:00:00Z"] });
+  });
+
+  it("writes nothing and says to open it again when a mail updated the parcel after the form was opened", async () => {
+    // The form still carries the old version; the stored row has moved on.
+    db.find("parcels", MANUAL_ID)!.updated_at = "2026-11-02T00:00:00Z";
+    db.find("parcels", MANUAL_ID)!.title = "メールが直した品名";
+    const { state, redirectedTo } = await run(updateManualParcel, fields({ id: MANUAL_ID, title: "古い画面で直した品名" }));
+    expect(redirectedTo).toBeNull();
+    expect(state?.error).toBe("更新できませんでした。開き直してください");
+    // The fields start again from what is stored (the page is read again), not from what was typed.
+    expect(state?.values).toEqual({});
+    expect(mocks.revalidatePath).toHaveBeenCalled();
+    expect(parcelQueries().filter((q) => q.op === "update")).toHaveLength(0);
+    expect(db.find("parcels", MANUAL_ID)!.title).toBe("メールが直した品名");
+  });
+
+  it("writes nothing when the parcel changes between the read and the write", async () => {
+    db.hooks.push((q, d) => {
+      if (q.table === "parcels" && q.op === "update") {
+        d.find("parcels", MANUAL_ID)!.updated_at = "2026-11-02T00:00:00Z";
+        d.find("parcels", MANUAL_ID)!.title = "メールが直した品名";
+      }
+    });
+    const { state, redirectedTo } = await run(updateManualParcel, fields({ id: MANUAL_ID, title: "古い画面で直した品名" }));
+    expect(redirectedTo).toBeNull();
+    expect(state?.error).toBe("更新できませんでした。開き直してください");
+    expect(state?.values).toEqual({});
+    expect(db.find("parcels", MANUAL_ID)!.title).toBe("メールが直した品名");
+  });
+
+  it("refuses a request sent without the version", async () => {
+    const withoutVersion = fields({ id: MANUAL_ID });
+    delete withoutVersion.updated_at;
+    const { state } = await run(updateManualParcel, withoutVersion);
+    expect(state?.error).toBe("更新できませんでした。開き直してください");
+    expect(parcelQueries().filter((q) => q.op === "update")).toHaveLength(0);
   });
 
   it("answers 「見つかりません」 for a mail parcel and leaves it unchanged", async () => {

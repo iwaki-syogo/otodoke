@@ -73,6 +73,8 @@ export function ManualForm({ parcel, today }: { parcel: ParcelRow | null; today:
     <div className="flex flex-col gap-6">
       <form action={action} className="flex flex-col gap-4">
         {parcel ? <input type="hidden" name="id" value={parcel.id} /> : null}
+        {/* The version the fields were filled from; the save is refused if the parcel changed since. */}
+        {parcel ? <input type="hidden" name="updated_at" value={parcel.updated_at} /> : null}
         {/* React resets the fields after the action; a key from the values redraws them with what was sent. */}
         <div key={JSON.stringify(values)} className="flex flex-col gap-4">
           <label className="text-sm font-medium">

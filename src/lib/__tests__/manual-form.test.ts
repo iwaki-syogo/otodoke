@@ -120,6 +120,27 @@ describe("manual form screens", () => {
     expect(edit).toMatch(/notFound\(|redirect\(/);
   });
 
+  it("carries the version the edit form was opened with, and a new parcel carries none", () => {
+    const html = (parcel: ParcelRow | null) => renderToStaticMarkup(createElement(ManualForm, { parcel, today: TODAY }));
+    const hidden = (markup: string) => findAll(parseHtml(markup), (n) => n.tag === "input" && n.attrs.name === "updated_at");
+    const opened = hidden(html(typedIn({ updated_at: "2026-11-02T01:02:03.456789+00:00" })));
+    expect(opened).toHaveLength(1);
+    expect(opened[0].attrs.type).toBe("hidden");
+    expect(opened[0].attrs.value).toBe("2026-11-02T01:02:03.456789+00:00");
+    expect(hidden(html(null))).toHaveLength(0);
+  });
+
+  it("starts the fields and the version again from the parcel it is given after a change", () => {
+    const html = (parcel: ParcelRow) => renderToStaticMarkup(createElement(ManualForm, { parcel, today: TODAY }));
+    const before = html(typedIn({ title: "開いた時の品名", updated_at: "2026-11-02T00:00:00+00:00" }));
+    const after = html(typedIn({ title: "メールで直った品名", updated_at: "2026-11-03T00:00:00+00:00" }));
+    expect(before).toContain("開いた時の品名");
+    expect(after).toContain("メールで直った品名");
+    expect(after).not.toContain("開いた時の品名");
+    expect(after).toContain("2026-11-03T00:00:00+00:00");
+    expect(after).not.toContain("2026-11-02T00:00:00+00:00");
+  });
+
   it("shows typed values as text only", () => {
     for (const f of ["parcels/manual-form.tsx", "parcels/new/page.tsx", "parcels/[id]/edit/page.tsx"]) {
       expect(read(f), f).not.toContain("dangerouslySetInnerHTML");

@@ -72,7 +72,7 @@ describe("saving the edit form of a typed-in parcel whose amount a mail filled i
   it("saves it unchanged", async () => {
     const db = new FakeDb({ parcels: [{ ...stored }] });
     mocks.state.db = db;
-    const values = { ...manualFormDefaults(stored as unknown as ParcelRow, "2026-11-06"), id: MANUAL_ID, expected_date: "2026-11-09" };
+    const values = { ...manualFormDefaults(stored as unknown as ParcelRow, "2026-11-06"), id: MANUAL_ID, updated_at: stored.updated_at, expected_date: "2026-11-09" };
     expect(await save(values)).toBe("redirected");
     expect(db.find("parcels", MANUAL_ID)).toMatchObject({ total_amount: 12_000_000, expected_date: "2026-11-09" });
   });
@@ -80,7 +80,7 @@ describe("saving the edit form of a typed-in parcel whose amount a mail filled i
   it("still refuses a changed amount above the typing bound", async () => {
     const db = new FakeDb({ parcels: [{ ...stored }] });
     mocks.state.db = db;
-    const values = { ...manualFormDefaults(stored as unknown as ParcelRow, "2026-11-06"), id: MANUAL_ID, total_amount: "13000000" };
+    const values = { ...manualFormDefaults(stored as unknown as ParcelRow, "2026-11-06"), id: MANUAL_ID, updated_at: stored.updated_at, total_amount: "13000000" };
     expect(await save(values)).toMatchObject({ error: "金額が正しくありません" });
     expect(db.find("parcels", MANUAL_ID)).toMatchObject({ total_amount: 12_000_000 });
   });

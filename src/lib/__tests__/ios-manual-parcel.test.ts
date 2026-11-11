@@ -166,6 +166,8 @@ describe("the words", () => {
     expect(detailText).toBeTruthy();
     expect(changed).toBe(detailText);
     expect(readFile("src/app/app/parcel-actions.ts")).toContain(`const NOT_UPDATED = "${changed}"`);
+    // The Web's edit of a typed-in parcel (updated_at check) answers with the same sentence.
+    expect(readFile("src/app/app/parcels/manual-actions.ts")).toContain(`const CHANGED = "${changed}"`);
   });
 });
 

@@ -139,6 +139,7 @@ describe("(a) the edit form of a cancelled typed-in parcel", () => {
 
 const form = (over: Record<string, string> = {}) => ({
   id: MANUAL_ID,
+  updated_at: "2026-11-01T00:00:00Z",
   title: "手入力の品名",
   shop: "手入力の店",
   ordered_at: "2026-11-01",
@@ -261,7 +262,7 @@ describe("saving an edit keeps what a mail added to unchanged fields", () => {
     return typedIn(over);
   };
   /** The edit form as it starts for this row, with the person's changes. */
-  const formOf = (row: ParcelRow, over: Record<string, string> = {}): Record<string, string> => ({ id: MANUAL_ID, ...manualFormDefaults(row, "2026-11-03"), ...over });
+  const formOf = (row: ParcelRow, over: Record<string, string> = {}): Record<string, string> => ({ id: MANUAL_ID, updated_at: row.updated_at, ...manualFormDefaults(row, "2026-11-03"), ...over });
   const stored = () => db.find("parcels", MANUAL_ID)!;
   beforeEach(() => {
     mocks.state.user = { id: USER };
