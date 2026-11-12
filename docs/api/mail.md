@@ -182,3 +182,11 @@ not acquire that deadline unless it later enters consent waiting, including on w
 The settings and privacy text share `UNREAD_MAIL_STORAGE_NOTICE` for ordinary unread storage
 without promising a deadline. `AI_CONSENT_TEXT.waitingRetention` describes consent waiting
 separately. This wording does not extend the SQL cleanup scope.
+
+## A retained reading whose original content is unavailable
+
+The embedded `emails` read includes `error` as well as `body_state`. For a dropped body, the exact
+reason `ai_consent_wait_expired` identifies the consent-waiting deadline; the Web uses
+`CONSENT_WAIT_EXPIRED_NOTICE` for this case. A null, missing or unknown reason does not establish a
+past key or login state: it receives the existing neutral content-not-kept explanation. Raw reasons
+are not displayed. This changes neither the saved parcel and reading nor plain and sealed content.
