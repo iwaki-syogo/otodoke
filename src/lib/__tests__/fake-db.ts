@@ -225,9 +225,11 @@ function splitOr(expr: string): string[] {
 }
 
 function matchOrPart(row: Row, part: string): boolean {
-  // and(a,b): every inner part holds (PostgREST's and() inside or()).
-  const grouped = part.trim().match(/^and\((.*)\)$/);
-  if (grouped) return splitOr(grouped[1]).every((inner) => matchOrPart(row, inner));
+  // PostgREST logical groups can nest either conjunction or disjunction.
+  const grouped = part.trim().match(/^(and|or)\((.*)\)$/);
+  if (grouped) return grouped[1] === "and"
+    ? splitOr(grouped[2]).every((inner) => matchOrPart(row, inner))
+    : splitOr(grouped[2]).some((inner) => matchOrPart(row, inner));
   const m = part.trim().match(/^([\w.]+?)\.(not\.)?(eq|neq|is|isdistinct|in|gt|gte|lt|lte|like|ilike)\.(.*)$/);
   if (!m) throw new Error(`fake-db: unsupported or() part "${part}"`);
   const [, column, negate, op, raw] = m;

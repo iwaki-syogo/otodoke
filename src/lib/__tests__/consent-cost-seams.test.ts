@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiReadingNotAllowedError, requireAiReadingConsent } from "@/lib/ai-consent";
 import { MAIL_LEASE_MS } from "@/lib/unread";
 import { withMailRun } from "@/lib/mail-run-db";
-import { FakeDb } from "./fake-db";
+import { FakeDb, consentWaitingRetentionMs } from "./fake-db";
 import { USER, asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
@@ -43,6 +43,8 @@ const mail = (n: number) => ({ ...mailOf("2026-11-12T00:00:00Z"), providerEmailI
 const claims = (db: FakeDb) => db.rpcCalls.filter((c) => /claim_claude_call/.test(c.name));
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
   vi.stubEnv("OTODOKE_UNREAD_USER_MAIL_LIMIT", "2");
@@ -178,6 +180,7 @@ describe("reading started by the grant goes through the cost guards", () => {
     id: `w-${n}`, user_id: USER, processing_status: "failed", error: "ai_consent_required", body_state: "plain",
     provider_email_id: `provider-${n}`, message_id: `<w-${n}@example.test>`, from_address: "orders@new-shop.test", from_name: null,
     subject: "ご注文ありがとうございます", sent_at: `2026-11-01T00:00:0${n}Z`, text_body: `ご注文番号 TEST-${n}`, html_body: null, created_at: "2026-11-01T00:00:00.000000Z",
+    received_at: "2026-11-01T00:00:00.000000Z", consent_waiting_until: new Date(Date.parse("2026-11-01T00:00:00Z") + consentWaitingRetentionMs()).toISOString(),
   });
   const granted = (n: number) => new FakeDb({
     ai_reading_consents: [{ ...consent("granted"), decided_at: DECIDED }],
@@ -279,6 +282,7 @@ describe("B5 x cost guards x reading permission: a clear is not undone by a read
         id: "w-1", user_id: SAMPLE_USER, processing_status: "failed", error: "ai_consent_required", body_state: "plain",
         provider_email_id: "provider-1", message_id: "<w-1@example.test>", from_address: "orders@new-shop.test", from_name: null,
         subject: "ご注文ありがとうございます", sent_at: "2026-11-01T00:00:01Z", text_body: "ご注文番号 TEST-1", html_body: null, created_at: "2026-11-01T00:00:00.000000Z",
+        received_at: "2026-11-01T00:00:00.000000Z", consent_waiting_until: new Date(Date.parse("2026-11-01T00:00:00Z") + consentWaitingRetentionMs()).toISOString(),
       }],
     });
     let release!: (value: ReturnType<typeof precomputed>) => void;

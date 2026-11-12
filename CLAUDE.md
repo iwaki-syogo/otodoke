@@ -191,3 +191,4 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 
 - 14日の期限は、許可待ちの履歴を示す `consent_waiting_until` がある未読メールに適用する。許可済みで届き、上限や失敗で待つメールには、許可待ちを経たり後から取り消したりしない限り、自動の保管期限は付かない。
 - 設定・privacyの一般未読の説明は `src/lib/mail-notices.ts` の `UNREAD_MAIL_STORAGE_NOTICE` を共用する。期限を約束せず、許可待ちの期限だけを `AI_CONSENT_TEXT.waitingRetention` の別段落で表示する。
+- 許可直後の自動読取は、旧error名でなく `consent_waiting_until` と元の `received_at`・期限で選ぶ。移行前の上限や停止のerrorは選択のために書き換えない。再試行の `created_at` を到着時刻として使わず、サンプル・確認メール・許可後の新着は含めない。手動読取は従来の未読集合を保つ。
