@@ -53,6 +53,21 @@ async function renderList(sample = false) {
 }
 
 describe("the first reading-permission screen", () => {
+  it.each(["list", "welcome", "settings"] as const)("the %s consent screen shows the approved purpose immediately after the existing body", async (after) => {
+    const { ReadingConsent } = await import("@/app/app/reading/reading-consent");
+    const root = parseHtml(renderToStaticMarkup(ReadingConsent({ after })));
+    const paragraphs = findAll(root, (n) => n.tag === "p");
+    expect(paragraphs.slice(0, 2).map(textOf)).toEqual([
+      "届いたメールは、Anthropic の Claude で読み取ります。",
+      "メールの件名・差出人・本文を送り、荷物の情報を取り出します。",
+    ]);
+    expect(paragraphs[1]?.parent).toBe(paragraphs[0].parent);
+    const siblings = paragraphs[0].parent!.children.filter((node) => typeof node !== "string");
+    expect(siblings[siblings.indexOf(paragraphs[0]) + 1]).toBe(paragraphs[1]);
+    expect(paragraphs.filter((n) => textOf(n) === "メールの件名・差出人・本文を送り、荷物の情報を取り出します。")).toHaveLength(1);
+    expect(AI_CONSENT_TEXT_VERSION).toBe("v1");
+  });
+
   it("an unanswered person sees the one wording source, both choices and the sample exit", async () => {
     const html = await renderList();
     expect(findAll(html, (n) => n.tag === "h1").map(textOf)).toEqual([AI_CONSENT_TEXT.title]);

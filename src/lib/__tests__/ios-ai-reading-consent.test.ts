@@ -14,7 +14,8 @@ const WEB_MAIL_HANDLER_PATH = path.join(WEB_ROOT, "src/app/api/mail/handler.ts")
 const SWIFT_ROOT = path.join(ROOT, "ios/Otodoke");
 const APPROVED_COPY = [
   "メールの読み取り",
-  "届いたメールは、Anthropic の Claude で読み取ります。メールの件名・差出人・本文を送り、荷物の情報を取り出します。",
+  "届いたメールは、Anthropic の Claude で読み取ります。",
+  "メールの件名・差出人・本文を送り、荷物の情報を取り出します。",
   "プライバシーポリシー",
   "許可する",
   "許可しない",
@@ -260,8 +261,8 @@ function assertSharedCopy(web: string[], native: string[]) {
 }
 
 describe("AI reading consent copy is shared with the actual Web values", () => {
-  // TODO: restore to `it` once the iOS side (Ron) has the same second body sentence.
-  // iOS の側（ロン）が同じ文を入れたら it に戻す。
+  // TODO: restore to `it` once the iOS side (Ron) has the same detail sentence (AI_CONSENT_TEXT.detail).
+  // iOS の側が同じ detail の文を入れて直ったら it に戻す。
   it.skip("compares exported Web copy with native strings, including every approved sentence", () => {
     expect(existsSync(WEB_TEXT_PATH), "integrate the Web-owned src/lib/ai-consent-text.ts before declaring parity complete").toBe(true);
     const web = exportedStrings(readFileSync(WEB_TEXT_PATH, "utf8"));
