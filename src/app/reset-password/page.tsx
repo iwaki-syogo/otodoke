@@ -3,7 +3,7 @@ import { Wordmark } from "@/components/wordmark";
 import { checkFresh, isFresh, readCookieSession, type AmrEntry, type FreshCheck, type SessionRead } from "@/lib/auth-session";
 import { createClient } from "@/lib/supabase/server";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
-import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { RESET_LOSES_MAIL, RESET_SINGLE_SCREEN_NOTICE } from "@/lib/mail-notices";
 import { ResetForm } from "./reset-form";
 
 export const metadata = { title: "パスワードの再設定" };
@@ -30,6 +30,7 @@ export default async function ResetPasswordPage() {
             このアカウント: <span className="break-all font-medium text-neutral-900">{session.email}</span>
           </p>
           <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">{RESET_LOSES_MAIL}</p>
+          <p className="mt-4 text-sm leading-6 text-neutral-600">{RESET_SINGLE_SCREEN_NOTICE}</p>
           <ResetForm email={session.email} userId={session.userId} />
         </>
       ) : (

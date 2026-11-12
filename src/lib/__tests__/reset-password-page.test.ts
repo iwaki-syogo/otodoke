@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KEY_SESSION_STALE, LOGIN_MESSAGES } from "@/lib/login-errors";
-import { RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { RESET_LOSES_MAIL, RESET_SINGLE_SCREEN_NOTICE } from "@/lib/mail-notices";
 import { fakeEvent, type Host } from "./element-tree";
 import { findAll, parseHtml, textOf } from "./html-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -90,6 +90,29 @@ describe("the page, by the session", () => {
     expect(textOf(root)).toContain(RESET_LOSES_MAIL);
     const [form] = findAll(root, (n) => n.tag === "form");
     expect(findAll(form, (n) => n.tag === "input" && n.attrs.type === "password")).toHaveLength(2);
+  });
+
+  it("a valid reset session shows the shared single-screen notice once, after the existing warning and before the form", async () => {
+    const notice = RESET_SINGLE_SCREEN_NOTICE;
+    mocks.read.mockResolvedValue(signedIn(["otp", 2]));
+    const root = await page();
+    expect(textOf(root).split(notice)).toHaveLength(2);
+    expect(findAll(root, (n) => n.tag === "p" && textOf(n) === notice)).toHaveLength(1);
+    const ordered = findAll(root, (n) => n.tag === "form" || (n.tag === "p" && [RESET_LOSES_MAIL, notice].includes(textOf(n))));
+    expect(ordered.map((n) => n.tag === "form" ? "form" : textOf(n))).toEqual([RESET_LOSES_MAIL, notice, "form"]);
+  });
+
+  it.each([
+    ["signed out", () => ({ state: "signed_out" })],
+    ["expired reset", () => signedIn(["otp", 20])],
+    ["password sign-in", () => signedIn(["password", 1])],
+    ["session read failed", () => ({ state: "unknown" })],
+  ] as const)("no form (%s): the single-screen notice is absent", async (_, read) => {
+    const notice = RESET_SINGLE_SCREEN_NOTICE;
+    mocks.read.mockResolvedValue(read());
+    const root = await page();
+    expect(findAll(root, (n) => n.tag === "form")).toHaveLength(0);
+    expect(textOf(root)).not.toContain(notice);
   });
 
   it("no session: asks to open the mail's link, and offers a new mail", async () => {
