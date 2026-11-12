@@ -11,8 +11,8 @@ export function actionReturnPath(value: unknown): string {
   return path === "/app" || path.startsWith("/app/") ? path : "/app";
 }
 
-export function accountChangedPath(returnTo: string): string {
-  return `/account-changed?next=${encodeURIComponent(actionReturnPath(returnTo))}`;
+export function accountChangedPath(returnTo: string, notice?: "logout"): string {
+  return `/account-changed?next=${encodeURIComponent(actionReturnPath(returnTo))}${notice === "logout" ? "&notice=logout" : ""}`;
 }
 
 export function displayedUserMatches(user: { id: string } | null, expectedUserId: unknown): boolean {

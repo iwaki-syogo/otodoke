@@ -200,7 +200,7 @@ describe("logout POST recovers with a new GET", () => {
   it.each([A.id, undefined, "", "not-a-user-id"])("does not sign out B for the old or missing precondition %j", async (expected) => {
     const response = await signOut(request(expected));
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(`https://otodoke.app${accountChangedPath("/app/settings")}`);
+    expect(response.headers.get("location")).toBe(`https://otodoke.app${accountChangedPath("/app/settings", "logout")}`);
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
   it("still signs out the same displayed account with a 303", async () => {
