@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -22,7 +22,7 @@ const policies: Record<string, Policy> = {
   "app/settings/account-actions.ts#deleteAccount": guard,
   "app/settings/actions.ts#loadDemo": guard,
   "app/settings/actions.ts#readWaitingMail": guard,
-  "app/settings/actions.ts#markWronglyDropped": rows,
+  "app/settings/actions.ts#markWronglyDropped": guard,
   "app/settings/actions.ts#forgetSender": guard,
   "app/settings/actions.ts#clearAllParcels": guard,
   "app/settings/actions.ts#dismissIntakeNotice": guard,
@@ -63,6 +63,55 @@ function nodes<T extends ts.Node>(root: ts.Node, predicate: (node: ts.Node) => n
 }
 const callName = (call: ts.CallExpression) => ts.isIdentifier(call.expression) ? call.expression.text : ts.isPropertyAccessExpression(call.expression) ? call.expression.name.text : "";
 const namedFunction = (file: ts.SourceFile, name: string) => file.statements.find((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && n.name?.text === name);
+
+/** Row ownership alone is not an exemption for a privileged client or a helper that takes one. */
+function usesAdminData(file: ts.SourceFile, fn: ts.FunctionDeclaration, seen = new Set<string>()): boolean {
+  const identity = `${file.fileName}#${fn.name?.text}`;
+  if (seen.has(identity)) return false;
+  seen.add(identity);
+  const bindings = new Map<string, { module: string; imported: string }>();
+  const adminTypes = new Set<string>();
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.importClause) continue;
+    const modulePath = statement.moduleSpecifier.text;
+    const clause = statement.importClause;
+    if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const binding of clause.namedBindings.elements) {
+        const imported = binding.propertyName?.text ?? binding.name.text;
+        if (modulePath === "@/lib/supabase/admin" && imported === "AdminClient") adminTypes.add(binding.name.text);
+        if (!clause.isTypeOnly && !binding.isTypeOnly) bindings.set(binding.name.text, { module: modulePath, imported });
+      }
+    } else if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings) && !clause.isTypeOnly) {
+      bindings.set(clause.namedBindings.name.text, { module: modulePath, imported: "*" });
+    }
+    if (clause.name && !clause.isTypeOnly) bindings.set(clause.name.text, { module: modulePath, imported: "default" });
+  }
+  if (fn.parameters.some((parameter) => parameter.type && nodes(parameter.type, ts.isTypeReferenceNode).some((type) => ts.isIdentifier(type.typeName) && adminTypes.has(type.typeName.text)))) return true;
+
+  for (const call of nodes(fn, ts.isCallExpression)) {
+    const callee = call.expression;
+    const local = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) ? callee.expression.text : null;
+    if (!local) continue;
+    const binding = bindings.get(local);
+    if (!binding) {
+      const helper = ts.isIdentifier(callee) ? namedFunction(file, local) : undefined;
+      if (helper && usesAdminData(file, helper, seen)) return true;
+      continue;
+    }
+    if (binding.module === "@/lib/supabase/admin") return true;
+    // Follow only local TypeScript modules; never packages, runtime values, or environment files.
+    const base = binding.module.startsWith("@/") ? path.resolve(app, "..", binding.module.slice(2))
+      : binding.module.startsWith(".") ? path.resolve(app, path.dirname(file.fileName), binding.module) : null;
+    if (!base || !base.startsWith(path.resolve(app, "..") + path.sep) || /(?:^|[/\\])(?:env|config|fixtures)(?:[/\\.]|$)/.test(base) || /\.config$/.test(base)) continue;
+    const helperFile = [base + ".ts", path.join(base, "index.ts")].find(existsSync);
+    if (!helperFile) continue;
+    const parsed = parse(helperFile, readFileSync(helperFile, "utf8"));
+    const exported = binding.imported === "*" && ts.isPropertyAccessExpression(callee) ? callee.name.text : binding.imported;
+    const helper = namedFunction(parsed, exported);
+    if (helper && usesAdminData(parsed, helper, seen)) return true;
+  }
+  return false;
+}
 
 /** Every mutation chain must retain both the immutable row id and the server's current owner. */
 function rowScopeErrors(fn: ts.FunctionDeclaration): string[] {
@@ -131,17 +180,14 @@ function audit(sources: Map<string, string>, decisions = policies): string[] {
       if (key !== "login/session-actions.ts#readSignedInAddress" || nodes(fn, ts.isCallExpression).some((call) => callName(call) !== "getUser")) errors.push(`${key}: read exception was forged`);
     } else if (policy.kind === "rows") {
       const permitted = new Set([
-        "app/category-actions.ts#setCategory", "app/parcel-actions.ts#markDelivered", "app/parcel-actions.ts#markDeliveredForUndo", "app/parcel-actions.ts#restoreStatuses", "app/parcel-actions.ts#markNotDelivered", "app/parcel-actions.ts#markNotReceived", "app/parcel-actions.ts#dismissCheck", "app/parcels/manual-actions.ts#updateManualParcel", "app/parcels/manual-actions.ts#deleteManualParcel", "app/settings/actions.ts#markWronglyDropped",
+        "app/category-actions.ts#setCategory", "app/parcel-actions.ts#markDelivered", "app/parcel-actions.ts#markDeliveredForUndo", "app/parcel-actions.ts#restoreStatuses", "app/parcel-actions.ts#markNotDelivered", "app/parcel-actions.ts#markNotReceived", "app/parcel-actions.ts#dismissCheck", "app/parcels/manual-actions.ts#updateManualParcel", "app/parcels/manual-actions.ts#deleteManualParcel",
       ]);
       if (!permitted.has(key)) { errors.push(`${key}: row exception was forged`); continue; }
+      if (usesAdminData(file, fn)) errors.push(`${key}: admin-backed action cannot use the row exemption`);
       if (key.endsWith("#markDelivered") || key.endsWith("#markDeliveredForUndo")) {
         const body = compact(fn.body!);
         if (body !== "{return(awaitdeliver(ids)).saved;}" && body !== "{returnawaitdeliver(ids);}") errors.push(`${key}: row wrapper changed`);
         errors.push(...rowScopeErrors(namedFunction(file, "deliver")!).map((e) => `${key}: ${e}`));
-      } else if (key.endsWith("#markWronglyDropped")) {
-        const helper = namedFunction(parse("mail-run.ts", readFileSync(path.resolve(__dirname, "../mail-run.ts"), "utf8")), "runMarkWronglyDropped")!;
-        if (!compact(fn).includes("runMarkWronglyDropped(createAdminClient(),user.id,user.email,id)")) errors.push(`${key}: row helper lost current owner`);
-        if (!compact(helper).includes('.eq("id",id).eq("user_id",userId)')) errors.push(`${key}: row helper lost id/owner`);
       } else errors.push(...rowScopeErrors(fn).map((e) => `${key}: ${e}`));
     } else errors.push(`${key}: unsupported policy`);
   }
@@ -177,6 +223,36 @@ describe("every Web Server Action has an executable identity policy", () => {
   it("cannot relabel an account effect as public, read-only or row-scoped", () => {
     for (const kind of ["public", "identity-read", "rows"] as const) {
       expect(audit(realSources(), { ...policies, "app/settings/account-actions.ts#deleteAccount": { kind, reason: "pretending this is an exception" } }).some((error) => error.includes("forged"))).toBe(true);
+    }
+  });
+
+  it("requires the displayed identity for marking dropped mail and refuses its former row exemption", () => {
+    const key = "app/settings/actions.ts#markWronglyDropped";
+    const sources = realSources();
+    const name = "app/settings/actions.ts";
+    const statement = 'requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/dropped");';
+    const source = sources.get(name)!;
+    const file = parse(name, source);
+    const mark = namedFunction(file, "markWronglyDropped")!;
+    const declaration = mark.getText(file);
+    expect(declaration).toContain(statement);
+    sources.set(name, source.slice(0, mark.getStart(file)) + declaration.replace(statement, "") + source.slice(mark.end));
+    expect(audit(sources)).toContain(`${key}: missing identity precondition`);
+    expect(audit(realSources(), { ...policies, [key]: rows })).toContain(`${key}: row exception was forged`);
+  });
+
+  it("rejects privileged clients and shared admin helpers even on an otherwise correctly row-scoped action", () => {
+    const name = "app/category-actions.ts";
+    const original = realSources().get(name)!;
+    for (const [imports, effect] of [
+      ['import { createAdminClient as privilegedDb } from "@/lib/supabase/admin";', "privilegedDb();"],
+      ['import * as privileged from "@/lib/supabase/admin";', "privileged.createAdminClient();"],
+      ['import { runMarkWronglyDropped as mark } from "@/lib/mail-run";', "await mark({} as never, user.id, undefined, id);"],
+      ['import { createAdminClient as privilegedDb } from "@/lib/supabase/admin";\nfunction privilegedWrapper() { return privilegedDb(); }', "privilegedWrapper();"],
+    ]) {
+      const sources = realSources();
+      sources.set(name, original.replace('"use server";', `"use server";\n${imports}`).replace("return { ok: true };", `${effect}\nreturn { ok: true };`));
+      expect(audit(sources)).toContain(`${name}#setCategory: admin-backed action cannot use the row exemption`);
     }
   });
 

@@ -74,7 +74,7 @@ export async function readWaitingMail(formData: FormData): Promise<void> {
  */
 export async function markWronglyDropped(formData: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/dropped");
   const id = String(formData.get("id") ?? "");
   let outcome: "remembered" | "shared" | "forwarded" | "own" | "failed" = "failed";
   if (isScreenEventId(id)) {
