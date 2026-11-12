@@ -108,7 +108,8 @@ function mailHandlingConsentParagraph(source: string, textSource: string): strin
   const visit = (node: ts.Node) => {
     if (ts.isJsxElement(node) && node.openingElement.tagName.getText(file) === "p") {
       const containsConsentText = node.children.some((child) => ts.isJsxExpression(child) && child.expression
-        && ts.isPropertyAccessExpression(child.expression) && child.expression.expression.getText(file) === "AI_CONSENT_TEXT");
+        && ts.isPropertyAccessExpression(child.expression) && child.expression.expression.getText(file) === "AI_CONSENT_TEXT"
+        && child.expression.name.text === "retainedResults");
       if (containsConsentText) {
         const text = node.children.map((child) => {
           if (ts.isJsxText(child)) return child.text;
@@ -301,6 +302,19 @@ describe("AI reading consent copy is shared with the actual Web values", () => {
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
     assertNativeConsentParagraph(web, native, consentText);
+  });
+
+  it("selects the retained-results paragraph without treating a separate waiting-retention paragraph as consent", () => {
+    const text = readRequired(WEB_TEXT_PATH);
+    const consent = "<p>読み取りの許可。{AI_CONSENT_TEXT.retainedResults}</p>";
+    const waiting = "<p>{AI_CONSENT_TEXT.waitingRetention}</p>";
+    const view = `<section>${consent}${waiting}</section>`;
+    expect(mailHandlingConsentParagraph(view, text)).toBe(`読み取りの許可。${exportedCopyProperty(text, "retainedResults")}`);
+    // A different shared text property, or the spelling of a reference as JSX text, is not it.
+    expect(() => mailHandlingConsentParagraph(waiting, text)).toThrow("exactly one mail-handling consent paragraph");
+    expect(() => mailHandlingConsentParagraph("<p>AI_CONSENT_TEXT.retainedResults</p>", text)).toThrow("exactly one mail-handling consent paragraph");
+    expect(() => mailHandlingConsentParagraph(view.replace(consent, ""), text)).toThrow("exactly one mail-handling consent paragraph");
+    expect(() => mailHandlingConsentParagraph(view.replace(consent, consent + consent), text)).toThrow("exactly one mail-handling consent paragraph");
   });
 
   it("compares the automatic request field with the Web schema and preserves the raw receipt and manual empty body", () => {
