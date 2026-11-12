@@ -130,15 +130,17 @@ export async function signIn(input: unknown): Promise<SignInResult> {
 }
 
 /**
- * What a refused mail request says. The answers that depend on whether the address has an account
- * (it exists already; a mail went to it within the minute) say "sent", like a mail that went out.
+ * Keep address-dependent early non-send outcomes neutral. Sending refusals are surfaced;
+ * Auth can skip the sender for some account states, so failure responses are not identical.
  */
 function mailRefusal(error: AuthError): MailRequestFailure | "sent" {
   if (error.code === "captcha_failed") return "captcha";
   // Supabase's per-IP limit: the same for every address.
   if (error.code === "over_request_rate_limit") return "rate";
   if (error.code === "email_address_invalid" || error.code === "validation_failed") return "invalid_email";
-  if (["user_already_exists", "email_exists", "user_not_found", "over_email_send_rate_limit"].includes(error.code ?? "") || error.status === 429) return "sent";
+  // These non-send codes stay neutral even with a contradictory transport status.
+  if (["user_already_exists", "email_exists", "user_not_found"].includes(error.code ?? "")) return "sent";
+  if (error.code === "over_email_send_rate_limit" || error.status === 429 || error.status === 500) return "mail_busy";
   if (isOutage(error)) return "network";
   return "other";
 }
@@ -192,8 +194,8 @@ async function requestMail(step: string, input: unknown, send: MailSend, asciiOn
 
 /**
  * Make an account: the address and the login secret. Supabase mails the confirmation link for a new
- * or still-unconfirmed address. A confirmed address can receive no mail from Supabase; its app
- * response is identical so the address's registration is not disclosed by the sign-up Action.
+ * or still-unconfirmed address. Confirmed-address early outcomes share the normal sent response
+ * and allowance. Sending refusals return mail_busy; Auth can skip those checks for a confirmed user.
  */
 export async function signUp(input: unknown): Promise<SignUpResult> {
   const parsed = SignUpInputSchema.safeParse(input);
@@ -211,7 +213,7 @@ export async function signUp(input: unknown): Promise<SignUpResult> {
   return { ok: true, code: "signup_exists_or_sent" };
 }
 
-/** The confirmation mail again. The same answer for every address. */
+/** Neutral sent/early outcomes for confirmation mail; sending refusals return mail_busy. */
 export async function resendSignupMail(input: unknown): Promise<ResendResult> {
   const parsed = MailRequestInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "other" };
@@ -228,7 +230,7 @@ export async function resendSignupMail(input: unknown): Promise<ResendResult> {
   return { ok: false, code: result.code === "email_not_ascii" ? "invalid_email" : result.code };
 }
 
-/** The reset mail. The same answer for every address. */
+/** Neutral sent/early outcomes for reset mail; sending refusals return mail_busy. */
 export async function requestResetMail(input: unknown): Promise<ResetMailResult> {
   const parsed = MailRequestInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "other" };

@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest";
  *  - iOS still identifies an empty identities array and user_already_exists as an existing address.
  *    Its migration to the generic waiting state belongs to the iOS owner. Web sign-up suppresses
  *    that distinction (I6); login-actions.test.ts verifies the responses for each Auth outcome,
- *    while this source contract prevents reintroducing the old Web branch. Mail refusal codes
- *    shared by the clients are still compared below.
+ *    while this source contract prevents reintroducing the old Web branch. The three neutral
+ *    non-send aliases stay shared; native delivery failures belong to the separate iOS handoff.
  */
 
 const ROOT = path.resolve(__dirname, "../../..");
@@ -69,6 +69,26 @@ describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
   /** The codes of the "sent" list: the array literal that precedes `.includes(` / `.contains(`. */
   const webSent = (src: string) => [...(src.match(/\[((?:"[a-z_]+",?\s*)+)\]\.includes\(error\.code/)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
   const swiftSent = (src: string) => [...(src.match(/\[((?:"[a-z_]+",?\s*)+)\]\.contains\(code/)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
+  const nonSendAliases = ["email_exists", "user_already_exists", "user_not_found"];
+  const legacyNativeDeliveryCode = "over_email_send_rate_limit";
+  const deliveryBranch = /if\s*\(error\.code === "over_email_send_rate_limit"\s*\|\| error\.status === 429\s*\|\| error\.status === 500\)\s*return "mail_busy";/;
+
+  function mailContractProblems(webSource: string, nativeSource: string): string[] {
+    const problems: string[] = [];
+    const mail = stripComments(webSource).match(/function mailRefusal\([^\n]+\{([\s\S]*?)^\}/m)?.[1] ?? "";
+    const nativeAliases = swiftSent(nativeSource);
+    if (JSON.stringify(webSent(mail)) !== JSON.stringify(nonSendAliases)) problems.push("Web non-send aliases");
+    // Permit removal of the one known legacy delivery code, never arbitrary new aliases.
+    if (JSON.stringify(nativeAliases.filter((code) => code !== legacyNativeDeliveryCode)) !== JSON.stringify(nonSendAliases)
+      || nativeAliases.filter((code) => code === legacyNativeDeliveryCode).length > 1) problems.push("native non-send aliases");
+    const neutral = mail.match(/if\s*\(\[[^\]]*\]\.includes\(error\.code \?\? ""\)\)\s*return "sent";/);
+    if (!neutral || mail.match(/return\s+"sent";/g)?.length !== 1) problems.push("Web sent fallback");
+    const delivery = mail.match(deliveryBranch);
+    if (!delivery) problems.push("Web delivery failure");
+    const outage = mail.match(/if\s*\(isOutage\(error\)\)\s*return "network";/);
+    if (!neutral || !delivery || !outage || neutral.index! >= delivery.index! || delivery.index! >= outage.index!) problems.push("Web failure precedence");
+    return problems;
+  }
 
   it("iOS still reads empty identities as existing; Web sign-up returns only the generic success", () => {
     expect(webSignup).toContain("export async function signUp(");
@@ -83,11 +103,8 @@ describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
     expect(line).not.toBeNull();
   });
 
-  it("the codes that say sent are the same list, and email_exists is among them on both sides", () => {
-    expect(webSent(web)).toEqual(["email_exists", "over_email_send_rate_limit", "user_already_exists", "user_not_found"]);
-    expect(swiftSent(swift)).toEqual(webSent(web));
-    expect(web).toMatch(/\.includes\(error\.code \?\? ""\) \|\| error\.status === 429\) return "sent"/);
-    expect(swift).toMatch(/\.contains\(code \?\? ""\) \|\| status == 429 \{ return \.sent \}/);
+  it("shares exactly three non-send aliases while Web delivery refusals are mail_busy", () => {
+    expect(mailContractProblems(web, swift)).toEqual([]);
   });
 
   it("the other refusals are the same too: captcha, the per-IP rate, an invalid address", () => {
@@ -99,9 +116,55 @@ describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
     expect(swift).toContain('if code == "email_address_invalid" || code == "validation_failed" { return .failed(.invalidEmail) }');
   });
 
-  it("negative control: a changed list, a status in the check or a missing identities test is caught", () => {
-    expect(swiftSent(swift.replace('"email_exists", ', ""))).not.toEqual(webSent(web));
-    expect(webSent(web.replace('"user_not_found", ', ""))).not.toEqual(swiftSent(swift));
+  it("negative control: removing an alias changes its original list and fails the shared contract", () => {
+    expect(mailContractProblems(web, swift)).toEqual([]);
+    const changedNative = swift.replace('"email_exists", ', "");
+    expect(changedNative).not.toBe(swift);
+    expect(swiftSent(changedNative)).not.toEqual(swiftSent(swift));
+    expect(mailContractProblems(web, changedNative)).toContain("native non-send aliases");
+    const changedWeb = web.replace(', "user_not_found"', "");
+    expect(changedWeb).not.toBe(web);
+    expect(webSent(changedWeb)).not.toEqual(webSent(web));
+    expect(mailContractProblems(changedWeb, swift)).toContain("Web non-send aliases");
+  });
+
+  it("negative control: unknown native aliases are not accepted as part of the handoff", () => {
+    const changed = swift.replace('"email_exists", ', '"email_exists", "unknown_non_send", ');
+    expect(changed).not.toBe(swift);
+    expect(mailContractProblems(web, changed)).toContain("native non-send aliases");
+  });
+
+  it("negative control: restoring sent or the generic outage helper for delivery failures is caught", () => {
+    const sent = web.replace('return "mail_busy";', 'return "sent";');
+    expect(sent).not.toBe(web);
+    expect(mailContractProblems(sent, swift)).toContain("Web sent fallback");
+    const rawSent = web.replace('.includes(error.code ?? "")) return "sent";', '.includes(error.code ?? "") || error.status === 429) return "sent";');
+    expect(rawSent).not.toBe(web);
+    expect(mailContractProblems(rawSent, swift)).toContain("Web sent fallback");
+    for (const clause of [" || error.status === 429", " || error.status === 500"]) {
+      const changed = web.replace(clause, "");
+      expect(changed).not.toBe(web);
+      expect(mailContractProblems(changed, swift)).toContain("Web delivery failure");
+    }
+    const earlyHelper = web.replace(deliveryBranch, 'if (isOutage(error)) return "network";\n$&');
+    expect(earlyHelper).not.toBe(web);
+    expect(mailContractProblems(earlyHelper, swift)).toContain("Web failure precedence");
+  });
+
+  it("positive control: native can remove its legacy delivery alias and formatting keeps the contract", () => {
+    const nativeList = /\[((?:"[a-z_]+",?\s*)+)\](?=\.contains\(code)/;
+    const withoutLegacy = swift.replace(nativeList, JSON.stringify(nonSendAliases));
+    expect(swiftSent(withoutLegacy)).toEqual(nonSendAliases);
+    expect(mailContractProblems(web, withoutLegacy)).toEqual([]);
+    const withLegacy = withoutLegacy.replace(nativeList, JSON.stringify([...nonSendAliases, legacyNativeDeliveryCode]));
+    expect(withLegacy).not.toBe(withoutLegacy);
+    expect(mailContractProblems(web, withLegacy)).toEqual([]);
+    const formatted = web.replace('"email_exists", ', '"email_exists",\n    ');
+    expect(formatted).not.toBe(web);
+    expect(mailContractProblems(formatted, swift)).toEqual([]);
+  });
+
+  it("negative control: a status in the existing check or a missing identities test is caught", () => {
     expect(swift.replace("identities.isEmpty", "identities.count > 1")).not.toMatch(/identities\.isEmpty \{ return \.existing \}/);
     const withStatus = 'if case let .refused(status, code) = Self.answer(of: error), status == 422, code == "user_already_exists" { return .existing }';
     expect(withStatus).not.toMatch(/\.refused\(_, code\) = Self\.answer\(of: error\), code == "user_already_exists"/);

@@ -184,12 +184,13 @@ describe("making the account", () => {
     expect(actions.signUp).not.toHaveBeenCalled();
   });
 
-  it.each(["email_not_ascii", "invalid_email", "rate", "captcha", "network", "not_configured", "other"] as const)("the server's %s is told with its fixed words", async (code) => {
+  it.each(["email_not_ascii", "invalid_email", "rate", "captcha", "network", "not_configured", "other", "mail_busy"] as const)("the server's %s is told with its fixed words", async (code) => {
     actions.signUp.mockResolvedValue({ ok: false, code });
     const view = await filled();
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
+    expect(view.text()).not.toContain("確認のメールを送りました");
     expect(textOfHost(button(view))).toBe("アカウントを作る");
   });
 });

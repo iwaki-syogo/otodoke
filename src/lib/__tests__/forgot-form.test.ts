@@ -77,12 +77,13 @@ describe("the reset mail", () => {
     expect(widget.round).toBe(1);
   });
 
-  it.each(["rate", "captcha", "network", "invalid_email", "not_configured", "other"] as const)("%s gets its fixed words", async (code) => {
+  it.each(["rate", "captcha", "network", "invalid_email", "not_configured", "other", "mail_busy"] as const)("%s gets its fixed words", async (code) => {
     actions.sendResetMail.mockResolvedValue({ ok: false, code });
     const view = await filled("someone@example.test");
     await press(view);
     await drawn();
     expect(view.text()).toContain(LOGIN_MESSAGES[code]);
+    expect(view.text()).not.toContain(LOGIN_MESSAGES.reset_sent);
   });
 
   it("an Action that does not answer is told as no connection, not left spinning", async () => {

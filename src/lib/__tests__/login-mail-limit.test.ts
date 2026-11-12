@@ -155,8 +155,8 @@ describe("a send Supabase refuses does not count", () => {
   }
 
   it.each([
-    [429, "over_email_send_rate_limit", SENT],
-    [500, "unexpected_failure", { ok: false, code: "network" }],
+    [429, "over_email_send_rate_limit", { ok: false, code: "mail_busy" }],
+    [500, "unexpected_failure", { ok: false, code: "mail_busy" }],
   ] as const)("gives back exactly the claimed send when Supabase answers %i", async (status, code, shown) => {
     answer(claimAnswer("ok", 77));
     mocks.resend.mockResolvedValue({ data: null, error: { status, code, message: "refused" } });
@@ -178,21 +178,21 @@ describe("a send Supabase refuses does not count", () => {
   it("does not release anything when nothing was claimed (the limit check had failed open)", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "function public.claim_login_mail does not exist" } });
     mocks.resend.mockResolvedValue({ data: null, error: { status: 500, code: "unexpected_failure", message: "refused" } });
-    expect(await submit()).toEqual({ ok: false, code: "network" });
+    expect(await submit()).toEqual({ ok: false, code: "mail_busy" });
     expect(rpcCalls("release_login_mail")).toHaveLength(0);
   });
 
   it("still answers, and warns, when giving the send back returns an error", async () => {
     answer(claimAnswer("ok", 77), { data: null, error: { message: "permission denied for function release_login_mail" } });
     mocks.resend.mockResolvedValue({ data: null, error: { status: 500, code: "unexpected_failure", message: "refused" } });
-    expect(await submit()).toEqual({ ok: false, code: "network" });
+    expect(await submit()).toEqual({ ok: false, code: "mail_busy" });
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("could not give back"), expect.stringContaining("permission denied"));
   });
 
   it("still answers, and warns, when giving the send back throws", async () => {
     answer(claimAnswer("ok", 77), new Error("fetch failed"));
     mocks.resend.mockResolvedValue({ data: null, error: { status: 500, code: "unexpected_failure", message: "refused" } });
-    expect(await submit()).toEqual({ ok: false, code: "network" });
+    expect(await submit()).toEqual({ ok: false, code: "mail_busy" });
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("could not give back"), "fetch failed");
   });
 

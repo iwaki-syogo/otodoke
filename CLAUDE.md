@@ -168,3 +168,9 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 100000/110000の本体・before・verify・downは同じ版で取り込む。Auth callbackは共通名のCREATE OR REPLACE TRIGGERで切り替える。100000を最終的に戻してtriggerを削除するにはAuth tableowner/memberが必要で、適用時のTRIGGER権限とは分けて確認する。利用者分離の実PG対照はtests/postgres/run-parcel-user-locks.mjs。
 - R2-2の共有入口はprivateな `public.lock_parcel_owner(p_user uuid) returns void`。U/G/Eは呼出し元で先取りし、helperは同ownerのTx設定と利用者別Lだけを確保する。NULLとowner切替は拒否、owner不明のstatementは従来どおり拒否。PUBLIC/anon/authenticated/service_roleへ直接EXECUTEを与えず、同ownerのDEFINER RPC/triggerから呼ぶ。
 - 後続migrationもinlineの62803取得や固定鍵を足さず、同helperへ統一する。メールのhelperは本人/run/lease検査後・snapshot/R前に置く。後続downの復元coreにも同じ呼出しを保ち、helperを作る100000より先に依存側を戻す。before/verify/downはhelperのABI/owner/ACLと、pg_procに固定62803,0が無いことも確認する。
+
+## 確認メールの送信拒否（2026-11-12 本人決定）
+
+- 公開時は最小修正とし、signup/resend/resetのover_email_send_rate_limit・分類されない429・メール要求の500をmail_busy失敗へ返す。文の正本はLOGIN_MESSAGES.mail_busy。新規signupを確認待ちへ進めず、送信済み/未送信やaccount作成の有無を文で断定しない。通常sign-in・通信例外・他の5xxの分類は保つ。
+- user_already_exists等の非送信の中立応答は維持する。公式Authが送信前に成功する状態と、送信拒否になる状態のI6差は公開時の既知制約として受け入れる。全状態へ同じ429を返すmockで隠さず、3入口の不存在/未確認/確認済みを分けて試験する。送信枠の消費/返却差も共通受付の将来設計で扱う。
+- 根本の共通受付は公開後。native iOSの同文対応は別担当へ引き継ぎ、この作業でSupabaseの送信設定を変更しない。仮文はPreviewで本人へ見せ、確定を代行しない。詳細な状態表と設計要点はrepo外のreports/fix-auth-extract.md。

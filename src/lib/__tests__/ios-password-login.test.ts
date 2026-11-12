@@ -90,7 +90,7 @@ function webSource(file: string, has: (src: string) => boolean): { from: string;
   throw new Error(`the Web's ${file} with the password-v1 words was found neither in this tree nor at ${COPY_SOURCE.ref}`);
 }
 
-/** Web keys the app shows, and the LoginText constants named after them. */
+/** Web keys the app shows; Web-only mail_busy is not part of the current native handoff. */
 const SHOWN_KEYS = [
   "credentials",
   "not_confirmed",

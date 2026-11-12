@@ -96,6 +96,7 @@ describe("signInWithAuthSecret", () => {
     ["a 429 without a code", { status: 429 }, "rate"],
     ["a refused bot check", { status: 400, code: "captcha_failed" }, "captcha"],
     ["no answer", { status: 0, name: "AuthRetryableFetchError" }, "network"],
+    ["an Auth 500 outside mail sending", { status: 500, code: "unexpected_failure" }, "network"],
     ["a 5xx", { status: 502 }, "network"],
     ["an answer that was not Supabase's", { name: "AuthUnknownError" }, "network"],
     ["anything else", { status: 400, code: "user_banned" }, "other"],
@@ -252,6 +253,100 @@ describe("signInWithAuthSecret", () => {
   });
 });
 
+describe("mail delivery backpressure", () => {
+  it.each([
+    ["a new sign-up reaching the confirmation sender", mocks.signUp, () => signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })],
+    ["a pending account's resend reaching the confirmation sender", mocks.resend, () => resendConfirmation({ email: EMAIL })],
+    ["a confirmed account's reset reaching the recovery sender", mocks.reset, () => sendResetMail({ email: EMAIL })],
+  ] as const)("%s does not report an email-send 429 as sent", async (_step, upstream, request) => {
+    const failure = { data: { user: null, session: null }, error: { status: 429, code: "over_email_send_rate_limit" } };
+    upstream.mockResolvedValue(failure);
+    expect(await request()).toEqual({ ok: false, code: "mail_busy" });
+    expect(upstream).toHaveBeenCalledTimes(1);
+    expect(calls("claim_login_mail")).toHaveLength(1);
+    expect(calls("release_login_mail")).toHaveLength(1);
+  });
+});
+
+describe("pinned Auth sender ordering and the accepted address-dependent failure boundary", () => {
+  // Official Auth source at 88725864802773ad4533e0cad28f7a2740c89a7e:
+  // signup.go returns confirmed users before sending; resend.go skips missing/confirmed users;
+  // recover.go skips missing users. These cases model those early outcomes, not a shared 429.
+  // A first signup can reach the project quota (not an existing ConfirmationSentAt cooldown).
+  // The SMTP row models a synchronous sender failure, not every possible unexpected_failure.
+  const signup = () => signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET });
+  const resend = () => resendConfirmation({ email: EMAIL });
+  const reset = () => sendResetMail({ email: EMAIL });
+  const states = [
+    ["signup new", "sender", mocks.signUp, signup, "signup_exists_or_sent"],
+    ["signup pending", "sender", mocks.signUp, signup, "signup_exists_or_sent"],
+    ["signup confirmed (user_already_exists)", "exists", mocks.signUp, signup, "signup_exists_or_sent"],
+    ["signup confirmed (sanitized 200)", "early", mocks.signUp, signup, "signup_exists_or_sent"],
+    ["resend missing", "early", mocks.resend, resend, "confirmation_sent"],
+    ["resend pending", "sender", mocks.resend, resend, "confirmation_sent"],
+    ["resend confirmed", "early", mocks.resend, resend, "confirmation_sent"],
+    ["recover missing", "early", mocks.reset, reset, "reset_sent"],
+    ["recover pending", "sender", mocks.reset, reset, "reset_sent"],
+    ["recover confirmed", "sender", mocks.reset, reset, "reset_sent"],
+  ] as const;
+  const pressure = [
+    ["email-send 429", { status: 429, code: "over_email_send_rate_limit" }],
+    ["raw 429", { status: 429 }],
+    ["SMTP 500", { status: 500, code: "unexpected_failure" }],
+  ] as const;
+  const scenarios = states.flatMap(([state, stage, upstream, request, sent]) => pressure.map(([label, failure]) =>
+    ({ label: `${state} under ${label} send backpressure`, stage, upstream, request, sent, failure })));
+
+  it.each(states)("%s keeps its neutral response and allowance with normal sending capacity", async (_state, stage, upstream, request, sent) => {
+    upstream.mockResolvedValue({ data: { user: { id: "synthetic-user", identities: stage === "sender" ? [{ id: "synthetic-identity" }] : [] }, session: null }, error: stage === "exists" ? { status: 422, code: "user_already_exists" } : null });
+    expect(await request()).toEqual({ ok: true, code: sent });
+    expect(calls("claim_login_mail")).toHaveLength(1);
+    expect(calls("release_login_mail")).toHaveLength(0);
+  });
+
+  it.each(scenarios)("$label", async ({ stage, upstream, request, sent, failure }) => {
+    const error = stage === "sender" ? failure : stage === "exists" ? { status: 422, code: "user_already_exists" } : null;
+    upstream.mockResolvedValue({ data: { user: { id: "synthetic-user", identities: [] }, session: null }, error });
+    expect(await request()).toEqual(stage === "sender" ? { ok: false, code: "mail_busy" } : { ok: true, code: sent });
+    expect(upstream).toHaveBeenCalledTimes(1);
+    expect(calls("claim_login_mail")).toHaveLength(1);
+    expect(calls("release_login_mail")).toHaveLength(stage === "sender" ? 1 : 0);
+  });
+
+  it.each([
+    ["signup", mocks.signUp, signup],
+    ["resend", mocks.resend, resend],
+    ["recover", mocks.reset, reset],
+  ] as const)("%s keeps code-only send backpressure separate from network failures", async (_step, upstream, request) => {
+    upstream.mockResolvedValue({ data: { user: null, session: null }, error: { code: "over_email_send_rate_limit" } });
+    expect(await request()).toEqual({ ok: false, code: "mail_busy" });
+    expect(calls("release_login_mail")).toHaveLength(1);
+    for (const error of [{ status: 502, code: "unexpected_failure" }, { status: 503 }, { status: 0, name: "AuthRetryableFetchError" }]) {
+      upstream.mockResolvedValue({ data: { user: null, session: null }, error });
+      expect(await request()).toEqual({ ok: false, code: "network" });
+    }
+    upstream.mockRejectedValue(new TypeError("fetch failed"));
+    expect(await request()).toEqual({ ok: false, code: "network" });
+    expect(calls("release_login_mail")).toHaveLength(5);
+  });
+
+  it.each(["user_already_exists", "email_exists", "user_not_found"])("keeps the non-send alias %s neutral even with an inconsistent busy status", async (code) => {
+    for (const status of [422, 429, 500]) {
+      for (const [upstream, request, sent, releases] of [
+        [mocks.signUp, signup, "signup_exists_or_sent", 0],
+        [mocks.resend, resend, "confirmation_sent", 1],
+        [mocks.reset, reset, "reset_sent", 1],
+      ] as const) {
+        mocks.rpc.mockClear();
+        upstream.mockResolvedValue({ data: { user: null, session: null }, error: { status, code } });
+        expect(await request()).toEqual({ ok: true, code: sent });
+        expect(calls("claim_login_mail")).toHaveLength(1);
+        expect(calls("release_login_mail")).toHaveLength(releases);
+      }
+    }
+  });
+});
+
 describe("signUpWithAuthSecret", () => {
   it("makes the account through a client that keeps no session, with the confirmation link to /auth/confirm", async () => {
     expect(await signUpWithAuthSecret({ email: "New@Example.com", authSecret: SECRET, captchaToken: TOKEN })).toEqual({ ok: true, code: "signup_exists_or_sent" });
@@ -313,7 +408,7 @@ describe("signUpWithAuthSecret", () => {
 
   it.each([
     ["the address has an account (email_exists)", { status: 422, code: "email_exists" }],
-    ["a mail went to it within the minute", { status: 429, code: "over_email_send_rate_limit" }],
+    ["the compatibility alias user_not_found", { status: 422, code: "user_not_found" }],
   ])("answers the same as a sent mail when %s", async (_what, error) => {
     mocks.signUp.mockResolvedValue({ data: { user: null, session: null }, error });
     expect(await signUpWithAuthSecret({ email: EMAIL, authSecret: SECRET })).toEqual({ ok: true, code: "signup_exists_or_sent" });
@@ -325,7 +420,7 @@ describe("signUpWithAuthSecret", () => {
     [{ status: 400, code: "captcha_failed" }, "captcha"],
     [{ status: 429, code: "over_request_rate_limit" }, "rate"],
     [{ status: 400, code: "email_address_invalid" }, "invalid_email"],
-    [{ status: 500, code: "unexpected_failure" }, "network"],
+    [{ status: 500, code: "unexpected_failure" }, "mail_busy"],
     [{ status: 422, code: "signup_disabled" }, "other"],
     [{ status: 400, code: "bad_json" }, "other"],
   ] as const)("answers %j as %s", async (error, code) => {
@@ -351,7 +446,7 @@ describe("signUpWithAuthSecret", () => {
   });
 });
 
-describe("resendConfirmation and sendResetMail answer the same for every address", () => {
+describe("resendConfirmation and sendResetMail keep normal sent outcomes neutral", () => {
   it("send the mails with the link to /auth/confirm", async () => {
     expect(await resendConfirmation({ email: EMAIL, captchaToken: TOKEN })).toEqual({ ok: true, code: "confirmation_sent" });
     expect(mocks.resend).toHaveBeenCalledWith({ type: "signup", email: EMAIL, options: { emailRedirectTo: "https://otodoke.app/auth/confirm?next=%2Fapp", captchaToken: TOKEN } });
@@ -359,8 +454,8 @@ describe("resendConfirmation and sendResetMail answer the same for every address
     expect(mocks.reset).toHaveBeenCalledWith(EMAIL, { redirectTo: "https://otodoke.app/auth/confirm?next=%2Fapp", captchaToken: TOKEN });
   });
 
-  it("say sent when Supabase's answer could tell whether the address has an account", async () => {
-    for (const error of [{ status: 429, code: "over_email_send_rate_limit" }, { status: 422, code: "user_not_found" }, { status: 429 }]) {
+  it("say sent for the address-dependent early non-send compatibility aliases", async () => {
+    for (const error of [{ status: 422, code: "user_already_exists" }, { status: 422, code: "user_not_found" }, { status: 422, code: "email_exists" }]) {
       mocks.resend.mockResolvedValue({ data: null, error });
       mocks.reset.mockResolvedValue({ data: null, error });
       expect(await resendConfirmation({ email: EMAIL })).toEqual({ ok: true, code: "confirmation_sent" });
@@ -381,7 +476,7 @@ describe("resendConfirmation and sendResetMail answer the same for every address
     expect(calls("release_login_mail")).toHaveLength(2);
   });
 
-  it("say what is the same for every address: the bot check, the per-IP limit, an outage, the address's form", async () => {
+  it("keeps the bot check, per-IP limit, non-500 outage and address validation categories", async () => {
     for (const [error, code] of [
       [{ status: 400, code: "captcha_failed" }, "captcha"],
       [{ status: 429, code: "over_request_rate_limit" }, "rate"],

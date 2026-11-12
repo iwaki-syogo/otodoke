@@ -18,6 +18,9 @@ export const LOGIN_MESSAGES = {
   network: "つながりませんでした。少し時間をおいて、もう一度お試しください。",
   other: "うまくいきませんでした。もう一度お試しください。",
 
+  // Web mail requests only; the owner supplied this wording pending the final choice.
+  mail_busy: "いま混み合っています。少し時間をおいて、もう一度お試しください。",
+
   // The address.
   invalid_email: "メールアドレスの形式を確認してください。",
   email_not_ascii: "半角の英数字と記号だけのメールアドレスをお使いください。",
@@ -99,11 +102,11 @@ export type CommonFailure = "credentials" | "not_confirmed" | "rate" | "captcha"
 export type SignInFailure = CommonFailure | "invalid_email";
 export type SignInResult = { ok: true; userId: string } | { ok: false; code: SignInFailure };
 
-export type SignUpFailure = "invalid_email" | "email_not_ascii" | "not_configured" | "rate" | "captcha" | "network" | "other";
+export type SignUpFailure = "invalid_email" | "email_not_ascii" | "not_configured" | "rate" | "captcha" | "network" | "other" | "mail_busy";
 /** `signup_existing` is retained for old callers; current sign-up always answers signup_exists_or_sent. */
 export type SignUpResult = { ok: true; code: "signup_exists_or_sent" | "signup_existing" } | { ok: false; code: SignUpFailure };
 
-export type MailRequestFailure = "invalid_email" | "not_configured" | "rate" | "captcha" | "network" | "other";
+export type MailRequestFailure = "invalid_email" | "not_configured" | "rate" | "captcha" | "network" | "other" | "mail_busy";
 export type ResendResult = { ok: true; code: "confirmation_sent" } | { ok: false; code: MailRequestFailure };
 export type ResetMailResult = { ok: true; code: "reset_sent" } | { ok: false; code: MailRequestFailure };
 
