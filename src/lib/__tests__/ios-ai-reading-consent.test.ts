@@ -100,14 +100,15 @@ function exportedCopyProperty(source: string, property: string): string {
   throw new Error(`the Web consent text value is missing: ${property}`);
 }
 
-/** Resolve the displayed paragraph, including its actual shared text references embedded by JSX. */
+/** Resolve the retained-results paragraph, including its actual shared text references embedded by JSX. */
 function mailHandlingConsentParagraph(source: string, textSource: string): string {
   const file = ts.createSourceFile("mail-handling.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const paragraphs: string[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isJsxElement(node) && node.openingElement.tagName.getText(file) === "p") {
       const containsConsentText = node.children.some((child) => ts.isJsxExpression(child) && child.expression
-        && ts.isPropertyAccessExpression(child.expression) && child.expression.expression.getText(file) === "AI_CONSENT_TEXT");
+        && ts.isPropertyAccessExpression(child.expression) && child.expression.expression.getText(file) === "AI_CONSENT_TEXT"
+        && child.expression.name.text === "retainedResults");
       if (containsConsentText) {
         const text = node.children.map((child) => {
           if (ts.isJsxText(child)) return child.text;
@@ -302,6 +303,26 @@ describe("AI reading consent copy is shared with the actual Web values", () => {
     assertNativeConsentParagraph(web, native, consentText);
   });
 
+  it("finds the retained-results paragraph with and without its adjacent waiting-retention paragraph", () => {
+    const view = readRequired(WEB_HANDLING_VIEW_PATH);
+    const text = readRequired(WEB_TEXT_PATH);
+    const waiting = view.match(/<p\b[^>]*>\s*\{AI_CONSENT_TEXT\.waitingRetention\}\s*<\/p>/)?.[0];
+    expect(waiting, "exercise the actual adjacent paragraph added to the Web view").toBeTruthy();
+    const withoutWaiting = view.replace(waiting!, "");
+    expect(withoutWaiting).not.toBe(view);
+    const retained = mailHandlingConsentParagraph(withoutWaiting, text);
+    expect(retained).toContain(exportedCopyProperty(text, "retainedResults"));
+    expect(mailHandlingConsentParagraph(view, text)).toBe(retained);
+    const waitingFirst = withoutWaiting.replace("<section>", `<section>${waiting}`);
+    expect(waitingFirst).not.toBe(withoutWaiting);
+    expect(mailHandlingConsentParagraph(waitingFirst, text)).toBe(retained);
+  });
+
+  it("negative control: duplicate retained-results paragraphs are still rejected", () => {
+    const view = "<section><p>{AI_CONSENT_TEXT.retainedResults}</p><p>{AI_CONSENT_TEXT.retainedResults}</p><p>{AI_CONSENT_TEXT.waitingRetention}</p></section>";
+    expect(() => mailHandlingConsentParagraph(view, readRequired(WEB_TEXT_PATH))).toThrow("exactly one mail-handling consent paragraph must be present");
+  });
+
   it("compares the automatic request field with the Web schema and preserves the raw receipt and manual empty body", () => {
     assertAutomaticRequestParity(readRequired(WEB_MAIL_HANDLER_PATH), readFileSync(path.join(SWIFT_ROOT, "Data/MailActionsAPI.swift"), "utf8"));
   });
@@ -325,7 +346,9 @@ describe("AI reading consent copy is shared with the actual Web values", () => {
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
     assertNativeConsentParagraph(web, native, consentText);
-    expect(() => mailHandlingConsentParagraph(view.replace(/<p\b[^>]*>[\s\S]*?<\/p>/, ""), text)).toThrow();
+    const withoutRetained = view.replace(/<p\b[^>]*>[^<]*\{AI_CONSENT_TEXT\.retainedResults\}<\/p>/, "");
+    expect(withoutRetained).not.toBe(view);
+    expect(() => mailHandlingConsentParagraph(withoutRetained, text)).toThrow();
     const changed = mailHandlingConsentParagraph(view.replace("Claude に送ります。", "Claude に送りません。"), text);
     expect(changed).not.toBe(web);
     expect(() => assertNativeConsentParagraph(changed, native, consentText)).toThrow();

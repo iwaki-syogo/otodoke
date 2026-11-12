@@ -109,3 +109,23 @@ node tests/postgres/run-claude-claim-consent.mjs --negative-lock
 ロックは standalone U→G→C→有料日の advisory、owned U→G→E→C→有料日の advisory です。v2 の保存済み core が public v1 を呼ぶときは U/G/C の再入です。release は従来の U→有料日の advisory のまま、許可を要求しません。取り消しと claim の順を同じ短い DB transaction で決め、成功した claim の commit 後に始まる外部 HTTP の間までロックを持ち出しません。
 
 台本は終了・失敗・割り込み時に専用 PG を止め、待ち受け 0 を確かめて専用データを削除します。2026-11-12 の Codex 環境では、既知の `shmget` 拒否を再試行・回避せず、構文検査・`--self-test` とソース契約試験だけを実行しました。実 SQL・並列操作・rollback と SQL 陰性対照は未実行です。
+
+## 受取の証跡と取り消し（130000）
+
+```sh
+node tests/postgres/run-received-receipts.mjs --self-test
+node tests/postgres/run-received-receipts.mjs
+node tests/postgres/run-received-receipts.mjs --negative-control
+```
+
+通常・陰性対照は専用 `127.0.0.1:65444` に Postgres 17 の使い捨て cluster を作ります。接続文字列や外部 cluster を指定する入口はありません。今回より前の実 migration を版順に適用し（pg_cronのスケジュールだけ明示skip）、before → 130000を2回適用 → verify → 動作確認 → downを2回 → 110000 verify → 再適用 verifyを実行します。既存parcel表のSupabase基盤grantだけをbootstrapで再現し、新journal/RPCの権限は実migrationのまま確認します。
+
+beforeと本体は110000・120000・121000の実適用履歴と関数を前提にします。台本は各migrationが実際に適用成功した後だけ履歴を記録し、前提を1本ずつ欠落させた場合の無変更拒否も確認します。
+
+動作確認は、別transactionのメール前後・空patchから証拠保存前のundo、本人/receipt_id/版の照合、二重undo、G待機中のjournal置換、501/1,001件の全件分割、過大なraw要求のlock前拒否、保存破棄時の巻き戻し、24時間固定の期限と再送による非延長・期限後の無変更拒否・既存daily purgeによる物理削除と先行の許可待ち掃除の継続、RLS/ACL/search_path、全消去/退会と5workerの自然競合です。`OTODOKE_RECEIPT_PG_ROUNDS` は2〜100、既定10回。実ロック待機を観測し、予期しないSQLSTATE・deadlock・timeout・結果欠落を成功に数えません。`now()`が1transactionで進むと仮定しません。
+
+陰性対照は、旧client statusによる実PATCHと、本物の旧private mail coreの空patchを使い、配達完了が発送済みに戻る要件違反を検出した場合だけ成功します。このmodeの `verdict=OK` は、旧経路の不具合を検出できた意味です。
+
+このrunnerは、自分のclusterの停止 → listener 0 → 作成した専用データ/ログの削除に成功した後に、最終 `verdict=OK` を出します。既存ポートのプロセスは停止しません。中断やエラー時も同じ後片付けを通ります。先の調査用ログ保持型のrunnerとは終了条件が異なります。
+
+作成環境では実Postgresを起動せず、`node --check` と `--self-test` だけを実行しています。自己試験は結果パーサー・SQLSTATE判定・PG環境分離・子プロセス異常を確認するもので、実DDL・時間差・並列・停止/削除を実測した証拠ではありません。実測はまとめ役が行い、統合SHAと出力を記録します。

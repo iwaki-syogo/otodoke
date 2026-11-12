@@ -218,10 +218,11 @@ describe("markNotDelivered: fails without writing", () => {
 describe("markNotDelivered: the existing undo keeps working", () => {
   it("marks a parcel received and puts it back with the undo, received_at included", async () => {
     db.find("parcels", BARE)!.status = "shipped";
-    expect(await actions.markDelivered([BARE])).toBe(1);
+    const receipt = await actions.markDeliveredForUndo([BARE]);
+    expect(receipt.saved).toBe(1);
     expect(statusOf(BARE)).toBe("delivered");
     expect(db.find("parcels", BARE)!.received_at).not.toBeNull();
-    await actions.restoreStatuses([{ id: BARE, status: "shipped", received_at: null, written_at: String(db.find("parcels", BARE)!.received_at) }]);
+    await actions.restoreStatuses(receipt.written);
     expect(statusOf(BARE)).toBe("shipped");
     expect(db.find("parcels", BARE)!.received_at).toBeNull();
   });

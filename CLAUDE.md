@@ -186,3 +186,14 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 退会はUを排他で取得して同じ利用者のclaim・返却を先に除外し、既存triggerでG/Eを先取りする。その後のC・費用行はFK cascadeで消え、cascade内部の表順は仮定しない。親の排他によって通常RPCとの循環経路を除く。
 - 受信保管用の62802は別の枝でGの後・Eの前に取得し、Cを取らない。上表のL（費用/荷物）と同一視しない。
 - claimと取消をDB内で直列化し、取消が先なら枠を取得せず許可待ちに残す。成功したclaimのcommitから外部API応答までDBロックを保持しない。サンプル・Gmail確認は有料claimを使わない。
+
+## Webの受取証跡と取り消し（2026-11-12 レビューAの修正）
+
+- `20261113130000_received_receipts` は110000・120000・121000の実適用履歴と関数を前提にする。衝突した旧番号120000のreceived_receiptsは使用しない。beforeとDDLは前提が足りなければ変更前に止まる。
+- Webは受取前の画面のstatusを復元権限にしない。`mark_parcels_received` がDBの直前状態・保存後の版をprivateな `parcel_receipt_undos` に記録し、本人の今回の操作へ `receipt_id` を返す。undoはopaqueなID/tokenだけを送る。
+- `restore_parcel_receipts` は本人・tokenに加え、現在の `parcels.received_at` と `updated_at` の両方を照合する。iOSと古いWebがjournalを変えず直接UPDATEした場合も、メールの配達完了を古いタブで消さない。空のメール補完も更新版を進める。結果は `restored / changed / failed` に分け、未回答を成功やchangedへ丸めない。
+- 1回の通信の正本は `receipt.ts` のraw 200件。Actionはdedup・認証・DBより前、RPCは所有者/ロックより前に検査する。UIの論理総数に上限を設けず、受取とundoを200件ずつ逐次処理し、501/1,001件以上と端数を残さない。実SDK試験でIDがPOST本文へ入り、URLが8,192 bytes未満となる不等式を確かめる。
+- journalは荷物/利用者のcascadeで消える。期限の正本は `public.parcel_receipt_retention()`。作成から24時間に固定し、受取の再送・undo・再送undoで延長しない。期限後のundoは変更しない。既存daily purgeへ期限切れの削除を合成し、許可待ちメールとscreen_eventsの掃除を保つ。正常に24時間毎の掃除が続く場合の物理残存は作成から48時間未満で、ジョブ停止中の物理削除は保証しない。
+- 手動受取は課金しないのでCを使わず、U → G → E → L → R → journalの順。`P1_OWNER_LOCK_SEAM` の3箇所はP-1担当の利用者別helperとの接続待ちで、接続前を公開可能とは扱わない。authenticatedの既存 `parcels UPDATE` grantは変更しない。B-4の通信予算と、DBの利用者別ロックP-1は別の守り。
+- 新Webの仮文は `UNDO_CHANGED_NOTICE` の「ほかで変更された荷物があります」。本人の決定までは仮置き。旧 `PARTLY_RESTORED_NOTICE` と `CANNOT_UNDO_NOTE` はiOSで使う値を維持する。Webの実装とTS parityの期待を同じ変更に含め、Swift/ios配下はiOS担当の版を保つ。iOSの三区分・新しい文・混在表示・Swift試験更新は別担当へ報告する。
+- STATUS_LABEL.deliveredはビルド14で「配達済み」へ更新済み。上の受取節にある「届いた」の保持説明は旧契約で、新しいWeb差分から戻さない。試験台本は `tests/postgres/run-received-receipts.mjs`、実Postgresの測定はまとめ役へ引き渡す。
