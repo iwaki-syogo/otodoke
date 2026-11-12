@@ -15,11 +15,15 @@ struct SettingsForwardPage: View {
 
     var body: some View {
         SettingsParts.page(spacing: 32) {
-            addressSection
+            if model.mayShowReadingAddress {
+                addressSection
             // The Web's order: the address, the approval card (and its failure), then the guides.
             // The approval card does not offer registering a parcel by hand.
-            SettingsStatusRows(model: model, register: {}).approvalSection
-            ForwardingGuideView(expanded: expandsGuide)
+                SettingsStatusRows(model: model, register: {}).approvalSection
+                ForwardingGuideView(expanded: expandsGuide)
+            } else {
+                AIReadingConsentSettingsControl(model: model)
+            }
         }
         .refreshableToTheEnd { await model.load() }
         .task {
@@ -64,12 +68,14 @@ struct SettingsForwardPage: View {
                 case let .loaded(address)?:
                     HStack(spacing: 8) {
                         Text(address)
+                            .accessibilityIdentifier("forwarding-address")
                             .font(model.addressCanBeCopied ? .subheadline.monospaced() : .subheadline)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if model.addressCanBeCopied {
                             CopyButton(text: address)
+                                .accessibilityIdentifier("forwarding-copy")
                         }
                     }
                     .padding(12)
@@ -187,16 +193,18 @@ struct SettingsDroppedPage: View {
 // MARK: 「あなたのメールの扱い」
 
 struct SettingsHandlingPage: View {
-    @Environment(\.openURL) private var openURL
+    let model: SettingsModel
+    @State private var showsPrivacy = false
 
     var body: some View {
         SettingsParts.page(spacing: 12) {
+            AIReadingConsentSettingsControl(model: model)
             // One child, so the gap between the summary and the link is this stack's own and does not
             // depend on the page's spacing.
             VStack(alignment: .leading, spacing: 0) {
                 MailHandlingView(showsHeading: false)
                 // As the Web's page: the whole policy, right under the summary of how mail is handled.
-                Button { SettingsWeb.open(.privacy, openURL) } label: {
+                Button { showsPrivacy = true } label: {
                     Text(SettingsWebText.privacyTitle)
                         .font(.caption)
                         .underline()
@@ -206,11 +214,12 @@ struct SettingsHandlingPage: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint(SettingsMenuText.webHint)
             }
         }
         .navigationTitle(SettingsMenuText.handlingTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsPrivacy) { AIReadingPrivacySheet() }
+        .task { await model.pageShown() }
     }
 }
 

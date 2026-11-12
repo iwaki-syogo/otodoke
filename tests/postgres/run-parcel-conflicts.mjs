@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { requireVerdict, runCommand, taggedResults } from "./run-cost-guards.mjs";
+import { runCommand, selfTestVerifyFiles, taggedResults, verifyFile } from "./run-cost-guards.mjs";
 
 // Importing the shared runner is safe: its CLI has an import.meta.url main guard.
 // Only the CLI's --self-test path is exercised while this runner is authored.
@@ -95,8 +95,7 @@ async function selfTest() {
   assert.equal(environment.KEEP, "yes");
   assert.equal(beforeSteps.filter(([kind]) => kind === "file").length, 2);
   assert.deepEqual(afterSteps.slice(0, 2), [["file", `supabase/rollback/${migration}.down.sql`], ["file", `supabase/rollback/${migration}.down.sql`]]);
-  requireVerdict("OK|t|OK\n", "self-test good verdict");
-  for (const output of ["", "FAILED|t\n", "OK|t\nERROR: broken\n"]) assert.throws(() => requireVerdict(output, "self-test bad verdict"));
+  await selfTestVerifyFiles([...beforeSteps, ...afterSteps].filter(([kind]) => kind === "verify").map(([, name]) => name));
   assert.deepEqual(oneResult('RESULT:{"verdict":"retry","parcel_id":null}\n'), { verdict: "retry", parcel_id: null });
   assert.throws(() => oneResult("RESULT:{}\nRESULT:{}\n"));
   assert.match(createCall([], 0), /public\.create_mail_parcel\('\[\]'::jsonb/);
@@ -148,8 +147,7 @@ async function main(negative, external) {
     ? command("psql", psqlArgs, { input: source })
     : command("psql", [...psqlArgs, "-f", path.join(root, name)]);
   const verify = async (name) => {
-    const output = await file(name);
-    requireVerdict(output, name);
+    const output = await verifyFile(name, file);
     console.log(`OK: ${name}: ${output.trim()}`);
   };
   const steps = async (plan) => { for (const [kind, name] of plan) await (kind === "verify" ? verify(name) : file(name)); };

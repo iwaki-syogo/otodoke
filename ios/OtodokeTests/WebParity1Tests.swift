@@ -127,6 +127,7 @@ struct WebParity1Tests {
         #expect(!cases.isEmpty)
         for (i, c) in cases.enumerated() {
             let s = withDefaultTimeZone(zone) { ParcelRules.sections(c.parcels, today: c.today) }
+            #expect(s.arrived.map(\.id) == c.out.arrived, "case \(i) 配達済み")
             #expect(s.toCheck.map(\.id) == c.out.toCheck, "case \(i) 要確認")
             #expect(s.delivering.map(\.id) == c.out.delivering, "case \(i) 配達中")
             #expect(s.soon.map(\.id) == c.out.soon, "case \(i) もうすぐ届く")
@@ -179,7 +180,7 @@ struct WebParity1Tests {
     }
 
     @Test func restorableIsTheWebsList() {
-        #expect(StatusRules.restorable == ["ordered", "shipped", "out_for_delivery", "attempted", "unknown"])
+        #expect(StatusRules.restorable == ["ordered", "shipped", "out_for_delivery", "attempted", "unknown", "delivered"])
         #expect(StatusRules.pendingGrace == 180)
         #expect(ParcelRules.checkAfterDays == 14)
     }

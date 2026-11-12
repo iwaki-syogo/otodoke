@@ -3,7 +3,8 @@ import { fakeEvent, hostText, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
 const WRITTEN = "2026-11-12T01:00:00.000Z";
-type Done = { saved: number; written: { id: string; received_at: string }[] };
+type Done = import("@/lib/receipt").MarkReceivedResult;
+const receipt = (id: string, previous_status = "shipped") => ({ id, receipt_id: `receipt-${id}`, received_at: WRITTEN, updated_at: WRITTEN, previous_status, previous_received_at: null });
 const control = vi.hoisted(() => ({ mark: vi.fn(), toast: vi.fn() }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -46,11 +47,11 @@ describe("B7: DeliverAll reports the full request's actual outcome", () => {
     await confirm(view);
     expect(view.text()).toContain("やめる");
     expect(control.toast).not.toHaveBeenCalled();
-    finish({ saved: 1, written: [{ id: items[0].id, received_at: WRITTEN }] });
+    finish({ saved: 1, written: [receipt(items[0].id)] });
     await vi.waitFor(() => expect(view.text()).toContain("保存できなかった荷物があります。開き直してください。"));
     expect(control.toast).toHaveBeenCalledWith({
       text: "一部を保存できませんでした",
-      undo: [{ ...items[0], written_at: WRITTEN }],
+      undo: [receipt(items[0].id)],
       note: null,
     });
     expect(control.toast.mock.calls[0][0].text).not.toBe("受け取り済みにしました");
@@ -58,12 +59,12 @@ describe("B7: DeliverAll reports the full request's actual outcome", () => {
   });
 
   it("duplicate IDs do not turn complete saving into partial saving or duplicate undo entries", async () => {
-    control.mark.mockResolvedValue({ saved: 2, written: items.map((item) => ({ id: item.id, received_at: WRITTEN })) });
+    control.mark.mockResolvedValue({ saved: 2, written: items.map((item) => receipt(item.id, item.status)) });
     const view = mount(() => DeliverAll({ items: [...items, items[0]] }));
     await confirm(view);
     await settled(view);
     expect(view.text()).not.toContain("保存できなかった");
-    expect(control.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: items.map((item) => ({ ...item, written_at: WRITTEN })), note: null });
+    expect(control.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: items.map((item) => receipt(item.id, item.status)), note: null });
     view.unmount();
   });
 

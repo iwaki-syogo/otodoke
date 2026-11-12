@@ -5,7 +5,6 @@ import SwiftUI
 
 struct SettingsKeyPage: View {
     let model: SettingsModel
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         SettingsParts.page {
@@ -61,7 +60,12 @@ struct SettingsKeyPage: View {
                         .foregroundStyle(note == SettingsWebText.oldKeyCountFailed ? OtodokeColor.errorText : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                SettingsParts.linkCard("パスワードを変える") { SettingsWeb.open(.changePassphrase, openURL) }
+                NavigationLink {
+                    PasswordChangeView(model: model.passwordChange)
+                } label: {
+                    SettingsRow(symbol: "key", title: "パスワードを変える", subtitle: nil, badge: nil, trailing: "chevron.right")
+                }
+                .buttonStyle(.plain)
                 FaceIDToggleRow(model: model)
             }
         }

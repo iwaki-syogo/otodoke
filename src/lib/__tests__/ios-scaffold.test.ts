@@ -291,9 +291,40 @@ describe("task 4: the logic never reads the device's calendar, time zone or loca
   });
 });
 
-/** How many writes to parcels a source holds: .insert / .update / .upsert / .delete straight on from("parcels"), and "PATCH". */
-function parcelWrites(src: string): number {
-  return (src.match(/from\("parcels"\)\s*\.(insert|update|upsert|delete)\(/g) ?? []).length + (src.match(/"PATCH"/g) ?? []).length;
+const RECEIVING_CATEGORY_FIXTURE = "ios/Otodoke/Screens/Spend/CategorySavingPreview.swift";
+
+/** A single local server reads PATCH, but must never gain a second outgoing write path of its own. */
+function receivingCategoryPatches(src: string): number {
+  const lines = src.trim().split("\n").map((line) => line.trim());
+  const directives = lines.filter((line) => line.startsWith("#"));
+  if (lines[0] !== "#if DEBUG" || lines[lines.length - 1] !== "#endif"
+    || JSON.stringify(directives) !== JSON.stringify(["#if DEBUG", "#endif"])) {
+    throw new Error("the receiving category fixture must remain wholly inside one DEBUG block");
+  }
+  if (/\.\s*httpMethod\s*=(?!=)/.test(src)) {
+    throw new Error("the receiving category fixture must not assign an outgoing HTTP method");
+  }
+  // Include aliased builders: `let table = db.from(...); table.update(...)` is still a bypass.
+  if (/\.\s*(insert|update|upsert|delete)\s*\(/.test(src)) {
+    throw new Error("the receiving category fixture must not call a database mutator");
+  }
+  if (/\.\s*(dataTask|uploadTask|downloadTask)\s*\(|\.\s*(data|upload|download)\s*\(\s*(for|from|to)\s*:/.test(src)) {
+    throw new Error("the receiving category fixture must not send a request directly");
+  }
+  const methodBindings = src.match(/\b(?:let|var)\s+method\b/g) ?? [];
+  if (methodBindings.length !== 1 || !/\blet\s+method\s*=\s*request\.httpMethod\s*\?\?\s*"GET"/.test(src)
+    || !/func\s+handle\(_\s+request:\s*URLRequest,\s*body:\s*Data\)/.test(src)) {
+    throw new Error("the PATCH comparison must read the incoming URLRequest method");
+  }
+  const comparisons = src.match(/\bmethod\s*==\s*"PATCH"/g) ?? [];
+  if (comparisons.length === 0) throw new Error("the verified receiving PATCH comparison is missing");
+  return comparisons.length;
+}
+
+/** Keep the original conservative write detector; only a verified local receive comparison is subtracted. */
+function parcelWrites(src: string, file?: string): number {
+  const writes = (src.match(/from\("parcels"\)\s*\.(insert|update|upsert|delete)\(/g) ?? []).length + (src.match(/"PATCH"/g) ?? []).length;
+  return writes - (file === RECEIVING_CATEGORY_FIXTURE ? receivingCategoryPatches(src) : 0);
 }
 
 describe("task 7: one write path", () => {
@@ -301,7 +332,7 @@ describe("task 7: one write path", () => {
     const writes: string[] = [];
     for (const f of swiftFiles(APP)) {
       const src = stripComments(readFileSync(f, "utf8"));
-      const n = parcelWrites(src);
+      const n = parcelWrites(src, rel(f));
       for (let i = 0; i < n; i++) writes.push(rel(f));
     }
     // update (the one write function), insert (createManual) and delete (deleteManual): all three in ParcelWriter only.
@@ -316,6 +347,39 @@ describe("task 7: one write path", () => {
     expect(parcelWrites('request.httpMethod = "PATCH"')).toBe(1);
     expect(parcelWrites('db.from("parcels").select("id")')).toBe(0);
     expect(parcelWrites('choices.insert((a, b), at: 1)')).toBe(0);
+  });
+
+  it("recognizes only the actual DEBUG category server's verified receive comparison", () => {
+    const source = stripComments(readFileSync(path.join(ROOT, RECEIVING_CATEGORY_FIXTURE), "utf8"));
+    expect(receivingCategoryPatches(source)).toBeGreaterThan(0);
+    expect(parcelWrites(source, RECEIVING_CATEGORY_FIXTURE)).toBe(0);
+    // Naming another file Preview/DEBUG does not grant it an exception.
+    expect(parcelWrites(source, "ios/Otodoke/Screens/OtherPreview.swift")).toBeGreaterThan(0);
+  });
+
+  it("negative control: outgoing writes added to the real receiving fixture still fail the one-writer guard", () => {
+    const source = stripComments(readFileSync(path.join(ROOT, RECEIVING_CATEGORY_FIXTURE), "utf8"));
+    const inject = (code: string) => source.replace(/\n#endif\s*$/, `\n${code}\n#endif\n`);
+    expect(parcelWrites(source, RECEIVING_CATEGORY_FIXTURE)).toBe(0);
+    for (const code of [
+      'request.httpMethod = "PATCH"',
+      'request.httpMethod = "DELETE"',
+      "request.httpMethod = method",
+      'try await db.from("parcels").update(values).execute()',
+      'let table = db.from("parcels"); try await table.update(values).execute()',
+      'try await db.from("parcels").insert(row).execute()',
+      'try await db.from("parcels").upsert(row).execute()',
+      'try await db.from("parcels").delete().execute()',
+      "try await URLSession.shared.data(for: request)",
+    ]) {
+      const changed = inject(code);
+      expect(changed, "the mutation must reach the actual fixture input").not.toBe(source);
+      expect(() => parcelWrites(changed, RECEIVING_CATEGORY_FIXTURE), code).toThrow();
+    }
+    expect(() => parcelWrites(source.replace("#if DEBUG", "#if RELEASE"), RECEIVING_CATEGORY_FIXTURE)).toThrow();
+    expect(() => parcelWrites(`let outsideBefore = true\n${source}`, RECEIVING_CATEGORY_FIXTURE), "code before DEBUG is not exempt").toThrow();
+    expect(() => parcelWrites(`${source}\nlet outsideAfter = true`, RECEIVING_CATEGORY_FIXTURE), "code after DEBUG is not exempt").toThrow();
+    expect(() => parcelWrites(source.replace('let method = request.httpMethod ?? "GET"', 'let method = "PATCH"'), RECEIVING_CATEGORY_FIXTURE)).toThrow();
   });
 });
 

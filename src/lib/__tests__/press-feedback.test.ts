@@ -17,8 +17,9 @@ import { mount, type Mounted } from "./hook-harness";
  */
 
 const W = "2026-11-12T01:00:00.000Z";
-type Done = { saved: number; written: { id: string; received_at: string }[] };
-const one: Done = { saved: 1, written: [{ id: "p1", received_at: W }] };
+type Done = import("@/lib/receipt").MarkReceivedResult;
+const receipt = (id: string, previous_status = "shipped") => ({ id, receipt_id: `receipt-${id}`, received_at: W, updated_at: W, previous_status, previous_received_at: null });
+const one: Done = { saved: 1, written: [receipt("p1")] };
 
 const ctl = vi.hoisted(() => ({
   transitionPending: false,
@@ -236,7 +237,7 @@ describe("the swipe's 「受け取った」 (SwipeToDeliver)", () => {
     expect(panelButton(view).props["aria-busy"]).toBe(true);
     release(one);
     await flush();
-    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: [{ id: "p1", status: "shipped", received_at: null, written_at: W }] });
+    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: [receipt("p1")] });
   });
 
   it("an old tab pressing a parcel that is already received: saved, but no 元に戻す (nothing of this press to take back)", async () => {
@@ -287,21 +288,21 @@ describe("「すべて受け取り済みにする」 (DeliverAll)", () => {
     view.rerender();
     expect(view.text()).toContain("保存しています…");
     expect(spinners(view.tree)).toHaveLength(1);
-    release({ saved: 2, written: [{ id: "a", received_at: W }, { id: "b", received_at: W }] });
+    release({ saved: 2, written: [receipt("a"), receipt("b", "ordered")] });
     await flush();
     ctl.transitionPending = false;
     view.rerender();
-    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: items.map((it) => ({ ...it, written_at: W })), note: null });
+    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: [receipt("a"), receipt("b", "ordered")], note: null });
   });
 
   it("some already received: 元に戻す covers only what this press wrote, and the toast carries the note", async () => {
-    ctl.markDeliveredForUndo.mockResolvedValue({ saved: 2, written: [{ id: "b", received_at: W }] });
+    ctl.markDeliveredForUndo.mockResolvedValue({ saved: 2, written: [receipt("b", "ordered")] });
     const view = mount(() => DeliverAll({ items }));
     press(buttonIn(view, "すべて受け取り済みにする"));
     await flush();
     press(buttonIn(view, "受け取り済みにする"));
     await flush();
-    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: [{ ...items[1], written_at: W }], note: "元に戻せない荷物があります" });
+    expect(ctl.toast).toHaveBeenCalledWith({ text: "受け取り済みにしました", undo: [receipt("b", "ordered")], note: "元に戻せない荷物があります" });
   });
 
   it("all already received: saved with no 元に戻す and no note", async () => {

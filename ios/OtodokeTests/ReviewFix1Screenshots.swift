@@ -51,6 +51,7 @@ struct ReviewFix1Screenshots {
     private func settings(_ fake: FakeSupabase, _ name: String) async throws {
         let (provider, auth) = try await TestSession.signedIn(fake)
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 7, count: $0) }),
             auth: auth,

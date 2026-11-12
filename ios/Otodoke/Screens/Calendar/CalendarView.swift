@@ -1,6 +1,6 @@
 // The カレンダー tab (src/app/app/calendar/page.tsx, 2541793): 「‹ 前月」 / the month / 「翌月 ›」, the
 // month's grid (Sunday red, Saturday sky, today in a black circle, 「N件」 and the red 「🤝N件」), then the
-// days still ahead with their parcels, and 「届いた荷物」 at the end. A day of the grid with parcels
+// days still ahead with their parcels, and 「受け取り済み」 at the end. A day of the grid with parcels
 // scrolls to that day.
 
 import SwiftUI
@@ -51,7 +51,8 @@ struct CalendarView<Detail: View>: View {
                         withAnimation { scroller.scrollTo(Self.anchor(day), anchor: .top) }
                     }
                     days
-                    PageLinkRow(label: "届いた荷物") { path.append(.delivered) }
+                    PageLinkRow(label: "受け取り済み") { path.append(.delivered) }
+                        .accessibilityIdentifier("page-link.received")
                 }
                 .padding(16)
             }
@@ -224,7 +225,7 @@ private struct EntryRow: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 6) {
-                    StatusBadge(status: parcel.status)
+                    StatusBadge(status: parcel.status, receivedAt: parcel.receivedAt)
                     PresenceBadge(parcel: parcel, compact: true)
                 }
                 .padding(.top, 4)

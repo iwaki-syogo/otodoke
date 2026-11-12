@@ -8,6 +8,7 @@ export function MailHandling({ hideHeading = false }: { hideHeading?: boolean } 
       {/* On its own page the page's h1 says it; the default keeps the h2 for any other place. */}
       {hideHeading ? null : <h2 className="text-base font-bold">あなたのメールの扱い</h2>}
       <p className={`${hideHeading ? "" : "mt-2 "}mb-3 text-sm leading-6 text-neutral-700`}>読み取りを許可しているときだけ、Anthropic の Claude に送ります。{AI_CONSENT_TEXT.retainedResults}</p>
+      <p className="mb-3 text-sm leading-6 text-neutral-700">{AI_CONSENT_TEXT.waitingRetention}</p>
       <ul className={`${hideHeading ? "" : "mt-2 "}flex list-disc flex-col gap-2 rounded-2xl border border-neutral-200 bg-white py-3 pl-8 pr-4 text-sm leading-6 text-neutral-700`}>
         <li>届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。</li>
         <li>読み取って買い物に関係ないと分かったメールは、Otodoke に残しません。</li>

@@ -20,6 +20,27 @@ export const MAIL_RUN_ALLOWED_COLUMNS = new Map(
 );
 if (MAIL_RUN_ALLOWED_COLUMNS.size !== 4) throw new Error("fake-db: could not read all mail gateway column allowlists");
 
+/** The fake reads the database's one retention constant; it never keeps a second period. */
+let consentWaitingRetention: number | null = null;
+export function consentWaitingRetentionMs(): number {
+  if (consentWaitingRetention !== null) return consentWaitingRetention;
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261113120000_consent_waiting_storage.sql", import.meta.url), "utf8");
+  const body = sql.match(/function public\.ai_consent_waiting_retention\(\)[\s\S]*?as \$\$([\s\S]*?)\$\$/i)?.[1];
+  const days = body?.match(/interval\s+'(\d+) days'/i);
+  if (!days || Number(days[1]) <= 0) throw new Error("fake-db: could not read consent-waiting retention");
+  consentWaitingRetention = Number(days[1]) * 24 * 3600_000;
+  return consentWaitingRetention;
+}
+
+/** Derive the fake's policy from the real SQL function instead of a second behavioral constant. */
+function parcelReceiptRetentionMs(): number {
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261113130000_received_receipts.sql", import.meta.url), "utf8");
+  const body = sql.match(/function public\.parcel_receipt_retention\(\)[\s\S]*?as \$\$([\s\S]*?)\$\$/i)?.[1];
+  const hours = body?.match(/interval '([0-9]+) hours'/i);
+  if (!hours || Number(hours[1]) <= 0) throw new Error("fake-db: could not read receipt retention");
+  return Number(hours[1]) * 3600_000;
+}
+
 export type Row = Record<string, unknown>;
 
 export interface Filter {
@@ -115,7 +136,7 @@ const PARCEL_DEFAULTS: Row = {
 
 const DEFAULTS: Record<string, Row> = {
   parcels: PARCEL_DEFAULTS,
-  emails: { processing_run_id: null, processing_lease_until: null, classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
+  emails: { processing_run_id: null, processing_lease_until: null, consent_waiting_until: null, classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
   extractions: { parcel_id: null, confidence: null },
   parcel_items: { quantity: null, unit_price: null, evidence: null },
 };
@@ -332,6 +353,76 @@ export class FakeDb {
     return builder as unknown as Promise<Result>;
   }
 
+  private async receiptUser(): Promise<string | null> {
+    const client = this as unknown as { auth?: { getUser(): Promise<{data:{user:{id:string}|null}}> } };
+    return (await client.auth?.getUser())?.data.user?.id ?? null;
+  }
+
+  private async markParcelsReceived(ids: string[]): Promise<Result> {
+    if (!Array.isArray(ids) || ids.length>200 || ids.some((id)=>typeof id!=="string")) return {data:null,error:{code:"22023",message:"invalid receipt ids"}};
+    const userId=await this.receiptUser();
+    if (!userId) return {data:null,error:{code:"42501",message:"signed in owner required"}};
+    const before=structuredClone(this.tables); const data:Row[]=[];
+    for (const id of [...new Set(ids)].sort()) {
+      const row=this.find("parcels",id);
+      if (!row || row.user_id!==userId || row.status==="cancelled" || (row.received_at!==null && !Number.isFinite(Date.parse(String(row.received_at))))) {data.push({id,outcome:"changed"});continue;}
+      if (row.received_at!==null) {data.push({id,outcome:"already_received"});continue;}
+      const previous={...row}; const receivedAt=new Date().toISOString();
+      const query=this.from("parcels").update({status:"delivered",received_at:receivedAt}).eq("id",id).eq("user_id",userId).eq("updated_at",row.updated_at).select("*").query;
+      query.viaRpc=true;
+      const result=this.execute(query); const saved=Array.isArray(result.data)?result.data[0] as Row:undefined;
+      if(result.error || !saved || saved.status!=="delivered" || saved.received_at!==receivedAt) {this.tables=before;return {data:null,error:result.error??{code:"42501",message:"received parcel was not stored as requested"}};}
+      const receipt={parcel_id:id,user_id:userId,receipt_id:crypto.randomUUID(),previous_status:previous.status,previous_received_at:previous.received_at,
+        written_received_at:saved.received_at,written_updated_at:saved.updated_at,undone_at:null,undone_updated_at:null,
+        created_at:receivedAt,expires_at:new Date(Date.parse(receivedAt)+parcelReceiptRetentionMs()).toISOString()};
+      const journal=this.rows("parcel_receipt_undos").find((j)=>j.parcel_id===id);
+      if(journal) Object.assign(journal,receipt);else this.rows("parcel_receipt_undos").push(receipt);
+      data.push({id,outcome:"written",receipt_id:receipt.receipt_id,received_at:saved.received_at,updated_at:saved.updated_at,previous_status:previous.status,previous_received_at:previous.received_at});
+    }
+    return {data,error:null};
+  }
+
+  private async restoreParcelReceipts(keys:Array<{id:string;receipt_id:string}>):Promise<Result> {
+    if(!Array.isArray(keys)||keys.length>200) return {data:null,error:{code:"22023",message:"invalid undo receipts"}};
+    const userId=await this.receiptUser();
+    if(!userId) return {data:null,error:{code:"42501",message:"signed in owner required"}};
+    const before=structuredClone(this.tables);const data:Row[]=[];
+    for(const key of [...new Map(keys.map((k)=>[k.id,k])).values()].sort((a,b)=>a.id<b.id?-1:1)) {
+      const row=this.find("parcels",key.id);const journal=this.rows("parcel_receipt_undos").find((j)=>j.parcel_id===key.id&&j.user_id===userId);
+      const outcome=(outcome:string)=>data.push({id:key.id,outcome});
+      if(!row||row.user_id!==userId) {outcome("changed");continue;}
+      if(!journal) {outcome("failed");continue;}
+      if(journal.receipt_id!==key.receipt_id) {outcome("changed");continue;}
+      if(Date.parse(String(journal.expires_at))<=Date.now()) {outcome("failed");continue;}
+      if(journal.undone_at!==null) {
+        outcome(row.updated_at===journal.undone_updated_at&&row.status===journal.previous_status&&row.received_at===journal.previous_received_at?"restored":"changed");continue;
+      }
+      if(row.status!=="delivered"||row.received_at!==journal.written_received_at||row.updated_at!==journal.written_updated_at) {outcome("changed");continue;}
+      const query=this.from("parcels").update({status:journal.previous_status,received_at:journal.previous_received_at}).eq("id",key.id).eq("user_id",userId).eq("updated_at",journal.written_updated_at).select("*").query;
+      query.viaRpc=true;
+      const result=this.execute(query);const saved=Array.isArray(result.data)?result.data[0] as Row:undefined;
+      if(result.error||!saved||saved.status!==journal.previous_status||saved.received_at!==journal.previous_received_at) {this.tables=before;return {data:null,error:result.error??{code:"42501",message:"undo parcel was not stored as requested"}};}
+      journal.undone_at=new Date().toISOString();journal.undone_updated_at=saved.updated_at;outcome("restored");
+    }
+    return {data,error:null};
+  }
+
+  private purgeReceiptAndConsent(): Result {
+    const before=structuredClone(this.tables); const now=Date.now(); let count=0;
+    // The real wrapper finishes existing consent cleanup before touching child receipt rows.
+    for(const mail of [...this.rows("emails")]) {
+      if(mail.body_state!=="plain" || mail.processing_status==="processed" || !mail.consent_waiting_until || Date.parse(String(mail.consent_waiting_until))>now
+        || (mail.processing_status==="pending"&&Date.parse(String(mail.processing_lease_until??mail.created_at))+(!mail.processing_lease_until?180_000:0)>now)) continue;
+      if(this.rows("extractions").some((x)=>x.email_id===mail.id)) Object.assign(mail,{subject:null,from_address:null,from_name:null,text_body:null,html_body:null,body_envelope:null,body_state:"dropped",processing_status:"discarded",error:"ai_consent_wait_expired",processing_run_id:null,processing_lease_until:null});
+      else this.tables.emails=this.rows("emails").filter((row)=>row!==mail);
+      count++;
+    }
+    const query=this.from("parcel_receipt_undos").delete().lte("expires_at",new Date(now).toISOString()).select("parcel_id").query;
+    query.viaRpc=true;const removed=this.execute(query);
+    if(removed.error || this.rows("parcel_receipt_undos").some((j)=>Date.parse(String(j.expires_at))<=now)) {this.tables=before;return {data:null,error:removed.error??{code:"42501",message:"expired receipt journals were not removed"}};}
+    return {data:count+(Array.isArray(removed.data)?removed.data.length:0),error:null};
+  }
+
   private sampleGeneration(userId: string): string {
     let row = this.rows("sample_generations").find((r) => r.user_id === userId);
     if (!row) { row = { user_id: userId, generation: crypto.randomUUID() }; this.rows("sample_generations").push(row); }
@@ -350,6 +441,9 @@ export class FakeDb {
 
   private executeRpc(name: string, args: unknown, headers: Record<string, string>): Promise<Result> {
     this.rpcCalls.push({ name, args });
+    if (name === "purge_old_screen_events") return Promise.resolve(this.purgeReceiptAndConsent());
+    if (name === "mark_parcels_received") return this.markParcelsReceived((args as { p_ids: string[] }).p_ids);
+    if (name === "restore_parcel_receipts") return this.restoreParcelReceipts((args as { p_receipts: Array<{id:string;receipt_id:string}> }).p_receipts);
     if (name === "update_mail_parcel") return Promise.resolve(this.updateMailParcel(args as UpdateParcelArgs, headers));
     if (name === "create_mail_parcel") return Promise.resolve(this.createMailParcel(args as CreateParcelArgs, headers));
     if (name === "ensure_mail_parcel_items") return Promise.resolve(this.ensureMailParcelItems(args as EnsureItemsArgs, headers));
@@ -376,7 +470,7 @@ export class FakeDb {
         const result = this.execute(this.from(table).delete().eq("user_id", userId).query);
         if (result.error) { this.tables = before; return Promise.resolve(result); }
       }
-      for (const table of ["extractions", "parcel_items"]) this.tables[table] = this.rows(table).filter((r) => r.user_id !== userId);
+      for (const table of ["extractions", "parcel_items", "parcel_receipt_undos"]) this.tables[table] = this.rows(table).filter((r) => r.user_id !== userId);
       return Promise.resolve({ data: generation, error: null });
     }
     if (name === "store_mail_run") {
@@ -425,16 +519,29 @@ export class FakeDb {
   private storeMailRun(a: StoreArgs, headers: Record<string, string> = {}): Result {
     const answer = (verdict: string): Result => ({ data: [{ verdict, email_id: a.p_email_id }], error: null });
     const old = this.rows("emails").find((r) => r.id === a.p_email_id && r.user_id === a.p_user_id);
+    if (old?.processing_status === "discarded" && old.error === "ai_consent_wait_expired") return answer("consent_wait_expired");
     if (old?.processing_status === "processed") return answer("duplicate");
     if (old?.processing_status === "pending" && Date.parse(String(old.processing_lease_until ?? new Date(Date.parse(String(old.created_at)) + 180_000).toISOString())) > Date.now()) return answer("busy");
     if ((old?.created_at ?? null) !== a.p_expected_created_at) return answer("busy");
+    if (old?.body_state === "plain" && old.processing_status !== "processed" && old.consent_waiting_until && Date.parse(String(old.consent_waiting_until)) <= Date.now()) {
+      if (this.rows("extractions").some((r) => r.email_id === old.id && r.user_id === old.user_id)) {
+        Object.assign(old, { subject: null, from_address: null, from_name: null, text_body: null, html_body: null, body_state: "dropped", body_envelope: null, processing_status: "discarded", error: "ai_consent_wait_expired", forwarding_confirm_url: null, processing_run_id: null, processing_lease_until: null });
+      } else this.tables.emails = this.rows("emails").filter((r) => r !== old);
+      return answer("consent_wait_expired");
+    }
     const bytes = (r: Row) => ["subject","from_address","from_name","text_body","html_body"].reduce((n,k) => n + Buffer.byteLength(String(r[k] ?? ""), "utf8"),0);
     const unread = this.rows("emails").filter((r) => r.id !== a.p_email_id && r.body_state === "plain" && r.processing_status !== "processed");
+    const global = unread.filter((r) => !r.consent_waiting_until);
     const own = unread.filter((r) => r.user_id === a.p_user_id);
+    const now = new Date().toISOString();
+    const arrival = old?.received_at ?? now;
+    const consented = this.rows("ai_reading_consents").some((r) => r.user_id === a.p_user_id && r.decision === "granted");
+    const waitingUntil = old?.consent_waiting_until ?? (!consented && a.p_columns.processing_status !== "processed" && (a.p_columns.body_state ?? "plain") === "plain" && !String(a.p_columns.provider_email_id ?? "").startsWith("demo:")
+      ? new Date(Date.parse(String(arrival)) + consentWaitingRetentionMs()).toISOString() : null);
     let reason: string | null = null;
     if (a.p_columns.processing_status !== "processed" && (a.p_columns.body_state ?? "plain") === "plain" && (!old || bytes(a.p_columns) > bytes(old))) {
       if (own.length + 1 > a.p_limits.user_count || own.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.user_bytes) reason = "user_storage_limit";
-      else if (unread.length + 1 > a.p_limits.global_count || unread.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.global_bytes) reason = "global_storage_limit";
+      else if (!waitingUntil && (global.length + 1 > a.p_limits.global_count || global.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.global_bytes)) reason = "global_storage_limit";
     }
     if (reason) {
       const notice = this.rows("mail_intake_notices").find((r) => r.user_id === a.p_user_id);
@@ -443,8 +550,7 @@ export class FakeDb {
       return answer(reason);
     }
     if (!old && a.p_columns.provider_email_id && this.rows("emails").some((r) => r.user_id === a.p_user_id && r.provider_email_id === a.p_columns.provider_email_id)) return answer("busy");
-    const now = new Date().toISOString();
-    const columns = { ...a.p_columns, processing_run_id: a.p_run_id, processing_lease_until: new Date(Date.now()+360_000).toISOString(), created_at: now };
+    const columns = { ...a.p_columns, received_at: arrival, consent_waiting_until: waitingUntil, processing_run_id: a.p_run_id, processing_lease_until: new Date(Date.now()+360_000).toISOString(), created_at: now };
     const q = old ? this.from("emails").update(columns).eq("id",a.p_email_id).eq("user_id",a.p_user_id).eq("processing_status",old.processing_status).eq("created_at",old.created_at) : this.from("emails").insert({ id:a.p_email_id,user_id:a.p_user_id,...columns });
     const query = q.select("id").maybeSingle().query;
     query.viaRpc = true;
@@ -481,6 +587,8 @@ export class FakeDb {
     if(!this.sameParcelSnapshot(a.p_snapshot,String(mail.user_id)) || !parcel || parcel.user_id!==mail.user_id || Date.parse(String(parcel.updated_at))!==Date.parse(a.p_expected_updated_at)) return retry();
     const before=structuredClone(this.tables);
     const values={...a.p_values,...(parcel.category_source==="user"?{}:a.p_category??{})};
+    const noop=Object.keys(values).length===0;
+    if(noop) values.shop=parcel.shop;
     let saved=parcel;
     if(Object.keys(values).length) {
       const result=this.ownedMutation({p_email_id:a.p_email_id,p_run_id:a.p_run_id,p_table:"parcels",p_operation:"update",p_values:values,
@@ -490,6 +598,7 @@ export class FakeDb {
       if(result.data.length===0) return retry();
       saved=result.data[0] as Row;
     }
+    if(noop && saved.updated_at===a.p_expected_updated_at) {this.tables=before;return {data:null,error:{code:"42501",message:"mail confirmation did not advance the parcel version"}};}
     const ensured=this.ensureMailParcelItems({...a,p_expected_updated_at:String(saved.updated_at)});
     if(ensured.error) {this.tables=before;return ensured;}
     if((ensured.data as Row[])[0]?.verdict!=="ok") {this.tables=before;return retry();}
@@ -585,6 +694,9 @@ export class FakeDb {
    * are exercised on Postgres; this mirrors their rules.
    */
   private claimClaudeCall(a: ClaimArgs, v2: boolean): Result {
+    if (!this.rows("ai_reading_consents").some((row) => row.user_id === a.p_user_id && row.decision === "granted")) {
+      return { data: null, error: { code: "42501", message: "ai_consent_required" } };
+    }
     const day = this.jstDay();
     const usage = this.rows("claude_usage_daily");
     const answer = (verdict: string, claimId: number | null): Result => ({ data: v2 ? [{ verdict, claim_id: claimId }] : verdict, error: null });
@@ -769,7 +881,20 @@ export class FakeDb {
   private update(q: Query): Result {
     const hits = this.matching(q);
     for (const row of hits) {
+      const before = { ...row };
       Object.assign(row, q.values as Row);
+      if (q.table === "emails") {
+        if (before.received_at !== undefined) row.received_at = before.received_at;
+        if (before.consent_waiting_until) row.consent_waiting_until = before.consent_waiting_until;
+        const consented = this.rows("ai_reading_consents").some((c) => c.user_id === row.user_id && c.decision === "granted");
+        if (!row.consent_waiting_until && row.body_state === "plain" && row.processing_status !== "processed"
+          && !String(row.provider_email_id ?? "").startsWith("demo:") && row.classification !== "forwarding_confirmation"
+          && (!consented || row.error === "ai_consent_required" || row.error === "ai_consent_unknown")) {
+          // Seeded legacy fixtures may omit the DB's non-null received_at column.
+          const arrival = row.received_at ?? row.created_at;
+          row.consent_waiting_until = new Date(Date.parse(String(arrival)) + consentWaitingRetentionMs()).toISOString();
+        }
+      }
       // parcels_set_updated_at: every update moves updated_at.
       if (q.table === "parcels") row.updated_at = this.tick();
     }
@@ -784,6 +909,7 @@ export class FakeDb {
   private remove(q: Query): Result {
     const hits = this.matching(q);
     this.tables[q.table] = this.rows(q.table).filter((r) => !hits.includes(r));
+    if(q.table==="parcels") this.tables.parcel_receipt_undos=this.rows("parcel_receipt_undos").filter((r)=>!hits.some((p)=>p.id===r.parcel_id));
     if (!q.returning) return { data: null, error: null };
     return this.shape(
       q,

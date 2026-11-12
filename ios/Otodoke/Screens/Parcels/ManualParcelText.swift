@@ -29,7 +29,8 @@ enum ManualParcelText {
     static let presenceDrop = "置き配・投函"
     static let statusOrdered = "注文済み"
     static let statusShipped = "発送済み"
-    static let statusDelivered = "届いた"
+    static let statusDelivered = "配達済み"
+    static let statusReceived = "受け取り済み"
 
     // Edit (src/app/app/parcels/[id]/edit/page.tsx, [id]/page.tsx, manual-form.tsx, manual-actions.ts)
     static let editHeading = "荷物を編集"
@@ -83,10 +84,11 @@ enum ManualParcelText {
         case .ordered: statusOrdered
         case .shipped: statusShipped
         case .delivered: statusDelivered
+        case .received: statusReceived
         }
     }
 
-    /// The status choices: the Web's three, and the one a mail set while the parcel is there (STATUS_LABEL's word).
+    /// The status choices: the Web's four, and the one a mail set while the parcel is there (STATUS_LABEL's word).
     static func statusChoices(keeping current: String) -> [(value: String, name: String)] {
         var choices = ManualStatus.allCases.map { (value: $0.rawValue, name: statusName($0)) }
         if ManualParcel.carriedStatuses.contains(current) || current == ManualParcel.cancelled {

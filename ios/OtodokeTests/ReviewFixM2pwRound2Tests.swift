@@ -48,7 +48,7 @@ struct ReviewFixM2pwRound2Tests {
             let made = Box<MainScreens>()
             self.made = made
             auth.makeSignedIn = { a in
-                let screens = MainScreens.live(auth: a, keyParts: parts)
+                let screens = MainScreens.live(auth: a, readingConsent: .allowedForTests(), keyParts: parts)
                 made.value = screens
                 return screens
             }

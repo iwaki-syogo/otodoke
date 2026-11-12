@@ -46,7 +46,8 @@ export const NOT_SAMPLE_NOR_CONFIRMATION = NOT_SAMPLE.flatMap((a) => NOT_CONFIRM
 
 /**
  * Why mail is waiting, counted by hand from one read of the unread rows: `stopped` (Claude cannot
- * be used), `overLimit` (the daily allowance) and `failed` (the rest).
+ * be used), `overLimit` (the daily allowance) and `failed` (the rest). Permission waits are counted
+ * separately when present; an unknown permission is not a choice to decline or a failed read.
  *
  * A row marked claude_unavailable counts as stopped only while nothing was read after it: the
  * newest such row must be newer than the newest processed mail. Otherwise Claude works again and
@@ -57,7 +58,7 @@ export const NOT_SAMPLE_NOR_CONFIRMATION = NOT_SAMPLE.flatMap((a) => NOT_CONFIRM
  * refused ("model refused") does: Claude answered.
  * null when either read failed: the reason is then unknown.
  */
-export async function readUnreadReasons(supabase: Supabase, where: string): Promise<{ stopped: number; overLimit: number; failed: number } | null> {
+export async function readUnreadReasons(supabase: Supabase, where: string): Promise<{ stopped: number; overLimit: number; failed: number; consentRequired?: number; consentUnknown?: number } | null> {
   let rows: Array<{ processing_status: string; error: string | null; created_at: string }>;
   try {
     rows = await readAll(() =>
@@ -85,8 +86,14 @@ export async function readUnreadReasons(supabase: Supabase, where: string): Prom
   // Proof that Claude answered after the stop: a mail it read, or one it refused ("model refused" is its answer).
   const answered = Math.max(lastRead ? at(lastRead.created_at) : -Infinity, ...rows.filter((r) => r.error === "model refused").map((r) => at(r.created_at)));
   const stopped = unavailableRows.length > 0 && newestStop > answered ? unavailableRows.length : 0;
-  const overLimit = rows.filter((r) => r.processing_status === "over_limit").length;
-  return { stopped, overLimit, failed: rows.length - stopped - overLimit };
+  const consentRequired = rows.filter((r) => r.error === "ai_consent_required").length;
+  const consentUnknown = rows.filter((r) => r.error === "ai_consent_unknown").length;
+  const overLimit = rows.filter((r) => r.processing_status === "over_limit" && r.error !== "ai_consent_required" && r.error !== "ai_consent_unknown").length;
+  return {
+    stopped, overLimit, failed: rows.length - stopped - overLimit - consentRequired - consentUnknown,
+    ...(consentRequired > 0 ? { consentRequired } : {}),
+    ...(consentUnknown > 0 ? { consentUnknown } : {}),
+  };
 }
 
 /** How many confirmation mails are looked through: a forged one without Google's link must not hide the real one. */

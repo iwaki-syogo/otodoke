@@ -16,7 +16,7 @@ enum ForwardingGuideText {
         let steps: [String]
     }
 
-    /// An explainer video: the path under https://otodoke.app and its length (opened in Safari, not played here).
+    /// An explainer video: its path under https://otodoke.app and length, played in the app's native video sheet.
     struct Video: Sendable {
         let path: String
         let seconds: Int

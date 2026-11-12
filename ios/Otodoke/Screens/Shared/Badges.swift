@@ -6,8 +6,9 @@ import UIKit
 
 enum BadgeText {
     /// STATUS_LABEL[status] ?? status.
-    static func status(_ status: String) -> String {
-        Format.statusLabel[status] ?? status
+    static func status(_ status: String, receivedAt: String? = nil) -> String {
+        if status == "delivered", ParcelRules.isReceivedAt(receivedAt) { return "受け取り済み" }
+        return Format.statusLabel[status] ?? status
     }
 
     /// ASSUMED_FACE_TO_FACE of parcel-card.tsx: the same words everywhere.
@@ -62,10 +63,11 @@ enum OtodokeColor {
 /// The status pill (STATUS_STYLE).
 struct StatusBadge: View {
     let status: String
+    var receivedAt: String? = nil
 
     var body: some View {
-        let style = Self.style(status)
-        Text(BadgeText.status(status))
+        let style = Self.style(status, receivedAt: receivedAt)
+        Text(BadgeText.status(status, receivedAt: receivedAt))
             .font(.caption2.weight(.medium))
             .strikethrough(status == "cancelled")
             .foregroundStyle(OtodokeColor.adaptive(light: style.light.text, dark: style.dark.text))
@@ -80,7 +82,10 @@ struct StatusBadge: View {
 
     /// The Web's STATUS_STYLE in light mode. The Web has no dark mode: in dark mode each pill takes the
     /// same hue, dark (the 900s / 950s) behind a light text (the 200s / 300s), as the amber and red boxes do.
-    static func style(_ status: String) -> (light: Pair, dark: Pair) {
+    static func style(_ status: String, receivedAt: String? = nil) -> (light: Pair, dark: Pair) {
+        if status == "delivered", ParcelRules.isReceivedAt(receivedAt) {
+            return (("#f5f5f5", "#525252"), ("#262626", "#d4d4d4"))
+        }
         switch status {
         case "ordered": return (("#f5f5f5", "#404040"), ("#262626", "#d4d4d4"))
         case "shipped": return (("#e0f2fe", "#075985"), ("#082f49", "#bae6fd"))

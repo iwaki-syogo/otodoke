@@ -47,6 +47,7 @@ struct WebExpected: Decodable {
     }
 
     struct SectionIDs: Decodable, Equatable {
+        let arrived: [String]
         let toCheck: [String]
         let delivering: [String]
         let soon: [String]

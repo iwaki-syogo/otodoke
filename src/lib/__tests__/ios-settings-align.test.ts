@@ -135,18 +135,25 @@ describe("the settings words copied from the Web's dev branch", () => {
     for (const n of ["mailGroup", "accountGroup", "privacyTitle", "deleteTitle"]) expect(view, n).toContain(`SettingsWebText.${n}`);
   });
 
-  it("the list: メール holds the samples, アカウント holds privacy, deletion and the Web, and the footer has no bracketed note", () => {
+  it("the list: メール holds the samples, アカウント holds privacy and deletion, and the footer has no bracketed note", () => {
     const view = stripComments(read(`${SETTINGS}/SettingsView.swift`));
     expect(view).toMatch(/section\(SettingsWebText\.mailGroup\)[\s\S]*?group\(Self\.mailPages\(for: model\)\)/);
     expect(view).toMatch(/static let mailOrder: \[SettingsPage\] = \[\.forward, \.key, \.dropped, \.handling, \.delivery, \.sample\]/);
-    expect(view).toMatch(/section\(SettingsWebText\.accountGroup\)[\s\S]*?\.privacy[\s\S]*?\.deleteAccount[\s\S]*?\.openWeb/);
+    expect(view).toMatch(/section\(SettingsWebText\.accountGroup\)[\s\S]*?privacyRow[\s\S]*?row\(\.deleteAccount/);
+    expect(view).not.toContain("webRow(.openWeb");
     expect(view).not.toContain("ログアウトしてください");
   });
 
-  it("the privacy link on the handling page says it opens Safari and does not cancel the parent's spacing; the deletion row has no note", () => {
+  it("the privacy link on the handling page opens an app sheet and keeps spacing; the deletion row has no note", () => {
     const pages = stripComments(read(`${SETTINGS}/SettingsPages.swift`));
     const handling = pages.match(/struct SettingsHandlingPage[\s\S]*?\n\}\n/)?.[0] ?? "";
-    expect(handling).toContain("SettingsMenuText.webHint");
+    const hasPolicySheet = (source: string) => /\.sheet\(isPresented: \$showsPrivacy\) \{ AIReadingPrivacySheet\(\) \}/.test(source)
+      && source.includes("Button { showsPrivacy = true }")
+      && !source.includes("SettingsWeb.open(.privacy");
+    expect(hasPolicySheet(handling)).toBe(true);
+    expect(handling).not.toContain("SettingsMenuText.webHint");
+    expect(hasPolicySheet(handling.replace("AIReadingPrivacySheet()", "EmptyView()"))).toBe(false);
+    expect(hasPolicySheet(handling.replace("Button { showsPrivacy = true }", "Button { SettingsWeb.open(.privacy, openURL) }"))).toBe(false);
     expect(handling).not.toMatch(/padding\(\.top, -/);
     // The deletion has its own page now (/app/settings/delete): the row says nothing about where it is.
     expect(stripComments(read(`${SETTINGS}/SettingsMenuText.swift`))).not.toContain("deleteSubtitle");
@@ -154,7 +161,7 @@ describe("the settings words copied from the Web's dev branch", () => {
   });
 
   it("the privacy link sits under 「あなたのメールの扱い」", () => {
-    expect(stripComments(read(`${SETTINGS}/SettingsPages.swift`))).toMatch(/SettingsHandlingPage[\s\S]*?SettingsWeb\.open\(\.privacy/);
+    expect(stripComments(read(`${SETTINGS}/SettingsPages.swift`))).toMatch(/SettingsHandlingPage[\s\S]*?MailHandlingView[\s\S]*?Text\(SettingsWebText\.privacyTitle\)[\s\S]*?\.sheet\(isPresented: \$showsPrivacy\) \{ AIReadingPrivacySheet\(\) \}/);
   });
 
   it("the badge on the forwarding row is the Web's 「承認待ち」, and the rows draw the new failure sentences through the constants", () => {

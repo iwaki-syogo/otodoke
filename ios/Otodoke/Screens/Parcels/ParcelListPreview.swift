@@ -5,10 +5,15 @@
 
 #if DEBUG
 import Foundation
+import Observation
+import SwiftUI
 
 struct ListPreview {
-    enum Scenario: String {
+    enum Scenario: String, Sendable {
         case list, empty, failed, toast, saving, many, bottom
+        case receivedList = "received-list"
+        case receivedDetail = "received-detail"
+        case receivedCheck = "received-check"
         /// The delivered / cancelled page with made-up parcels (the number by the heading).
         case deliveredPage = "delivered-page"
         case cancelledPage = "cancelled-page"
@@ -27,6 +32,16 @@ struct ListPreview {
         case loginSent = "login-sent"
         /// The first screen (the two buttons) before the login.
         case welcome
+        case accountDelete = "account-delete"
+        case consentRequired = "consent-required"
+        case consentDenied = "consent-denied"
+        case consentAllowed = "consent-allowed"
+        case consentError = "consent-error"
+        case consentOnboarding = "consent-onboarding"
+        case consentAutoHold = "consent-auto-hold"
+        case consentAutoLimit = "consent-auto-limit"
+        case consentAutoStopped = "consent-auto-stopped"
+        case consentAutoFailed = "consent-auto-failed"
         /// The waiting screen after making an account.
         case loginWaiting = "login-waiting"
     }
@@ -42,6 +57,84 @@ struct ListPreview {
 
     /// True for the first-screen scenario.
     var showsWelcome: Bool { scenario == .welcome }
+
+    @MainActor
+    func accountDeletionModel() -> AccountDeletionModel? {
+        guard scenario == .accountDelete else { return nil }
+        return AccountDeletionModel(api: PreviewDeletion(), accessToken: { nil }, completed: {})
+    }
+
+    private struct PreviewDeletion: AccountDeleting {
+        func deleteAccount(accessToken: String) async throws(AccountAPIFailure) { throw .unauthorized }
+    }
+
+    @MainActor
+    static func allowedReadingConsent() -> AIReadingConsentModel {
+        makeReadingConsent(decision: .allowed, fails: false, counter: ConsentPreviewCounter())
+    }
+
+    @MainActor
+    private static func makeReadingConsent(decision: AIReadingDecision, fails: Bool, counter: ConsentPreviewCounter, gate: ConsentPreviewLoadGate? = nil) -> AIReadingConsentModel {
+        let session = SessionGeneration()
+        session.follow(userID: "consent-preview")
+        return AIReadingConsentModel(store: ConsentPreviewStore(decision: decision, fails: fails, counter: counter, gate: gate), session: session,
+                                     loadFailureMessage: AIReadingConsentText.readFailed, saveFailureMessage: AIReadingConsentText.saveFailed)
+    }
+
+    /// Uses the real tabs, settings and consent models with local stores only.
+    @MainActor
+    func consentScreens() -> MainScreens? {
+        let decision: AIReadingDecision
+        switch scenario {
+        case .consentRequired, .consentError, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed: decision = .notDetermined
+        case .consentDenied: decision = .denied
+        case .consentAllowed, .consentOnboarding: decision = .allowed
+        default: return nil
+        }
+        let provider = Self.provider(), changes = DataChanges()
+        let reader = ParcelReader(provider: provider), writer = ParcelWriter(provider: provider, changes: changes)
+        let today = Format.todayJst(now: Date())
+        let list = makeModel()
+        let counter = ConsentPreviewCounter()
+        let gate = scenario == .consentOnboarding ? ConsentPreviewLoadGate() : nil
+        let consent = Self.makeReadingConsent(decision: decision, fails: scenario == .consentError, counter: counter, gate: gate)
+        let settings = SettingsModel.live(auth: AuthService(provider: provider), changes: changes, consent: consent)
+        settings.debugConsentFixture = true
+        settings.debugConsentSaveCount = { counter.count }
+        settings.debugConsentAutoReadCount = { counter.automaticCount }
+        settings.debugConsentManualReadCount = { counter.manualCount }
+        let automaticGate = scenario == .consentAutoHold ? ConsentPreviewLoadGate() : nil
+        if let automaticGate { settings.debugConsentCompleteAuto = { automaticGate.finish() } }
+        let readAPI = ConsentPreviewReadAPI(counter: counter, gate: automaticGate, scenario: scenario) { partial, stopped in
+            settings.debugConsentUnreadReasons = UnreadReasons(stopped: stopped ? 2 : 0,
+                overLimit: partial && scenario == .consentAutoLimit ? 1 : 0,
+                failed: partial && scenario == .consentAutoFailed ? 1 : 0)
+            if !stopped {
+                var rows = list.rows
+                if !rows.contains(where: { $0.id == Self.id(90_001) }) {
+                    rows.append(Self.row(90_001, shop: "見本の本屋", title: "架空の自動読取の本", status: "ordered", date: nil))
+                }
+                settings.debugConsentUnreadCount = partial ? 1 : 0
+                list.debugShow(rows: rows, counts: ParcelCounts(unread: .loaded(partial ? 1 : 0)), loadState: .loaded)
+            }
+        }
+        settings.mailActions = MailActionsModel(api: readAPI, accessToken: { "preview-token" },
+            reload: { await settings.loadForwardingGuide() }, mayRead: { settings.mayShowReadingAddress },
+            requestReadingConsent: { settings.requestReadingConsent() }, isCurrent: { consent.isActiveSession },
+            authorizeAfterConsent: { await consent.authorizeReadAfterConsent($0) }, isCurrentGrant: { consent.isCurrentGrant($0) },
+            permissionGeneration: { consent.choiceGeneration })
+        if let gate {
+            settings.debugFirstKeyCreated = true
+            settings.debugConsentIsHoldingLoad = { gate.isHolding }
+            settings.debugConsentFinishLoad = { gate.finish() }
+        }
+        settings.demo = DemoModel(api: ConsentPreviewDemo(), accessToken: { "preview-token" }, changed: {
+            list.debugShow(rows: Self.rows(today: today), counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
+        })
+        return MainScreens(changes: changes, list: list, calendar: CalendarModel(reader: reader, changes: changes, today: { today }),
+                           spend: SpendModel(reader: reader, writer: writer, changes: changes, today: { today }), settings: settings,
+                           detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: { today }) })
+    }
 
     /// An auth service that reaches nothing (the first-screen scenario's buttons open LoginView).
     @MainActor
@@ -59,7 +152,9 @@ struct ListPreview {
         let today = Format.todayJst(now: Date())
         let model = DeliveredModel(reader: StatusListReader(provider: Self.provider()), changes: nil)
         let rows = (1...7).map { n in
-            Self.row(n, shop: n % 2 == 0 ? "見本ストア" : "サンプル書店", title: "架空の品物 \(n)", status: "delivered", date: CivilDate.addDays(today, -n * 9))
+            var row = Self.row(n, shop: n % 2 == 0 ? "見本ストア" : "サンプル書店", title: "架空の品物 \(n)", status: "delivered", date: CivilDate.addDays(today, -n * 9))
+            row.receivedAt = ISO8601DateFormatter().string(from: Date())
+            return row
         }
         model.debugShow(parcels: rows)
         return model
@@ -93,7 +188,10 @@ struct ListPreview {
             model.debugShow(mode: .signUp, email: "qa@example.com", notice: LoginText.signupExistsOrSent)
         case .loginWaiting:
             model.debugShowWaiting(email: "qa@example.com")
-        default:
+        case .list, .empty, .failed, .toast, .saving, .many, .bottom,
+             .receivedList, .receivedDetail, .receivedCheck, .deliveredPage, .cancelledPage,
+             .emptyReceived, .emptyApproval, .checking, .detail, .welcome, .accountDelete,
+             .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentOnboarding, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed:
             return nil
         }
         return model
@@ -102,12 +200,13 @@ struct ListPreview {
     /// For the detail scenario: a detail model filled with made-up data (nothing is read).
     @MainActor
     func detailModelMaker() -> ((String) -> ParcelDetailModel)? {
-        guard scenario == .detail else { return nil }
+        guard scenario == .detail || scenario == .receivedDetail else { return nil }
         let provider = Self.provider()
         let today = Format.todayJst(now: Date())
         return { id in
             let model = ParcelDetailModel(id: id, reader: ParcelReader(provider: provider), writer: ParcelWriter(provider: provider), today: { today })
             var row = Self.rows(today: today).first { $0.id == id } ?? Self.rows(today: today)[0]
+            if scenario == .receivedDetail { row.id = id; row.status = "delivered"; row.receivedAt = nil }
             row.carrier = "ヤマト運輸"
             row.trackingNumber = "1234-5678-9012"
             row.orderNumber = "A-0001-TEST"
@@ -127,6 +226,9 @@ struct ListPreview {
                               fromText: "サンプル書店 <shop@example.com>", confidenceText: "確信度 93%", body: "ご注文内容\n架空の本 上下巻セット", notes: nil),
                 TimelineEntry(id: Self.id(202), label: "発送", dateText: "11/3(火) 09:45", subject: "商品を発送しました",
                               fromText: "shop@example.com", confidenceText: "確信度 88%", body: "伝票番号 1234-5678-9012", notes: "お届け日は発送メールから"),
+                TimelineEntry(id: Self.id(203), label: "配達完了", dateText: "11/4(水) 12:00", subject: "お届け完了",
+                              fromText: "shop@example.com", confidenceText: nil, body: "玄関前へのお届けが完了しました。", notes: nil,
+                              deliveryEvidence: "玄関前へのお届けが完了しました。", evidenceAt: "2026-11-04T03:00:00Z"),
             ]
             model.debugShow(parcel: row, items: items, timeline: timeline)
             // A delete here goes through (nothing is sent), so the screen check can see the sheet close and the page go back.
@@ -159,7 +261,15 @@ struct ListPreview {
         switch scenario {
         case .list, .detail, .deliveredPage, .cancelledPage, .login, .loginSignUp, .loginError, .loginSent, .loginWaiting, .welcome:
             model.debugShow(rows: Self.rows(today: today), counts: counts, loadState: .loaded)
-        case .empty:
+        case .receivedList, .receivedDetail:
+            var delivered = Self.row(30, shop: "サンプル書店", title: "架空の本 上下巻セット", status: "delivered", date: CivilDate.addDays(today, -1), presence: true)
+            delivered.lastEmailAt = ISO8601DateFormatter().string(from: Date())
+            model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
+        case .receivedCheck:
+            var delivered = Self.row(31, shop: "見本ストア", title: "架空のマグカップ", status: "delivered", date: CivilDate.addDays(today, -20), presence: true)
+            delivered.lastEmailAt = CivilDate.addDays(today, -20) + "T00:00:00Z"
+            model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
+        case .empty, .accountDelete, .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentOnboarding, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
         case .emptyReceived, .emptyApproval:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded,
@@ -177,7 +287,7 @@ struct ListPreview {
             model.debugShow(
                 rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded,
                 saving: [Self.id(2)], checking: [Self.id(2)],
-                toast: ListToast(text: "3 件を受取済にしました", canUndo: true), toastNote: ParcelListModel.cannotUndoNote(1)
+                toast: ListToast(text: ParcelListModel.savedText, canUndo: true), toastNote: ParcelListModel.cannotUndoNote(1)
             )
         case .saving:
             model.debugShow(rows: Self.rows(today: today).filter { $0.id != Self.id(7) }, counts: counts, loadState: .loaded, saving: [Self.id(2)])
@@ -200,7 +310,7 @@ struct ListPreview {
 
     /// Made-up parcels, one or more in every section.
     static func rows(today: String) -> [ParcelRow] {
-        [
+        var rows = [
             row(1, shop: "サンプル書店", title: "架空の本 上下巻セット", status: "out_for_delivery", date: today,
                 window: ("14:00:00", "16:00:00"), presence: true),
             row(2, shop: "Amazon.co.jp", title: "USB-C ケーブル 2 本入り（1m・急速充電対応・とても長い品名の例）", status: "shipped",
@@ -214,6 +324,8 @@ struct ListPreview {
             row(7, shop: "見本ストア", title: "架空のマグカップ", status: "shipped", date: CivilDate.addDays(today, -20)),
             row(8, shop: "テスト書房", title: "架空の雑誌", status: "delivered", date: CivilDate.addDays(today, -2)),
         ]
+        rows[7].receivedAt = ISO8601DateFormatter().string(from: Date())
+        return rows
     }
 
     static func row(
@@ -238,6 +350,146 @@ struct ListPreview {
         func store(key: String, value: Data) throws { lock.withLock { values[key] = value } }
         func retrieve(key: String) throws -> Data? { lock.withLock { values[key] } }
         func remove(key: String) throws { lock.withLock { _ = values.removeValue(forKey: key) } }
+    }
+}
+
+@MainActor
+@Observable
+private final class ConsentPreviewCounter {
+    var count = 0
+    var automaticCount = 0
+    var manualCount = 0
+    func recordAutomatic() { automaticCount += 1 }
+    func recordManual() { manualCount += 1 }
+    func recordSave() { count += 1 }
+}
+
+private actor ConsentPreviewStore: AIReadingConsentStoring {
+    var decision: AIReadingDecision
+    let fails: Bool
+    let counter: ConsentPreviewCounter
+    let gate: ConsentPreviewLoadGate?
+    private var loadCount = 0
+    private var choiceRevision = 0
+
+    init(decision: AIReadingDecision, fails: Bool, counter: ConsentPreviewCounter, gate: ConsentPreviewLoadGate?) {
+        self.decision = decision
+        self.fails = fails
+        self.counter = counter
+        self.gate = gate
+    }
+
+    func load(for stamp: SessionStamp) async -> LoadResult<AIReadingDecision> {
+        loadCount += 1
+        if loadCount > 1 { await gate?.wait() }
+        return fails ? .failed : .loaded(decision)
+    }
+
+    func save(_ allowed: Bool, for stamp: SessionStamp) async -> LoadResult<AIReadingConsentSaveReceipt> {
+        await counter.recordSave()
+        guard !fails else { return .failed }
+        let next: AIReadingDecision = allowed ? .allowed : .denied
+        if decision != next { choiceRevision += 1 }
+        decision = next
+        return .loaded(AIReadingConsentSaveReceipt(decision: decision, decidedAt: String(format: "2026-11-12T00:00:00.%06d+00:00", choiceRevision), stamp: stamp))
+    }
+}
+
+@MainActor
+@Observable
+private final class ConsentPreviewLoadGate {
+    private(set) var isHolding = false
+    @ObservationIgnored private var continuation: CheckedContinuation<Void, Never>?
+    @ObservationIgnored private var isOpen = false
+
+    func wait() async {
+        guard !isOpen else { return }
+        isHolding = true
+        await withCheckedContinuation { continuation = $0 }
+        isHolding = false
+    }
+
+    func finish() { isOpen = true; continuation?.resume(); continuation = nil }
+}
+
+private actor ConsentPreviewReadAPI: MailActionsAPI {
+    let counter: ConsentPreviewCounter
+    let gate: ConsentPreviewLoadGate?
+    let scenario: ListPreview.Scenario
+    let completed: @MainActor (Bool, Bool) -> Void
+
+    init(counter: ConsentPreviewCounter, gate: ConsentPreviewLoadGate?, scenario: ListPreview.Scenario,
+         completed: @escaping @MainActor (Bool, Bool) -> Void) {
+        self.counter = counter; self.gate = gate; self.scenario = scenario; self.completed = completed
+    }
+    func markParcel(id: String, accessToken: String) async throws(MailAPIFailure) -> MarkParcelOutcome { .remembered }
+    func readWaiting(accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult {
+        await counter.recordManual()
+        await completed(false, false)
+        return ReadWaitingResult()
+    }
+    func readWaiting(afterConsent receipt: AIReadingConsentSaveReceipt, accessToken: String) async throws(MailAPIFailure) -> ReadWaitingResult {
+        await counter.recordAutomatic()
+        await gate?.wait()
+        let partial = scenario == .consentAutoLimit || scenario == .consentAutoFailed
+        let stopped = scenario == .consentAutoStopped
+        await completed(partial, stopped)
+        if scenario == .consentAutoFailed { throw .readFailed }
+        return ReadWaitingResult(stopped: stopped, overLimit: scenario == .consentAutoLimit)
+    }
+}
+
+private struct ConsentPreviewDemo: DemoAPI {
+    func load(accessToken: String) async -> Result<DemoLoaded, DemoFailure> {
+        .success(DemoLoaded(processed: 1, busy: false))
+    }
+    func clear(accessToken: String) async -> Result<Void, DemoFailure> { .success(()) }
+}
+
+/// The same observable store counter on the prompt and the tabs, without adding visible copy.
+struct ConsentPreviewAccessibility: ViewModifier {
+    let settings: SettingsModel
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let count = settings.debugConsentSaveCount {
+            content
+                .background {
+                    if let automatic = settings.debugConsentAutoReadCount {
+                        Color.clear.frame(width: 1, height: 1).allowsHitTesting(false)
+                            .accessibilityElement().accessibilityIdentifier("consent-preview.auto-read-count")
+                            .accessibilityValue(String(automatic()))
+                    }
+                    if let manual = settings.debugConsentManualReadCount {
+                        Color.clear.frame(width: 1, height: 1).allowsHitTesting(false)
+                            .accessibilityElement().accessibilityIdentifier("consent-preview.manual-read-count")
+                            .accessibilityValue(String(manual()))
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if settings.mailActions.isAutomaticallyReading, let finish = settings.debugConsentCompleteAuto {
+                        Button(ManualParcelText.close, action: finish)
+                            .accessibilityIdentifier("consent-auto-read.complete")
+                    }
+                    if let holding = settings.debugConsentIsHoldingLoad {
+                        if holding() {
+                            VStack {
+                                ProgressView().accessibilityIdentifier("consent-onboarding.loading")
+                                Button(ManualParcelText.close) { settings.debugConsentFinishLoad?() }
+                                    .accessibilityIdentifier("consent-onboarding.complete")
+                            }
+                        } else {
+                            Button("確かめる") { Task { await settings.load() } }
+                                .accessibilityIdentifier("consent-onboarding.reload")
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("consent-preview.save-count")
+                .accessibilityValue(String(count()))
+        } else {
+            content
+        }
     }
 }
 #endif

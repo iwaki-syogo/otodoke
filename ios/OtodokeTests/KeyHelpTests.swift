@@ -17,13 +17,9 @@ struct KeyHelpTests {
     @Test func theWordsAndTheWebsLoginPage() {
         // The Web's key_not_opened (LOGIN_MESSAGES), then the app's own.
         #expect(LoginText.keyNotOpened == "このパスワードでは、メールの鍵を開けませんでした。")
-        #expect(LoginText.webLoginPrompt == "Web でログインしてください。")
-        #expect(LoginText.keyNeedsWebLogin == "このパスワードでは、メールの鍵を開けませんでした。Web でログインしてください。")
-        #expect(LoginText.openWebLogin == "Web でログイン")
+        #expect(PasswordChangeText.openAnother == "ほかのパスワードで開く")
         #expect(LoginText.noKeyYet == "メールの鍵がまだできていません。ログインし直すと作れます。")
         #expect(LoginText.signInAgain == "ログインし直す")
-        #expect(LoginText.webLoginURL == URL(string: "https://otodoke.app/login"))
-        #expect(LoginText.webLoginURL.scheme == "https")
     }
 
     // MARK: KeySetup

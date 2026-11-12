@@ -59,7 +59,7 @@ final class MainTabsUITests: XCTestCase {
         let card = app.staticTexts["架空の本 上下巻セット"]
         XCTAssertTrue(card.waitForExistence(timeout: 10))
         card.swipeLeft()
-        let arrived = app.buttons["届いた"]
+        let arrived = app.buttons["受け取った"]
         XCTAssertTrue(arrived.waitForExistence(timeout: 5))
         arrived.tap()
         XCTAssertTrue(app.staticTexts["保存できませんでした。もう一度スワイプしてください。"].waitForExistence(timeout: 10))
@@ -67,20 +67,20 @@ final class MainTabsUITests: XCTestCase {
 
     func testThePageLinksOpenTheirPlaces() {
         let app = launch("empty")
-        let delivered = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "届いた荷物")).firstMatch
+        let delivered = app.buttons["page-link.received"]
         XCTAssertTrue(delivered.waitForExistence(timeout: 10))
         delivered.tap()
-        XCTAssertTrue(app.navigationBars["届いた荷物"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["受け取り済み"].waitForExistence(timeout: 5))
     }
 
     func testDeliverAllAsksASecondTime() {
         let app = launch("list")
-        let button = app.buttons["すべて受取済にする"]
+        let button = app.buttons["すべて受け取り済みにする"]
         XCTAssertTrue(button.waitForExistence(timeout: 10))
         button.tap()
-        XCTAssertTrue(app.buttons["1 件を受取済にする"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["受け取り済みにする"].waitForExistence(timeout: 5))
         app.buttons["やめる"].tap()
-        XCTAssertTrue(app.buttons["すべて受取済にする"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["すべて受け取り済みにする"].waitForExistence(timeout: 5))
     }
 
     /// 「＋ 登録」 opens the form inside the app (not Safari): the fields in the Web's order, the Web's words for a
@@ -119,8 +119,8 @@ final class MainTabsUITests: XCTestCase {
     /// The two page links at the foot of the list are the name and an arrow: no number, no 「件」.
     func testThePageLinksShowNoCount() {
         let app = launch("list")
-        for link in ["届いた荷物", "キャンセルした荷物"] {
-            let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", link)).firstMatch
+        for (link, identifier) in [("受け取り済み", "page-link.received"), ("キャンセルした荷物", "page-link.cancelled")] {
+            let row = app.buttons[identifier]
             var tries = 0
             while !row.exists && tries < 6 { app.swipeUp(); tries += 1 }
             XCTAssertTrue(row.exists, link)
@@ -133,11 +133,11 @@ final class MainTabsUITests: XCTestCase {
     /// The number is on the page the link opens, by the heading.
     func testTheOpenedPagesShowTheirCount() {
         let app = launch("list")
-        let delivered = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "届いた荷物")).firstMatch
+        let delivered = app.buttons["page-link.received"]
         var tries = 0
         while !delivered.exists && tries < 6 { app.swipeUp(); tries += 1 }
         delivered.tap()
-        XCTAssertTrue(app.navigationBars["届いた荷物"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["受け取り済み"].waitForExistence(timeout: 5))
         // No session here: the page cannot read, so it shows its heading and the failure, no number.
         XCTAssertTrue(app.staticTexts["読み込めませんでした"].waitForExistence(timeout: 10))
     }

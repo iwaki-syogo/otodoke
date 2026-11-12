@@ -9,6 +9,7 @@ import { reading } from "./pipeline-fixtures";
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
+const GRANT = { user_id: USER, decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" };
 const mocks = vi.hoisted(() => ({ db: null as unknown, redirect: vi.fn(), extract: vi.fn() }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -62,10 +63,11 @@ describe("readWaitingMail with a sample mail left pending", () => {
   it("reads it as loadDemo does: no Claude, kept in plain text, the same parcel", async () => {
     const stuck = await stuckSample();
     const db = newDb([stuck]);
+    db.rows("ai_reading_consents").push({ ...GRANT });
     mocks.db = db;
     expect(await run(readWaitingMail)).toEqual(["/app/settings/trouble"]);
     expect(mocks.extract).not.toHaveBeenCalled();
-    expect(db.rows("ai_reading_consents")).toHaveLength(0);
+    expect(db.rows("ai_reading_consents")).toEqual([GRANT]);
     expect(db.callsOn("emails", "insert")).toHaveLength(0);
     expect(db.rpcCalls.filter((c) => c.name === "claim_claude_call_v2")).toHaveLength(0);
     expect(db.rows("emails")).toHaveLength(1);
@@ -84,6 +86,7 @@ describe("readWaitingMail with a sample mail left pending", () => {
   it("a sample id with no matching sample: Claude is not called and the read ends as failed", async () => {
     const stuck = await stuckSample();
     const db = newDb([{ ...stuck, provider_email_id: "demo:gone/missing", message_id: "demo:gone/missing" }]);
+    db.rows("ai_reading_consents").push({ ...GRANT });
     mocks.db = db;
     const [to] = await run(readWaitingMail);
     expect(to).toContain("error=read_failed");

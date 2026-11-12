@@ -61,7 +61,7 @@ describe("the pages the app opens in the browser", () => {
   it("every /app/settings/<page> path exists as src/app/app/settings/<page>/page.tsx", () => {
     const settingsPaths = paths.filter((p) => p.startsWith("/app/settings"));
     // 「読み取る」 (trouble) and 「これは荷物」 (dropped) finish in the app now: no link to those pages is left.
-    expect(settingsPaths.sort()).toEqual(["/app/settings/delete", "/app/settings/password"]);
+    expect(settingsPaths.sort()).toEqual([]);
     const existing = pages();
     for (const p of settingsPaths) expect(existing, p).toContain(p.replace("/app/settings/", ""));
   });
@@ -97,9 +97,10 @@ describe("the pages the app opens in the browser", () => {
     has("demo-labels.ts", "サンプル");
     expect(read("src/app/app/settings/(list)/page.tsx")).toContain('href: "/app/settings/delete"');
     const model = stripComments(read("ios/Otodoke/Screens/Settings/SettingsModel.swift"));
-    expect(model).toMatch(/case \.changePassphrase: WebLink\.settingsPassword/);
+    expect(model).toContain("PasswordChangeModel(");
     expect(model).not.toMatch(/case \.readWaiting|case \.markAsParcel|settingsTrouble|settingsDropped|settingsDemo|createPassphrase|case \.sample|case \.clearAll/);
-    expect(model).toMatch(/case \.deleteAccount: WebLink\.settingsDelete/);
+    expect(model).toContain("AccountDeletionModel(");
+    expect(model).not.toContain("WebLink.settingsDelete");
   });
 
   it("negative control: a path with no page under settings is caught", () => {

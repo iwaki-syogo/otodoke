@@ -66,12 +66,17 @@ enum Format {
     }
 
     /// STATUS_LABEL.
+    /// The status and the person's receipt are separate facts.
+    static func parcelStatusLabel(_ parcel: ParcelRow) -> String {
+        ParcelRules.isReceived(parcel) ? "受け取り済み" : (statusLabel[parcel.status] ?? parcel.status)
+    }
+
     static let statusLabel: [String: String] = [
         "ordered": "注文中",
         "shipped": "発送済み",
         "out_for_delivery": "配達中",
         "attempted": "不在・再配達",
-        "delivered": "届いた",
+        "delivered": "配達済み",
         "cancelled": "キャンセル",
         "unknown": "不明",
     ]

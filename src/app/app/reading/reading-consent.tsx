@@ -10,6 +10,7 @@ export function ReadingConsent({ unknown = false, error, after = "list" }: { unk
       <div>
         <h1 className="text-2xl font-bold">{AI_CONSENT_TEXT.title}</h1>
         <p className="mt-3 text-sm leading-6 text-neutral-700">{AI_CONSENT_TEXT.body}</p>
+        <p className="mt-2 text-sm leading-6 text-neutral-700">{AI_CONSENT_TEXT.detail}</p>
         <Link href="/privacy" className="mt-2 inline-flex min-h-11 items-center text-sm text-sky-700 underline underline-offset-4">{AI_CONSENT_TEXT.privacy}</Link>
       </div>
       {unknown ? (

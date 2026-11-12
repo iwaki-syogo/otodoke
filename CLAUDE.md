@@ -1,5 +1,17 @@
 # Otodoke — project guide for coding agents
 
+## エージェント共通の要点
+
+- 公開repo。秘密・実メール・個人情報を読んだりコミットしたりしない。仕様・計画・作業報告はrepo外。作ったものの説明と開発ルールだけをrepoへ置く。
+- `parcels` のauthenticated UPDATE権限はiOSの直接更新にも必要。変更せず、本人・lease・世代・候補集合・更新版の検証を保つ。Swiftの変更はiOS担当へ渡す。
+- DBの部分順序はU(Auth)→G(世代)→E(メール)→C(必要な許可行)→L(利用者の候補鍵/有料日の鍵)→R。不要な段は飛ばせるが逆順に初取得しない。受取mark/restoreは最新の共有契約どおりU/G/Eの後・Rの前でLを取る。
+- 候補鍵はprivateな `public.lock_parcel_owner(p_user uuid)` だけから取る。同ownerのTx-local設定と利用者別Lを確保し、NULL・owner切替・owner不明を拒否する。固定キーへのfallbackは作らない。メールcoreは本人/run/lease確認後・snapshot/R前で呼ぶ。
+- 130000のforward/downも同helperを使い、before/verify/downでABI・owner・ACLを確認する。戻し順は130000→110000→100000。所有者やgrantを自動で直して関門を通さない。
+- Web undoはDBの受取証跡と現在のreceived_at/updated_atを照合し、restored/changed/failedを区別する。1通信200件と論理全件を分け、501件以上も分割処理する。証跡期限の正本はDB関数。
+- verify出力は共有のファイル別形式で判定する。110000の判定は末尾。他列のOKで代用しない。SQLと形式・正常/異常自己試験を同じ変更にそろえ、自己試験と実Postgresを区別する。
+- 並行作業中の全件vitestは1プロセスだけ、負荷20未満で実行する。実Postgresは自分の専用clusterだけを使い、停止・listener0・専用データ削除まで確認する。
+
+
 Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 11-08 20:00 JST。
 一文で言うと「どの店で買った荷物も、何がいつ届くか・いつ家にいればいいか・今月いくら使ったかが分かる荷物カレンダー」。メールの自動転送は最初に 1 回設定するだけで、あとは何もしない。
 キャッチコピーは「荷物に、予定を合わせない。」（2026-11-05 本人決定）。画面・README・説明文に「転送するだけ」と書かない（メールを毎回転送すると読めて面倒に見えるため）。
@@ -168,3 +180,66 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 100000/110000の本体・before・verify・downは同じ版で取り込む。Auth callbackは共通名のCREATE OR REPLACE TRIGGERで切り替える。100000を最終的に戻してtriggerを削除するにはAuth tableowner/memberが必要で、適用時のTRIGGER権限とは分けて確認する。利用者分離の実PG対照はtests/postgres/run-parcel-user-locks.mjs。
 - R2-2の共有入口はprivateな `public.lock_parcel_owner(p_user uuid) returns void`。U/G/Eは呼出し元で先取りし、helperは同ownerのTx設定と利用者別Lだけを確保する。NULLとowner切替は拒否、owner不明のstatementは従来どおり拒否。PUBLIC/anon/authenticated/service_roleへ直接EXECUTEを与えず、同ownerのDEFINER RPC/triggerから呼ぶ。
 - 後続migrationもinlineの62803取得や固定鍵を足さず、同helperへ統一する。メールのhelperは本人/run/lease検査後・snapshot/R前に置く。後続downの復元coreにも同じ呼出しを保ち、helperを作る100000より先に依存側を戻す。before/verify/downはhelperのABI/owner/ACLと、pg_procに固定62803,0が無いことも確認する。
+
+## ビルド14の受け取り状態（2026-11-11）
+
+- ビルド14では `STATUS_LABEL.delivered` とiOSの `Format.statusLabel` を「配達済み」にそろえた。上の受け取り済み節にある「iOSの照合のため届いたのまま」はビルド13までの説明。本人の受取は有限の `received_at` で出し分ける。
+- マスターからの報告: `20261112100000_parcel_received_at.sql` は2026-11-11 23:23 JSTに本番へ適用され、verifyも成功。Webの受け取り済みはdevのPreviewへ反映された。Codexが本番DBへ適用・検証したという記録ではない。
+- iOS用の削除・パスワード変更APIは `docs/api/account.md`。これらのAPIをWeb本番へ反映してから、呼び出すiOS版を配布する。
+
+## AIによるメールの読み取り許可（2026-11-12 本人指定）
+
+- ログイン後、転送先アドレスを見せる前に「メールの読み取り」を1回表示する。未選択の既存利用者も対象。拒否/未確認ではアドレスを出さず、手入力と作り物のサンプルは使えるようにする。
+- 本文は「届いたメールは、Anthropic の Claude で読み取ります。」。許可/拒否と、アプリ内で開くプライバシーポリシーを用意し、設定の「あなたのメールの扱い」から撤回/再許可できるようにする。
+- Webとの契約は `ai_reading_consents` の本人行を読み、`set_ai_reading(p_decision,p_text_version)` で `granted` / `declined` と `v1` を保存する。0行と取得失敗を区別し、文の版違いだけでは再質問しない。許可を押しただけで有料の読取を開始しない。
+
+## AI読み取り許可の更新（2026-11-12 本人決定）
+
+- 上の「許可を押しただけで読取を開始しない」は旧方針。許可を保存した直後は、それまでに届いて待っていたメールを1日の上限内で自動で読み取り、もう一度押す操作を要求しない。Web側の最新契約にそろえる。
+- 読み取りをやめても、既に読み取った荷物と結果は残す。許可の取消とデータ削除は別で、消したい人は既存の削除操作を使う。
+- 受け取りの例外の文は「元に戻せない荷物があります」「受け取り済みのままの荷物があります」。この2場面も件数を表示しない。
+- 許可の自動読取は、`set_ai_reading` が返した `decided_at` を原文字列のまま `POST /api/mail/read-waiting` の `after_consent` に渡す。日時を再生成しない。Web/DBが同じ許可の二重実行を防ぎ、対象の続くバッチと日次上限を扱う。
+- 読取失敗でも許可を取り消した扱いにしない。POSTを自動で再送せず、後から本人が「読み取る」を押すときは従来の空の本文を送る。通常の起動・foreground・許可の再確認から新しい自動読取を開始しない。
+
+## ビルド14の分類保存とundo（2026-11-12 追加依頼）
+
+- 分類の選択シートは、選択した値が `category_source=user` で保存できたと確認したときだけ成功として閉じる。競合・結果不明・再読失敗は、エラー文が空であることだけを成功としない。
+- 受取のundoは、今回の操作が実際に書いた荷物だけを対象にし、現在の受取日時が今回書いた値と一致する行だけを戻す。保存0件ではundoを付けない。既存の更新版による上書き防止も維持する。
+
+## 許可待ちメールの保管
+
+- `20261113120000_consent_waiting_storage` は110000までの変更と既存の毎日の掃除に依存する。許可待ちは既存の利用者別保管上限を使い、全体の未読保管枠から分ける。許可後の日次上限待ちも、元の待ちメールの期限と区分を保つ。
+- 期限の正本は `public.ai_consent_waiting_retention()` の1か所。`emails.received_at` から `consent_waiting_until` を付け、再読取や許可の変更で延ばさない。拒否・取消の直後には消さず、この期限まで残す。
+- 既存の `purge_old_screen_events()` の入口から期限切れを掃除する。結果なしはメール行を削除し、既に部分結果がある行は本文・件名・差出人を消して荷物と結果を残す。完了済みの読み取りは期限の対象外。既存行の再読取は、掃除で行がなくなった後に新着として保存し直さない。
+- Webの「読み取る」も、admin処理の前に許可を確かめる。未回答・拒否は許可画面、確認不能は既存の再読込へ案内する。pipeline内の各メールの確認も維持する。
+
+## 有料 claim と許可行のロック順
+
+`20261113121000_claude_claim_consent` は120000のsetterと110000の所有者prefixに依存する。共通の部分順序は **U → G → E → C → L → R**。使わない段は飛ばせるが、後の段から前の段を初めて取りに戻らない。
+
+| 段 | 対象 | 取得する経路 |
+| --- | --- | --- |
+| U | `auth.users` の本人行 | claim v1/v2、owned処理、許可変更、全消去、退会。退会以外は親の KEY SHARE を先に取得する |
+| G | `sample_generations` の本人行 | claim v1/v2も `lock_sample_owner` を通る。owned処理・許可変更・全消去も同じ順 |
+| E | `emails` の対象行 | owned claim・荷物保存・全消去・取消時の待ちメール処理。直接の claim は使わない |
+| C | `ai_reading_consents` の本人行 | 有料 claim は FOR SHARE と granted の確認。setter・自動起動claimは更新ロック。C の後で新しい G/E を取得しない |
+| L | 費用の62801、または荷物候補の62803 | 費用は C の後に日次ロック。荷物経路は C を使わず E の後に62803 |
+| R | 各経路のデータ行 | 費用は日次カウンタ・ledger、荷物は荷物・品目の行 |
+
+- v2の内部からv1を呼ぶ時点ではU/G/Cを既に取得済みとし、再取得で初取得の逆順を作らない。owned経路も既存U/G/Eの中で同じclaim入口を使う。
+- 自動起動claimはU → C → journalで、Cの後にG/Eを取らない。返却はU → 62801 → ledger / counterのままとし、取消後の正当な返却に新しい許可を求めない。
+- 退会はUを排他で取得して同じ利用者のclaim・返却を先に除外し、既存triggerでG/Eを先取りする。その後のC・費用行はFK cascadeで消え、cascade内部の表順は仮定しない。親の排他によって通常RPCとの循環経路を除く。
+- 受信保管用の62802は別の枝でGの後・Eの前に取得し、Cを取らない。上表のL（費用/荷物）と同一視しない。
+- claimと取消をDB内で直列化し、取消が先なら枠を取得せず許可待ちに残す。成功したclaimのcommitから外部API応答までDBロックを保持しない。サンプル・Gmail確認は有料claimを使わない。
+
+## Webの受取証跡と取り消し（2026-11-12 レビューAの修正）
+
+- `20261113130000_received_receipts` は110000・120000・121000の実適用履歴と関数を前提にする。衝突した旧番号120000のreceived_receiptsは使用しない。beforeとDDLは前提が足りなければ変更前に止まる。
+- Webは受取前の画面のstatusを復元権限にしない。`mark_parcels_received` がDBの直前状態・保存後の版をprivateな `parcel_receipt_undos` に記録し、本人の今回の操作へ `receipt_id` を返す。undoはopaqueなID/tokenだけを送る。
+- `restore_parcel_receipts` は本人・tokenに加え、現在の `parcels.received_at` と `updated_at` の両方を照合する。iOSと古いWebがjournalを変えず直接UPDATEした場合も、メールの配達完了を古いタブで消さない。空のメール補完も更新版を進める。結果は `restored / changed / failed` に分け、未回答を成功やchangedへ丸めない。
+- 1回の通信の正本は `receipt.ts` のraw 200件。Actionはdedup・認証・DBより前、RPCは所有者/ロックより前に検査する。UIの論理総数に上限を設けず、受取とundoを200件ずつ逐次処理し、501/1,001件以上と端数を残さない。実SDK試験でIDがPOST本文へ入り、URLが8,192 bytes未満となる不等式を確かめる。
+- journalは荷物/利用者のcascadeで消える。期限の正本は `public.parcel_receipt_retention()`。作成から24時間に固定し、受取の再送・undo・再送undoで延長しない。期限後のundoは変更しない。既存daily purgeへ期限切れの削除を合成し、許可待ちメールとscreen_eventsの掃除を保つ。正常に24時間毎の掃除が続く場合の物理残存は作成から48時間未満で、ジョブ停止中の物理削除は保証しない。
+- 手動受取は課金しないのでCを使わず、U → G → E → L → R → journalの順。forwardの3入口とdownの復元coreはP-1の共有 `lock_parcel_owner` を使う。mark/restoreはU/G/E後・R前、mail coreは本人/run/lease確認後に呼ぶ。before/verify/downはhelperのABI/owner/ACLと固定キー不在を確認し、誤った戻し順は変更前に止める。authenticatedの既存 `parcels UPDATE` grantは変更しない。B-4の通信予算と、DBの利用者別ロックP-1は別の守り。
+- 新Webの仮文は `UNDO_CHANGED_NOTICE` の「ほかで変更された荷物があります」。本人の決定までは仮置き。旧 `PARTLY_RESTORED_NOTICE` と `CANNOT_UNDO_NOTE` はiOSで使う値を維持する。Webの実装とTS parityの期待を同じ変更に含め、Swift/ios配下はiOS担当の版を保つ。iOSの三区分・新しい文・混在表示・Swift試験更新は別担当へ報告する。
+- STATUS_LABEL.deliveredはビルド14で「配達済み」へ更新済み。上の受取節にある「届いた」の保持説明は旧契約で、新しいWeb差分から戻さない。試験台本は `tests/postgres/run-received-receipts.mjs` と、受取/undoを追加した `run-sample-lock-order.mjs` の `--with-receipts`。専用Postgresでowner分離・固定キーの陰性・自然競合・戻し/再適用を測り、停止と削除まで確認する。
+- DB試験台本のverify出力は、共有の `tests/postgres/run-cost-guards.mjs` のファイル別形式で判定する。110000 afterは末尾の判定列を読む。任意の列にあるOKでは代用せず、列数・必須真偽値・件数・動作試験結果も照合する。verifyのSELECTを変えたら共有形式と正常/異常の自己試験も同じ変更で合わせ、実Postgresの測定とは区別する。

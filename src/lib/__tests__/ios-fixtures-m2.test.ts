@@ -15,7 +15,8 @@ import {
   monthChoices,
   searchWord,
 } from "@/lib/delivered";
-import type { ParcelRow } from "@/lib/match";
+import { needsCheck, type ParcelRow } from "@/lib/match";
+import { parcelSections } from "@/lib/parcel-sections";
 import { normalizeShop } from "@/lib/shop";
 
 /**
@@ -177,7 +178,7 @@ describe("task 13: the negative vectors are made by the Web's own functions", ()
 // ---------------------------------------------------------------------------------------------
 
 const PARCEL_COLUMNS = [
-  "carrier", "category", "category_source", "created_at", "expected_date", "expected_date_end", "expected_text",
+  "carrier", "category", "category_source", "check_dismissed_at", "received_at", "created_at", "expected_date", "expected_date_end", "expected_text",
   "expected_window_end", "expected_window_start", "id", "last_email_at", "needs_review", "order_number", "ordered_at",
   "presence_evidence", "requires_presence", "shop", "shop_key", "source", "status", "title", "total_amount",
   "tracking_number", "tracking_url", "updated_at", "user_id",
@@ -346,14 +347,28 @@ describe("task 13: the delivered cases the plan asks for are there", () => {
 });
 
 describe("task 13: the sections from before M2 come out as they did at the end of M1", () => {
-  it(`every key of web-expected.json at ${M1_COMMIT} is unchanged`, () => {
+  it(`preserves every M1 case apart from the explicit build 14 receipt upgrade`, () => {
     // The Amazon link was later changed on purpose from the ship-track page to the order-details page;
     // read the M1 file with that one URL shape rewritten, so nothing else may drift.
     const beforeText = execFileSync("git", ["show", `${M1_COMMIT}:ios/OtodokeTests/Fixtures/web-expected.json`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-    const before = JSON.parse(beforeText.replaceAll("your-account/ship-track?orderId=", "your-account/order-details?orderID="));
+    // Build 14 adds the two database columns and the arrived section to the same rows. The old
+    // delivered row now means 配達済み, so its needsCheck answer follows the Web's current rule.
+    const before = JSON.parse(beforeText.replaceAll("your-account/ship-track?orderId=", "your-account/order-details?orderID="), (_key, value) => {
+      if (value && typeof value === "object" && "id" in value && "user_id" in value && "status" in value) {
+        return { ...value, received_at: null, check_dismissed_at: null };
+      }
+      return value;
+    });
+    before.format.statusLabel.delivered = "配達済み";
+    for (const c of before.match.needsCheck) {
+      if (c.parcel.status === "delivered") c.out = needsCheck(c.parcel, c.today);
+    }
+    for (const c of before.sections) c.out.arrived = parcelSections(c.parcels, c.today).arrived.map((p) => p.id);
     for (const key of Object.keys(before)) {
       if (key === "carriers") continue;
-      expect(fx[key], key).toEqual(before[key]);
+      // The new receipt case is additional; every existing section input and output is preserved.
+      const current = key === "sections" ? fx.sections.filter((c: Any) => !c.parcels.some((p: Any) => p.id.startsWith("00000000-0000-4000-8000-0004"))) : fx[key];
+      expect(current, key).toEqual(before[key]);
     }
     // carriers: the Web's ded1789 (review R2-3, "No." labels and signs such as № ①) appended cases to each of
     // its lists. Every case from M1 still comes out the same, in the same place; only new ones follow.
@@ -362,7 +377,7 @@ describe("task 13: the sections from before M2 come out as they did at the end o
       expect(fx.carriers[list].length, `carriers.${list}`).toBeGreaterThanOrEqual(cases.length);
       expect(fx.carriers[list].slice(0, cases.length), `carriers.${list}`).toEqual(cases);
     }
-    expect(Object.keys(fx).filter((k) => !(k in before))).toEqual(["delivered"]);
+    expect(Object.keys(fx).filter((k) => !(k in before)).sort()).toEqual(["delivered", "received"]);
   });
 
   it("the committed file holds the delivered section (regenerated, not hand-written)", () => {

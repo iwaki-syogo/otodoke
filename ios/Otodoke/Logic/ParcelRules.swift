@@ -6,6 +6,7 @@ import Foundation
 /// The list's sections. `open` is every parcel neither delivered nor cancelled, in the order given.
 struct ParcelSections: Equatable, Sendable {
     var open: [ParcelRow]
+    var arrived: [ParcelRow] = []
     var toCheck: [ParcelRow]
     var delivering: [ParcelRow]
     var soon: [ParcelRow]
@@ -23,16 +24,45 @@ enum ParcelRules {
         p.expectedDateEnd ?? p.expectedDate
     }
 
-    /// Still open two weeks after it should have arrived (or, with no date, two weeks after its last mail).
-    /// A last_email_at that is not an instant counts as no mail (the Web would throw there).
+    /// The sentinel asks the database to store null without the old-client trigger setting now().
+    static let receivedAtNone = "-infinity"
+
+    /// Only finite instants are received: neither PostgreSQL infinity nor malformed text counts.
+    static func isReceivedAt(_ value: String?) -> Bool {
+        value.flatMap(Instant.micros) != nil
+    }
+
+    static func isReceived(_ p: ParcelRow) -> Bool {
+        p.status == "delivered" && isReceivedAt(p.receivedAt)
+    }
+
+    /// Two weeks after the expected day, or (for delivered) the later of that day and its latest mail.
+    /// A delivered parcel answered with まだ is not asked again; no parcel moves itself to received.
     static func needsCheck(_ p: ParcelRow, today: String) -> Bool {
-        if isClosed(p) { return false }
-        let cutoff = CivilDate.addDays(today, -checkAfterDays)
-        if let lastDay = lastExpectedDay(p) { return !JSText.less(cutoff, lastDay) }
-        guard let last = p.lastEmailAt, let micros = Instant.micros(last) else { return false }
+        if p.status == "cancelled" || isReceived(p) { return false }
+        if p.status == "delivered" {
+            guard p.checkDismissedAt == nil else { return false }
+            return deliveryNeedsCheck(expectedDate: p.expectedDate, expectedDateEnd: p.expectedDateEnd,
+                                      lastEmailAt: p.lastEmailAt, today: today)
+        }
+        let base = lastExpectedDay(p) ?? mailDay(p.lastEmailAt)
+        return base.map { !JSText.less(CivilDate.addDays(today, -checkAfterDays), $0) } ?? false
+    }
+
+    /// The same 14-day question without a previous received/まだ answer, for a change back to 配達済み.
+    static func deliveryNeedsCheck(expectedDate: String?, expectedDateEnd: String?, lastEmailAt: String?, today: String) -> Bool {
+        let last = expectedDateEnd ?? expectedDate
+        let mail = mailDay(lastEmailAt)
+        let base: String?
+        if let last, let mail { base = JSText.less(last, mail) ? mail : last }
+        else { base = last ?? mail }
+        return base.map { !JSText.less(CivilDate.addDays(today, -checkAfterDays), $0) } ?? false
+    }
+
+    private static func mailDay(_ value: String?) -> String? {
+        guard let micros = value.flatMap(Instant.micros) else { return nil }
         let seconds = CivilDate.floorDiv(micros, 1_000_000)
-        let mailDay = Format.todayJst(now: Date(timeIntervalSince1970: TimeInterval(seconds)))
-        return !JSText.less(cutoff, mailDay)
+        return Format.todayJst(now: Date(timeIntervalSince1970: TimeInterval(seconds)))
     }
 
     /// Past its date with no delivery mail yet, but not long enough to ask.
@@ -56,14 +86,15 @@ enum ParcelRules {
     /// parcelSections(parcels, today), given parcels in the database's order.
     static func sections(_ parcels: [ParcelRow], today: String) -> ParcelSections {
         let open = parcels.filter { !isClosed($0) }
-        let toCheck = open.filter { needsCheck($0, today: today) }
+        let toCheck = parcels.filter { needsCheck($0, today: today) }
+        let arrived = parcels.filter { $0.status == "delivered" && !isReceived($0) && !needsCheck($0, today: today) }
         let active = open.filter { !needsCheck($0, today: today) }
         let isDelivering = { (p: ParcelRow) in p.status == "out_for_delivery" && !isLate(p, today: today) }
         let isOrdered = { (p: ParcelRow) in (p.status == "ordered" || p.status == "unknown") && !isLate(p, today: today) }
         let delivering = active.filter(isDelivering)
         let ordered = active.filter(isOrdered)
         let soon = stableSorted(active.filter { !isDelivering($0) && !isOrdered($0) }, by: byNextArrival(today: today))
-        return ParcelSections(open: open, toCheck: toCheck, delivering: delivering, soon: soon, ordered: ordered)
+        return ParcelSections(open: open, arrived: arrived, toCheck: toCheck, delivering: delivering, soon: soon, ordered: ordered)
     }
 
     /// The database's order of the Web's list: expected_date ascending, nulls last; then last_email_at

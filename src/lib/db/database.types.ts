@@ -122,6 +122,7 @@ export type Database = {
           body_envelope: Json | null
           body_state: string
           classification: string | null
+          consent_waiting_until: string | null
           created_at: string
           error: string | null
           forwarding_confirm_url: string | null
@@ -146,6 +147,7 @@ export type Database = {
           body_envelope?: Json | null
           body_state?: string
           classification?: string | null
+          consent_waiting_until?: string | null
           created_at?: string
           error?: string | null
           forwarding_confirm_url?: string | null
@@ -170,6 +172,7 @@ export type Database = {
           body_envelope?: Json | null
           body_state?: string
           classification?: string | null
+          consent_waiting_until?: string | null
           created_at?: string
           error?: string | null
           forwarding_confirm_url?: string | null
@@ -324,6 +327,20 @@ export type Database = {
             foreignKeyName: "parcel_items_parcel_id_fkey"
             columns: ["parcel_id"]
             isOneToOne: false
+            referencedRelation: "parcels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      parcel_receipt_undos: {
+        Row: { created_at: string; expires_at: string; parcel_id: string; user_id: string; receipt_id: string; previous_status: string; previous_received_at: string | null; written_received_at: string; written_updated_at: string; undone_at: string | null; undone_updated_at: string | null }
+        Insert: { created_at: string; expires_at: string; parcel_id: string; user_id: string; receipt_id: string; previous_status: string; previous_received_at?: string | null; written_received_at: string; written_updated_at: string; undone_at?: string | null; undone_updated_at?: string | null }
+        Update: { created_at?: string; expires_at?: string; parcel_id?: string; user_id?: string; receipt_id?: string; previous_status?: string; previous_received_at?: string | null; written_received_at?: string; written_updated_at?: string; undone_at?: string | null; undone_updated_at?: string | null }
+        Relationships: [
+          {
+            foreignKeyName: "parcel_receipt_undos_parcel_id_fkey"
+            columns: ["parcel_id"]
+            isOneToOne: true
             referencedRelation: "parcels"
             referencedColumns: ["id"]
           },
@@ -502,6 +519,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      mark_parcels_received: {
+        Args: { p_ids: string[] }
+        Returns: { id: string; outcome: string; receipt_id: string | null; received_at: string | null; updated_at: string | null; previous_status: string | null; previous_received_at: string | null }[]
+      }
+      restore_parcel_receipts: {
+        Args: { p_receipts: Json }
+        Returns: { id: string; outcome: string }[]
+      }
+
       activate_user_key: {
         Args: { p_challenge_hash: string; p_key_id: string; p_user_id: string }
         Returns: string

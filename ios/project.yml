@@ -17,7 +17,7 @@ settings:
     # Shown in the App Store as the version.
     MARKETING_VERSION: "1.0"
     # Build number: raise it by one for every upload to App Store Connect.
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "14"
 
 packages:
   Supabase:

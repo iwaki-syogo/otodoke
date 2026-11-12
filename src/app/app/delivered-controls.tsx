@@ -3,12 +3,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { PendingButton, usePendingAction } from "@/components/pending-button";
 import { Spinner } from "@/components/spinner";
-import { CANNOT_UNDO_NOTE, PARTLY_RESTORED_NOTICE } from "@/lib/format";
+import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE } from "@/lib/format";
 import { runUndo } from "@/lib/undo-outcome";
+import { markReceivedInChunks } from "@/lib/receipt-client";
+import type { ReceivedReceipt } from "@/lib/receipt";
 import { markDeliveredForUndo, restoreStatuses } from "./parcel-actions";
 
 type Marked = { id: string; status: string; received_at: string | null }[];
-type Undoable = (Marked[number] & { written_at: string })[];
+type Undoable = ReceivedReceipt[];
 interface Toast {
   text: string;
   undo: Undoable | null;
@@ -29,7 +31,6 @@ const UNDOING = "戻しています…";
 export function DeliveredToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
   const { pending, run } = usePendingAction();
-  const [failed, setFailed] = useState(false);
 
   // Closes after a while, but never while 元に戻す is on the way: its answer must be seen.
   useEffect(() => {
@@ -42,24 +43,23 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
     const items = toast?.undo;
     if (!items) return;
     run(async () => {
-      const outcome = await runUndo(() => restoreStatuses(items));
-      if (outcome === "failed") setFailed(true);
-      // Some parcels stayed received: say so, so nobody takes the list for the old one.
-      else if (outcome === "partly") setToast({ text: PARTLY_RESTORED_NOTICE, undo: null });
+      const outcome = await runUndo(restoreStatuses, items);
+      if (outcome.failed.length > 0) setToast({ text: UNDO_FAILED_NOTICE, undo: null, note: outcome.changed.length > 0 ? UNDO_CHANGED_NOTICE : null });
+      else if (outcome.changed.length > 0) setToast({ text: UNDO_CHANGED_NOTICE, undo: null });
       else setToast(null);
     });
   };
 
   return (
-    <ToastContext.Provider value={(t) => { setFailed(false); setToast(t); }}>
+    <ToastContext.Provider value={setToast}>
       {children}
       {toast ? (
         <div role="status" className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
           <span>
-            {failed ? "元に戻せませんでした" : toast.text}
-            {!failed && toast.note ? <span className="mt-0.5 block text-xs text-neutral-300">{toast.note}</span> : null}
+            {toast.text}
+            {toast.note ? <span className="mt-0.5 block text-xs text-neutral-300">{toast.note}</span> : null}
           </span>
-          {toast.undo && !failed ? (
+          {toast.undo ? (
             <PendingButton pending={pending} pendingLabel={UNDOING} tone="light" onClick={undo} className="inline-flex shrink-0 items-center gap-1.5 font-bold text-emerald-300">
               元に戻す
             </PendingButton>
@@ -74,7 +74,7 @@ const REVEAL = 96;
 const COMMIT = 120;
 
 /** Swipe a card to the left to say the parcel is received (受け取った). Vertical scrolling is left alone. */
-export function SwipeToDeliver({ id, status, receivedAt = null, children }: { id: string; status: string; receivedAt?: string | null; children: ReactNode }) {
+export function SwipeToDeliver({ id, children }: { id: string; status: string; receivedAt?: string | null; children: ReactNode }) {
   const showToast = useContext(ToastContext);
   const [dx, setDx] = useState(0);
   const [state, setState] = useState<"idle" | "dragging" | "saving" | "error">("idle");
@@ -92,17 +92,17 @@ export function SwipeToDeliver({ id, status, receivedAt = null, children }: { id
     startTransition(async () => {
       try {
         // 0: nothing was saved (signed out, or the parcel was cancelled meanwhile). Not received.
-        const done = await markDeliveredForUndo([id]);
+        const done = await markReceivedInChunks([id], markDeliveredForUndo);
         if (done.saved === 0) throw new Error("nothing saved");
         // Nothing written (already received on another screen): saved, with no 元に戻す to offer.
-        showToast({ text: "受け取り済みにしました", undo: done.written.length > 0 ? [{ id, status, received_at: receivedAt, written_at: done.written[0].received_at }] : null });
+        showToast({ text: "受け取り済みにしました", undo: done.written.length > 0 ? done.written : null });
       } catch {
         saving.current = false;
         setState("error");
         setDx(0);
       }
     });
-  }, [id, status, receivedAt, showToast]);
+  }, [id, showToast]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (state === "saving") return;
@@ -188,7 +188,7 @@ export function DeliverAll({ items }: { items: Marked }) {
   const save = () =>
     run(async () => {
       try {
-        const done = await markDeliveredForUndo(items.map((it) => it.id));
+        const done = await markReceivedInChunks(items.map((it) => it.id), markDeliveredForUndo);
         // 0: nothing was saved (signed out, or all cancelled meanwhile).
         if (done.saved === 0) {
           setStep("error");
@@ -197,9 +197,7 @@ export function DeliverAll({ items }: { items: Marked }) {
         const partial = done.saved < new Set(items.map((it) => it.id)).size;
         setStep(partial ? "partial" : "idle");
         // 元に戻す covers only what this press wrote; the rest (already received) is said in a note.
-        const writtenAt = new Map(done.written.map((w) => [w.id, w.received_at]));
-        const uniqueItems = [...new Map(items.map((it) => [it.id, it])).values()];
-        const undo = uniqueItems.flatMap((it) => (writtenAt.has(it.id) ? [{ ...it, written_at: writtenAt.get(it.id)! }] : []));
+        const undo = done.written;
         showToast({ text: partial ? "一部を保存できませんでした" : "受け取り済みにしました", undo: undo.length > 0 ? undo : null, note: undo.length > 0 && undo.length < done.saved ? CANNOT_UNDO_NOTE : null });
       } catch {
         setStep("error");

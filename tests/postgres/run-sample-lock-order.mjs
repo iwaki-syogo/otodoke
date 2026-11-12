@@ -24,6 +24,15 @@ const json = (value) => `${quote(JSON.stringify(value))}::jsonb`;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const prefix = "otodoke-sample-lock-";
 const items = [{ name: "Synthetic parcel item", quantity: 1, unit_price: 1000, evidence: "Synthetic" }];
+const mailWorkerKinds = new Set(["create-shipped", "update-shipped", "update-delivered", "ensure"]);
+
+export function requireReceiptAccounting(summary, rounds) {
+  for (const kind of ["clear", "create-shipped", "update-shipped", "update-delivered", "receive", "restore"]) {
+    assert.equal(summary.routes[kind], rounds, `${kind}: every trial must contribute one terminal operation`);
+  }
+  assert.equal(Object.values(summary.receipt_outcomes).reduce((total, count) => total + count, 0), rounds * 2,
+    "receive/restore must each return one validated SQL row per trial; refusals cannot replace receipt rows");
+}
 
 export function trialCount(value = "360") {
   const count = Number(value);
@@ -31,8 +40,9 @@ export function trialCount(value = "360") {
   return count;
 }
 
-export function migrationFiles(names) {
-  return names.filter((name) => /^\d{14}_.+\.sql$/.test(name) && (name.slice(0, 14) < target.slice(0, 14) || name === target)).sort();
+export function migrationFiles(names, withReceipts = false) {
+  const last = withReceipts ? "20261113130000_received_receipts.sql" : target;
+  return names.filter((name) => /^\d{14}_.+\.sql$/.test(name) && (name.slice(0, 14) < last.slice(0, 14) || name === last)).sort();
 }
 
 export function originalFunctions(source) {
@@ -55,13 +65,19 @@ export function classify(result, worker) {
     if (["55P03", "57014"].includes(state)) return { kind: "timeout", state };
     const lease = state === "42501" && /mail run no longer owns the lease/.test(result.stderr);
     const generation = state === "55000" && /sample (?:load was cleared; load it again|generation or owner is missing)/.test(result.stderr);
-    if (worker.kind !== "clear" && (lease || (worker.sample && generation))) return { kind: "expected_refusal", state };
+    if (mailWorkerKinds.has(worker.kind) && (lease || (worker.sample && generation))) return { kind: "expected_refusal", state };
     return { kind: "sql_error", state, message: result.stderr.split(/\r?\n/).find((line) => /ERROR|FATAL|PANIC/.test(line)) ?? `process exit ${result.code}` };
   }
   const tagged = taggedResults(result.stdout);
   if (tagged.length !== 1) return { kind: "invalid_result", message: `expected one result, got ${tagged.length}` };
   try {
     const value = JSON.parse(tagged[0]);
+    if (["receive", "restore"].includes(worker.kind)) {
+      const allowed = worker.kind === "receive" ? ["written", "already_received", "changed"] : ["restored", "changed", "failed"];
+      if (value.verdict !== "ok" || !Array.isArray(value.rows) || value.rows.length !== 1 || value.rows[0].id !== parcel || !allowed.includes(value.rows[0].outcome)) return { kind: "invalid_result", message: "receipt RPC returned an incomplete or invalid per-id result" };
+      if (value.rows[0].outcome === "written" && !/^[0-9a-f-]{36}$/.test(value.rows[0].receipt_id ?? "")) return { kind: "invalid_result", message: "written receipt has no opaque token" };
+      return { kind: "ok", value };
+    }
     if (worker.kind === "clear" && value.verdict === "cleared" && /^[0-9a-f-]{36}$/.test(value.generation)) return { kind: "ok", value };
     if (worker.kind !== "clear" && ["ok", "retry"].includes(value.verdict)) return { kind: value.verdict, value };
     return { kind: "invalid_result", message: "unexpected verdict" };
@@ -96,6 +112,8 @@ function workerQuery(kind, seeded) {
   const mailIds = seeded.emails ?? emails;
   const runIds = seeded.runs ?? runs;
   if (kind === "clear") return `select 'RESULT:' || jsonb_build_object('verdict','cleared','generation',public.clear_all_parcels('${user}'))::text;`;
+  if (kind === "receive") return `select 'RESULT:' || jsonb_build_object('verdict','ok','rows',coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb))::text from (select * from public.mark_parcels_received(array['${parcel}']::uuid[])) r;`;
+  if (kind === "restore") return `select 'RESULT:' || jsonb_build_object('verdict','ok','rows',coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb))::text from (select * from public.restore_parcel_receipts(${json([seeded.receipt])})) r;`;
   if (kind === "create-shipped") return `select 'RESULT:' || row_to_json(r)::text from public.create_mail_parcel(${snap},${json({ user_id: user, shop: "Synthetic shop", order_number: "SYNTHETIC-NEW", status: "shipped" })},${json(items)},'${mailIds[0]}','${runIds[0]}') r;`;
   if (kind === "ensure") return `select 'RESULT:' || row_to_json(r)::text from (select * from public.ensure_mail_parcel_items('${parcel}',${at}::timestamptz,${json(items)},'${mailIds[0]}','${runIds[0]}')) r;`;
   const index = kind === "update-delivered" ? 2 : 1;
@@ -112,6 +130,7 @@ async function selfTest() {
   assert.equal(trialCount(), 360);
   for (const value of ["", "0", "359", "360.5", "NaN", "2001"]) assert.throws(() => trialCount(value));
   assert.deepEqual(migrationFiles([target, legacy, "20261113110000_another.sql", "20261113120000_future.sql", "notes.md"]), [legacy, target]);
+  assert.deepEqual(migrationFiles([target, "20261113121000_claude_claim_consent.sql", "20261113130000_received_receipts.sql", "20261113140000_future.sql"], true), [target, "20261113121000_claude_claim_consent.sql", "20261113130000_received_receipts.sql"]);
   const env = cleanEnvironment("synthetic-scratch", { PGHOST: "remote.invalid", PGPORT: "5432", PGSERVICE: "production", PGPASSWORD: "unused", PATH: "test" });
   assert.equal(env.PGHOST, undefined);
   assert.equal(env.PGPASSWORD, undefined);
@@ -132,6 +151,22 @@ async function selfTest() {
   for (const stdout of ["", "RESULT:{}\n", 'RESULT:{"verdict":"ok"}\nRESULT:{"verdict":"ok"}\n', "RESULT:broken\n"]) assert.equal(classify(result({ stdout }), mail).kind, "invalid_result");
   assert.equal(classify(result({ stderr: "ERROR:  42601: syntax error" }), mail).kind, "sql_error");
   assert.equal(classify(result({ code: 2, stderr: "connection failed" }), mail).kind, "sql_error");
+  for (const kind of ["receive", "restore"]) {
+    for (const stderr of ["ERROR:  42501: mail run no longer owns the lease", "ERROR:  55000: sample load was cleared; load it again"]) {
+      assert.equal(classify(result({ stderr, code: 3 }), { kind, sample: true }).kind, "sql_error", `${kind} must never hide a mail-only refusal`);
+    }
+    const outcome = kind === "receive" ? "written" : "restored";
+    const rows = [{ id: parcel, outcome, receipt_id: uuid(90) }];
+    assert.equal(classify(result({ stdout: `RESULT:${JSON.stringify({ verdict: "ok", rows })}\n` }), { kind }).kind, "ok");
+    for (const bad of [[], [...rows, ...rows], [{ ...rows[0], id: otherParcel }], [{ ...rows[0], outcome: "unknown" }]]) {
+      assert.equal(classify(result({ stdout: `RESULT:${JSON.stringify({ verdict: "ok", rows: bad })}\n` }), { kind }).kind, "invalid_result");
+    }
+  }
+  const receiptSummary = { routes: { clear: 720, "create-shipped": 720, "update-shipped": 720, "update-delivered": 720, receive: 720, restore: 720 },
+    receipt_outcomes: { changed: 1220, written: 116, restored: 35, already_received: 69 } };
+  requireReceiptAccounting(receiptSummary, 720);
+  for (const kind of Object.keys(receiptSummary.routes)) assert.throws(() => requireReceiptAccounting({ ...receiptSummary, routes: { ...receiptSummary.routes, [kind]: 719 } }, 720));
+  assert.throws(() => requireReceiptAccounting({ ...receiptSummary, receipt_outcomes: { changed: 1439 } }, 720));
   const source = await readFile(path.join(root, "supabase/migrations", legacy), "utf8");
   assert.equal(originalFunctions(source).length, 3);
   assert.throws(() => originalFunctions(source.replace("public.create_mail_parcel(", "public.missing_create(")));
@@ -146,12 +181,15 @@ async function selfTest() {
   console.log("NOT RUN: PostgreSQL migrations or concurrency");
 }
 
-async function main(negative, controlsOnly = false) {
+async function main(negative, controlsOnly = false, withReceipts = false) {
   assert.ok(process.argv.includes("--external-test-server"), "use --external-test-server for an explicitly supplied disposable loopback cluster");
   const port = Number(process.env.OTODOKE_SAMPLE_PG_PORT);
   assert.ok(Number.isSafeInteger(port) && port >= 1024 && port <= 65535, "OTODOKE_SAMPLE_PG_PORT must name the dedicated test server port");
-  const rounds = trialCount(process.env.OTODOKE_SAMPLE_LOCK_ROUNDS ?? "360");
-  const parent = path.join(root, ".vitest/pg");
+  assert.ok(!(negative && withReceipts), "legacy lock-order negative is separate from the receipt-integrated suite");
+  const rounds = trialCount(process.env.OTODOKE_SAMPLE_LOCK_ROUNDS ?? (withReceipts ? "720" : "360"));
+  const parent = process.env.OTODOKE_SAMPLE_SCRATCH_PARENT ?? path.join(root, ".vitest/pg");
+  const relativeParent = path.relative(path.join(root, ".vitest/pg"), parent);
+  assert.ok(!relativeParent.startsWith("..") && !path.isAbsolute(relativeParent), "child summaries must remain under this worktree's PG scratch");
   await mkdir(parent, { recursive: true });
   const scratch = await mkdtemp(path.join(parent, "sample-lock-"));
   const environment = cleanEnvironment(scratch);
@@ -165,8 +203,8 @@ async function main(negative, controlsOnly = false) {
   const launch = (input, { db = database, interactive = false, timeout = 20_000 } = {}) => {
     assert.equal(interrupted, false, "runner was interrupted");
     const handle = startChild(executable, args(db), { environment, input, interactive, timeout });
-    children.add(handle.child);
-    handle.complete.then(() => children.delete(handle.child));
+    children.add(handle);
+    handle.complete.then(() => children.delete(handle));
     return handle;
   };
   const preamble = "set statement_timeout='12s'; set lock_timeout='8s'; set deadlock_timeout='100ms';\n";
@@ -188,15 +226,16 @@ async function main(negative, controlsOnly = false) {
     throw new Error(`timeout waiting for ${label}; not counted as a completed trial`);
   };
   const summary = { mode: negative ? "negative-control" : controlsOnly ? "controls-only" : "natural", trials_started: 0, trials_completed: 0, operations_started: 0, operations_completed: 0,
-    outcomes: { ok: 0, retry: 0, expected_refusal: 0, deadlock: 0, sql_error: 0, timeout: 0, invalid_result: 0 }, sqlstates: {}, gate_workers_observed: 0, production_waiters_observed: 0,
+    outcomes: { ok: 0, retry: 0, expected_refusal: 0, deadlock: 0, sql_error: 0, timeout: 0, invalid_result: 0 }, sqlstates: {}, gate_workers_observed: 0, production_waiters_observed: 0, contention_trials_completed: 0,
     controls: { single: 0, old_lease_refusal: 0, fresh_intake: 0, fresh_parcel: 0 }, target_sha256: null, negative_source_sha256: null,
-    sql_sha256: {}, sql_source: "working tree", negative_order: negative ? "local 100000 E -> per-user L -> 110000 G, without the public G prefix" : null };
+    sql_sha256: {}, sql_source: "working tree", receipt_integrated: withReceipts, routes: {}, receipt_outcomes: {}, real_trials: 0, sample_trials: 0,
+    negative_order: negative ? "local 100000 E -> per-user L -> 110000 G, without the public G prefix" : null };
   const record = (value) => {
     summary.operations_completed++;
     summary.outcomes[value.kind]++;
     if (value.state) summary.sqlstates[value.state] = (summary.sqlstates[value.state] ?? 0) + 1;
   };
-  const seed = async (sample) => one(await sql(`select public.clear_all_parcels('${user}'); select public.clear_all_parcels('${other}');
+  const seed = async (sample, restoreSeed = false) => one(await sql(`select public.clear_all_parcels('${user}'); select public.clear_all_parcels('${other}');
     begin;
     select set_config('request.headers',jsonb_build_object('x-otodoke-sample-user','${other}',
       'x-otodoke-sample-generation',public.begin_sample_load('${other}'))::text,true);
@@ -207,15 +246,22 @@ async function main(negative, controlsOnly = false) {
     insert into public.emails(id,user_id,provider_email_id,processing_status,processing_run_id,processing_lease_until) values
       ${emails.map((email, index) => `('${email}','${user}','${sample ? "demo:" : "synthetic:"}lock-${index}','pending','${runs[index]}',clock_timestamp()+interval '360 seconds')`).join(",")};
     insert into public.parcels(id,user_id,shop,status) values('${parcel}','${user}','Synthetic shop','ordered');
+    ${withReceipts ? `set local request.jwt.claim.sub='${user}'; create temporary table receipt_seed on commit drop as select * from public.mark_parcels_received(array['${parcel}']::uuid[]);` : ""}
+    ${withReceipts && restoreSeed ? "select * from public.restore_parcel_receipts((select jsonb_agg(jsonb_build_object('id',id,'receipt_id',receipt_id)) from receipt_seed));" : ""}
     select 'RESULT:' || jsonb_build_object('snapshot',public.mail_parcel_snapshot('${user}'),'version',(select updated_at from public.parcels where id='${parcel}'),
       'generation',(select generation from public.sample_generations where user_id='${user}'),
-      'other_generation',(select generation from public.sample_generations where user_id='${other}'))::text; commit;`));
-  const workersFor = (seeded, sample) => ["clear", "create-shipped", "update-shipped", "update-delivered"].map((kind) => ({ kind, sample: kind !== "clear" && sample, query: workerQuery(kind, seeded) }));
+      'other_generation',(select generation from public.sample_generations where user_id='${other}')
+      ${withReceipts ? ",'receipt',(select jsonb_build_object('id',id,'receipt_id',receipt_id) from receipt_seed)" : ""})::text; commit;`));
+  const workersFor = (seeded, sample) => ["clear", "create-shipped", "update-shipped", "update-delivered", ...(withReceipts ? ["receive", "restore"] : [])]
+    .map((kind) => ({ kind, role: ["receive", "restore"].includes(kind) ? "authenticated" : "service_role", sample: kind !== "clear" && sample, query: workerQuery(kind, seeded) }));
   const controls = async () => {
-    for (const kind of ["create-shipped", "update-shipped", "update-delivered", "ensure", "clear"]) {
-      const seeded = await seed(false);
-      const value = classify(await launch(preamble + `begin; set local role service_role; ${header(false)} ${workerQuery(kind, seeded)} commit;`).complete, { kind, sample: false });
+    for (const kind of ["create-shipped", "update-shipped", "update-delivered", "ensure", "clear", ...(withReceipts ? ["receive", "restore"] : [])]) {
+      const seeded = await seed(false, kind === "receive");
+      const role = ["receive", "restore"].includes(kind) ? "authenticated" : "service_role";
+      const value = classify(await launch(preamble + `begin; set local role ${role}; set local request.jwt.claim.sub='${user}'; ${header(false)} ${workerQuery(kind, seeded)} commit;`).complete, { kind, sample: false });
       assert.equal(value.kind, "ok", `single control ${kind}: ${JSON.stringify(value)}`);
+      if (kind === "receive") assert.equal(value.value.rows[0].outcome, "written");
+      if (kind === "restore") assert.equal(value.value.rows[0].outcome, "restored");
       summary.controls.single++;
     }
     console.log("OK: single controls executed actual create/shipped-update/delivered-update/ensure/clear queries");
@@ -275,26 +321,38 @@ async function main(negative, controlsOnly = false) {
   };
   const natural = async (index) => {
     const sample = index % 2 === 0;
-    const seeded = await seed(sample);
+    const seeded = await seed(sample, withReceipts && index % 4 < 2);
     const workers = workersFor(seeded, sample);
     summary.trials_started++;
+    summary[sample ? "sample_trials" : "real_trials"]++;
     const controller = launch(preamble + `begin; select pg_advisory_xact_lock(${gate}); select 'GATE-HELD';\n`, { interactive: true });
     await waitFor(() => controller.state.stdout.includes("GATE-HELD"), "start gate", [controller]);
-    const pending = workers.map((worker, slot) => launch(preamble + `set application_name='${prefix}worker-${slot}'; begin; set local role service_role;
-      ${header(worker.sample, seeded.generation)} select pg_advisory_xact_lock_shared(${gate}); ${worker.query} select pg_sleep(0.03); commit;`));
+    const pending = workers.map((worker, slot) => launch(preamble + `set application_name='${prefix}worker-${slot}'; begin; set local role ${worker.role}; set local request.jwt.claim.sub='${user}';
+      ${header(worker.sample, seeded.generation)} select pg_advisory_xact_lock_shared(${gate}); ${worker.query} select pg_sleep(0.05); commit;`));
     summary.operations_started += pending.length;
-    await waitFor(async () => Number(await scalar(`select count(*) from pg_stat_activity where datname=current_database() and application_name like '${prefix}worker-%' and wait_event='advisory';`)) === 4,
-      "all four workers at start gate", pending);
-    summary.gate_workers_observed += 4;
+    await waitFor(async () => Number(await scalar(`select count(*) from pg_stat_activity where datname=current_database() and application_name like '${prefix}worker-%' and wait_event='advisory';`)) === workers.length,
+      "every worker at start gate", pending);
+    summary.gate_workers_observed += workers.length;
     controller.child.stdin.end("commit;\n");
     const gateResult = await controller.complete;
     assert.equal(gateResult.code, 0, "start gate controller failed");
     // Commit delay only holds locks acquired by the real RPC; no production lock order is injected.
-    summary.production_waiters_observed += Number(await scalar(`select count(*) from pg_stat_activity a where a.datname=current_database() and a.application_name like '${prefix}worker-%'
-      and a.wait_event_type='Lock' and exists(select 1 from pg_stat_activity b where b.pid=any(pg_blocking_pids(a.pid)) and b.datname=current_database() and b.application_name like '${prefix}worker-%');`));
+    let observed = 0;
+    await waitFor(async () => {
+      observed = Number(await scalar(`select count(*) from pg_stat_activity a where a.datname=current_database() and a.application_name like '${prefix}worker-%'
+        and a.wait_event_type='Lock' and exists(select 1 from pg_stat_activity b where b.pid=any(pg_blocking_pids(a.pid)) and b.datname=current_database() and b.application_name like '${prefix}worker-%');`));
+      if (observed > 0) return true;
+      assert.ok(pending.some((handle) => !handle.state.exited), "all workers ended before any production-lock wait was observed");
+      return false;
+    }, "real production-lock contention in this trial");
+    summary.production_waiters_observed += observed; summary.contention_trials_completed++;
     const values = (await Promise.all(pending.map((handle) => handle.complete))).map((result, slot) => classify(result, workers[slot]));
     values.forEach(record);
-    assert.equal(values.length, 4, "every worker must return a terminal result");
+    values.forEach((value, slot) => {
+      summary.routes[workers[slot].kind] = (summary.routes[workers[slot].kind] ?? 0) + 1;
+      for (const row of value.value?.rows ?? []) if (row.outcome) summary.receipt_outcomes[row.outcome] = (summary.receipt_outcomes[row.outcome] ?? 0) + 1;
+    });
+    assert.equal(values.length, workers.length, "every worker must return a terminal result");
     assert.equal(values[0].kind, "ok", `clear failed: ${JSON.stringify(values[0])}`);
     for (const value of values) assert.ok(["ok", "retry", "expected_refusal"].includes(value.kind), `unexpected outcome: ${JSON.stringify(value)}`);
     assert.equal(Number(await scalar(`select count(*) from public.parcels where user_id='${user}';`)), 0, "clear must leave no resurrected parcel");
@@ -304,7 +362,7 @@ async function main(negative, controlsOnly = false) {
     summary.trials_completed++;
     if ((index + 1) % 30 === 0) console.log(`PROGRESS: ${summary.trials_completed}/${rounds} trials; ${summary.operations_completed} terminal operations; 40P01=${summary.outcomes.deadlock}`);
   };
-  const stop = () => { interrupted = true; for (const child of children) child.kill("SIGTERM"); };
+  const stop = () => { interrupted = true; for (const handle of children) handle.child.kill("SIGTERM"); };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
   try {
@@ -316,15 +374,27 @@ async function main(negative, controlsOnly = false) {
     assert.equal(Number(await scalar("select count(*) from pg_roles where rolname in ('anon','authenticated','service_role');")), 3, "test roles must already exist; runner never changes cluster-wide roles");
     const bootstrap = (await readFile(path.join(root, "tests/postgres/bootstrap.sql"), "utf8")).replace(/^create role (?:anon|authenticated|service_role)\b[^;]*;\s*/gm, "");
     await sql(bootstrap);
-    const migrations = migrationFiles(await readdir(path.join(root, "supabase/migrations")));
+    if (withReceipts) await sql("create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key,name text);");
+    const migrations = migrationFiles(await readdir(path.join(root, "supabase/migrations")), withReceipts);
     assert.ok(migrations.includes(target));
     for (const name of migrations) {
-      if (name === "20261106180000_screen_events_daily_purge.sql") console.log(`SKIP: ${name} (pg_cron-only schedule)`);
+      if (name === "20261106180000_screen_events_daily_purge.sql") {
+        if (withReceipts) {
+          const source = await readFile(path.join(root, "supabase/migrations", name), "utf8");
+          await sql(source.slice(source.indexOf("create or replace function public.is_shared_mail_domain"), source.indexOf("select cron.schedule")));
+          await sql("create schema cron; create table cron.job(jobname text,command text,schedule text,active boolean); insert into cron.job values('otodoke-purge-old-screen-events','select public.purge_old_screen_events()','30 18 * * *',true);");
+        }
+        console.log(`SKIP SCHEDULER: ${name} (no history recorded for the partial local platform fixture)`);
+      }
       else {
         const source = await readFile(path.join(root, "supabase/migrations", name), "utf8");
         if (name === target || name === legacy) summary.sql_sha256[name] = createHash("sha256").update(source).digest("hex");
         if (name === target) summary.target_sha256 = createHash("sha256").update(source).digest("hex");
         await sql(source);
+        if (withReceipts) {
+          summary.sql_sha256[name] = createHash("sha256").update(source).digest("hex");
+          await sql(`insert into supabase_migrations.schema_migrations(version,name) values('${name.slice(0, 14)}',${quote(name.slice(15, -4))});`);
+        }
       }
     }
     await sql(`insert into auth.users(id) values('${user}'),('${other}'); select public.begin_sample_load('${user}'); select public.begin_sample_load('${other}');`);
@@ -338,12 +408,14 @@ async function main(negative, controlsOnly = false) {
     } else {
       await controls();
       await postClearControls();
-      if (controlsOnly) console.log("NOT RUN: the 360 natural concurrent trials (controls-only smoke)");
+      if (controlsOnly) console.log(`NOT RUN: the ${rounds} natural concurrent trials (controls-only smoke)`);
       else {
         for (let index = 0; index < rounds; index++) await natural(index);
         assert.equal(summary.trials_completed, rounds);
-        assert.equal(summary.operations_completed, rounds * 4);
-        assert.equal(summary.gate_workers_observed, rounds * 4);
+        assert.equal(summary.operations_completed, rounds * (withReceipts ? 6 : 4));
+        assert.equal(summary.gate_workers_observed, rounds * (withReceipts ? 6 : 4));
+        assert.equal(summary.contention_trials_completed, rounds);
+        if (withReceipts) requireReceiptAccounting(summary, rounds);
         assert.ok(summary.production_waiters_observed > 0, "actual production-lock contention must be observed, not just a synthetic start gate");
         assert.equal(summary.outcomes.deadlock, 0);
       }
@@ -356,7 +428,8 @@ async function main(negative, controlsOnly = false) {
   } finally {
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
-    for (const child of children) child.kill("SIGTERM");
+    const pending = [...children]; for (const handle of pending) handle.child.kill("SIGTERM");
+    await Promise.allSettled(pending.map((handle) => handle.complete));
     await writeFile(path.join(scratch, "summary.json"), JSON.stringify({ ...summary, database, port }, null, 2));
     console.log(databaseCreated ? `Retained scratch database ${database}; external test cluster was not stopped` : "Scratch database was not created; external test cluster was not stopped");
     console.log(`Local summary: ${path.relative(root, path.join(scratch, "summary.json"))}`);
@@ -365,11 +438,11 @@ async function main(negative, controlsOnly = false) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  const allowed = new Set(["--self-test", "--negative-control", "--external-test-server", "--controls-only"]);
+  const allowed = new Set(["--self-test", "--negative-control", "--external-test-server", "--controls-only", "--with-receipts"]);
   if (args.some((arg) => !allowed.has(arg)) || new Set(args).size !== args.length || (args.includes("--self-test") && args.length !== 1) || (args.includes("--negative-control") && args.includes("--controls-only"))) {
-    console.error("Usage: node tests/postgres/run-sample-lock-order.mjs --self-test | --external-test-server [--negative-control|--controls-only]");
+    console.error("Usage: node tests/postgres/run-sample-lock-order.mjs --self-test | --external-test-server [--negative-control|--controls-only] [--with-receipts]");
     process.exitCode = 2;
-  } else (args.includes("--self-test") ? selfTest() : main(args.includes("--negative-control"), args.includes("--controls-only"))).catch((error) => {
+  } else (args.includes("--self-test") ? selfTest() : main(args.includes("--negative-control"), args.includes("--controls-only"), args.includes("--with-receipts"))).catch((error) => {
     console.error(`verdict=FAILED: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   });

@@ -917,7 +917,7 @@ struct OnboardingFlowTests {
         )
         let made = Box<MainScreens>()
         auth.makeSignedIn = { a in
-            let screens = MainScreens.live(auth: a, keyParts: parts)
+            let screens = MainScreens.live(auth: a, readingConsent: .allowedForTests(), keyParts: parts)
             made.value = screens
             return screens
         }
@@ -1062,7 +1062,7 @@ struct OnboardingFlowTests {
         )
         let made = Box<MainScreens>()
         auth.makeSignedIn = { a in
-            let screens = MainScreens.live(auth: a, keyParts: parts)
+            let screens = MainScreens.live(auth: a, readingConsent: .allowedForTests(), keyParts: parts)
             made.value = screens
             return screens
         }

@@ -119,8 +119,8 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
             text: m.text_body,
             html: m.html_body,
           },
-          // Re-read exactly the listed row/version. A clear or another reader must not turn this
-          // cached payload into a new incoming mail, including when it has a Message-ID.
+          // Re-read the exact listed row/version. A sweep or clear must not recreate cached
+          // plaintext as a new delivery, including when the mail has a Message-ID.
           { replacesEmailId: m.id, replacesCreatedAt: m.created_at },
         );
       }

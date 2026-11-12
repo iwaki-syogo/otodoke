@@ -69,8 +69,7 @@ describe("limits and choices", () => {
 
   it("the carriers, the ways of receiving and the statuses are the Web's, in the Web's order", () => {
     expect(swiftCases("ManualCarrier")).toEqual([...MANUAL_CARRIERS]);
-    // The app (build 13) has the first three; the Web adds 受け取り済み ("received", saved as delivered with received_at).
-    expect(swiftCases("ManualStatus")).toEqual(MANUAL_STATUSES.filter((s) => s !== "received"));
+    expect(swiftCases("ManualStatus")).toEqual([...MANUAL_STATUSES]);
     // MANUAL_PRESENCE is ["face", "drop", ""]; the Swift enum names the empty one `none`.
     expect(swiftCases("ManualPresence").map((c) => (c === "none" ? "" : c)).sort()).toEqual([...MANUAL_PRESENCE].sort());
     expect(LOGIC).toMatch(/case none = ""/);
@@ -129,11 +128,8 @@ describe("the words", () => {
     expect(FORM).toContain(`<option value="drop">${constant(TEXT, "presenceDrop")}</option>`);
     expect(FORM).toContain(`ordered: "${constant(TEXT, "statusOrdered")}"`);
     expect(FORM).toContain(`shipped: "${constant(TEXT, "statusShipped")}"`);
-    // Known difference until iOS build 14: the Web's form has 配達済み and 受け取り済み, the app (build 13)
-    // has one 届いた. Its trigger sets received_at all the same (so its 届いた is the Web's 受け取り済み).
-    expect(FORM).toContain('delivered: "配達済み"');
-    expect(FORM).toContain('received: "受け取り済み"');
-    expect(constant(TEXT, "statusDelivered")).toBe("届いた");
+    expect(FORM).toContain(`delivered: "${constant(TEXT, "statusDelivered")}"`);
+    expect(FORM).toContain(`received: "${constant(TEXT, "statusReceived")}"`);
     expect(FORM).toContain(`pendingLabel="${constant(TEXT, "submitting")}"`);
     expect(FORM).toContain(`{parcel ? "保存" : "${constant(TEXT, "submit")}"}`);
     expect(constant(TEXT, "uncategorized")).toBe(categoryLabel(null));
@@ -156,7 +152,7 @@ describe("the words", () => {
     const onWeb = new Set([
       "heading", "titleLabel", "shopLabel", "orderedAtLabel", "expectedDateLabel", "amountLabel", "amountUnit", "amountPlaceholder", "categoryLabel",
       "trackingLabel", "carrierLabel", "presenceLabel", "statusLabel", "uncategorized", "carrierAuto", "presenceNone", "presenceFace", "presenceDrop",
-      "statusOrdered", "statusShipped", "statusDelivered", "submit", "submitting", "titleEmpty", "titleTooLong", "shopEmpty", "shopTooLong",
+      "statusOrdered", "statusShipped", "statusDelivered", "statusReceived", "submit", "submitting", "titleEmpty", "titleTooLong", "shopEmpty", "shopTooLong",
       "orderedAtInvalid", "expectedDateInvalid", "amountInvalid", "categoryInvalid", "trackingTooLong", "checkInput", "notSignedIn", "failed",
       "editHeading", "edit", "save", "deleteSummary", "deleteWarning", "deleteConfirm", "deleteButton", "deleting", "notFound", "deleteFailed", "deleteUnchecked",
     ]);
@@ -180,7 +176,7 @@ describe("the columns written", () => {
   it("manualParcelRow writes exactly the columns the Swift row sends (and user_id)", () => {
     const parsed = ManualParcelSchema.parse({ title: "本", shop: "店", status: "ordered" });
     // "id" is the one the form makes when it is opened (the Web lets the database make it).
-    const web = Object.keys(manualParcelRow(parsed, new Date("2026-11-08T00:00:00Z"))).concat("user_id", "id").sort();
+    const web = [...new Set([...Object.keys(manualParcelRow(parsed, new Date("2026-11-08T00:00:00Z"))), ...Object.keys(manualParcelRow({ ...parsed, status: "delivered" }, new Date("2026-11-08T00:00:00Z"))), "user_id", "id"])].sort();
     const keys = [...(LOGIC.match(/private enum Keys: String, CodingKey \{([\s\S]*?)\n    \}/)?.[1] ?? "").matchAll(/"([a-z_]+)"|\b(id|title|shop|category|carrier|status|source)\b/g)].map((m) => m[1] ?? m[2]);
     expect([...new Set(keys)].sort()).toEqual(web);
   });

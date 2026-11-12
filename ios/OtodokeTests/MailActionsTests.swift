@@ -30,6 +30,7 @@ struct MailActionsTests {
         let (provider, auth) = try await TestSession.signedIn(fake)
         let changes = DataChanges()
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
@@ -244,11 +245,29 @@ struct MailActionsTests {
         #expect(MailActionsClient.markTimeout == 30)
     }
 
+    @Test func readWaitingDistinguishesAnExplicitConsentRefusalFromACheckFailureWithoutRetrying() async throws {
+        let fake = FakeSupabase.make()
+        let (provider, _) = try await TestSession.signedIn(fake)
+        let token = try await provider.auth.session.accessToken
+        let server = FakeMailServer.make(supabase: fake)
+        let client = MailActionsClient(baseURL: server.baseURL, session: server.urlSession)
+        await server.force("read-waiting", .answer(status: 403, ok: false, code: "ai_consent_required"))
+        await #expect(throws: MailAPIFailure.aiConsentRequired) {
+            try await client.readWaiting(accessToken: token)
+        }
+        #expect(await server.count("read-waiting") == 1)
+        await server.force("read-waiting", nth: 2, .answer(status: 503, ok: false, code: "unavailable"))
+        await #expect(throws: MailAPIFailure.unavailable) {
+            try await client.readWaiting(accessToken: token)
+        }
+        #expect(await server.count("read-waiting") == 2)
+    }
+
     @Test(arguments: [
         (500, "read_failed", "読み取れなかったメールがあります。時間をおいてお試しください。"),
         (200, "read_failed", "読み取れなかったメールがあります。時間をおいてお試しください。"),
         (401, "unauthorized", "ログインし直してください。"),
-        (503, "unavailable", "うまくいきませんでした。もう一度お試しください。"),
+        (503, "unavailable", AIReadingConsentText.readFailed),
         (400, "invalid_input", "うまくいきませんでした。もう一度お試しください。"),
         (500, "something_new", "うまくいきませんでした。もう一度お試しください。"),
     ])
@@ -258,8 +277,8 @@ struct MailActionsTests {
         await s.actions.readWaiting()
         #expect(s.actions.readNote == text)
         #expect(s.actions.isReading == false)
-        // Some mails may have been read before it failed: the count is read again.
-        #expect(s.counter.reloads == 1)
+        // An explicit consent-check failure starts no read; its recovery is the consent sheet's reload.
+        #expect(s.counter.reloads == (code == "unavailable" ? 0 : 1))
         #expect(s.model.unread == .loaded(3))
     }
 

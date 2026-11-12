@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * 「届いた荷物」「キャンセルした荷物」 on the iOS parcel tab are the name and an arrow: no number, no 「件」 (the
+ * 「受け取り済み」「キャンセルした荷物」 on the iOS parcel tab are the name and an arrow: no number, no 「件」 (the
  * owner's wish). The number is shown by the page each one opens, beside its heading, written as the Web writes it
  * (delivered: DeliveredHeading in filter-form.tsx, cancelled: cancelled/page.tsx, both toLocaleString("ja-JP")).
  * The number is not read for the list any more (one request fewer per read); the unread mail is still counted.
@@ -26,9 +26,9 @@ describe("the page links of the list carry no count", () => {
   const row = ios("Screens/Parcels/PageLinkRow.swift");
 
   it("both links are the name alone, as the calendar's one is", () => {
-    expect(list).toContain('PageLinkRow(label: "届いた荷物") {');
+    expect(list).toContain('PageLinkRow(label: "受け取り済み") {');
     expect(list).toContain('PageLinkRow(label: "キャンセルした荷物") {');
-    expect(calendar).toContain('PageLinkRow(label: "届いた荷物") {');
+    expect(calendar).toContain('PageLinkRow(label: "受け取り済み") {');
     expect(list).not.toMatch(COUNT_ON_LINK);
     expect(calendar).not.toMatch(COUNT_ON_LINK);
   });
@@ -49,8 +49,8 @@ describe("the page links of the list carry no count", () => {
   });
 
   it("negative control: the detector sees a count put back on a link", () => {
-    expect(list.replace('PageLinkRow(label: "届いた荷物") {', 'PageLinkRow(label: "届いた荷物", count: model.n) {')).toMatch(COUNT_ON_LINK);
-    expect(calendar.replace('PageLinkRow(label: "届いた荷物")', 'PageLinkRow(label: "届いた荷物", count: nil)')).toMatch(COUNT_ON_LINK);
+    expect(list.replace('PageLinkRow(label: "受け取り済み") {', 'PageLinkRow(label: "受け取り済み", count: model.n) {')).toMatch(COUNT_ON_LINK);
+    expect(calendar.replace('PageLinkRow(label: "受け取り済み")', 'PageLinkRow(label: "受け取り済み", count: nil)')).toMatch(COUNT_ON_LINK);
     expect(`${list}\nvar deliveredCount: Int? { nil }`).toMatch(COUNT_ON_LINK);
   });
 });

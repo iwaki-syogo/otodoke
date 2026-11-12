@@ -34,6 +34,8 @@ final class CalendarModel {
     static let failedText = "読み込めませんでした"
     static let emptyText = "この月の予定はありません"
 
+    @ObservationIgnored private var retired = false
+
     let reader: ParcelReader
 
     /// "YYYY-MM": starts at today's month.
@@ -160,6 +162,7 @@ final class CalendarModel {
     // MARK: reading
 
     private func move(to ym: String) async {
+        guard !retired else { return }
         guard !isMoving, bounds.contains(ym), !JSText.equal(ym, month) else { return }
         isMoving = true
         movingTo = ym
@@ -170,6 +173,7 @@ final class CalendarModel {
 
     /// Reads `ym`; shown only when no newer read began meanwhile.
     private func read(_ ym: String) async {
+        guard !retired else { return }
         let ticket = fence.beginRead()
         let signal = CutOffSignal()
         cutOff = signal
@@ -184,7 +188,7 @@ final class CalendarModel {
         // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
         // [N-r2-2] The calendar never writes (no fence.beginWrite), so the verdict is .current or
         // .superseded; anything not current is a newer read's.
-        guard fence.verdict(ticket) == .current else { return }
+        guard !retired, fence.verdict(ticket) == .current else { return }
         // [S1] Cut off (the .task cancelled when the tab is left): dropped, not shown as a failure.
         // [N-r2-1] A move on the way stays (isMoving, movingTo): the next load() reads movingTo and ends it.
         guard !Task.isCancelled else {
@@ -205,6 +209,17 @@ final class CalendarModel {
             let open = Self.databaseOrder(rows.filter { $0.status != "cancelled" })
             byDay = .loaded(CalendarRules.upcomingByDay(open, today: now, first: first, last: last))
         }
+    }
+
+    /// Retires this account's calendar, including the result of a read still on its way.
+    func clearForSignOut() {
+        retired = true
+        _ = fence.beginRead()
+        byDay = nil
+        movingTo = nil
+        isMoving = false
+        wasCutOff = false
+        cutOff = nil
     }
 
     /// The Web's order: expected_date ↑, expected_window_start ↑ (nulls last for both), then id ↑.

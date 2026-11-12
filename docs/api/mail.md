@@ -129,3 +129,40 @@ batches. If the contract is missing or inconsistent, it fails before claiming or
 the permission remains saved. Deploy this automatic reader together with the cost-guard branch's
 SDK timeout and retry controls. A mail must not be started just because there is a positive amount of
 time left. An interrupted or uncertain paid request is not automatically replayed.
+
+## Storage and expiry while waiting for permission
+
+Consent-waiting mail uses the existing per-user unread count and byte limits. It does not consume
+the active global unread storage pool, including after a later grant while the same mail waits for
+the daily Claude allowance. Storage rejection keeps the existing intake notice and response fields.
+No permission choice or retry extends its deadline.
+
+The retention period is defined once by `public.ai_consent_waiting_retention()` in migration
+`20261113120000_consent_waiting_storage.sql`. The database assigns `consent_waiting_until` from the
+immutable original `received_at`. Declining or withdrawing keeps unread mail only until that
+arrival-based deadline. A grant does not reset it. Clients must not promise indefinite retention
+of consent-waiting mail, or calculate a fresh deadline when retrying.
+
+The existing daily cleanup removes expired waiting mail. Taking over an expired row also clears it
+before Claude is called and uses the existing discarded outcome. If a partial reading has already
+been saved, cleanup clears the mail content while keeping its saved results and parcel. Completed
+readings remain until the user deletes them. No new cron or client-scheduled cleanup is required.
+
+## Permission at each paid claim
+
+Migration `20261113121000_claude_claim_consent.sql` also checks the current consent inside both
+paid-claim RPCs. It locks the user's consent row `FOR SHARE` before taking any daily allowance.
+A withdrawal serialized before the claim prevents that claim and keeps the mail waiting, including
+when withdrawal occurs after the pipeline's first check or between triage and extraction.
+The existing permission choice and previously saved results stay intact. A legitimate release of
+an earlier claim remains possible after withdrawal.
+
+Only SQLSTATE `42501` with the exact message `ai_consent_required` is treated as the fixed permission
+denial. Lease failures, database errors and failure to retain the waiting state remain failures.
+The initial API guard and its existing response contract are unchanged; a running batch stopped by
+a later withdrawal can still report `read_failed` as described above.
+
+The transaction serializes claim authorization with withdrawal. Its locks are released when the
+claim commits, before the external HTTP request; they are not held across Claude's response. An
+already authorized call cannot be recalled by a later withdrawal. Clients must not replay such a
+call automatically or reset the saved permission when reporting the stopped batch.

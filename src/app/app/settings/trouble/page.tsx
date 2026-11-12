@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { FoldCard, PitfallBody } from "@/components/forwarding-steps";
 import { FORWARDING_PITFALLS, PITFALLS_HEADING, PITFALLS_LEAD } from "@/lib/forwarding-guide";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUser } from "@/lib/supabase/server";
+import { readAiReadingConsent } from "@/lib/ai-consent";
+import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { READ_FAILED_REASON, READ_OVER_LIMIT_REASON, READ_STOPPED_BUTTON, READ_STOPPED_REASON, READ_STORAGE_LIMIT_NOTICE, READ_STORAGE_LIMIT_REASON, READ_STORAGE_NOTICE_FAILED } from "@/lib/read-notices";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import { dismissIntakeNotice, readWaitingMail } from "../actions";
@@ -26,6 +28,8 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
   // The reasons are told only from counts that were read; when they were not, no reason is stated.
   const intake = await readIntakeNotice(supabase, "settings trouble");
   const reasons = waiting !== null && waiting > 0 ? await readUnreadReasons(supabase, "settings trouble") : null;
+  const user = waiting !== null && waiting > 0 ? await getUser() : null;
+  const consent = user ? await readAiReadingConsent(supabase, user.id) : "unknown";
 
   return (
     <SubPage title="うまく届かないとき">
@@ -54,9 +58,18 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
           ) : null}
           {reasons && reasons.overLimit > 0 ? <p className="mt-1 text-sm leading-6">{READ_OVER_LIMIT_REASON}</p> : null}
           {reasons && reasons.failed > 0 ? <p className="mt-1 text-sm leading-6">{READ_FAILED_REASON}</p> : null}
-          <form action={readWaitingMail} className="mt-3">
-            <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
-          </form>
+          {consent === "granted" ? (
+            <form action={readWaitingMail} className="mt-3">
+              <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
+            </form>
+          ) : consent === "unknown" ? (
+            <div role="alert" className="mt-3 text-sm">
+              <p>{AI_CONSENT_TEXT.readFailed}</p>
+              <Link href="/app/settings/trouble" className="mt-2 inline-flex min-h-11 items-center underline underline-offset-4">{AI_CONSENT_TEXT.retry}</Link>
+            </div>
+          ) : (
+            <Link href="/app/reading?after=settings" className="mt-3 inline-flex min-h-11 items-center rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">{AI_CONSENT_TEXT.start}</Link>
+          )}
         </section>
       ) : (
         <p className="text-sm leading-6 text-neutral-600">未読のメールはありません。</p>

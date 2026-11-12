@@ -12,7 +12,7 @@
  */
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { readCookieSession, isFresh, throwawayAuthClient, type ServerClient } from "@/lib/auth-session";
+import { readCookieSession, isFresh, throwawayAuthClient, type ServerClient, type SessionRead } from "@/lib/auth-session";
 import { appUrl } from "@/lib/env";
 import {
   isOutage,
@@ -331,14 +331,16 @@ export type RestoreKeyWrap = (db: AdminClient, userId: string, input: KeyRestore
  *      the password that still signs in. When Supabase's answer is unknown nothing is put back:
  *      the key opens with the new password, which may be the one that signs in (secret_change_unknown).
  */
-export async function changeSecret(input: unknown, restoreWrap: RestoreKeyWrap): Promise<ChangeSecretResult> {
+export async function changeSecret(input: unknown, restoreWrap: RestoreKeyWrap, native?: { client: ServerClient; session: SessionRead }): Promise<ChangeSecretResult> {
   const parsed = ChangeSecretInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "invalid_input" };
   const { currentAuthSecret, newAuthSecret, rewrap, captchaToken } = parsed.data;
   if (currentAuthSecret === newAuthSecret) return { ok: false, code: "same_secret" };
 
-  const supabase = await createClient();
-  const read = await readCookieSession(supabase);
+  // Native callers supply an ephemeral client and the verified Bearer owner. The same steps below
+  // reauthenticate that owner's current secret before either the wrap or the login secret changes.
+  const supabase = native?.client ?? await createClient();
+  const read = native?.session ?? await readCookieSession(supabase);
   if (read.state === "unknown") return { ok: false, code: "network" };
   if (read.state === "signed_out" || !read.session.email) return { ok: false, code: "signed_out" };
   const { userId } = read.session;

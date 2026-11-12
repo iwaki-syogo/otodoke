@@ -10,15 +10,17 @@ import Observation
 @MainActor
 @Observable
 final class DeliveredModel {
-    static let title = "届いた荷物"
+    static let title = "受け取り済み"
     static let failedText = "読み込めませんでした"
-    static let emptyText = "届いた荷物はありません"
+    static let emptyText = "受け取り済みの荷物はありません"
     static let noMatchText = "見つかりません"
     static let searchPlaceholder = "品名・店名"
     static let clearText = "クリア"
     static let allShops = "すべての店"
     static let allCategories = "すべての分類"
     static let allMonths = "すべての月"
+
+    @ObservationIgnored private var retired = false
 
     let reader: StatusListReader
 
@@ -92,7 +94,7 @@ final class DeliveredModel {
         shown?.count
     }
 
-    /// 読み込めませんでした / 届いた荷物はありません / 見つかりません, or nil when there are results.
+    /// 読み込めませんでした / 受け取り済みの荷物はありません / 見つかりません, or nil when there are results.
     var message: String? {
         if parcels == .failed || items == .failed { return Self.failedText }
         guard case let .loaded(rows)? = parcels, let shown else { return nil }
@@ -121,6 +123,7 @@ final class DeliveredModel {
     }
 
     func load() async {
+        guard !retired else { return }
         let ticket = fence.beginRead()
         let signal = CutOffSignal()
         cutOff = signal
@@ -136,7 +139,7 @@ final class DeliveredModel {
         }
         // A newer read was started meanwhile: this one is older than what it would replace (and it owns
         // the state: this one being cut off changes nothing, N-new2).
-        guard fence.verdict(ticket) == .current else { return }
+        guard !retired, fence.verdict(ticket) == .current else { return }
         isLoading = false
         // [B2-1] Cut off (the .task cancelled when the tab is left): its answers are dropped, not shown as
         // 「読み込めませんでした」, and the next appearance reads again.
@@ -156,6 +159,20 @@ final class DeliveredModel {
         let failed = parcels == .failed || items == .failed
         guard parcels == nil || failed || mark.isStale || wasCutOff || cutOff?.isRaised == true else { return }
         await load()
+    }
+
+    /// Retires this account's received list and rejects any result still on its way.
+    func clearForSignOut() {
+        retired = true
+        _ = fence.beginRead()
+        parcels = nil
+        items = nil
+        memo = nil
+        resultNumber &+= 1
+        isLoading = false
+        wasCutOff = false
+        cutOff = nil
+        clear()
     }
 
     /// iOS-12: back in front.

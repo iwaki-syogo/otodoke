@@ -229,6 +229,7 @@ struct SettingsModelTests {
         let (provider, auth) = try await TestSession.signedIn(fake)
         let changes = DataChanges()
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
@@ -393,19 +394,16 @@ struct SettingsModelTests {
 
     @Test func theWebPagesAreTheListOfTaskMd() {
         // One page per item (the Web's dev 84255fc): the button opens the page that holds it.
-        #expect(SettingsModel.webLink(.changePassphrase).absoluteString == "https://otodoke.app/app/settings/password")
-        #expect(SettingsModel.webLink(.openWeb).absoluteString == "https://otodoke.app/app")
+        #expect(SettingsWebAction.allCases == [.privacy])
         for action in SettingsWebAction.allCases {
             #expect(SettingsModel.webLink(action).scheme == "https", "\(action)")
             #expect(SettingsModel.webLink(action).host() == "otodoke.app", "\(action)")
         }
-        #expect(WebLink.settingsPassword.absoluteString == "https://otodoke.app/app/settings/password")
-        #expect(WebLink.app.absoluteString == "https://otodoke.app/app")
     }
 
     @Test func thePrivacyAndDeletionRows() {
         #expect(SettingsModel.webLink(.privacy).absoluteString == "https://otodoke.app/privacy")
-        #expect(SettingsModel.webLink(.deleteAccount).absoluteString == "https://otodoke.app/app/settings/delete")
+        #expect(SettingsView.title(.deleteAccount) == "アカウントの削除")
     }
 
     @Test func theMailHandlingItemsOfM1() {
@@ -593,7 +591,7 @@ struct SettingsModelTests {
     @Test func aKeyStepThatFailedShowsOnTheKeyRow() async throws {
         let w = try await KeyOwnerAndOrderTests.SignInWorld(keyInUse: false)
         try await w.signIn()
-        let screens = MainScreens.live(auth: w.auth)
+        let screens = MainScreens.live(auth: w.auth, readingConsent: .allowedForTests())
         let setup = try #require(screens.keySetup)
         #expect(await waitFor(.seconds(5)) { await MainActor.run { setup.lastOutcome != nil } })
         await screens.settings.onAppear()

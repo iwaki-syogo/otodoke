@@ -1,29 +1,22 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PARTLY_RESTORED_NOTICE } from "@/lib/format";
+import { PARTLY_RESTORED_NOTICE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE } from "@/lib/format";
 import { runUndo } from "@/lib/undo-outcome";
 
-const CONTROLS = readFileSync(path.resolve(__dirname, "../../app/app/delivered-controls.tsx"), "utf8");
+const receipt = { id: "parcel", receipt_id: "opaque-receipt" };
 
-describe("what 元に戻す shows", () => {
-  it("everything went back: the notice closes", async () => {
-    expect(await runUndo(async () => ({ leftReceived: false }))).toBe("done");
+describe("what 元に戻す knows", () => {
+  it("all restored: returns the confirmed restored IDs", async () => {
+    expect(await runUndo(async () => ({ restored: [receipt.id], changed: [], failed: [] }), [receipt])).toEqual({ restored: [receipt.id], changed: [], failed: [] });
   });
-
-  it("only some went back: the notice says some parcels are still received", async () => {
-    expect(await runUndo(async () => ({ leftReceived: true }))).toBe("partly");
-    expect(PARTLY_RESTORED_NOTICE).toBe("受け取り済みのままの荷物があります");
+  it("a change elsewhere says nothing about whether a parcel is still received", async () => {
+    expect(await runUndo(async () => ({ restored: [], changed: [receipt.id], failed: [] }), [receipt])).toEqual({ restored: [], changed: [receipt.id], failed: [] });
+    expect(UNDO_CHANGED_NOTICE).not.toContain("受け取り済みのまま");
   });
-
-  it("an exception is the failure text, not a partial one", async () => {
-    expect(await runUndo(async () => { throw new Error("offline"); })).toBe("failed");
-    expect(CONTROLS).toContain("元に戻せませんでした");
-  });
-
-  it("the toast uses the outcome: it shows the notice for a partial undo and does not drop the result", () => {
-    expect(CONTROLS).toMatch(/runUndo\(\(\) => restoreStatuses\(items\)\)/);
-    expect(CONTROLS).toMatch(/outcome === "partly"\) setToast\(\{ text: PARTLY_RESTORED_NOTICE, undo: null \}\)/);
+  it("a lost request is failed, not a changed parcel", async () => {
+    expect(await runUndo(async () => { throw new Error("offline"); }, [receipt])).toEqual({ restored: [], changed: [], failed: [receipt.id] });
+    expect(UNDO_FAILED_NOTICE).toBe("元に戻せませんでした");
   });
 });
 
@@ -31,10 +24,9 @@ const IOS = path.resolve(__dirname, "../../../ios/Otodoke");
 const swiftSources = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? swiftSources(path.join(dir, e.name)) : e.name.endsWith(".swift") ? [readFileSync(path.join(dir, e.name), "utf8")] : []));
 
-// The same sentence must exist in the iOS app, but build 14 (feature/ios-b14) has not been merged into
-// this branch yet, so the app does not have it. Change it.skip to it after merging build 14.
+// The same sentence must exist in the iOS app (build 14 has it).
 describe("iOS parity of the partial-undo sentence", () => {
-  it.skip("the iOS Swift sources contain PARTLY_RESTORED_NOTICE verbatim", () => {
+  it("the iOS Swift sources contain PARTLY_RESTORED_NOTICE verbatim", () => {
     expect(swiftSources(IOS).some((src) => src.includes(PARTLY_RESTORED_NOTICE))).toBe(true);
   });
 });

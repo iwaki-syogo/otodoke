@@ -52,6 +52,7 @@ struct DemoScreenShots {
         let fake = FakeSupabase.make()
         let (provider, auth) = try await TestSession.signedIn(fake)
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider),
             auth: auth,
