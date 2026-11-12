@@ -246,16 +246,14 @@ describe("/privacy: what it says", () => {
     expect(text).toContain("消したデータも、データベースのバックアップと接続の記録に、最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。");
   });
 
-  it("gives consent-waiting mail an arrival-based deadline, including a decline, instead of promising indefinite storage", async () => {
+  it("uses the approved short arrival-based waiting deadline across policy, settings and README", async () => {
     const root = await render();
     const waiting = Object.fromEntries(terms(section(root, "メールの扱い")))["許可待ちのメール"];
     expect(waiting).toBe(AI_CONSENT_TEXT.waitingRetention);
-    const days = waiting?.match(/届いてから (\d+) 日で期限切れになります/);
+    expect(waiting).toBe("許可を待つメールは、届いてから 14 日で消えます。");
+    const days = waiting?.match(/届いてから (\d+) 日で消えます/);
     expect(days).not.toBeNull();
     expect(Number(days![1]) * 24 * 3600_000).toBe(consentWaitingRetentionMs());
-    expect(waiting).toContain("期限を過ぎた件名・差出人・本文は、毎日の掃除で消します");
-    expect(waiting).toContain("許可しない場合や読み取りをやめた場合も、その期限までは残ります");
-    expect(waiting).toContain("許可した後も、読み取るまでは同じ期限です");
     const { MailHandling } = await import("@/app/app/settings/mail-handling");
     const settings = parseHtml(renderToStaticMarkup(createElement(MailHandling)));
     expect(findAll(settings, (n) => n.tag === "p" && textOf(n) === waiting)).toHaveLength(1);

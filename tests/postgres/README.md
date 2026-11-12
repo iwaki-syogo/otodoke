@@ -109,3 +109,11 @@ node tests/postgres/run-claude-claim-consent.mjs --negative-lock
 ロックは standalone U→G→C→有料日の advisory、owned U→G→E→C→有料日の advisory です。v2 の保存済み core が public v1 を呼ぶときは U/G/C の再入です。release は従来の U→有料日の advisory のまま、許可を要求しません。取り消しと claim の順を同じ短い DB transaction で決め、成功した claim の commit 後に始まる外部 HTTP の間までロックを持ち出しません。
 
 台本は終了・失敗・割り込み時に専用 PG を止め、待ち受け 0 を確かめて専用データを削除します。2026-11-12 の Codex 環境では、既知の `shmget` 拒否を再試行・回避せず、構文検査・`--self-test` とソース契約試験だけを実行しました。実 SQL・並列操作・rollback と SQL 陰性対照は未実行です。
+
+## 許可待ち台本の verify 出力の読み方
+
+`run-consent-waiting-storage.mjs` は、verify ごとに列の契約を指定します。rollback 後の `110000_sample_generation.sql` は 8 列で、先頭 7 列が真、最後の列が `OK` です。`120000_consent_waiting_storage.before.sql` は 11 列で、先頭が `OK`、次の 7 列が真、残り 3 列が非負の件数です。同じ版の after verify も 11 列で、先頭が `OK`、次の 8 列が真、残り 2 列が非負の件数です。先頭と末尾のどちらかに `OK` があればよい、という読み方はしません。列数・判定位置が変わった場合も止まります。
+
+実際の before／rollback 検証／再適用後の検証と `--self-test` は、同じ `verifyFile` を通ります。自己試験は PostgreSQL を起動せず、Node の子プロセスから実 stdout を受け取り、上の正常な形と、`FAILED`・欠落列・偽の先頭 `OK`・偽の真偽値・判定の後ろの SQL エラー・終了コード 0 の stderr SQL エラーを確かめます。未知の verify ファイルも受け付けません。Vitest の `consent-waiting-verify-runner.test.ts` が、自己試験だけでなく実行経路もこの境界を使うことを検査します。
+
+2026-11-12 の C-2 修正では、新しい自己試験で旧先頭列判定の失敗を再現し、修正後の成功、旧判定へ戻した陰性対照での失敗、復元後の成功を確認しました。実行経路だけを旧判定へ戻して自己試験を通してしまう変更も、別のソース検査が失敗することを確認しました。これらは parser と子プロセスの実測です。PostgreSQL の起動・SQL・rollback／再適用そのものは、この修正では実行していません。
