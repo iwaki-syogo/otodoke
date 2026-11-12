@@ -20,7 +20,16 @@ Now waiting:
   sender and body that users without a key left behind (one data change, no schema). Only with the
   owner's YES on the day; nothing it removes comes back. Its verify files each return one verdict
   row: `supabase/verify/20261114090000_drop_unsealed_plaintext.before.sql` and `.count-control.sql`
-  first, `.after.sql` right after.
+  first, `.after.sql` right after. **The UPDATE takes the owner's two numbers (users, mails) on ONE
+  line** (`select set_config('otodoke.expected_users', '<USERS>', ...), set_config('otodoke.expected_mails',
+  '<MAILS>', ...)` near the top): on the day replace `<USERS>` and `<MAILS>` by the digits, save as
+  another file, check `diff` against the original shows only that line, and run the saved file. It is
+  one transaction: if the users or mails it changes are not exactly those numbers, or either was left
+  as `<USERS>` / `<MAILS>`, empty, 0 or not an integer, it raises and changes nothing; likewise if a
+  row it did not mean to change would differ after (whole-row hash, same transaction). Its last
+  row says `DROPPED` or `NOT_RUN`. The after file's verdict means only "nothing left to drop, no
+  plaintext on dropped rows". The count-control file WRITES to production emails and always
+  rolls back; it is not read only.
 - `20261107090000_retire_passphrase_keys.sql` — **WARNING (2026-11-08, restated 2026-11-10): do NOT
   run this.** password-v1 is already in production, and its key rows look the same as passphrase
   rows, so running it as written retires EVERY key in use and every user who signed in with a

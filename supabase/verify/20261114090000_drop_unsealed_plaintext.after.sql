@@ -3,6 +3,16 @@
 -- Go on only if verdict is 'OK'. No row (an error) counts as FAILED: `supabase db query --linked -f`
 -- returns only the last result and exits 0 even on an error.
 --
+-- WHAT THE VERDICT SAYS, AND ONLY THIS (the column verdict_covers repeats it on the row): no read
+-- plain mail of a user without a key is left (to_drop_left = 0), and no dropped row keeps a
+-- plaintext column (dropped_with_plaintext = 0). It does NOT say nothing was removed too much: it
+-- is a state check with no before to compare with, so a wrongly dropped row looks the same as a
+-- right one. "Did not drop too much" is checked INSIDE the pending SQL's own transaction (the rows
+-- it did not change are hashed whole before and after, and it refuses to commit if they differ).
+-- Here you can only compare the three kept_* counts with the before row, by hand; that is a
+-- count, not proof that the same rows are there. Never write "the after file confirmed nothing was
+-- lost".
+--
 --   to_drop_left              must be 0: no read plain mail of a user without a key
 --   dropped_with_plaintext    must be 0: a dropped row keeps none of the five
 --   confirm_links_kept        Gmail confirmations that are dropped and keep their approval link: at
@@ -34,5 +44,6 @@ checks as (
 )
 select
   case when to_drop_left = 0 and dropped_with_plaintext = 0 then 'OK' else 'FAILED' end as verdict,
+  'nothing left to drop and no plaintext on dropped rows, NOT: nothing dropped too much' as verdict_covers,
   checks.*
 from checks;
