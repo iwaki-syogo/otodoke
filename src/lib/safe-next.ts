@@ -19,8 +19,8 @@ const HOME = "/app";
  * No page of the app has a path that starts with an empty or encoded segment, so nothing a person
  * is sent to after login is refused. The query and fragment are kept as they are.
  */
-export function safeNextPath(value: string | null): string {
-  if (!value?.startsWith("/")) return HOME;
+export function safeNextPath(value: unknown): string {
+  if (typeof value !== "string" || !value.startsWith("/")) return HOME;
   const url = onThisSite(value);
   if (!url) return HOME;
   const decoded = decodeAsciiEscapes(url.pathname);

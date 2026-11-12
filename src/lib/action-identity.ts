@@ -4,7 +4,8 @@ import { safeNextPath } from "@/lib/safe-next";
 export const KEY_SETTINGS_PATH = "/app/settings/password";
 
 /** Only app GET pages can be a recovery destination; never replay an old form or auth request. */
-export function actionReturnPath(value: string | null): string {
+export function actionReturnPath(value: unknown): string {
+  if (typeof value !== "string") return "/app";
   const safe = safeNextPath(value);
   const path = new URL(safe, "https://otodoke.invalid").pathname;
   return path === "/app" || path.startsWith("/app/") ? path : "/app";
