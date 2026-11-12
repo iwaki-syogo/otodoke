@@ -4,7 +4,6 @@
 do $$
 declare
   v_user uuid := gen_random_uuid();
-  v_other uuid := gen_random_uuid();
   v_mail uuid := gen_random_uuid();
   v_run uuid := gen_random_uuid();
   v_next uuid := gen_random_uuid();
@@ -20,18 +19,25 @@ begin
     -- are rolled back, so no existing person's count/body/status is edited.
     perform pg_catalog.pg_advisory_xact_lock(62802,0);
     perform pg_catalog.pg_advisory_xact_lock(62801,v_day-date '2000-01-01');
-    insert into auth.users(id) values(v_user),(v_other);
+    insert into auth.users(id) values(v_user);
+    -- Once 121000 is applied, claims need a granted consent row and every claim in one transaction must be for
+    -- one owner (the sample-owner lock). The synthetic user gets the consent row (rolled back with the rest);
+    -- the table only exists after 180000, which precedes this migration.
+    if to_regclass('public.ai_reading_consents') is not null then
+      insert into public.ai_reading_consents(user_id,decision,text_version) values(v_user,'granted','verify');
+    end if;
     select coalesce(sum(calls),0) into v_total from public.claude_usage_daily where day = v_day;
+    -- A refused zero-limit claim must not create a usage row (the user has none yet).
+    if public.claim_claude_call(v_user,0,2147483647) <> 'user_limit' then v_fail := v_fail || ' zero_limit_new_row'; end if;
+    if exists(select 1 from public.claude_usage_daily where user_id=v_user and day=v_day) then v_fail := v_fail || ' refused_new_row'; end if;
     select * into v_verdict,v_claim from public.claim_claude_call_v2(v_user,1,2147483647);
     if v_verdict is distinct from 'ok' or v_claim is null then v_fail := v_fail || ' v2_claim'; end if;
     if (select calls from public.claude_usage_daily where user_id=v_user and day=v_day) is distinct from 1 then v_fail := v_fail || ' v2_count'; end if;
     if public.claim_claude_call(v_user,1,2147483647) <> 'user_limit' then v_fail := v_fail || ' personal_limit'; end if;
-    if public.claim_claude_call(v_other,0,2147483647) <> 'user_limit' then v_fail := v_fail || ' zero_limit_new_row'; end if;
-    if exists(select 1 from public.claude_usage_daily where user_id=v_other and day=v_day) then v_fail := v_fail || ' refused_new_row'; end if;
     v_n := public.release_claude_call(v_claim,v_user);
     if v_n <> 1 or public.release_claude_call(v_claim,v_user) <> 0 then v_fail := v_fail || ' release_once'; end if;
     if (select coalesce(sum(calls),0) from public.claude_usage_daily where day=v_day) <> v_total then v_fail := v_fail || ' release_count'; end if;
-    if public.claim_claude_call(v_other,10,2147483647) <> 'ok' then v_fail := v_fail || ' v1_claim'; end if;
+    if public.claim_claude_call(v_user,10,2147483647) <> 'ok' then v_fail := v_fail || ' v1_claim'; end if;
 
     select verdict into v_verdict from public.store_mail_run(v_user,v_mail,v_run,v_cols,null,v_limits);
     if v_verdict is distinct from 'ok' then v_fail := v_fail || ' intake'; end if;

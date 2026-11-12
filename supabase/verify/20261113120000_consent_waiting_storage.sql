@@ -10,8 +10,12 @@ with checks as (
       and prosrc like '%filter (where consent_waiting_until is null)%'
       and prosrc like '%v_old.consent_waiting_until <= v_now%'
       and prosrc like '%consent_wait_expired%') as isolated_expiring_intake,
+    -- Direct call from the daily purge, or (after 130000) through the preserved prior body that still calls it.
     exists(select 1 from pg_proc where oid=to_regprocedure('public.purge_old_screen_events()')
-      and prosrc like '%public.purge_expired_consent_waiting_mail()%') as existing_purge_extended,
+      and (prosrc like '%public.purge_expired_consent_waiting_mail()%'
+        or (prosrc like '%public.purge_old_screen_events_before_receipt_retention()%'
+          and exists(select 1 from pg_proc where oid=to_regprocedure('public.purge_old_screen_events_before_receipt_retention()')
+            and prosrc like '%public.purge_expired_consent_waiting_mail()%')))) as existing_purge_extended,
     (select count(*)=1 from cron.job where jobname='otodoke-purge-old-screen-events'
       and command='select public.purge_old_screen_events()' and schedule='30 18 * * *' and active) as same_daily_job,
     (select count(*)=8 and bool_and(p.proconfig=array['search_path=""']

@@ -40,8 +40,25 @@ begin
     update public.parcels p set category='beauty',category_source='user' where p.id=v_parcel;
     v_snapshot:=public.mail_parcel_snapshot(v_user);
     select p.updated_at into v_version from public.parcels p where p.id=v_parcel;
-    select u.verdict,u.parcel_row into v_verdict,v_saved from public.update_mail_parcel(v_snapshot,v_parcel,v_version,'{}','{"category":"hobby","category_source":"auto"}',v_items,v_mail,v_run) u;
-    if v_verdict is distinct from 'ok' or v_saved->>'category' is distinct from 'beauty' then v_fail:=v_fail||' user_category'; end if;
+    if to_regclass('public.parcel_receipt_undos') is null then
+      select u.verdict,u.parcel_row into v_verdict,v_saved from public.update_mail_parcel(v_snapshot,v_parcel,v_version,'{}','{"category":"hobby","category_source":"auto"}',v_items,v_mail,v_run) u;
+      if v_verdict is distinct from 'ok' or v_saved->>'category' is distinct from 'beauty' then v_fail:=v_fail||' user_category'; end if;
+    else
+      -- 130000 makes an empty mail merge advance the parcel version. now() is constant inside this
+      -- verifier's one transaction, so the version cannot advance here: that guard must refuse the call
+      -- (run-received-receipts.mjs covers the advance across separate transactions).
+      begin
+        perform 1 from public.update_mail_parcel(v_snapshot,v_parcel,v_version,'{}','{"category":"hobby","category_source":"auto"}',v_items,v_mail,v_run);
+        v_fail:=v_fail||' user_category_empty_merge_accepted';
+      exception when insufficient_privilege then
+        if sqlerrm is distinct from 'mail confirmation did not advance the parcel version' then raise; end if;
+      end;
+    end if;
+    -- A non-empty merge must still keep the person's category, whichever migrations are applied.
+    v_snapshot:=public.mail_parcel_snapshot(v_user);
+    select p.updated_at into v_version from public.parcels p where p.id=v_parcel;
+    select u.verdict,u.parcel_row into v_verdict,v_saved from public.update_mail_parcel(v_snapshot,v_parcel,v_version,'{"shop":"Synthetic shop renamed"}','{"category":"hobby","category_source":"auto"}',v_items,v_mail,v_run) u;
+    if v_verdict is distinct from 'ok' or v_saved->>'category' is distinct from 'beauty' or v_saved->>'shop' is distinct from 'Synthetic shop renamed' then v_fail:=v_fail||' user_category_nonempty'; end if;
     select count(*) into v_count from public.parcel_items i where i.parcel_id=v_parcel;
     if v_count<>1 then v_fail:=v_fail||' duplicate_items'; end if;
     update public.emails e set processing_lease_until=clock_timestamp()-interval '1 second' where e.id=v_mail;
