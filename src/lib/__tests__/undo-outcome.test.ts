@@ -31,10 +31,9 @@ const IOS = path.resolve(__dirname, "../../../ios/Otodoke");
 const swiftSources = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? swiftSources(path.join(dir, e.name)) : e.name.endsWith(".swift") ? [readFileSync(path.join(dir, e.name), "utf8")] : []));
 
-// The same sentence must exist in the iOS app, but build 14 (feature/ios-b14) has not been merged into
-// this branch yet, so the app does not have it. Change it.skip to it after merging build 14.
+// The same sentence must exist in the iOS app (build 14 has it).
 describe("iOS parity of the partial-undo sentence", () => {
-  it.skip("the iOS Swift sources contain PARTLY_RESTORED_NOTICE verbatim", () => {
+  it("the iOS Swift sources contain PARTLY_RESTORED_NOTICE verbatim", () => {
     expect(swiftSources(IOS).some((src) => src.includes(PARTLY_RESTORED_NOTICE))).toBe(true);
   });
 });
