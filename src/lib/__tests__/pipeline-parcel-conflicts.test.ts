@@ -1,13 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { processInboundEmail } from "@/lib/pipeline";
 import type { AdminClient } from "@/lib/supabase/admin";
-import { FakeDb } from "./fake-db";
+import { FakeDb, type Result } from "./fake-db";
 import { USER, asConsentingAdmin as asAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 const mocks = vi.hoisted(() => ({ extract: vi.fn(), triage: vi.fn() }));
 vi.mock("@/lib/extract/extract", () => ({ extractEmail: mocks.extract }));
 vi.mock("@/lib/extract/triage", () => ({ isPurchaseMail: mocks.triage }));
 const ORDER = "ORDER-12345678";
+
+/** Preserve lazy request headers while delaying or changing a synthetic RPC reply. */
+function rpcResult(query: Promise<Result>, work: (source: Promise<Result>) => Promise<Result> = async (source) => source): Promise<Result> {
+  let started: Promise<Result> | undefined;
+  const builder = {
+    setHeader(key: string, value: string) {
+      const setter = (query as Promise<Result> & { setHeader?: (key: string, value: string) => unknown }).setHeader;
+      if (setter) setter.call(query, key, value);
+      return builder;
+    },
+    then(resolve: (value: Result) => unknown, reject: (reason: unknown) => unknown) {
+      started ??= work(query);
+      return started.then(resolve, reject);
+    },
+  };
+  return builder as unknown as Promise<Result>;
+}
 const incoming = (id: string, sentAt = "2026-11-12T00:00:00Z") => ({ ...mailOf(sentAt), providerEmailId: `provider-${id}`, messageId: `<${id}@example.test>`, text: "テスト本文\nSynthetic item\n根拠の行" });
 
 beforeEach(() => {
@@ -43,17 +60,17 @@ describe("different mails filing the same parcel", () => {
     let held = false;
     const client = new Proxy(asAdmin(db), {
       get(target, property) {
-        if (property === "rpc") return async (name: string, args: unknown) => {
+        if (property === "rpc") return (name: string, args: unknown) => rpcResult(db.rpc(name, args), async (query) => {
           const a = args as { p_table?: string; p_operation?: string; p_values?: { status?: string } };
           if (!held && (name === "mail_run_write" && a.p_table === "parcels" && a.p_operation === "update" || name === "update_mail_parcel") && a.p_values?.status === "shipped") {
             held = true; arrived(); await resume;
           }
-          const result = await db.rpc(name,args);
+          const result = await query;
           // The real parcels_received_at trigger clears this when delivered is reverted.
           const parcel = db.find("parcels", "shared-parcel");
           if (parcel && parcel.status !== "delivered") parcel.received_at = null;
           return result;
-        };
+        });
         const value = Reflect.get(target,property);
         return typeof value === "function" ? value.bind(target) : value;
       },
@@ -83,11 +100,11 @@ describe("different mails filing the same parcel", () => {
     let arrived!:()=>void; let release!:()=>void;
     const waiting=new Promise<void>((r)=>{arrived=r;}); const resume=new Promise<void>((r)=>{release=r;}); let held=false;
     const client=new Proxy(asAdmin(db),{get(target,key){
-      if(key==="rpc") return async(name:string,args:unknown)=>{
+      if(key==="rpc") return (name:string,args:unknown)=>rpcResult(db.rpc(name,args),async(query)=>{
         const a=args as {p_table?:string;p_parcel_id?:string;p_values?:{order_number?:string}};
         if(!held && ["mail_run_write","update_mail_parcel"].includes(name) && a.p_values?.order_number===ORDER && (a.p_table==="parcels" || a.p_parcel_id==="carrier")) {held=true;arrived();await resume;}
-        return db.rpc(name,args);
-      };
+        return query;
+      });
       const value=Reflect.get(target,key);return typeof value==="function"?value.bind(target):value;
     }}) as AdminClient;
     const body="テスト本文\n根拠の行\nLong synthetic item A\nLong synthetic item B";
@@ -116,7 +133,7 @@ describe("different mails filing the same parcel", () => {
   it("B1: bounded repeated conflicts keep the mail unread and retain the paid evidence", async () => {
     const db=new FakeDb();const rpc=db.rpc.bind(db);let attempts=0;
     db.rpc=(name,args)=>{
-      if(name==="create_mail_parcel") {attempts++;db.rpcCalls.push({name,args});return Promise.resolve({data:[{verdict:"retry",parcel_id:null}],error:null});}
+      if(name==="create_mail_parcel") {attempts++;db.rpcCalls.push({name,args});return rpcResult(Promise.resolve({data:[{verdict:"retry",parcel_id:null}],error:null}));}
       return rpc(name,args);
     };
     await expect(processInboundEmail(asAdmin(db),incoming("busy"),{precomputed:precomputed(reading({relevance:"order",order_number:sure(ORDER)}))})).rejects.toThrow("not merged yet");
@@ -147,14 +164,14 @@ describe("different mails filing the same parcel", () => {
   it("B2: accepts a PostgreSQL time readback with seconds after sending HH:MM", async () => {
     const db=new FakeDb({parcels:[{id:"timed",user_id:USER,shop:"テスト店",shop_key:"other",status:"ordered",order_number:ORDER,updated_at:"2026-11-01T00:00:00Z"}]});
     const rpc=db.rpc.bind(db);
-    db.rpc=async(name,args)=>{
-      const result=await rpc(name,args);
+    db.rpc=(name,args)=>rpcResult(rpc(name,args),async(query)=>{
+      const result=await query;
       if(name==="update_mail_parcel" && Array.isArray(result.data)) {
         const row=result.data[0]?.parcel_row as Record<string,unknown>|undefined;
         if(row?.expected_window_start==="12:34") {row.expected_window_start="12:34:00";db.find("parcels","timed")!.expected_window_start="12:34:00";}
       }
       return result;
-    };
+    });
     expect((await processInboundEmail(asAdmin(db),incoming("time-readback"),{precomputed:precomputed(reading({relevance:"shipped",order_number:sure(ORDER),expected_date:sure("2026-11-15"),expected_window_start:sure("12:34")}))})).kind).toBe("processed");
     expect(db.find("parcels","timed")!.expected_window_start).toBe("12:34:00");
   });
@@ -163,11 +180,11 @@ describe("different mails filing the same parcel", () => {
     const db=new FakeDb({parcels:[{id:"total",user_id:USER,shop:"テスト店",shop_key:"other",status:"ordered",order_number:ORDER,updated_at:"2026-11-01T00:00:00Z"}]});
     const rpc=db.rpc.bind(db);let arrived!:()=>void;let release!:()=>void;let held=false;
     const waiting=new Promise<void>((r)=>{arrived=r;});const resume=new Promise<void>((r)=>{release=r;});
-    db.rpc=async(name,args)=>{
+    db.rpc=(name,args)=>rpcResult(rpc(name,args),async(query)=>{
       const a=args as {p_table?:string;p_values?:{total_amount?:number}};
       if(!held && name==="mail_run_write" && a.p_table==="parcels" && a.p_values?.total_amount===1000) {held=true;arrived();await resume;}
-      return rpc(name,args);
-    };
+      return query;
+    });
     const first=processInboundEmail(asAdmin(db),incoming("total-old"),{precomputed:precomputed(reading({relevance:"shipped",order_number:sure(ORDER),total_amount:sure(1000)}))});
     await waiting;
     try { await processInboundEmail(asAdmin(db),incoming("total-new","2026-11-12T01:00:00Z"),{precomputed:precomputed(reading({relevance:"shipped",order_number:sure(ORDER),total_amount:sure(2000)}))}); }
@@ -180,7 +197,7 @@ describe("different mails filing the same parcel", () => {
   it("B1: a database deadlock is a visible failure and the same mail can recover", async () => {
     const db=new FakeDb();const rpc=db.rpc.bind(db);let failed=false;
     db.rpc=(name,args)=>{
-      if(name==="create_mail_parcel"&&!failed){failed=true;return Promise.resolve({data:null,error:{code:"40P01",message:"deadlock detected"}});}
+      if(name==="create_mail_parcel"&&!failed){failed=true;return rpcResult(Promise.resolve({data:null,error:{code:"40P01",message:"deadlock detected"}}));}
       return rpc(name,args);
     };
     const options={precomputed:precomputed(reading({relevance:"order",order_number:sure(ORDER)}))};

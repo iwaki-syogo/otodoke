@@ -26,7 +26,7 @@ const migrated = (id: number, over: Partial<Row> = {}): Row => ({
 });
 const dbFor = (rows: Row[]) => new FakeDb({ ai_reading_consents: [granted()], emails: rows });
 const start = (db: FakeDb) => runReadAfterConsent(asAdmin(db), USER, GRANTED);
-const backlogQueries = (db: FakeDb) => db.callsOn("emails", "select").filter((q) => q.columns?.startsWith("id, provider_email_id"));
+const backlogQueries = (db: FakeDb) => db.callsOn("emails", "select").filter((q) => q.columns?.startsWith("id, created_at, provider_email_id"));
 const savedReading = () => precomputed(reading({ relevance: "other_purchase", relevance_evidence: "ご注文番号" }));
 
 beforeEach(() => {
@@ -46,7 +46,7 @@ describe("N2: migration-marked pre-consent mail participates in the first automa
     const db = dbFor(rows);
     const reasonsAtSelection: unknown[][] = [];
     db.hooks.push((q) => {
-      if (q.table === "emails" && q.op === "select" && q.columns?.startsWith("id, provider_email_id")) reasonsAtSelection.push(db.rows("emails").map((row) => row.error));
+      if (q.table === "emails" && q.op === "select" && q.columns?.startsWith("id, created_at, provider_email_id")) reasonsAtSelection.push(db.rows("emails").map((row) => row.error));
     });
     expect(await start(db)).toEqual({ ok: true, read: 3, overLimit: false, unavailable: false });
     expect(reasonsAtSelection[0]).toEqual(["user_limit", "claude_unavailable", "old database failure"]);
@@ -145,7 +145,10 @@ describe("N2: migration-marked pre-consent mail participates in the first automa
   it("the real SDK emits a single logical filter with all eligibility predicates before limit, using only an in-memory fetch stub", async () => {
     const urls: URL[] = [];
     const fetchStub: typeof fetch = async (input) => {
-      urls.push(new URL(input instanceof Request ? input.url : String(input)));
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      // The reader fixes the mail generation first (one RPC); only the emails SELECT is the query under test.
+      if (url.pathname.endsWith("/rpc/begin_sample_load")) return new Response(JSON.stringify("11111111-1111-4111-8111-111111111111"), { status: 200, headers: { "content-type": "application/json" } });
+      urls.push(url);
       return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
     };
     const db = createClient("http://127.0.0.1:1", "local-test-key", { global: { fetch: fetchStub }, auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });

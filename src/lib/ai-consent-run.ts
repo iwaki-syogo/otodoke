@@ -1,6 +1,7 @@
 import { runReadWaitingMail, type ReadWaitingResult } from "@/lib/mail-run";
 import type { AdminClient } from "@/lib/supabase/admin";
 import * as mailTiming from "@/lib/unread";
+import { beginMailGeneration } from "@/lib/sample-generation-db";
 
 interface BoundedMailTiming {
   TRIAGE_TIMEOUT_MS: number;
@@ -43,6 +44,12 @@ export async function runReadAfterConsent(db: AdminClient, userId: string, decid
     if (!data) return empty();
   } catch {
     return failed("ai_consent_backlog_claim_failed");
+  }
+
+  try {
+    db = await beginMailGeneration(db, userId);
+  } catch {
+    return failed("ai_consent_backlog_read_failed");
   }
 
   let read = 0;

@@ -6,6 +6,7 @@ import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import { AiReadingNotAllowedError } from "@/lib/ai-consent";
 import { processInboundEmail } from "@/lib/pipeline";
 import { scheduleSealRemaining } from "@/lib/seal-later";
+import { beginMailGeneration, MailGenerationExpiredError } from "@/lib/sample-generation-db";
 
 /**
  * Resend `email.received` webhook. The event carries metadata only, so the body is
@@ -57,12 +58,18 @@ export async function POST(request: Request) {
   const admin = () => (db ??= createAdminClient());
   // The same rule as for the fetched mail below, on the event's own lists.
   const announced = Array.isArray(data.received_for) ? localPartFor([...stringsOf(data.received_for), ...stringsOf(data.to)], domain) : undefined;
-  let checked: { localPart: string; userId: string } | null = null;
+  let checked: { localPart: string; userId: string; db: AdminClient } | null = null;
   if (announced) {
     const found = await findInbox(admin(), announced);
     if (found === "failed") return NextResponse.json({ error: "lookup failed" }, { status: 500 });
     if (!found) return unknownInbox();
-    checked = { localPart: announced, userId: found.user_id };
+    try {
+      // The known owner's request starts before the external body fetch can cross a clear.
+      checked = { localPart: announced, userId: found.user_id, db: await beginMailGeneration(admin(), found.user_id) };
+    } catch (error) {
+      console.error("inbound: generation lookup failed", errorSummary(error));
+      return NextResponse.json({ error: "lookup failed" }, { status: 500 });
+    }
   }
 
   const { data: mail, error } = await resend.emails.receiving.get(emailId);
@@ -81,13 +88,23 @@ export async function POST(request: Request) {
   }
 
   let userId: string;
+  let processingDb: AdminClient;
   if (checked?.localPart === localPart) {
     userId = checked.userId;
+    processingDb = checked.db;
   } else {
     const found = await findInbox(admin(), localPart);
     if (found === "failed") return NextResponse.json({ error: "lookup failed" }, { status: 500 });
     if (!found) return unknownInbox();
     userId = found.user_id;
+    try {
+      // Legacy events first reveal their owner here. A different fetched owner gets its own
+      // scope; never reuse the announced recipient's generation for another account.
+      processingDb = await beginMailGeneration(admin(), userId);
+    } catch (error) {
+      console.error("inbound: generation lookup failed", errorSummary(error));
+      return NextResponse.json({ error: "lookup failed" }, { status: 500 });
+    }
   }
 
   const fromHeader = mail.headers?.from ?? mail.headers?.From ?? mail.from;
@@ -95,7 +112,7 @@ export async function POST(request: Request) {
   const sentAt = parseDate(mail.headers?.date ?? mail.headers?.Date) ?? mail.created_at ?? null;
 
   try {
-    const outcome = await processInboundEmail(admin(), {
+    const outcome = await processInboundEmail(processingDb, {
       userId,
       providerEmailId: mail.id,
       messageId: mail.message_id ?? null,
@@ -107,9 +124,12 @@ export async function POST(request: Request) {
       html: mail.html?.slice(0, MAX_BODY_CHARS) ?? null,
     });
     // Once per inbound request: the rest of this user's plaintext mail is sealed after the answer.
-    scheduleSealRemaining(userId, admin());
+    scheduleSealRemaining(userId, processingDb);
     return NextResponse.json({ ok: true, outcome: outcome.kind });
   } catch (err) {
+    // A confirmed clear intentionally canceled this request. A provider retry with a new
+    // generation would otherwise recreate the deleted mail and spend on reading it again.
+    if (err instanceof MailGenerationExpiredError) return NextResponse.json({ ok: true, outcome: "cleared" });
     // Waiting for a choice is deliberate, not a transient failure: the stored mail is read by
     // the person later. Retrying this webhook after they consented must not start a paid read.
     if (err instanceof AiReadingNotAllowedError && err.code === "ai_consent_required") {

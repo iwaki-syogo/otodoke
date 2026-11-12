@@ -21,7 +21,7 @@ function assertOnlyFreeMailStorage(calls: RpcCall[]): void {
   const operations = new Set(["insert", "update", "delete"]);
   for (const call of calls) {
     // The sample is filed by the parcel-filing RPCs: database writes only, no AI allowance.
-    if (["store_mail_run", "create_mail_parcel", "update_mail_parcel", "ensure_mail_parcel_items", "mail_parcel_snapshot"].includes(call.name)) continue;
+    if (["begin_sample_load", "store_mail_run", "create_mail_parcel", "update_mail_parcel", "ensure_mail_parcel_items", "mail_parcel_snapshot"].includes(call.name)) continue;
     if (call.name === "mail_run_write" && call.args && typeof call.args === "object") {
       const args = call.args as { p_table?: unknown; p_operation?: unknown };
       if (typeof args.p_table === "string" && tables.has(args.p_table)
@@ -42,6 +42,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("reading permission is a server decision", () => {
   it("the no-allowance contract permits known storage writes", () => {
     expect(() => assertOnlyFreeMailStorage([
+      { name: "begin_sample_load", args: { p_user_id: USER } },
       { name: "store_mail_run", args: {} },
       { name: "create_mail_parcel", args: {} },
       { name: "update_mail_parcel", args: {} },

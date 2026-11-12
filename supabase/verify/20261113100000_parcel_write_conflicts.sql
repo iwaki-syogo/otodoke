@@ -12,9 +12,10 @@ begin
     insert into auth.users(id) values(v_user);
     insert into public.emails(id,user_id,processing_status,processing_run_id,processing_lease_until)
       values(v_mail,v_user,'pending',v_run,clock_timestamp()+interval '360 seconds');
-    -- Email -> global, just as the owning RPCs. Never day -> global while traffic is live.
+    -- Email -> this user's candidate key, just as the owning RPCs.
     perform 1 from public.emails e where e.id=v_mail for update;
-    perform pg_catalog.pg_advisory_xact_lock(62803,0);
+    perform set_config('otodoke.parcel_owner',v_user::text,true);
+    perform public.lock_parcel_owner(v_user);
     v_snapshot:=public.mail_parcel_snapshot(v_user);
     select c.verdict,c.parcel_id into v_verdict,v_parcel from public.create_mail_parcel(v_snapshot,v_values,v_items,v_mail,v_run) c;
     if v_verdict is distinct from 'ok' or v_parcel is null then v_fail:=v_fail||' create'; end if;
@@ -49,6 +50,10 @@ begin
       v_fail:=v_fail||' expired_owner';
     exception when insufficient_privilege then null;
     end;
+    delete from auth.users where id=v_user;
+    if exists(select 1 from public.parcels where user_id=v_user)
+      or exists(select 1 from public.emails where user_id=v_user)
+      or exists(select 1 from public.parcel_items where user_id=v_user) then v_fail:=v_fail||' account_cascade'; end if;
     raise exception using errcode='OTRBK',message='undo parcel verifier writes';
   exception when sqlstate 'OTRBK' then null;
   when others then v_fail:=v_fail||' SQLSTATE='||sqlstate||' '||sqlerrm;
@@ -57,12 +62,32 @@ begin
 end $$;
 with checks as (
   select
+    (select count(*)=1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+      and exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+        and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+        and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+        and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+        and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+          from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as shared_owner_helper_ok,
+    not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+      and p.prosrc ~* 'pg_(try_)?advisory(_xact)?_lock(_shared)?[[:space:]]*\([[:space:]]*62803[[:space:]]*,[[:space:]]*0[[:space:]]*\)') as no_global_candidate_lock,
     (select count(*)=5 and bool_and(p.prosecdef and p.proconfig=array['search_path=""']
       and not has_function_privilege('anon',p.oid,'execute') and not has_function_privilege('authenticated',p.oid,'execute')
       and has_function_privilege('service_role',p.oid,'execute')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname in ('lock_parcel_candidates','mail_parcel_snapshot','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items')) as functions_ok,
-    (select count(*)=2 and bool_and((t.tgtype&1)=0 and (t.tgtype&2)=2 and t.tgenabled='O') from pg_trigger t
+    (select count(*)=2 and bool_and(t.tgtype=62 and t.tgenabled='O' and t.tgfoid=to_regprocedure('public.lock_parcel_candidates()')
+      and t.tgrelid=case t.tgname when 'parcels_candidate_write_lock' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+      and t.tgqual is null and t.tgattr=''::int2vector and t.tgnargs=0) from pg_trigger t
       where t.tgname in ('parcels_candidate_write_lock','parcel_items_candidate_write_lock') and not t.tgisinternal) as statement_locks_ok,
+    (select count(*)=2 and bool_and(t.tgtype=31 and t.tgenabled='O' and t.tgfoid=to_regprocedure('public.lock_parcel_candidates()')
+      and t.tgrelid=case t.tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+      and t.tgqual is null and t.tgattr=''::int2vector and t.tgnargs=0)
+      from pg_trigger t where t.tgname in ('parcels_candidate_owner','parcel_items_candidate_owner') and not t.tgisinternal) as row_owners_ok,
+    (select count(*)=1 and bool_and(t.tgtype=11 and t.tgenabled='O' and t.tgqual is null and t.tgnargs=0 and t.tgfoid=case when to_regclass('public.sample_generations') is null
+      then to_regprocedure('public.lock_parcel_candidates()') else to_regprocedure('public.prelock_sample_owner_delete()') end)
+      from pg_trigger t where t.tgrelid='auth.users'::regclass and t.tgname='parcel_candidate_owner_delete' and not t.tgisinternal) as auth_callback_ok,
     coalesce(current_setting('otodoke.verify_parcel_conflicts',true),'FAILED: behaviour did not run') as behaviour
 )
-select case when functions_ok and statement_locks_ok and behaviour='OK' then 'OK' else 'FAILED' end as verdict,checks.* from checks;
+select case when functions_ok and statement_locks_ok and row_owners_ok and auth_callback_ok and shared_owner_helper_ok
+  and no_global_candidate_lock and behaviour='OK' then 'OK' else 'FAILED' end as verdict,checks.* from checks;

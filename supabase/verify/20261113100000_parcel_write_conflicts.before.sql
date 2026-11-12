@@ -8,6 +8,21 @@ with checks as (
       (e.created_at>clock_timestamp()-interval '300 seconds' or
         (to_jsonb(e)->>'processing_lease_until')::timestamptz>clock_timestamp())) as possibly_active_rows,
     (select count(*) from public.parcels p where p.updated_at is null) as missing_versions,
-    to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') is not null as dependency_a_already_present
+    to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') is not null as dependency_a_already_present,
+    coalesce(has_table_privilege(current_user,to_regclass('auth.users'),'TRIGGER'),false) as can_create_auth_delete_trigger,
+    current_user=(select tableowner from pg_tables where schemaname='public' and tablename='emails') as migration_owner_matches_existing,
+    not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+      or ((select count(*)=1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+        and exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+          and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+          and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+          and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+          and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+            from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a))) as shared_owner_helper_ok,
+    to_regclass('public.sample_generations') is null as sample_generation_absent,
+    not exists(select 1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete'
+      and (tgfoid is distinct from to_regprocedure('public.lock_parcel_candidates()') or tgtype<>11 or tgenabled<>'O' or tgqual is not null or tgnargs<>0)) as auth_callback_ok
 )
-select case when possibly_active_rows=0 and missing_versions=0 then 'OK' else 'FAILED' end as verdict,checks.* from checks;
+select case when possibly_active_rows=0 and missing_versions=0 and can_create_auth_delete_trigger
+  and migration_owner_matches_existing and shared_owner_helper_ok and sample_generation_absent and auth_callback_ok then 'OK' else 'FAILED' end as verdict,checks.* from checks;

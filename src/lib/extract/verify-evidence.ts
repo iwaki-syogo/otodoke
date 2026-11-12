@@ -4,6 +4,13 @@ import { decodeEntities, emailBodyText, stripInvisible } from "@/lib/text/html-t
 type SourceMail = { subject: string; text?: string | null; html?: string | null; body?: string };
 type Field = { value: unknown; evidence: string | null; confidence: number };
 
+export const UNVERIFIED_UNRELATED_ERROR = "relevance_unverified";
+
+/** After verification, an unsupported negative verdict must wait as mail, not become an order. */
+export function hasUnverifiedUnrelatedVerdict(extraction: Extraction): boolean {
+  return extraction.relevance === "unrelated" && extraction.evidence_review?.includes("relevance") === true;
+}
+
 /** Formatting differences are harmless; words and the order of quoted fragments are kept. */
 function normalized(text: string): string {
   return decodeEntities(stripInvisible(text)).normalize("NFKC")
@@ -97,8 +104,6 @@ export function verifyEvidence(input: Extraction, mail: SourceMail): Extraction 
 
   const result: Extraction = {
     ...x,
-    // An ungrounded "unrelated" must not delete a parcel mail. The matcher leaves its status unknown.
-    relevance: !relevanceVerified && x.relevance === "unrelated" ? "order" : x.relevance,
     order_number: field("order_number", x.order_number, review),
     package_description: field("package_description", x.package_description, review),
     total_amount: field("total_amount", x.total_amount, review),

@@ -5,7 +5,7 @@ import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { MAIL_READ_BUDGET_MS, MAIL_REQUEST_BUDGET_MS, WAITING_MAIL_FILTER as UNREAD_FILTER } from "@/lib/unread";
-import { withSampleGeneration } from "@/lib/sample-generation-db";
+import { beginMailGeneration, withSampleGeneration } from "@/lib/sample-generation-db";
 
 /**
  * "This dropped mail was a parcel" and "read the mail that is waiting", as plain functions: shared
@@ -64,9 +64,14 @@ export interface ReadWaitingOptions {
 export async function runReadWaitingMail(db: AdminClient, userId: string, options: ReadWaitingOptions = {}): Promise<ReadWaitingResult> {
   const started = Date.now();
   const unread = UNREAD_FILTER(new Date(started));
+  try {
+    db = await beginMailGeneration(db, userId);
+  } catch (error) {
+    return { ok: false, stage: "lookup", message: error instanceof Error ? error.message : String(error), read: 0, overLimit: false, unavailable: false, onlyBusy: false };
+  }
   let query = db
     .from("emails")
-    .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body, sample_generation")
+    .select("id, created_at, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body, sample_generation")
     .eq("user_id", userId)
     .eq("body_state", "plain");
   if (options.consentDecidedAt !== undefined) {
@@ -103,7 +108,7 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
         // No sample of that name any more: unreadable, and never a reason to call Claude.
         if (!entry) throw new Error(`sample mail ${file} not found`);
         const input = demoInput(entry, userId);
-        outcome = await processInboundEmail(withSampleGeneration(db, userId, m.sample_generation), input.mail, { ...input.options, replacesEmailId: m.id });
+        outcome = await processInboundEmail(withSampleGeneration(db, userId, m.sample_generation), input.mail, { ...input.options, replacesEmailId: m.id, replacesCreatedAt: m.created_at });
       } else {
         outcome = await processInboundEmail(
           db,
@@ -118,9 +123,9 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
             text: m.text_body,
             html: m.html_body,
           },
-          // Always name the snapshot's row. If a sweep or clear removed it after the SELECT,
-          // the pipeline must not recreate this old plaintext as a new incoming delivery.
-          { replacesEmailId: m.id },
+          // Re-read exactly the listed row/version. A clear or another reader must not turn this
+          // cached payload into a new incoming mail, including when it has a Message-ID.
+          { replacesEmailId: m.id, replacesCreatedAt: m.created_at },
         );
       }
       if (outcome.kind === "over_limit") {

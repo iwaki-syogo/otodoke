@@ -6,18 +6,20 @@ import { openMail, sealMail, type PrivateRecipient } from "@/lib/crypto/envelope
 import { utf8 } from "@/lib/crypto/bytes";
 import { rewrapStoredKey } from "@/lib/crypto/key-wrap";
 import * as keyWrap from "@/lib/crypto/key-wrap";
-import type { FinishResetInput } from "@/lib/login-input";
+import { FinishResetInputSchema, type FinishResetInput } from "@/lib/login-input";
+import { FRESH_AUTH_MS, isFresh } from "@/lib/auth-session";
 
 const A = "00000000-0000-4000-8000-00000000000a";
 const B = "00000000-0000-4000-8000-00000000000b";
 const ADDRESS = { [A]: "alpha@example.test", [B]: "beta@example.test" };
-const state = vi.hoisted(() => ({ owner: "", db: null as unknown as FakeDb, secrets: new Map<string, string>(), lost: false, updates: 0 }));
+const state = vi.hoisted(() => ({ owner: "", db: null as unknown as FakeDb, secrets: new Map<string, string>(), lost: false, updates: 0, resetAt: 0 }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: () => {} }));
+const seal = vi.hoisted(() => ({ schedule: vi.fn() }));
+vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: seal.schedule }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => asAdmin(state.db) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: {
-  getSession: async () => ({ data: { session: { access_token: `e30.${Buffer.from(JSON.stringify({ sub: state.owner, amr: [{ method: "otp", timestamp: Date.now() / 1000 }] })).toString("base64url")}.c2ln` } }, error: null }),
+  getSession: async () => ({ data: { session: { access_token: `e30.${Buffer.from(JSON.stringify({ sub: state.owner, amr: [{ method: "otp", timestamp: state.resetAt / 1000 }] })).toString("base64url")}.c2ln` } }, error: null }),
   getUser: async () => ({ data: { user: { id: state.owner, email: state.owner.endsWith("a") ? "alpha@example.test" : "beta@example.test" } }, error: null }),
   updateUser: async ({ password }: { password: string }) => {
     state.updates++;
@@ -43,6 +45,8 @@ const { finishPasswordReset, disposePasswordReset, preparePasswordReset, flowMes
 beforeEach(() => {
   tab.setTabKey.mockReset();
   tab.forgetTabKey.mockReset();
+  seal.schedule.mockReset();
+  state.resetAt = Date.now();
   state.owner = A;
   state.secrets = new Map([[A, "old-alpha"], [B, "old-beta"]]);
   state.updates = 0;
@@ -52,7 +56,7 @@ beforeEach(() => {
     { user_id: B, key_id: "b".repeat(32), activated_at: "2026-11-01", retired_at: null },
   ] });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 function ports(end = finishReset) {
   return {
@@ -66,6 +70,33 @@ const invoke = (scope: ReturnType<typeof ports>, password = INPUT.password) => f
 const active = () => state.db.rows("user_keys").filter((k) => k.activated_at && !k.retired_at);
 
 describe("reset retry after a lost successful response", () => {
+  it("recovers the same completed request after sixteen minutes without writes or losing newly delivered mail", async () => {
+    const { scope, requests } = lostSuccess();
+    expect(await invoke(scope)).toEqual({ ok: false, code: "other" });
+    const key = active().find((row) => row.user_id === A)!;
+    const mail = { subject: "Synthetic dispatch notice", from_name: "Example shop", from_address: "shop@example.test", text: "Synthetic mail sent after reset", html: null };
+    const sealed = await sealMail({ keyId: String(key.key_id), publicKey: Uint8Array.from(Buffer.from(String(key.public_key), "base64")) }, A, "late-retry-mail", mail);
+    const keysBefore = structuredClone(state.db.rows("user_keys"));
+    const secretsBefore = new Map(state.secrets);
+    const rpcsBefore = state.db.rpcCalls.length;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(state.resetAt + FRESH_AUTH_MS + 60_000);
+    expect(isFresh([{ method: "otp", at: state.resetAt }], "reset")).toBe(false);
+
+    expect(await invoke(scope)).toEqual({ ok: true });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+    expect(state.db.rows("user_keys")).toEqual(keysBefore);
+    expect(state.secrets).toEqual(secretsBefore);
+    expect(state.db.rpcCalls).toHaveLength(rpcsBefore);
+    expect(state.updates).toBe(1);
+    // The existing sealing follow-up runs on both the first success and its recovered response.
+    expect(seal.schedule).toHaveBeenCalledTimes(2);
+    const opened = tab.setTabKey.mock.calls.at(-1)![1] as PrivateRecipient;
+    expect(opened.keyId).toBe(key.key_id);
+    expect(await openMail(opened, A, "late-retry-mail", sealed)).toEqual(mail);
+  });
+
   it("keeps the activated key and opens mail delivered between the lost response and retry", async () => {
     let lose = true;
     const scope = ports(async (input) => {
@@ -102,6 +133,58 @@ function lostSuccess() {
   });
   return { scope, requests };
 }
+
+describe("expired reset completion boundaries", () => {
+  it("rejects an unfinished pending request after the reset window without changing Auth or keys", async () => {
+    let request!: FinishResetInput;
+    const scope = ports(async (input) => { request = FinishResetInputSchema.parse(input); return { ok: false, code: "network" }; });
+    expect(await invoke(scope)).toEqual({ ok: false, code: "network" });
+    const before = structuredClone(state.db.rows("user_keys"));
+    const rpcs = state.db.rpcCalls.length;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(state.resetAt + FRESH_AUTH_MS + 60_000);
+    expect(await finishReset(request)).toEqual({ ok: false, code: "reset_expired" });
+    expect(state.db.rows("user_keys")).toEqual(before);
+    expect(state.db.rpcCalls).toHaveLength(rpcs);
+    expect(state.updates).toBe(0);
+    expect(state.secrets.get(A)).toBe("old-alpha");
+    expect(seal.schedule).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["cookie owner", "signed_out"],
+    ["expected owner", "signed_out"],
+    ["expected email", "signed_out"],
+    ["challenge", "key_challenge_failed"],
+    ["original wrap", "key_wrap_changed"],
+    ["missing wrap", "key_wrap_changed"],
+    ["current key", "key_in_use_changed"],
+  ] as const)("still rejects a different %s after the window, with no Auth or key writes", async (changed, code) => {
+    const { scope, requests } = lostSuccess();
+    expect(await invoke(scope)).toEqual({ ok: false, code: "other" });
+    const request = { ...requests[0] };
+    if (changed === "cookie owner") state.owner = B;
+    if (changed === "expected owner") request.expectedUserId = B;
+    if (changed === "expected email") request.expectedEmailNorm = ADDRESS[B];
+    if (changed === "challenge") request.challenge = Buffer.alloc(32, 99).toString("base64");
+    if (changed === "original wrap") request.expectedWrappedPrivateKey = Buffer.alloc(154, 99).toString("base64");
+    if (changed === "missing wrap") delete request.expectedWrappedPrivateKey;
+    if (changed === "current key") expect(await invoke(ports(), "a later reset password")).toEqual({ ok: true });
+    const before = structuredClone(state.db.rows("user_keys"));
+    const secrets = new Map(state.secrets);
+    const updates = state.updates;
+    const rpcs = state.db.rpcCalls.length;
+    const followUps = seal.schedule.mock.calls.length;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(state.resetAt + FRESH_AUTH_MS + 60_000);
+    expect(await finishReset(request)).toEqual({ ok: false, code });
+    expect(state.db.rows("user_keys")).toEqual(before);
+    expect(state.secrets).toEqual(secrets);
+    expect(state.updates).toBe(updates);
+    expect(state.db.rpcCalls).toHaveLength(rpcs);
+    expect(seal.schedule).toHaveBeenCalledTimes(followUps);
+  });
+});
 
 describe("reset operation boundaries", () => {
   it("a screen disposed during key generation sends no registration that can replace a newer pending key", async () => {
@@ -192,10 +275,12 @@ describe("reset operation boundaries", () => {
     expect(state.db.rpcCalls.filter((call) => call.name === "activate_user_key_checked")).toHaveLength(1);
   });
 
-  it("a changed password cannot turn an unresolved retry into another key rotation", async () => {
+  it.each([0, FRESH_AUTH_MS + 60_000])("a changed password cannot turn an unresolved retry into another key rotation after %i ms", async (elapsed) => {
     const { scope } = lostSuccess();
     expect((await invoke(scope)).ok).toBe(false);
     const before = structuredClone(state.db.rows("user_keys"));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(state.resetAt + elapsed);
     expect(await invoke(scope, "a different new password")).toEqual({ ok: false, code: "reset_retry_changed" });
     expect(flowMessage("reset_retry_changed")).toBe("同じ新しいパスワードで、もう一度お試しください。");
     expect(state.db.rows("user_keys")).toEqual(before);
@@ -239,7 +324,7 @@ describe("reset operation boundaries", () => {
     expect(state.updates).toBe(2);
   });
 
-  it("the server rejects an old request after a same-key rewrap without rewriting Auth", async () => {
+  it.each([0, FRESH_AUTH_MS + 60_000])("the server rejects an old request after a same-key rewrap without rewriting Auth after %i ms", async (elapsed) => {
     const { scope, requests } = lostSuccess();
     expect((await invoke(scope)).ok).toBe(false);
     const request = requests[0];
@@ -253,6 +338,8 @@ describe("reset operation boundaries", () => {
     expect((await rewrapKey(asAdmin(state.db), A, { keyId: stored.key.key_id, previousWrappedPrivateKey: stored.key.wrapped_private_key, wrappedPrivateKey: wrap.wrapped_private_key, wrapIv: wrap.wrap_iv, kdfSalt: wrap.kdf_salt, kdfIterations: wrap.kdf_iterations })).ok).toBe(true);
     const changedSecret = await authSecretHex(newMaster);
     state.secrets.set(A, changedSecret);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(state.resetAt + elapsed);
     expect(await finishReset(request)).toEqual({ ok: false, code: "key_wrap_changed" });
     expect(state.secrets.get(A)).toBe(changedSecret);
     expect(state.updates).toBe(1);

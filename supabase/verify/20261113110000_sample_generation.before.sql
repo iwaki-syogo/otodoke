@@ -11,7 +11,34 @@ with inventory as (
       and to_regclass('public.emails') is not null and to_regclass('public.parcels') is not null
       and to_regclass('public.extractions') is not null and to_regclass('public.parcel_items') is not null as auth_and_base_ok,
     coalesce(has_table_privilege(current_user,to_regclass('auth.users'),'TRIGGER'),false) as can_create_auth_delete_trigger,
+    case when to_regclass('public.sample_generations') is null
+      and to_regprocedure('public.begin_sample_load(uuid)') is null
+      and to_regprocedure('public.lock_sample_owner(uuid)') is null then
+        coalesce(current_user=(select tableowner from pg_tables where schemaname='public' and tablename='emails'),false)
+      else true end as migration_owner_matches_existing,
+    coalesce(has_schema_privilege(current_user,to_regnamespace('auth'),'USAGE')
+      and has_column_privilege(current_user,to_regclass('auth.users'),'id','SELECT')
+      and has_any_column_privilege(current_user,to_regclass('auth.users'),'UPDATE'),false) as can_lock_auth_user_rows,
+    case when to_regclass('public.sample_generations') is null
+      and to_regprocedure('public.begin_sample_load(uuid)') is null
+      and to_regprocedure('public.lock_sample_owner(uuid)') is null then true else (
+        select count(*)=5 and bool_and(coalesce(has_schema_privilege(p.proowner,to_regnamespace('auth'),'USAGE')
+          and has_column_privilege(p.proowner,to_regclass('auth.users'),'id','SELECT')
+          and has_any_column_privilege(p.proowner,to_regclass('auth.users'),'UPDATE'),false))
+        from pg_proc p where p.oid in (
+          to_regprocedure('public.begin_sample_load(uuid)'),to_regprocedure('public.lock_sample_owner(uuid)'),
+          to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)'),
+          to_regprocedure('public.release_claude_call(bigint,uuid)'),to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)'))
+      ) end as runtime_auth_lock_owners_ok,
     (select count(*) = 3 from pg_roles where rolname in ('anon','authenticated','service_role')) as roles_ok,
+    (select count(*)=1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+      and exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+        and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+        and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+        and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+        and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+          from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as shared_owner_helper_ok,
     to_regclass('public.ai_reading_consents') is not null as consent_table,
     to_regprocedure('public.set_ai_reading(text,text)') is not null as consent_rpc,
     to_regclass('public.ai_consent_read_runs') is not null as auto_table,
@@ -100,7 +127,7 @@ with inventory as (
     )) as expected_rpc_abi_ok,
     (prerequisite_state <> 'present' or (
       exists(select 1 from pg_proc where oid = to_regprocedure('public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb)') and md5(prosrc) = '3ea94d29e7f03b05060d3cd428b6f645')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') and md5(prosrc) = case when parcel_rpcs then '2672195186996d6c1da415ce09216014' else '09f1ab05ad5ccac3c31a8f5512dc9c0c' end)
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') and md5(prosrc) = case when parcel_rpcs then '8c3c49b0542e2027014dbeb4b589ffb0' else '09f1ab05ad5ccac3c31a8f5512dc9c0c' end)
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.claim_claude_call(uuid,integer,integer)') and md5(prosrc) = 'ab7586c4c396b0ca1db60c4d63225b60')
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)') and md5(prosrc) = '9cac5bf34db2a84a7f9554569e3940ba')
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.release_claude_call(bigint,uuid)') and md5(prosrc) = 'c32011cb8f66c469cd947af2a2be4461')
@@ -108,14 +135,20 @@ with inventory as (
       and md5(prosrc) = case when auto_read_state = 'present' then '3a0d1452f9a11dc8396691b04e95448b' else 'da05fd2061bc698db9809bc1741b62c3' end))
     and (auto_read_state <> 'present' or exists(select 1 from pg_proc where oid = to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)') and md5(prosrc) = '6d302317a1265f556b7a7457c5975908'))
     and (not parcel_rpcs or (
-      exists(select 1 from pg_proc where oid = to_regprocedure('public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = 'c4c8cd221d81a65693501f1f76c6da43' and pronargdefaults=2
+      exists(select 1 from pg_proc where oid = to_regprocedure('public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = '227a0ca214d02c5c47116bc8d76a02d0' and pronargdefaults=2
         and proargnames=array['p_snapshot','p_values','p_items','p_email_id','p_run_id','verdict','parcel_id'] and pg_get_function_result(oid)='TABLE(verdict text, parcel_id uuid)')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = '1f31656cb496ae7332d5ce722ef5039a' and pronargdefaults=2
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = '9ea38a44cc600e7d3bedd29b24af290a' and pronargdefaults=2
         and proargnames=array['p_snapshot','p_parcel_id','p_expected_updated_at','p_values','p_category','p_items','p_email_id','p_run_id','verdict','parcel_id','parcel_row'] and pg_get_function_result(oid)='TABLE(verdict text, parcel_id uuid, parcel_row jsonb)')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)') and md5(prosrc) = '9b794fc0498e1a85e6058a68e0895755' and pronargdefaults=2
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)') and md5(prosrc) = '75b8ddcfc1799156284ae4c0f9933806' and pronargdefaults=2
         and proargnames=array['p_parcel_id','p_expected_updated_at','p_items','p_email_id','p_run_id','verdict'] and pg_get_function_result(oid)='TABLE(verdict text)')
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.mail_parcel_snapshot(uuid)') and md5(prosrc)='93b25c57e72edd8476fa87b9276daaca')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.lock_parcel_candidates()') and md5(prosrc) = '9b397e6fa6a3471f713395ee78ccd9b9')
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.lock_parcel_candidates()') and md5(prosrc) = '56cd312a6a1246d0d3a3ecb7ea82a424')
+      and (select count(*)=2 from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
+        and tgtype=31 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal
+        and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+        and tgqual is null and tgattr=''::int2vector and tgnargs=0)
+      and (select count(*)=1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete'
+        and tgtype=11 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal and tgqual is null and tgnargs=0)
     )) as expected_guard_definitions_ok,
     not exists(select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname in ('store_mail_run','mail_run_write','set_ai_reading','claim_ai_reading_backlog','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','claim_claude_call_v2','release_claude_call') and (
@@ -126,18 +159,18 @@ with inventory as (
         or has_function_privilege('service_role', p.oid, 'EXECUTE') is distinct from (p.proname <> 'set_ai_reading')
       )) as expected_privileges_owner_ok,
     not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','set_ai_reading') and not (select count(*)=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete') then 1 else 2 end
+    where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','set_ai_reading') and not (select count(*)=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner') then 1 else 2 end
       and bool_and(a.grantor=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable
-        and (a.grantee=p.proowner or coalesce(a.grantee=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete') then null::oid
+        and (a.grantee=p.proowner or coalesce(a.grantee=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner') then null::oid
           when p.proname='set_ai_reading' then 'authenticated'::regrole::oid else 'service_role'::regrole::oid end,false)))
     from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as expected_function_acls_ok
   from states
 )
-select auth_and_base_ok, can_create_auth_delete_trigger, roles_ok, consent_state, auto_read_state, prerequisite_state, prior_prefix_ok, sample_absent, expected_structures_ok,
+select auth_and_base_ok, can_create_auth_delete_trigger, migration_owner_matches_existing, can_lock_auth_user_rows, runtime_auth_lock_owners_ok, roles_ok, consent_state, auto_read_state, prerequisite_state, prior_prefix_ok, sample_absent, expected_structures_ok,
   required_store_mail_run_present, required_owned_write_present, required_parcel_gateways_present,
-  expected_rpc_abi_ok, expected_guard_definitions_ok, expected_privileges_owner_ok, expected_function_acls_ok, no_extra_overloads,
-  case when auth_and_base_ok and can_create_auth_delete_trigger and roles_ok and consent_state <> 'partial' and auto_read_state <> 'partial' and prerequisite_state <> 'partial'
-    and required_store_mail_run_present and required_owned_write_present and required_parcel_gateways_present
+  expected_rpc_abi_ok, expected_guard_definitions_ok, expected_privileges_owner_ok, expected_function_acls_ok, no_extra_overloads, shared_owner_helper_ok,
+  case when auth_and_base_ok and can_create_auth_delete_trigger and migration_owner_matches_existing and can_lock_auth_user_rows and runtime_auth_lock_owners_ok and roles_ok and consent_state <> 'partial' and auto_read_state <> 'partial' and prerequisite_state <> 'partial'
+    and required_store_mail_run_present and required_owned_write_present and required_parcel_gateways_present and shared_owner_helper_ok
     and prior_prefix_ok and sample_absent and expected_structures_ok and expected_rpc_abi_ok and expected_guard_definitions_ok and expected_privileges_owner_ok and expected_function_acls_ok and no_extra_overloads
     then 'OK' else 'FAILED' end as verdict
 from checks;

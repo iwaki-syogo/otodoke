@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOGIN_MESSAGES } from "@/lib/login-errors";
 import { clearLoginHandoff, peekLoginHandoff } from "@/lib/login-handoff";
 import { LOGIN_ATTEMPT_LIMITS, LOGIN_TRY_LIMITS } from "@/lib/login-mail-limit";
-import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, autoSignInGapMs } from "@/lib/onboarding";
+import { AUTO_SIGN_IN_AFTER_FAILURE_MS, AUTO_SIGN_IN_BACKOFF_MS, AUTO_SIGN_IN_MAX, AUTO_SIGN_IN_SAME_RETURN_MS, CONFIRM_WAIT, autoSignInGapMs } from "@/lib/onboarding";
 import { TURNSTILE_AUTO_WAIT_MS, TURNSTILE_TOKEN_STALE_MS, TURNSTILE_WAIT_MS, tokenForAutoAttempt, tokenIsStale, type TokenField } from "@/lib/turnstile";
 import { fakeEvent, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -120,13 +120,13 @@ function stubTab() {
 }
 
 /** /signup with the account made and the mail sent: the waiting screen, with a new token ready. */
-async function waiting(): Promise<Mounted> {
+async function waiting(password = PASSWORD): Promise<Mounted> {
   actions.signUp.mockResolvedValue({ ok: true, code: "signup_exists_or_sent" });
   const view = mount(() => SignupForm());
   widget.token!.current.value = "0.token-of-the-signup";
   type(view, "signup-email", EMAIL);
-  type(view, "signup-password", PASSWORD);
-  type(view, "signup-password-again", PASSWORD);
+  type(view, "signup-password", password);
+  type(view, "signup-password-again", password);
   await drawn();
   await (view.host((h) => h.type === "form").props.onSubmit as (e: unknown) => Promise<void>)(fakeEvent());
   await drawn();
@@ -162,6 +162,21 @@ afterEach(() => {
 });
 
 describe("the waiting screen's words", () => {
+  it("offers login and password reset in one neutral sentence beside the existing login link", async () => {
+    const view = await waiting();
+    const help = view.hosts((h) => h.type === "p" && textOfHost(h).includes("パスワードの再設定"));
+    expect(help).toHaveLength(1);
+    expect(textOfHost(help[0])).toBe(CONFIRM_WAIT.loginHelp);
+    expect(textOfHost(help[0])).toContain("ログイン");
+    expect(textOfHost(help[0])).not.toMatch(/登録済み|登録されています|既存|別のパスワード|届かない|仮|暫定/);
+    expect(view.hosts((h) => h.type === "a").map((h) => [h.props.href, textOfHost(h)])).toEqual([["/login", "ログイン"]]);
+    expect(buttons(view).map(textOfHost)).toEqual([WORDS.done, WORDS.resend, WORDS.restart]);
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(actions.resend).not.toHaveBeenCalled();
+    expect(nav.to).toEqual([]);
+    view.unmount();
+  });
+
   it("are the wording file's: the title, the body, the address on a line of its own, 「確認しました」, 「メールを送り直す」 and 「別のアドレスでやり直す」", async () => {
     const view = await waiting();
     const h1 = view.hosts((h) => h.type === "h1").map(textOfHost);
@@ -170,7 +185,7 @@ describe("the waiting screen's words", () => {
     // The body, then the address alone (no label), in that order.
     expect(paragraphs.slice(0, 2)).toEqual([WORDS.body, EMAIL]);
     expect(buttons(view).map(textOfHost)).toEqual([WORDS.done, WORDS.resend, WORDS.restart]);
-    // No standing notes, and none of the sign-up form's links.
+    // The existing login link remains the waiting screen's only link.
     expect(view.hosts((h) => h.type === "a").map((h) => h.props.href)).toEqual(["/login"]);
     expect(view.text()).not.toContain(LOGIN_MESSAGES.signup_exists_or_sent);
     expect(view.text()).not.toContain("転送するだけ");
@@ -271,14 +286,19 @@ describe("when it signs in", () => {
 
   it.each(["auto", "press"] as const)("credentials (%s): keeps the same waiting screen and does not disclose an account", async (how) => {
     flows.signIn.mockResolvedValue({ ok: false, code: "credentials" });
-    const view = await waiting();
+    const triedPassword = `${PASSWORD}！`;
+    const view = await waiting(triedPassword);
     if (how === "auto") await shownAndTried(1);
     else { pressDone(view); await vi.waitFor(() => expect(view.text()).toContain(WORDS.notYet)); }
-    await drawn();
+    await vi.waitFor(() => expect(textOfHost(buttons(view)[0])).toBe(WORDS.done));
+    expect(flows.signIn).toHaveBeenCalledWith({ email: EMAIL, password: triedPassword, captchaToken: TOKEN }, expect.anything());
     expect(nav.to).toEqual([]);
     expect(peekLoginHandoff()).toBeNull();
     expect(view.text()).toContain(WORDS.title);
+    expect(view.text()).toContain(CONFIRM_WAIT.loginHelp);
     expect(view.text()).not.toContain("登録済み");
+    expect(view.hosts((h) => h.type === "a").map((h) => [h.props.href, textOfHost(h)])).toEqual([["/login", "ログイン"]]);
+    expect(buttons(view).map(textOfHost)).toEqual([WORDS.done, WORDS.resend, WORDS.restart]);
   });
 
   it("the sign-in that made the first key goes straight to the first-run guide, never by the list", async () => {

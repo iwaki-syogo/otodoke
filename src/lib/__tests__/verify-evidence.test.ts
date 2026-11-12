@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evidenceIsPresent, verifyEvidence } from "@/lib/extract/verify-evidence";
+import { evidenceIsPresent, hasUnverifiedUnrelatedVerdict, verifyEvidence } from "@/lib/extract/verify-evidence";
 import { buildParcelInsert, buildParcelUpdate, mergeIntoManual, parcelTotal, splitOrders } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb } from "./fake-db";
@@ -98,6 +98,15 @@ describe("field-specific evidence verification", () => {
     expect(buildParcelInsert("test", x, "2026-11-12T00:00:00Z")).toMatchObject({ status: "unknown", ordered_at: null, needs_review: true });
   });
 
+  it("preserves an unverified unrelated verdict instead of inventing a positive order", () => {
+    const x = verifyEvidence({ ...good(), relevance: "unrelated", relevance_evidence: null }, source);
+    expect(x.relevance).toBe("unrelated");
+    expect(x.evidence_review).toContain("relevance");
+    expect(hasUnverifiedUnrelatedVerdict(x)).toBe(true);
+    expect(verifyEvidence(x, source)).toEqual(x);
+    expect(hasUnverifiedUnrelatedVerdict(verifyEvidence(good(), source))).toBe(false);
+  });
+
   it("flags both automatic updates and merges into manual parcels", () => {
     const x = verifyEvidence({ ...good(), total_amount: field(9999, null) }, source);
     const existing = { ...buildParcelInsert("test", good(), null), source: "manual" } as ParcelRow;
@@ -138,13 +147,16 @@ describe("pipeline verifies before persisting or using an extraction", () => {
     expect(db.rows("emails")).toHaveLength(1);
   });
 
-  it("does not discard a mail because of an ungrounded unrelated verdict", async () => {
+  it("keeps a mail with an ungrounded unrelated verdict without filing it as an order", async () => {
     const db = new FakeDb();
     const out = await processInboundEmail(asConsentingAdmin(db), { ...mailOf("2026-11-12T00:00:00Z"), ...source }, {
       precomputed: precomputed({ ...good(), relevance: "unrelated", relevance_evidence: "広告をどうぞ" }),
     });
-    expect(out.kind).toBe("processed");
-    expect(db.rows("parcels")[0]).toMatchObject({ status: "unknown", needs_review: true });
+    // Keeping the original mail does not justify creating a parcel from a negative verdict.
+    expect(out.kind).toBe("noted");
+    expect(db.rows("parcels")).toEqual([]);
+    expect(db.rows("extractions")).toEqual([]);
     expect(db.rows("emails")).toHaveLength(1);
+    expect(db.rows("emails")[0]).toMatchObject({ processing_status: "failed", error: "relevance_unverified", text_body: source.text });
   });
 });

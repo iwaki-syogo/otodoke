@@ -193,3 +193,36 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 設定・privacyの一般未読の説明は `src/lib/mail-notices.ts` の `UNREAD_MAIL_STORAGE_NOTICE` を共用する。期限を約束せず、許可待ちの期限だけを `AI_CONSENT_TEXT.waitingRetention` の別段落で表示する。
 - 許可直後の自動読取は、旧error名でなく `consent_waiting_until` と元の `received_at`・期限で選ぶ。移行前の上限や停止のerrorは選択のために書き換えない。再試行の `created_at` を到着時刻として使わず、サンプル・確認メール・許可後の新着は含めない。手動読取は従来の未読集合を保つ。
 - Webの元メール表示は `body_state=dropped` の理由も取得し、`error=ai_consent_wait_expired` の完全一致だけに `CONSENT_WAIT_EXPIRED_NOTICE` を使う。専用の鍵なし理由は記録されていないため、null・欠落・未知理由から過去のログインを断定せず「本文は保存していません」と表示する。理由の生文字列は表示しない。
+
+## 全消去とメールの再読
+
+- 実メールも、所有者を特定した入口で全消去の世代を固定する。受信本文の取得待ちや未読一覧の取得より前に固定し、同じ要求の途中で新世代を採用し直さない。全消去後に始めた新着・再読は新世代を使う。
+- 再読はMessage-IDの有無によらず一覧の行idとcreated_atを渡す。指定行が消えていたら作り直さず、同じMessage-IDの別行にも乗り換えない。所有者・lease・保存版・世代のDB検査をすべて通す。
+- 全消去による受信中止と確認できた場合だけ、webhookは成功応答で再送を止める。未知のDB障害を中止や空一覧に読み替えない。メールの所有者が分かる前に世代を推測しない。
+
+## 引用を確認できない無関係判定
+
+- 原文で裏付けられない `unrelated` を注文へ書き換えない。`relevance_unverified` のfailed/未読メールとして本文を残し、荷物と抽出行を作らない。引用を確認できる無関係判定の破棄は維持し、未読から再試行できる。
+- 公開保存済み結果のoffline集計は `npx tsx scripts/check-public-demo-relevance.ts`。公開2集合と合成対照を分け、unrelatedの分母が0なら条件付き率は未測定として扱う。実メールや課金APIを使わない。
+
+## 再設定の完了確認と期限
+
+- `finishReset` はI1の本人一致と、所有者・challenge・現行active鍵・元wrapの照合を先に行う。完了済みの同じ要求は15分を過ぎても成功確認を返し、Auth secretや鍵を再更新しない。未完了の変更は引き続き15分以内のreset認証を要する。
+- 再試行の時刻試験では、認証AMRを初回時刻に固定する。各呼出しで現在時刻へ更新すると期限切れを再現できない。間に届いたメールの開封と、別の本人/鍵/包み直し操作を成功扱いしない対照も確認する。
+
+## DB適用主体とAuth行ロックの権限
+
+- 110000のfresh適用は既存emails/RPCの標準ownerを適用主体にする。新wrapperと退避coreのownerを混在させず、既存private呼出しとdownの所有者契約を保つ。所有者や権限を自動で変更してgateを通さない。
+- Auth行を直接ロックする5関数には、実効的なauth schema USAGE・SELECT(id)・少なくとも1列のUPDATEが要る。正当な列grant/継承も認め、API呼出し役へ広いAuth権限を付けない。初回は新規DEFINER=current_user、再適用は既存の実owner全件も確認する。
+- beforeの構造検査だけで権限を保証しない。afterは既存helperの実DEFINER権限で0行FOR KEY SHAREを通し、保存する行を作らずに必要ACLを確かめる。SQLエラー・出力無し・false/null・FAILEDなら停止する。全ユーザーのRLS可視性とは別の検査として扱う。
+
+## 利用者ごとの荷物候補ロック（P-1）
+
+- 上の62803は利用者ごとの `(62803, hashtext(user_id::text))`。authenticatedの直接DMLはauth.uid()、owned mail RPCはロックしたemails.user_idを正本にする。本人の0行UPDATEも自分の鍵だけを取り、既存grantとRLSは維持する。hashは排他の識別にだけ使い、所有者・lease・候補・snapshotの照合はUUIDのまま。hash衝突は待ち時間だけを増やす。
+- 最終110000まで揃えた通常の書込みは U(Auth行) → G(世代行) → E(必要なメール行) → L(利用者の候補鍵) → R(荷物/明細行)。100000単独はGの無い途中段階なので、その段階でwriterを再開しない。
+- serviceの直接parcels/items DMLには単一利用者のscopeが必要。実メールpipelineはwithMailRun/mail_run_write、サンプルと適用付きcategorizeはbeginMailGenerationの同じ世代付きclientを最後まで使う。categorizeは有料処理より前にscopeを確定する。header/context無しは拒否し、全員共通の鍵へ戻さない。
+- 一つのtransactionでownerを切り替えない。退会のprivate callbackだけが削除対象UUIDのcontextを作り、cascadeの再入では削除済み親行を取り直さない。任意headerを削除contextの根拠にしない。
+- TRUNCATEは通常のtriggerで常に拒否する。writer停止/drainだけでは許可されない。複数利用者にまたがる保守は単一owner transactionへ分割するか、別途レビューした手順を用意する。
+- 100000/110000の本体・before・verify・downは同じ版で取り込む。Auth callbackは共通名のCREATE OR REPLACE TRIGGERで切り替える。100000を最終的に戻してtriggerを削除するにはAuth tableowner/memberが必要で、適用時のTRIGGER権限とは分けて確認する。利用者分離の実PG対照はtests/postgres/run-parcel-user-locks.mjs。
+- R2-2の共有入口はprivateな `public.lock_parcel_owner(p_user uuid) returns void`。U/G/Eは呼出し元で先取りし、helperは同ownerのTx設定と利用者別Lだけを確保する。NULLとowner切替は拒否、owner不明のstatementは従来どおり拒否。PUBLIC/anon/authenticated/service_roleへ直接EXECUTEを与えず、同ownerのDEFINER RPC/triggerから呼ぶ。
+- 後続migrationもinlineの62803取得や固定鍵を足さず、同helperへ統一する。メールのhelperは本人/run/lease検査後・snapshot/R前に置く。後続downの復元coreにも同じ呼出しを保ち、helperを作る100000より先に依存側を戻す。before/verify/downはhelperのABI/owner/ACLと、pg_procに固定62803,0が無いことも確認する。

@@ -273,7 +273,8 @@ async function setLoginSecret(supabase: ServerClient, authSecret: string): Promi
  * The end of a reset (/reset-password): verify the screen owner and the pending key first, then
  * the new login secret, then the key the browser made
  * for it is put in use (the old key is retired under the same lock: activate_user_key_checked).
- * Only on a session from a reset link of the last 15 minutes (auth-session.ts).
+ * Starting a pending reset needs a reset-link session of the last 15 minutes (auth-session.ts).
+ * A proven completed request only confirms its current key, even after that window has passed.
  *
  * When only the activation fails, its code is answered and calling this again is safe: the secret
  * is the new one already (Supabase answers same_password, read as set) and the pending key waits.
@@ -288,8 +289,6 @@ export async function finishReset(input: unknown): Promise<FinishResetResult> {
   if (read.state === "signed_out") return { ok: false, code: "signed_out" };
   // These are equality conditions only: the authenticated session remains the owner of every query.
   if (read.session.userId !== expectedUserId || !read.session.email || normalizeLoginAddress(read.session.email) !== expectedEmailNorm) return { ok: false, code: "signed_out" };
-  if (!isFresh(read.session.amr, "reset")) return { ok: false, code: "reset_expired" };
-
   const db = createAdminClient();
   const checked = await checkResetKey(db, read.session.userId, { keyId, challenge, expectedCurrentKeyId, expectedWrappedPrivateKey });
   if (!checked.ok) return { ok: false, code: keyStepCode(checked.error) };
@@ -298,6 +297,7 @@ export async function finishReset(input: unknown): Promise<FinishResetResult> {
     scheduleSealRemaining(read.session.userId);
     return { ok: true, keyId: checked.keyId };
   }
+  if (!isFresh(read.session.amr, "reset")) return { ok: false, code: "reset_expired" };
 
   const set = await setLoginSecret(supabase, authSecret);
   if (set === "unknown") return { ok: false, code: "secret_change_unknown" };
