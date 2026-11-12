@@ -1,5 +1,5 @@
 /**
- * A copy of the Web's words the iOS app shows, from integrate/password-v1 (pinned at fd0e7d4):
+ * A copy of the Web's words for the Web/iOS contract, from integrate/password-v1 (pinned at fd0e7d4):
  *  - LOGIN_MESSAGES of src/lib/login-errors.ts (every key, in order);
  *  - the password rule of src/lib/crypto/password-v1.ts (PASSWORD_RULE and passwordProblem's three answers).
  * The copy is here only while this branch's src/ does not have those files yet. ios-password-login.test.ts
@@ -15,6 +15,8 @@ export const LOGIN_MESSAGES_COPY: Record<string, string> = {
   captcha: "確認が切れました。もう一度お試しください。",
   network: "つながりませんでした。少し時間をおいて、もう一度お試しください。",
   other: "うまくいきませんでした。もう一度お試しください。",
+  // Web-only until the native mail-failure handoff is implemented.
+  mail_busy: "いま混み合っています。少し時間をおいて、もう一度お試しください。",
   invalid_email: "メールアドレスの形式を確認してください。",
   email_not_ascii: "半角の英数字と記号だけのメールアドレスをお使いください。",
   not_configured: "いまは受け付けられません。少し時間をおいて、もう一度お試しください。",

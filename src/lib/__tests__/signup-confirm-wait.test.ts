@@ -162,6 +162,20 @@ afterEach(() => {
 });
 
 describe("the waiting screen's words", () => {
+  it("a busy resend shows the mail failure without a sent toast, navigation or an automatic sign-in", async () => {
+    actions.resend.mockResolvedValue({ ok: false, code: "mail_busy" });
+    const view = await waiting();
+    pressResend(view);
+    await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.mail_busy));
+    await vi.waitFor(() => expect(textOfHost(buttons(view)[1])).toBe(WORDS.resend));
+    expect(view.hosts((h) => h.props.role === "alert").map(textOfHost)).toEqual([LOGIN_MESSAGES.mail_busy]);
+    expect(view.text()).not.toContain(WORDS.resent);
+    expect(view.text()).toContain(WORDS.title);
+    expect(flows.signIn).not.toHaveBeenCalled();
+    expect(nav.to).toEqual([]);
+    view.unmount();
+  });
+
   it("offers login and password reset in one neutral sentence beside the existing login link", async () => {
     const view = await waiting();
     const help = view.hosts((h) => h.type === "p" && textOfHost(h).includes("パスワードの再設定"));
