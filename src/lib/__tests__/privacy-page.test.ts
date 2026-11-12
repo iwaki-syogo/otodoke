@@ -131,7 +131,7 @@ describe("/privacy: what it says", () => {
       "cookie",
     ]);
     const said = Object.fromEntries(list);
-    expect(said["読み取りの許可"]).toContain("選択と、選んだ日時、画面の文の版を記録します");
+    expect(said["読み取りの許可"]).toContain("選択と、選んだ日時、画面の文の版を、あなたのアカウントと結び付けて記録します");
     // No login link any more: the address gets the confirmation and reset mails.
     expect(said["ログインのメールアドレス"]).toBe("確認や再設定のメールを送り、あなたのアカウントを見分けるために使います。");
     // password-v1: the browser splits the password in two and sends only the login value.
@@ -192,7 +192,7 @@ describe("/privacy: what it says", () => {
     expect(said["読み取りの許可と取り消し"]).toContain("届いたメールを Anthropic の Claude に送る前に、読み取りの許可を求めます");
     expect(said["読み取りの許可と取り消し"]).toContain("設定の「あなたのメールの扱い」にある「読み取りをやめる」");
     expect(said["読み取りの許可と取り消し"]).toContain("すでに読み取った荷物と結果は残ります");
-    expect(said["Claude での読み取り"]).toContain("読み取る数秒のあいだ、サーバーと Claude API がメールの中身を扱います");
+    expect(said["Claude での読み取り"]).toContain("読み取りのあいだ、サーバーと Claude API がその内容を扱います");
     expect(said["保存と暗号化"]).toContain("あなたのパスワードでしか開けない形に暗号化して保存します");
     expect(said["保存と暗号化"]).toContain("暗号化したメールは、運営者もデータベースからは読めません");
     expect(said["保存と暗号化"]).toContain("パスワードそのものは、サーバーに送りません");
