@@ -397,7 +397,9 @@ export async function countPlainRead(db: AdminClient, userId: string, after: str
 export const SealBatchSchema = z.object({ after: z.string().regex(/^[0-9a-f-]{1,36}$/i).nullable() }).strict();
 export type SealBatch = z.infer<typeof SealBatchSchema>;
 
-export type SealBatchResult = KeyResult<{ sealed: number; failed: string[]; next: string | null; remaining: number }>;
+type SealBatchValues = { sealed: number; failed: string[]; next: string | null; remaining: number };
+export type SealBatchResult = KeyResult<SealBatchValues>;
+type SealBatchProgress = KeyResult<SealBatchValues & { selected: number }>;
 
 /**
  * Seal up to SEAL_BATCH_SIZE of this user's read mails that are still in plaintext, with the key
@@ -409,7 +411,7 @@ export type SealBatchResult = KeyResult<{ sealed: number; failed: string[]; next
  * still plaintext after `next`, samples left out (0: this run is done). A batch shorter than
  * SEAL_BATCH_SIZE has nothing after it, so it is not counted (no extra reads).
  */
-export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { after: null }): Promise<SealBatchResult> {
+async function sealPlainBatchProgress(db: AdminClient, userId: string, input: unknown): Promise<SealBatchProgress> {
   try {
     const { after } = parseInput(SealBatchSchema, input);
     const key = await currentSealKey(db, userId);
@@ -444,7 +446,11 @@ export async function sealPlainBatch(db: AdminClient, userId: string, input: unk
           .eq("body_state", "plain")
           .select("id");
         if (writeError) throw new Error(writeError.message);
-        sealed += written?.length ?? 0;
+        if (!Array.isArray(written) || written.length > 1 || (written.length === 1 && written[0]?.id !== row.id)) {
+          throw new Error("seal update returned unconfirmed rows");
+        }
+        // Another writer may already have sealed or removed the selected row.
+        sealed += written.length;
       } catch (err) {
         // Only the id and the database's message: never the mail.
         console.error("seal: a row could not be sealed", row.id, err instanceof Error ? err.message : "unknown error");
@@ -454,10 +460,17 @@ export async function sealPlainBatch(db: AdminClient, userId: string, input: unk
     const next = rows.length > 0 ? rows[rows.length - 1].id : after;
     // A short (or empty) batch reached the end of the plaintext rows: nothing is left to count.
     const remaining = rows.length < SEAL_BATCH_SIZE ? 0 : await countPlainRead(db, userId, next);
-    return { ok: true, sealed, failed, next, remaining };
+    return { ok: true, sealed, failed, next, remaining, selected: rows.length };
   } catch (err) {
     return fail(err);
   }
+}
+
+/** Keep internal scan progress out of the public batch response. */
+export async function sealPlainBatch(db: AdminClient, userId: string, input: unknown = { after: null }): Promise<SealBatchResult> {
+  const result = await sealPlainBatchProgress(db, userId, input);
+  if (!result.ok) return result;
+  return { ok: true, sealed: result.sealed, failed: result.failed, next: result.next, remaining: result.remaining };
 }
 
 /** Batches one automatic run goes through at most: 8 x SEAL_BATCH_SIZE = 400 rows. */
@@ -467,7 +480,7 @@ export interface SealRemainingResult {
   sealed: number;
   failed: number;
   batches: number;
-  /** Still plaintext when the run stopped (0 when it finished or there was nothing to do). */
+  /** Unvisited real-mail plaintext after the cursor; failed rows are counted separately. */
   remaining: number;
   /** Why it stopped before looking at everything: no key in use, or a database error. */
   stopped: "done" | "limit" | "no_key" | "error";
@@ -486,7 +499,7 @@ export async function sealRemainingPlain(db: AdminClient, userId: string, option
   try {
     let after: string | null = null;
     while (result.batches < maxBatches) {
-      const batch: SealBatchResult = await sealPlainBatch(db, userId, { after });
+      const batch = await sealPlainBatchProgress(db, userId, { after });
       result.batches += 1;
       if (!batch.ok) {
         result.stopped = batch.error === "no key in use" ? "no_key" : "error";
@@ -499,7 +512,7 @@ export async function sealRemainingPlain(db: AdminClient, userId: string, option
       // Done is decided by what the batch looked at, not by countPlainRead (which leaves the demo
       // rows out although the batch seals them): a short batch reached the end, and a cursor that
       // did not move means nothing was selected.
-      if (batch.next === after || batch.sealed + batch.failed.length < SEAL_BATCH_SIZE) return result;
+      if (batch.next === after || batch.selected < SEAL_BATCH_SIZE) return result;
       after = batch.next;
     }
     result.stopped = "limit";

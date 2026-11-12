@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toBase64 } from "@/lib/crypto/bytes";
 import { challengeAad, openBytes } from "@/lib/crypto/envelope";
 import { createKeyPair, openStoredKey, wrapPrivateKey, type StoredKey } from "@/lib/crypto/key-wrap";
-import { activateKey, AUTO_SEAL_MAX_BATCHES, registerKey, SEAL_BATCH_SIZE, sealRemainingPlain } from "@/lib/mail-keys";
+import { activateKey, AUTO_SEAL_MAX_BATCHES, registerKey, SEAL_BATCH_SIZE, sealPlainBatch, sealRemainingPlain } from "@/lib/mail-keys";
+import { closedBody, currentSealKey } from "@/lib/mail-seal";
 import { FakeDb, type Row } from "./fake-db";
 import { USER, asAdmin } from "./pipeline-fixtures";
 import { findAll, parseHtml, textOf } from "./html-tree";
@@ -96,7 +97,9 @@ beforeEach(() => {
   mocks.afterCallbacks.length = 0;
   mocks.afterThrows = false;
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("unexpected external request"); }));
 });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("sealRemainingPlain", () => {
   it("seals everything in batches and stops at 0", async () => {
@@ -160,6 +163,60 @@ describe("sealRemainingPlain", () => {
     const res = await sealRemainingPlain(asAdmin(db), USER);
     expect(res).toMatchObject({ sealed: SEAL_BATCH_SIZE + 1, stopped: "done" });
     expect(plainLeft(db)).toBe(0);
+  });
+
+  it.each(["seal", "delete"] as const)("continues to the 51st row when another writer makes an earlier UPDATE a no-op by %s", async (concurrent) => {
+    const db = new FakeDb();
+    await withKey(db);
+    seedPlain(db, SEAL_BATCH_SIZE + 1);
+    const first = db.rows("emails")[0];
+    const key = await currentSealKey(asAdmin(db), USER);
+    const alreadyClosed = await closedBody(key, USER, first.id as string, {
+      subject: first.subject as string, from_name: first.from_name as string,
+      from_address: first.from_address as string, text: first.text_body as string, html: null,
+    }, false);
+    let changed = false;
+    db.hooks.push((query) => {
+      if (changed || query.table !== "emails" || query.op !== "update") return;
+      changed = true;
+      // The selected row stops matching body_state=plain before this run writes it.
+      if (concurrent === "seal") Object.assign(first, alreadyClosed);
+      else db.rows("emails").splice(0, 1);
+    });
+
+    const result = await sealRemainingPlain(asAdmin(db), USER);
+    expect(changed).toBe(true);
+    expect(result).toEqual({ sealed: SEAL_BATCH_SIZE, failed: 0, batches: 2, remaining: 0, stopped: "done" });
+    expect(plainLeft(db)).toBe(0);
+    expect(db.rows("emails").find((row) => row.id === `e-${String(SEAL_BATCH_SIZE).padStart(4, "0")}`)?.body_state).toBe("sealed");
+  });
+
+  it("keeps the public batch response unchanged while a concurrent no-op is counted as zero writes", async () => {
+    const db = new FakeDb();
+    await withKey(db);
+    seedPlain(db, 1);
+    db.hooks.push((query) => {
+      if (query.table === "emails" && query.op === "update") db.rows("emails").splice(0, 1);
+    });
+    expect(await sealPlainBatch(asAdmin(db), USER)).toEqual({ ok: true, sealed: 0, failed: [], next: "e-0000", remaining: 0 });
+  });
+
+  it.each([
+    ["null", null],
+    ["object", { id: "e-0000" }],
+    ["another ID", [{ id: "another-row" }]],
+    ["multiple rows", [{ id: "e-0000" }, { id: "another-row" }]],
+  ])("does not confirm sealing from an unconfirmed %s response and retries on the next run", async (_name, data) => {
+    const db = new FakeDb();
+    await withKey(db);
+    seedPlain(db, 1);
+    db.hooks.push((query) => query.table === "emails" && query.op === "update" ? { data, error: null } : undefined);
+    expect(await sealPlainBatch(asAdmin(db), USER)).toEqual({ ok: true, sealed: 0, failed: ["e-0000"], next: "e-0000", remaining: 0 });
+    expect(plainLeft(db)).toBe(1);
+    db.hooks.length = 0;
+    expect(await sealRemainingPlain(asAdmin(db), USER)).toEqual({ sealed: 1, failed: 0, batches: 1, remaining: 0, stopped: "done" });
+    expect(plainLeft(db)).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("respects maxBatches and goes on where it stopped on the next call", async () => {

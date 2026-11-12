@@ -225,13 +225,11 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
         // Re-reading a stored mail can land here too. Leave no row behind, or it would stay unread
         // forever. Only while the row is as it was read, as for the take-over below: a delivery that
         // took it over meanwhile is reading it, and its row is not removed from under it.
-        const { data, error } = await db.from("emails").delete().eq("user_id", mail.userId).eq("id", emailId).select("id");
-        if (error) throw new Error(`emails cleanup failed: ${error.message}`);
-        const removed = (data ?? []).length > 0;
+        await removeOwnedMail(db, mail.userId, emailId);
         // Logged as dropped (its subject in plaintext, for 14 days) only once its row is gone: a
         // delivery that took the row over may read and seal it (review R3-33). Removed first and
         // logged after, so a failure in between leaves no subject behind.
-        if (removed) await logScreenEvent(db, mail, "dropped", screen.reason);
+        await logScreenEvent(db, mail, "dropped", screen.reason);
         return { kind: "screened_out", reason: screen.reason };
       }
     }
@@ -267,6 +265,15 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     await db.from("emails").update({ processing_status: "failed", error: failure ? failure.code : message }).eq("id", emailRow.id);
     if (failure?.code === "claude_unavailable") throw new ClaudeUnavailableError("claude is unavailable");
     throw err;
+  }
+}
+
+/** Zero returned rows is a failed owned write, not proof that the target was already absent. */
+async function removeOwnedMail(db: AdminClient, userId: string, emailId: string): Promise<void> {
+  const { data, error } = await db.from("emails").delete().eq("user_id", userId).eq("id", emailId).select("id");
+  if (error) throw new Error(`emails cleanup failed: ${error.message}`);
+  if (!Array.isArray(data) || data.length !== 1 || data[0]?.id !== emailId) {
+    throw new Error("emails cleanup did not remove the expected row");
   }
 }
 
@@ -394,7 +401,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
 
   // 3. Unrelated mail is not kept at all.
   if (!isParcelRelevant(x.relevance)) {
-    await db.from("emails").delete().eq("id", emailId);
+    await removeOwnedMail(db, mail.userId, emailId);
     return { kind: "discarded", reason: x.relevance_evidence ?? "unrelated" };
   }
 
