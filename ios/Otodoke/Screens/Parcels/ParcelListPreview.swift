@@ -48,6 +48,8 @@ struct ListPreview {
         case consentAutoLimit = "consent-auto-limit"
         case consentAutoStopped = "consent-auto-stopped"
         case consentAutoFailed = "consent-auto-failed"
+        /// The tabs with a signed-in user the settings read can verify; every read then fails at once.
+        case settingsSignedIn = "settings-signed-in"
         /// The waiting screen after making an account.
         case loginWaiting = "login-waiting"
     }
@@ -105,6 +107,7 @@ struct ListPreview {
         case .consentRequired, .consentError, .consentSaveError, .consentSaveOffline, .consentLoading, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed: decision = .notDetermined
         case .consentDenied: decision = .denied
         case .consentAllowed, .consentOnboarding, .consentSheetRequest: decision = .allowed
+        case .settingsSignedIn: return settingsSignedInScreens()
         default: return nil
         }
         let provider = Self.provider(), changes = DataChanges()
@@ -153,6 +156,22 @@ struct ListPreview {
         })
         return MainScreens(changes: changes, list: list, calendar: CalendarModel(reader: reader, changes: changes, today: { today }),
                            spend: SpendModel(reader: reader, writer: writer, changes: changes, today: { today }), settings: settings,
+                           detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: { today }) })
+    }
+
+    /// The real settings model with the real identity check: its generation follows the user the provider's
+    /// stored session names. The reads go to a transport that fails at once, so the key card settles as unread.
+    @MainActor
+    private func settingsSignedInScreens() -> MainScreens {
+        let provider = SignedInPreviewSupport.makeProvider(), changes = DataChanges()
+        let auth = AuthService(provider: provider)
+        auth.session.follow(userID: SignedInPreviewSupport.userID)
+        let reader = ParcelReader(provider: provider), writer = ParcelWriter(provider: provider, changes: changes)
+        let today = Format.todayJst(now: Date())
+        let consent = Self.makeReadingConsent(decision: .denied, fails: false, counter: ConsentPreviewCounter())
+        return MainScreens(changes: changes, list: makeModel(), calendar: CalendarModel(reader: reader, changes: changes, today: { today }),
+                           spend: SpendModel(reader: reader, writer: writer, changes: changes, today: { today }),
+                           settings: SettingsModel.live(auth: auth, changes: changes, consent: consent),
                            detail: { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: { today }) })
     }
 
@@ -211,7 +230,7 @@ struct ListPreview {
         case .list, .empty, .failed, .toast, .saving, .many, .bottom,
              .receivedList, .receivedDetail, .receivedCheck, .deliveredPage, .cancelledPage,
              .emptyReceived, .emptyApproval, .checking, .detail, .welcome, .accountDelete,
-             .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentSaveError, .consentSaveOffline, .consentLoading, .consentSheetRequest, .consentOnboarding, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed:
+             .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentSaveError, .consentSaveOffline, .consentLoading, .consentSheetRequest, .consentOnboarding, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed, .settingsSignedIn:
             return nil
         }
         return model
@@ -289,7 +308,7 @@ struct ListPreview {
             var delivered = Self.row(31, shop: "見本ストア", title: "架空のマグカップ", status: "delivered", date: CivilDate.addDays(today, -20), presence: true)
             delivered.lastEmailAt = CivilDate.addDays(today, -20) + "T00:00:00Z"
             model.debugShow(rows: [delivered], counts: counts, loadState: .loaded)
-        case .empty, .accountDelete, .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentSaveError, .consentSaveOffline, .consentLoading, .consentSheetRequest, .consentOnboarding, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed:
+        case .empty, .accountDelete, .consentRequired, .consentDenied, .consentAllowed, .consentError, .consentSaveError, .consentSaveOffline, .consentLoading, .consentSheetRequest, .consentOnboarding, .consentAutoHold, .consentAutoLimit, .consentAutoStopped, .consentAutoFailed, .settingsSignedIn:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded)
         case .emptyReceived, .emptyApproval:
             model.debugShow(rows: [], counts: ParcelCounts(unread: .loaded(0)), loadState: .loaded,

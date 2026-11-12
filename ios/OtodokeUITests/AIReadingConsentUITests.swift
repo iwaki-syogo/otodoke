@@ -1,5 +1,19 @@
 import XCTest
 
+/// The touch-target size comparison, kept outside the main-actor test classes so pure tests can call it.
+enum TouchTarget {
+    /// Smallest touch target side, in points.
+    static let minimumTargetSide: CGFloat = 44
+    /// Slack for a point value that is a difference of two pixel edges divided by the scale. At @3x the link spans
+    /// 1516px to 1648px (132px = 44pt), but 1648/3 - 1516/3 evaluates to 43.99999999999994 in double precision.
+    /// The slack is far below one pixel (1/3pt), so a target that is truly smaller still fails. Unit: points.
+    static let targetRoundingSlack: CGFloat = 1e-6
+
+    static func meetsMinimumTarget(_ side: CGFloat) -> Bool {
+        side >= minimumTargetSide - targetRoundingSlack
+    }
+}
+
 /// The real consent and settings screens, backed by the DEBUG consent server and made-up mail.
 @MainActor
 final class AIReadingConsentUITests: XCTestCase {
@@ -105,8 +119,8 @@ final class AIReadingConsentUITests: XCTestCase {
             check(element.isHittable, "unreachable-\(identifier)", in: app)
             check(modal.frame.intersection(viewport.frame).insetBy(dx: -1, dy: -1).contains(element.frame), "clipped-\(identifier)", in: app)
             if ["ai-reading-consent.privacy", "ai-reading-consent.allow", "ai-reading-consent.deny"].contains(identifier) {
-                XCTAssertGreaterThanOrEqual(element.frame.height, 44, identifier)
-                XCTAssertGreaterThanOrEqual(element.frame.width, 44, identifier)
+                XCTAssertTrue(TouchTarget.meetsMinimumTarget(element.frame.height), "\(identifier) height \(element.frame.height)")
+                XCTAssertTrue(TouchTarget.meetsMinimumTarget(element.frame.width), "\(identifier) width \(element.frame.width)")
             }
         }
     }
@@ -741,5 +755,19 @@ final class AIReadingConsentUITests: XCTestCase {
         add(evidence)
         assertBackgroundUnavailable(in: app)
         assertConsentSaveCount(0, in: app)
+    }
+}
+
+/// Pure checks of the touch-target comparison; the app is not launched.
+final class MinimumTargetComparisonTests: XCTestCase {
+    func testExactAndRoundedValuesPass() {
+        XCTAssertTrue(TouchTarget.meetsMinimumTarget(44))
+        XCTAssertTrue(TouchTarget.meetsMinimumTarget(43.99999999999994))
+        XCTAssertTrue(TouchTarget.meetsMinimumTarget(1648.0 / 3 - 1516.0 / 3))
+    }
+
+    func testRealShortfallsFail() {
+        XCTAssertFalse(TouchTarget.meetsMinimumTarget(43.999))
+        XCTAssertFalse(TouchTarget.meetsMinimumTarget(43.5))
     }
 }

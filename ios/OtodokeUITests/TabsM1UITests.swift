@@ -1,16 +1,16 @@
 import XCTest
 
 /// [Batch 2, task 12] The calendar, spend and settings tabs open their screens (no longer the empty
-/// places of batch 1). DEBUG screen check (`-otodoke-ui-preview list`): no session, so the reads fail
+/// places of batch 1). DEBUG screen check (`-otodoke-ui-preview list`; the settings tab uses `settings-signed-in`): the reads fail
 /// and say 「読み込めませんでした」; nothing is read or written over the network.
 final class TabsM1UITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    private func launch() -> XCUIApplication {
+    private func launch(_ scenario: String = "list") -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-otodoke-ui-preview", "list"]
+        app.launchArguments = ["-otodoke-ui-preview", scenario]
         app.launch()
         return app
     }
@@ -42,9 +42,10 @@ final class TabsM1UITests: XCTestCase {
     }
 
     func testTheSettingsTabShowsSettings() {
-        let app = launch()
+        // The settings read checks the signed-in user first; this scene has one, and every read then fails.
+        let app = launch("settings-signed-in")
         open(app, "設定")
-        // The passphrase card at the top: its read fails here, and says so.
+        // The passphrase card at the top settles (the loading mark goes away) and says the read failed.
         XCTAssertTrue(app.staticTexts["読み込めませんでした"].firstMatch.waitForExistence(timeout: 10))
     }
 }
