@@ -49,6 +49,7 @@ const INITIAL: ManualFormState = { error: null, values: {} };
 
 function formData(values: Record<string, string>): FormData {
   const fd = new FormData();
+  fd.set("expectedUserId", USER.id);
   for (const [k, v] of Object.entries(values)) fd.append(k, v);
   return fd;
 }

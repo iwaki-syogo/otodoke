@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   afterCallbacks: [] as Array<() => Promise<void> | void>,
   afterThrows: false,
   db: null as unknown,
-  fresh: vi.fn(),
+  cookieSession: vi.fn(),
 }));
 
 // These existing UI scenarios begin after the person has allowed reading.
@@ -52,7 +52,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 vi.mock("@/lib/inbox", () => ({ ensureInboxAddress: async () => "abcdefghjk", inboxEmail: () => "abcdefghjk@in.example.test" }));
-vi.mock("@/lib/auth-session", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/auth-session")>()), freshCookieSession: mocks.fresh }));
+vi.mock("@/lib/auth-session", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/auth-session")>()), readCookieSession: mocks.cookieSession }));
 
 const current = (db: FakeDb) => db.rows("user_keys").filter((k) => k.user_id === USER && k.activated_at && !k.retired_at);
 
@@ -280,10 +280,10 @@ describe("each trigger schedules it", () => {
     const mod = await vi.importActual<typeof import("@/lib/mail-keys")>("@/lib/mail-keys");
     const db = new FakeDb();
     mocks.db = db;
-    mocks.fresh.mockResolvedValue({ ok: true, session: { userId: USER } });
+    mocks.cookieSession.mockResolvedValue({ state: "signed_in", session: { userId: USER, email: "qa@example.com", amr: [{ method: "password", at: Date.now() }] } });
     const { activateMailKey } = await import("@/app/app/settings/key-actions");
     // A failing activation (no key waiting) schedules nothing.
-    const failed = await activateMailKey({ keyId: "a".repeat(32), challenge: toBase64(new Uint8Array(32)), expectedCurrentKeyId: null });
+    const failed = await activateMailKey({ keyId: "a".repeat(32), challenge: toBase64(new Uint8Array(32)), expectedCurrentKeyId: null }, USER);
     expect(failed.ok).toBe(false);
     expect(mocks.afterCallbacks).toHaveLength(0);
 
@@ -295,7 +295,7 @@ describe("each trigger schedules it", () => {
     seedPlain(db, 6);
     const recipient = await openStoredKey(db.rows("user_keys").find((k) => k.key_id === reg.keyId) as unknown as StoredKey & Row, PASS, USER);
     const answer = await openBytes(recipient, challengeAad(USER, reg.keyId), reg.challenge);
-    const ok = await activateMailKey({ keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: null });
+    const ok = await activateMailKey({ keyId: reg.keyId, challenge: toBase64(answer), expectedCurrentKeyId: null }, USER);
     expect(ok).toEqual({ ok: true, keyId: reg.keyId });
     expect(mocks.afterCallbacks).toHaveLength(1);
     expect(plainLeft(db)).toBe(6);

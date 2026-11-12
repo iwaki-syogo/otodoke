@@ -8,6 +8,7 @@ import { NO_BODY_TEXT, NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notice
 import { htmlToText } from "@/lib/text/html-to-text";
 import { readSealedMail } from "@/app/app/settings/key-actions";
 import { UnlockForm } from "../../unlock-form";
+import { unstable_rethrow } from "next/navigation";
 
 type Opened = { kind: "open"; mail: MailPlaintext } | { kind: "old-key" } | { kind: "failed" };
 
@@ -36,7 +37,7 @@ export function SealedMail({ userId, email, emailId, fromDomain, notes, confiden
     if (!key) return;
     let cancelled = false;
     (async (): Promise<Opened> => {
-      const res = await readSealedMail({ emailId });
+      const res = await readSealedMail({ emailId }, userId);
       if (!res.ok || !res.envelope) return { kind: "failed" };
       if (kidOf(res.envelope) !== key.keyId) return { kind: "old-key" };
       try {
@@ -45,7 +46,7 @@ export function SealedMail({ userId, email, emailId, fromDomain, notes, confiden
         return err instanceof WrongKeyError ? { kind: "old-key" } : { kind: "failed" };
       }
     })()
-      .catch((): Opened => ({ kind: "failed" }))
+      .catch((error): Opened => { unstable_rethrow(error); return { kind: "failed" }; })
       .then((result) => {
         if (!cancelled) setOpened({ keyId: key.keyId, result });
       });

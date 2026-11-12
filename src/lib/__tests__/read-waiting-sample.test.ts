@@ -31,9 +31,11 @@ const newDb = (emails: Row[] = []) => {
   // The pipeline's "young pending row" check reads the real time.
   return new FakeDb({ emails, parcels: [] }, Date.now());
 };
-const run = async (fn: () => Promise<void>) => {
+const run = async (fn: (formData: FormData) => Promise<void>) => {
+  const formData = new FormData();
+  formData.set("expectedUserId", USER);
   mocks.redirect.mockClear();
-  await expect(fn()).rejects.toThrow("NEXT_REDIRECT");
+  await expect(fn(formData)).rejects.toThrow("NEXT_REDIRECT");
   return mocks.redirect.mock.calls.map((c) => c[0] as string);
 };
 /** The parcel's identity (later mails of the same order move its status and dates, so those are left out). */

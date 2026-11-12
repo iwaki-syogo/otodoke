@@ -40,7 +40,7 @@ function press(view: Mounted, label: string): boolean {
 }
 
 async function opened(): Promise<Mounted> {
-  const view = mount(() => AccountDeletion(), focusable);
+  const view = mount(() => AccountDeletion({ userId: "00000000-0000-4000-8000-00000000000a" }), focusable);
   press(view, "アカウントを削除");
   await Promise.resolve();
   return view;
@@ -53,12 +53,12 @@ beforeEach(() => {
 
 describe("the first press deletes nothing", () => {
   it("before it there is one button and no form", () => {
-    const view = mount(() => AccountDeletion(), focusable);
+    const view = mount(() => AccountDeletion({ userId: "00000000-0000-4000-8000-00000000000a" }), focusable);
     expect(view.hosts((h) => h.type === "form")).toEqual([]);
     expect(view.hosts((h) => h.type === "button").map(textOfHost)).toEqual(["アカウントを削除"]);
     expect(view.text()).not.toContain("削除する");
     // Static markup (the settings page) too.
-    const html = renderToStaticMarkup(createElement(AccountDeletion));
+    const html = renderToStaticMarkup(createElement(AccountDeletion, { userId: "00000000-0000-4000-8000-00000000000a" }));
     expect(html).toContain("アカウントを削除");
     expect(html).not.toContain("<form");
     expect(html).not.toContain(ACCOUNT_DELETE_CONFIRM.value);
@@ -75,8 +75,9 @@ describe("the first press deletes nothing", () => {
     expect(text).toContain("Gmail などで設定した自動転送も外してください。");
     const form = view.host((h) => h.type === "form");
     expect(form.props.action).toBe(action.formAction);
-    const hidden = view.host((h) => h.type === "input");
+    const hidden = view.host((h) => h.type === "input" && h.props.name === ACCOUNT_DELETE_CONFIRM.name);
     expect(hidden.props).toMatchObject({ type: "hidden", name: ACCOUNT_DELETE_CONFIRM.name, value: ACCOUNT_DELETE_CONFIRM.value });
+    expect(view.host((h) => h.type === "input" && h.props.name === "expectedUserId").props.value).toBe("00000000-0000-4000-8000-00000000000a");
     expect(view.host(isButton("削除する")).props.type).toBe("submit");
     expect(view.host(isButton("やめる")).props.type).toBe("button");
   });
@@ -90,7 +91,7 @@ describe("the first press deletes nothing", () => {
   });
 
   it("moves the focus to the question when it opens and back to the button when it closes, not on the first draw", async () => {
-    const view = mount(() => AccountDeletion(), focusable);
+    const view = mount(() => AccountDeletion({ userId: "00000000-0000-4000-8000-00000000000a" }), focusable);
     const opener = view.nodeOf<{ focus: ReturnType<typeof vi.fn> }>(view.host(isButton("アカウントを削除")));
     expect(opener.focus).not.toHaveBeenCalled();
     press(view, "アカウントを削除");
@@ -129,7 +130,7 @@ describe("「削除する」 shows the press and is sent once", () => {
   });
 
   it("is never disabled in the source either", () => {
-    const html = renderToStaticMarkup(createElement(AccountDeletion));
+    const html = renderToStaticMarkup(createElement(AccountDeletion, { userId: "00000000-0000-4000-8000-00000000000a" }));
     expect(html).not.toMatch(/\sdisabled(=|\s|>)/);
   });
 });

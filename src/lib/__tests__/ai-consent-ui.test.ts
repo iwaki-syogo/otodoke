@@ -55,7 +55,7 @@ async function renderList(sample = false) {
 describe("the first reading-permission screen", () => {
   it.each(["list", "welcome", "settings"] as const)("the %s consent screen shows the approved purpose immediately after the existing body", async (after) => {
     const { ReadingConsent } = await import("@/app/app/reading/reading-consent");
-    const root = parseHtml(renderToStaticMarkup(ReadingConsent({ after })));
+    const root = parseHtml(renderToStaticMarkup(ReadingConsent({ userId: USER, after })));
     const paragraphs = findAll(root, (n) => n.tag === "p");
     expect(paragraphs.slice(0, 2).map(textOf)).toEqual([
       "届いたメールは、Anthropic の Claude で読み取ります。",
@@ -153,6 +153,7 @@ describe("forwarding addresses require a positive consent read", () => {
 describe("changing the reading permission", () => {
   const form = (decision: string, after = "list") => {
     const data = new FormData();
+    data.set("expectedUserId", USER);
     data.set("decision", decision);
     data.set("after", after);
     return data;
@@ -214,7 +215,7 @@ describe("wording and a local preview of the real component", () => {
   it("the request uses the centralized words and its rendered markup can be reviewed offline", async () => {
     const { ReadingConsent } = await import("@/app/app/reading/reading-consent");
     const React = await import("react");
-    const markup = renderToStaticMarkup(React.createElement(ReadingConsent));
+    const markup = renderToStaticMarkup(React.createElement(ReadingConsent, { userId: USER }));
     const source = readFileSync(path.resolve(__dirname, "../../app/app/reading/reading-consent.tsx"), "utf8");
     expect(source).toContain("AI_CONSENT_TEXT");
     for (const word of [AI_CONSENT_TEXT.title, AI_CONSENT_TEXT.body, AI_CONSENT_TEXT.allow, AI_CONSENT_TEXT.decline]) {
@@ -226,7 +227,7 @@ describe("wording and a local preview of the real component", () => {
       mkdirSync(dir, { recursive: true });
       // The markup is the production component. Only the surrounding offline page is a preview.
       for (const [name, props] of [["consent", {}], ["unknown", { unknown: true }], ["save-failed", { error: "save" as const }]] as const) {
-        writeFileSync(path.join(dir, `${name}.html`), `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${AI_CONSENT_TEXT.title}</title><link rel="stylesheet" href="preview.css"><body><main class="mx-auto min-h-dvh w-full max-w-md px-4 pb-28 pt-6">${renderToStaticMarkup(React.createElement(ReadingConsent, props))}</main></body></html>`);
+        writeFileSync(path.join(dir, `${name}.html`), `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${AI_CONSENT_TEXT.title}</title><link rel="stylesheet" href="preview.css"><body><main class="mx-auto min-h-dvh w-full max-w-md px-4 pb-28 pt-6">${renderToStaticMarkup(React.createElement(ReadingConsent, { userId: USER, ...props }))}</main></body></html>`);
       }
       const { MailHandling } = await import("@/app/app/settings/mail-handling");
       writeFileSync(path.join(dir, "mail-handling.html"), `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>あなたのメールの扱い</title><link rel="stylesheet" href="preview.css"><body><main class="mx-auto min-h-dvh w-full max-w-md px-4 pb-28 pt-6">${renderToStaticMarkup(React.createElement(MailHandling))}</main></body></html>`);

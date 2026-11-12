@@ -299,6 +299,19 @@ describe("signing in: the key opens with another password (a change that stopped
     expect(tab.setTabKey).not.toHaveBeenCalled();
   });
 
+  it("keeps the server's identity-recovery redirect when another-password opening checks its retained account", async () => {
+    await halfChanged();
+    const openWithAnother = await notOpened();
+    const { redirect } = await import("next/navigation");
+    let recovery: unknown;
+    try { redirect("/account-changed?next=%2Fapp%2Fsettings%2Fpassword"); } catch (error) { recovery = error; }
+    server.readSignedInAddress.mockRejectedValueOnce(recovery);
+    await expect(openWithAnother(NEW_PASSWORD)).rejects.toBe(recovery);
+    expect(server.readSignedInAddress).toHaveBeenLastCalledWith(USER);
+    expect(server.log).toEqual([]);
+    expect(tab.setTabKey).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["a wrap another tab changed", KEY_WRAP_CHANGED, "key_wrap_changed"],
     ["a session older than 15 minutes since the password", KEY_SESSION_STALE, "stale_session"],

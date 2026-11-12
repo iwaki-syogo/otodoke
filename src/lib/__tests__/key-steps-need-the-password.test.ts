@@ -127,24 +127,24 @@ afterEach(() => {
 describe("the web's key Actions (key-actions.ts)", () => {
   it.each(MAILBOX)("a session from a mail's token (%s, a minute old): putting a key in use and rewrapping are refused, nothing changes", async (method) => {
     cookieSession(method);
-    expect(await keys.activateMailKey(ACTIVATION)).toEqual({ ok: false, error: KEY_SESSION_STALE });
-    expect(await keys.rewrapMailKey(REWRAP)).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect(await keys.activateMailKey(ACTIVATION, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect(await keys.rewrapMailKey(REWRAP, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
     expect(store.activate).not.toHaveBeenCalled();
     expect(store.rewrap).not.toHaveBeenCalled();
   });
 
   it.each(MAILBOX)("control: the same session (%s) registers a key (the reset page does), and reads", async (method) => {
     cookieSession(method);
-    expect(await keys.registerMailKey(REGISTRATION)).toMatchObject({ ok: true, keyId: KEY_ID });
+    expect(await keys.registerMailKey(REGISTRATION, "user-1")).toMatchObject({ ok: true, keyId: KEY_ID });
     expect(store.register).toHaveBeenCalledWith({ admin: true }, "user-1", REGISTRATION);
-    expect(await keys.readMailKey({ keyId: null })).toEqual({ ok: true, key: null });
+    expect(await keys.readMailKey({ keyId: null }, "user-1")).toEqual({ ok: true, key: null });
   });
 
   it("a password sign-in of the last 15 minutes does all three: the first key after the login, and 「ほかのパスワードで開く」", async () => {
     cookieSession("password", 14 * MINUTE);
-    expect((await keys.registerMailKey(REGISTRATION)).ok).toBe(true);
-    expect((await keys.activateMailKey(ACTIVATION)).ok).toBe(true);
-    expect((await keys.rewrapMailKey(REWRAP)).ok).toBe(true);
+    expect((await keys.registerMailKey(REGISTRATION, "user-1")).ok).toBe(true);
+    expect((await keys.activateMailKey(ACTIVATION, "user-1")).ok).toBe(true);
+    expect((await keys.rewrapMailKey(REWRAP, "user-1")).ok).toBe(true);
     expect(store.register).toHaveBeenCalledTimes(1);
     expect(store.activate).toHaveBeenCalledTimes(1);
     expect(store.rewrap).toHaveBeenCalledTimes(1);
@@ -153,9 +153,9 @@ describe("the web's key Actions (key-actions.ts)", () => {
   it("a password sign-in more than 15 minutes ago, or a reset link more than 15 minutes ago, does none", async () => {
     for (const method of ["password", "otp"]) {
       cookieSession(method, FRESH_AUTH_MS + MINUTE);
-      expect(await keys.registerMailKey(REGISTRATION)).toEqual({ ok: false, error: KEY_SESSION_STALE });
-      expect(await keys.activateMailKey(ACTIVATION)).toEqual({ ok: false, error: KEY_SESSION_STALE });
-      expect(await keys.rewrapMailKey(REWRAP)).toEqual({ ok: false, error: KEY_SESSION_STALE });
+      expect(await keys.registerMailKey(REGISTRATION, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
+      expect(await keys.activateMailKey(ACTIVATION, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
+      expect(await keys.rewrapMailKey(REWRAP, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
     }
     expect(store.register).not.toHaveBeenCalled();
   });
@@ -166,13 +166,13 @@ describe("the reset puts its key in use through finishReset, not activateMailKey
 
   it.each(MAILBOX)("on a reset link's session (%s): the key is registered, then finishReset sets the secret and puts the key in use", async (method) => {
     cookieSession(method);
-    expect((await keys.registerMailKey(REGISTRATION)).ok).toBe(true);
+    expect((await keys.registerMailKey(REGISTRATION, "user-1")).ok).toBe(true);
     expect(await finishReset(RESET)).toEqual({ ok: true, keyId: KEY_ID });
     expect(auth.updateUser).toHaveBeenCalledWith({ password: NEW_SECRET });
     expect(store.activate).toHaveBeenCalledWith({ admin: true }, "user-1", { keyId: KEY_ID, challenge: RESET.challenge, expectedCurrentKeyId: null });
     // The same session cannot put a key in use without the new password (the hole of R3-PW-2).
     store.activate.mockClear();
-    expect(await keys.activateMailKey(ACTIVATION)).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect(await keys.activateMailKey(ACTIVATION, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
     expect(store.activate).not.toHaveBeenCalled();
   });
 

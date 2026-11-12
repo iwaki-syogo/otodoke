@@ -94,7 +94,7 @@ export default async function SettingsPage() {
                 <RowInfo key={row.id} icon={row.icon} title={row.title} value={row.value} />
               ) : (
                 <Fragment key={row.id}>
-                  <LogoutForm />
+                  <LogoutForm userId={user.id} />
                 </Fragment>
               ),
             )}

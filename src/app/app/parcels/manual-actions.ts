@@ -13,6 +13,7 @@ import {
   type ManualFormState,
 } from "@/lib/manual-parcel";
 import { createClient } from "@/lib/supabase/server";
+import { requireDisplayedUser } from "@/lib/action-identity";
 
 // Parcels typed in by hand. Writes go through the user's own session (row-level security), and
 // are also limited to the session's user_id, which never comes from the form. source = 'manual'
@@ -29,7 +30,7 @@ const Id = z.uuid();
 function valuesOf(formData: FormData): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of formData.entries()) {
-    if (typeof v === "string" && !k.startsWith("$ACTION")) out[k] = v;
+    if (typeof v === "string" && !k.startsWith("$ACTION") && k !== "expectedUserId") out[k] = v;
   }
   return out;
 }
@@ -50,6 +51,7 @@ export async function createManualParcel(_prev: ManualFormState, formData: FormD
   const values = valuesOf(formData);
   const session = await signedIn();
   if (!session) return { error: NOT_SIGNED_IN, values };
+  requireDisplayedUser({ id: session.userId }, formData.get("expectedUserId"), "/app/parcels/new");
   const parsed = ManualParcelSchema.safeParse(values);
   if (!parsed.success) return { error: invalid(parsed.error), values };
 

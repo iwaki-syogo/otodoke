@@ -10,13 +10,12 @@ import { useTabKey } from "@/lib/crypto/tab-key";
 import { LOGIN_MESSAGES, TURNSTILE_TICK_PROMPT } from "@/lib/login-errors";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
 import { pressText, tokenForPress, type TokenField } from "@/lib/turnstile";
-import { signInWithAuthSecret } from "@/app/login/actions";
 import { readSignedInAddress } from "@/app/login/session-actions";
 import { OtherPasswordForm } from "@/app/login/other-password-form";
 import { TurnstileWidget } from "@/app/login/turnstile-widget";
 import { UnlockForm } from "../unlock-form";
 import { activateMailKey, readMailKey, registerMailKey, rewrapMailKey } from "./key-actions";
-import { changeLoginSecret } from "./password-actions";
+import { changeLoginSecret, signInForKey } from "./password-actions";
 
 export interface PasswordPanelState {
   userId: string;
@@ -57,7 +56,7 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
         <h2 className="text-base font-bold">メールの鍵を作る</h2>
         <p className="mt-1 text-sm leading-6">読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。</p>
         {hasPlain ? <p className="mt-2 text-sm leading-6">{PLAINTEXT_DROP_NOTICE}</p> : null}
-        <MakeKeyForm email={email} />
+        <MakeKeyForm userId={userId} email={email} />
         <p className="mt-3 text-sm leading-6 text-neutral-700">
           パスワードをまだ決めていない場合は、
           <Link href="/login/forgot" className="font-medium underline underline-offset-4">
@@ -110,7 +109,7 @@ function LogInAgain() {
  * For a user with no key: the password, checked by signing in with it, then the first key.
  * Exported for its tests (captcha-enforced-forms.test.ts), like ChangeForm.
  */
-export function MakeKeyForm({ email }: { email: string }) {
+export function MakeKeyForm({ userId, email }: { userId: string; email: string }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -131,7 +130,7 @@ export function MakeKeyForm({ email }: { email: string }) {
     try {
       const captchaToken = await tokenForPress(token.current, { onNeedsTick: setNeedsTick, onStale: () => setRound((r) => r + 1) });
       setNeedsTick(false);
-      const result = await signInAndOpenKey({ email, password, captchaToken }, { signInWithAuthSecret, readSignedInAddress, readMailKey, registerMailKey, activateMailKey, rewrapMailKey });
+      const result = await signInAndOpenKey({ email, password, captchaToken }, { signInWithAuthSecret: (input) => signInForKey(input, userId), readSignedInAddress, readMailKey, registerMailKey, activateMailKey, rewrapMailKey });
       if (!result.ok) {
         // The address is the session's: a refused sign-in can only be the password.
         const code = result.code === "credentials" ? "wrong_password" : result.code;

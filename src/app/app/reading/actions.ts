@@ -7,12 +7,13 @@ import { runReadAfterConsent } from "@/lib/ai-consent-run";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { settingsErrorPath, type SettingsErrorCode } from "@/lib/settings-errors";
+import { requireDisplayedUser } from "@/lib/action-identity";
 
 /** Store only the signed-in person's choice through the database's checked, server-timed RPC. */
 export async function setAiReadingDecision(formData: FormData): Promise<void> {
   const requestStartedAt = Date.now();
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/reading");
   const decision = formData.get("decision");
   const after = formData.get("after");
   const suffix = after === "welcome" ? "&after=welcome" : after === "settings" ? "&after=settings" : "";

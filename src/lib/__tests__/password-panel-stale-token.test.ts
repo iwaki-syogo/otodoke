@@ -27,7 +27,7 @@ vi.mock("next/link", async () => {
   const Link = ({ href, children, prefetch, ...rest }: Record<string, unknown>) => h("a", { href: String(href), ...rest }, children as never);
   return { default: Link };
 });
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
 // As the real widget: a new round (the form moving it on) brings a new token, noted with its time.
 vi.mock("@/app/login/turnstile-widget", () => ({
   TurnstileWidget: (props: { tokenRef: { current: TokenField }; round: number }) => {
@@ -45,7 +45,7 @@ vi.mock("@/lib/crypto/password-flows", async (importOriginal) => ({ ...(await im
 vi.mock("@/app/login/actions", () => ({ signInWithAuthSecret: vi.fn(), sendResetMail: reset.mail }));
 vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: vi.fn() }));
 vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readSealedMail: vi.fn() }));
-vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn(), signInForKey: vi.fn() }));
 
 const { MakeKeyForm, ChangeForm } = await import("@/app/app/settings/password-panel");
 const { ForgotForm } = await import("@/app/login/forgot/forgot-form");
@@ -70,7 +70,7 @@ const FORMS = [
     name: "鍵を作る",
     action: flows.signIn,
     open: async () => {
-      const view = mount(() => MakeKeyForm({ email: EMAIL }));
+      const view = mount(() => MakeKeyForm({ email: EMAIL, userId: USER }));
       type(view, "パスワード", PASSWORD);
       await drawn();
       return view;

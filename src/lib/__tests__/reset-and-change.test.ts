@@ -198,7 +198,7 @@ describe("finishReset", () => {
 describe("changeLoginSecret", () => {
   it("checks the current secret, rewraps the key over the wrap the browser opened, then sets the new secret", async () => {
     session("password", 3 * 3_600_000);
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: true });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: true });
     expect(order).toEqual(["signIn", "readKey", "rewrap", "updateUser"]);
     // The address is the session's, never one from the input.
     expect(mocks.signIn).toHaveBeenCalledWith({ email: "someone@example.com", password: OLD, options: { captchaToken: undefined } });
@@ -208,14 +208,14 @@ describe("changeLoginSecret", () => {
 
   it("refuses the same secret as the new one, before anything", async () => {
     session("password");
-    expect(await changeLoginSecret({ ...CHANGE, newAuthSecret: OLD })).toEqual({ ok: false, code: "same_secret" });
+    expect(await changeLoginSecret({ ...CHANGE, newAuthSecret: OLD }, "user-1")).toEqual({ ok: false, code: "same_secret" });
     expect(order).toEqual([]);
   });
 
   it("answers credentials for a wrong current secret, keeps that attempt counted, and changes nothing", async () => {
     session("password");
     mocks.signIn.mockResolvedValue({ data: { user: null, session: null }, error: { status: 400, code: "invalid_credentials" } });
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "credentials" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "credentials" });
     expect(mocks.claim).toHaveBeenCalledWith("someone@example.com", "203.0.113.7");
     expect(mocks.release).not.toHaveBeenCalled();
     expect(mocks.rewrap).not.toHaveBeenCalled();
@@ -225,24 +225,24 @@ describe("changeLoginSecret", () => {
   it("answers rate without trying when the attempt limit is used up", async () => {
     session("password");
     mocks.claim.mockResolvedValue({ verdict: "email_10m", claimId: null });
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "rate" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "rate" });
     expect(mocks.signIn).not.toHaveBeenCalled();
   });
 
   it("refuses a missing rewrap while a key is in use (it would no longer open), and takes none without a key", async () => {
     session("password");
-    expect(await changeLoginSecret({ ...CHANGE, rewrap: null })).toEqual({ ok: false, code: "key_in_use_changed" });
+    expect(await changeLoginSecret({ ...CHANGE, rewrap: null }, "user-1")).toEqual({ ok: false, code: "key_in_use_changed" });
     expect(mocks.updateUser).not.toHaveBeenCalled();
     mocks.readKey.mockResolvedValue({ ok: true, key: null });
-    expect(await changeLoginSecret({ ...CHANGE, rewrap: null })).toEqual({ ok: true });
+    expect(await changeLoginSecret({ ...CHANGE, rewrap: null }, "user-1")).toEqual({ ok: true });
   });
 
   it("refuses a rewrap of a wrap that is not the stored one, or of another key", async () => {
     session("password");
-    expect(await changeLoginSecret({ ...CHANGE, rewrap: { ...REWRAP, previousWrappedPrivateKey: "T1RIRVI=" } })).toEqual({ ok: false, code: "key_wrap_changed" });
-    expect(await changeLoginSecret({ ...CHANGE, rewrap: { ...REWRAP, keyId: "c".repeat(32) } })).toEqual({ ok: false, code: "key_not_in_use" });
+    expect(await changeLoginSecret({ ...CHANGE, rewrap: { ...REWRAP, previousWrappedPrivateKey: "T1RIRVI=" } }, "user-1")).toEqual({ ok: false, code: "key_wrap_changed" });
+    expect(await changeLoginSecret({ ...CHANGE, rewrap: { ...REWRAP, keyId: "c".repeat(32) } }, "user-1")).toEqual({ ok: false, code: "key_not_in_use" });
     mocks.rewrap.mockResolvedValue({ ok: false, error: KEY_WRAP_CHANGED });
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "key_wrap_changed" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "key_wrap_changed" });
     expect(mocks.updateUser).not.toHaveBeenCalled();
   });
 
@@ -281,7 +281,7 @@ describe("changeLoginSecret", () => {
   it("the Action puts the wrap back with restoreKeyWrap of mail-keys.ts, over the wrap it stored only", async () => {
     session("password");
     mocks.updateUser.mockImplementation(async () => (order.push("updateUser"), { data: { user: null }, error: { status: 422, code: "weak_password" } }));
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "secret_change_refused" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "secret_change_refused" });
     expect(order).toEqual(["signIn", "readKey", "rewrap", "updateUser", "restore"]);
     expect(mocks.restore).toHaveBeenCalledWith({ admin: true }, "user-1", {
       keyId: KEY_ID,
@@ -303,23 +303,23 @@ describe("changeLoginSecret", () => {
     session("password");
     mocks.updateUser.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "weak_password" } });
     mocks.restore.mockResolvedValue({ ok: false, error });
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "secret_change_refused_key_new" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "secret_change_refused_key_new" });
     expect(console.error).toHaveBeenCalledWith("[login] change: the wrap could not be put back:", code);
   });
 
   it("the Action does not put the wrap back when the new secret was set, or when Supabase's answer is unknown", async () => {
     session("password");
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: true });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: true });
     mocks.updateUser.mockResolvedValue({ data: { user: null }, error: { status: 504 } });
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "secret_change_unknown" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "secret_change_unknown" });
     expect(mocks.restore).not.toHaveBeenCalled();
   });
 
   it("says signed_out without a session, and refuses a password field", async () => {
     session(null);
-    expect(await changeLoginSecret(CHANGE)).toEqual({ ok: false, code: "signed_out" });
+    expect(await changeLoginSecret(CHANGE, "user-1")).toEqual({ ok: false, code: "signed_out" });
     session("password");
-    expect(await changeLoginSecret({ ...CHANGE, password: "x" } as never)).toEqual({ ok: false, code: "invalid_input" });
-    expect(await changeLoginSecret({ ...CHANGE, newAuthSecret: "NotHex" })).toEqual({ ok: false, code: "invalid_input" });
+    expect(await changeLoginSecret({ ...CHANGE, password: "x" } as never, "user-1")).toEqual({ ok: false, code: "invalid_input" });
+    expect(await changeLoginSecret({ ...CHANGE, newAuthSecret: "NotHex" }, "user-1")).toEqual({ ok: false, code: "invalid_input" });
   });
 });

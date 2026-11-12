@@ -85,7 +85,7 @@ describe("under /app, a page left or shown again from the back/forward cache", (
 
 describe("設定's logout", () => {
   it("forgets the key at the press, and lets the browser post the form (nothing prevented)", () => {
-    const form = LogoutForm() as unknown as { type: string; props: { action: string; method: string; onSubmit: (e: unknown) => void } };
+    const form = LogoutForm({ userId: "00000000-0000-4000-8000-00000000000a" }) as unknown as { type: string; props: { action: string; method: string; onSubmit: (e: unknown) => void } };
     expect(form.type).toBe("form");
     expect(form.props).toMatchObject({ action: "/auth/signout", method: "post" });
     const event = fakeEvent();

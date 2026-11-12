@@ -37,14 +37,15 @@ import { forgetTabKey, setTabKey } from "./tab-key";
 import { KEY_SESSION_STALE, SIGN_IN_RETRY_MESSAGE, keyStepCode, loginMessage, type ChangeSecretResult, type FinishResetResult, type LoginCode, type SignInResult, type SignUpResult } from "@/lib/login-errors";
 import type { ChangeSecretInput, FinishResetInput, SignInInput, SignUpInput } from "@/lib/login-input";
 import type { KeyActivation, KeyRead, KeyRegistration, KeyResult, KeyRewrap, StoredKeyColumns } from "@/lib/mail-keys";
+import { unstable_rethrow } from "next/navigation";
 
 // ---- The Server Actions the steps call ----------------------------------------------------------
 
 /** src/app/app/settings/key-actions.ts */
 export interface KeyPorts {
-  readMailKey: (input: KeyRead) => Promise<KeyResult<{ key: StoredKeyColumns | null }>>;
-  registerMailKey: (input: KeyRegistration) => Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>>;
-  activateMailKey: (input: KeyActivation) => Promise<KeyResult<{ keyId: string }>>;
+  readMailKey: (input: KeyRead, expectedUserId?: string) => Promise<KeyResult<{ key: StoredKeyColumns | null }>>;
+  registerMailKey: (input: KeyRegistration, expectedUserId?: string) => Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>>;
+  activateMailKey: (input: KeyActivation, expectedUserId?: string) => Promise<KeyResult<{ keyId: string }>>;
 }
 
 /** The signed-in user's id and address as Supabase Auth keeps it (src/app/login/session-actions.ts). */
@@ -54,16 +55,16 @@ export type SignedInAddress = { ok: true; userId: string; email: string } | { ok
 export interface SignInPorts extends KeyPorts {
   /** src/app/login/actions.ts */
   signInWithAuthSecret: (input: SignInInput) => Promise<SignInResult>;
-  readSignedInAddress: () => Promise<SignedInAddress>;
+  readSignedInAddress: (expectedUserId?: string) => Promise<SignedInAddress>;
   /** key-actions.ts: a key opened with another password, wrapped again for the one that signed in. */
-  rewrapMailKey: (input: KeyRewrap) => Promise<KeyResult<{ keyId: string }>>;
+  rewrapMailKey: (input: KeyRewrap, expectedUserId?: string) => Promise<KeyResult<{ keyId: string }>>;
 }
 
 /** 設定's 「パスワードを変える」. */
 export interface ChangePorts {
   readMailKey: KeyPorts["readMailKey"];
   /** src/app/app/settings/password-actions.ts */
-  changeLoginSecret: (input: ChangeSecretInput) => Promise<ChangeSecretResult>;
+  changeLoginSecret: (input: ChangeSecretInput, expectedUserId?: string) => Promise<ChangeSecretResult>;
 }
 
 /** /reset-password. */
@@ -176,13 +177,13 @@ async function registerNewKey(master: CryptoKey, userId: string, expectedCurrent
     kdfSalt: made.wrapped.kdf_salt,
     kdfIterations: made.wrapped.kdf_iterations,
     expectedCurrentKeyId,
-  });
+  }, userId);
   if (!isActive()) return { ok: false, code: "signed_out" };
   if (!reg.ok) return { ok: false, code: keyActionCode(reg.error) };
   if (reg.keyId !== made.keyId) return { ok: false, code: "key_failed" };
 
   // From the copy the database holds: it opens with this password and is this pair.
-  const back = await ports.readMailKey({ keyId: reg.keyId });
+  const back = await ports.readMailKey({ keyId: reg.keyId }, userId);
   if (!back.ok) return { ok: false, code: keyActionCode(back.error) };
   const row = back.key;
   const sent = rowOf(made);
@@ -208,11 +209,11 @@ async function registerNewKey(master: CryptoKey, userId: string, expectedCurrent
 function anotherPasswordOpener(loginMaster: CryptoKey, typedEmail: string, userId: string, ports: SignInPorts): OpenWithAnother {
   return async (otherPassword) => {
     try {
-      const who = await ports.readSignedInAddress();
+      const who = await ports.readSignedInAddress(userId);
       // Another account signed in meanwhile (another tab): its key is not this one's to wrap.
       if (!who.ok || who.userId !== userId) return { ok: false, code: "signed_out" };
       if (emailNorm(who.email) !== emailNorm(typedEmail)) return { ok: false, code: "address_mismatch" };
-      const [otherMaster, read] = await Promise.all([deriveMaster(who.email, otherPassword), ports.readMailKey({ keyId: null })]);
+      const [otherMaster, read] = await Promise.all([deriveMaster(who.email, otherPassword), ports.readMailKey({ keyId: null }, userId)]);
       if (!read.ok) return { ok: false, code: keyActionCode(read.error) };
       if (!read.key) return { ok: false, code: "no_key" };
       const stored = read.key;
@@ -234,11 +235,12 @@ function anotherPasswordOpener(loginMaster: CryptoKey, typedEmail: string, userI
         wrapIv: wrap.wrap_iv,
         kdfSalt: wrap.kdf_salt,
         kdfIterations: wrap.kdf_iterations,
-      });
+      }, userId);
       if (!saved.ok) return { ok: false, code: keyActionCode(saved.error) };
       setTabKey(userId, reopened);
       return { ok: true };
-    } catch {
+    } catch (error) {
+      unstable_rethrow(error);
       return { ok: false, code: "other" };
     }
   };
@@ -246,7 +248,7 @@ function anotherPasswordOpener(loginMaster: CryptoKey, typedEmail: string, userI
 
 /** The key in use read again and opened with the same master (another tab or device put one in use meanwhile). */
 async function openKeyInUse(master: CryptoKey, typedEmail: string, userId: string, ports: SignInPorts): Promise<KeyAfterSignIn> {
-  const read = await ports.readMailKey({ keyId: null });
+  const read = await ports.readMailKey({ keyId: null }, userId);
   if (!read.ok) return { key: "failed", code: keyActionCode(read.error) };
   if (!read.key) return { key: "failed", code: "key_failed" };
   const recipient = await openRow(read.key, master, userId);
@@ -257,7 +259,7 @@ async function openKeyInUse(master: CryptoKey, typedEmail: string, userId: strin
 
 /** After the sign-in: the key in use opened, or the first one made. */
 async function openOrMakeKey(master: CryptoKey, typedEmail: string, userId: string, ports: SignInPorts): Promise<KeyAfterSignIn> {
-  const read = await ports.readMailKey({ keyId: null });
+  const read = await ports.readMailKey({ keyId: null }, userId);
   if (!read.ok) return { key: "failed", code: keyActionCode(read.error) };
   if (read.key) {
     const recipient = await openRow(read.key, master, userId);
@@ -268,13 +270,13 @@ async function openOrMakeKey(master: CryptoKey, typedEmail: string, userId: stri
 
   // No key yet. Every later step makes master from the session's address: make this key only when
   // the typed one is the same for password-v1 (an address with letters outside ASCII could differ).
-  const who = await ports.readSignedInAddress();
+  const who = await ports.readSignedInAddress(userId);
   if (!who.ok || who.userId !== userId) return { key: "failed", code: "other" };
   if (emailNorm(who.email) !== emailNorm(typedEmail)) return { key: "failed", code: "address_mismatch" };
 
   const reg = await registerNewKey(master, userId, null, ports);
   if (!reg.ok) return reg.code === "key_in_use_changed" ? openKeyInUse(master, typedEmail, userId, ports) : { key: "failed", code: reg.code };
-  const done = await ports.activateMailKey({ keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId: null });
+  const done = await ports.activateMailKey({ keyId: reg.keyId, challenge: reg.answer, expectedCurrentKeyId: null }, userId);
   if (!done.ok) {
     const code = keyActionCode(done.error);
     return code === "key_in_use_changed" ? openKeyInUse(master, typedEmail, userId, ports) : { key: "failed", code };
@@ -297,10 +299,12 @@ export async function signInAndOpenKey(input: { email: string; password: string;
     if (!signIn.ok) return signIn;
     try {
       return { ok: true, userId: signIn.userId, ...(await openOrMakeKey(master, input.email, signIn.userId, ports)) };
-    } catch {
+    } catch (error) {
+      unstable_rethrow(error);
       return { ok: true, userId: signIn.userId, key: "failed", code: "other" };
     }
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, code: "other" };
   }
 }
@@ -313,7 +317,8 @@ export async function signUpWithPassword(input: { email: string; password: strin
   try {
     const master = await deriveMaster(input.email, input.password);
     return await ports.signUpWithAuthSecret({ email: input.email, authSecret: await authSecretHex(master), captchaToken: input.captchaToken });
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, code: "other" };
   }
 }
@@ -324,14 +329,15 @@ export async function signUpWithPassword(input: { email: string; password: strin
  */
 export async function openKeyAgain(input: { email: string; password: string; userId: string }, ports: Pick<KeyPorts, "readMailKey">): Promise<{ ok: true } | Failed> {
   try {
-    const [master, read] = await Promise.all([deriveMaster(input.email, input.password), ports.readMailKey({ keyId: null })]);
+    const [master, read] = await Promise.all([deriveMaster(input.email, input.password), ports.readMailKey({ keyId: null }, input.userId)]);
     if (!read.ok) return { ok: false, code: keyActionCode(read.error) };
     if (!read.key) return { ok: false, code: "no_key" };
     const recipient = await openRow(read.key, master, input.userId);
     if (!recipient) return { ok: false, code: "wrong_password" };
     setTabKey(input.userId, recipient);
     return { ok: true };
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, code: "key_failed" };
   }
 }
@@ -349,7 +355,7 @@ export async function openKeyAgain(input: { email: string; password: string; use
 export async function changePassword(input: { email: string; userId: string; current: string; next: string; captchaToken?: string }, ports: ChangePorts): Promise<{ ok: true } | Failed> {
   if (normalizePassword(input.current) === normalizePassword(input.next)) return { ok: false, code: "same_secret" };
   try {
-    const [read, currentMaster, newMaster] = await Promise.all([ports.readMailKey({ keyId: null }), deriveMaster(input.email, input.current), deriveMaster(input.email, input.next)]);
+    const [read, currentMaster, newMaster] = await Promise.all([ports.readMailKey({ keyId: null }, input.userId), deriveMaster(input.email, input.current), deriveMaster(input.email, input.next)]);
     if (!read.ok) return { ok: false, code: keyActionCode(read.error) };
     let rewrap: KeyRewrap | null = null;
     let reopened: PrivateRecipient | null = null;
@@ -369,11 +375,12 @@ export async function changePassword(input: { email: string; userId: string; cur
       newAuthSecret: await authSecretHex(newMaster),
       rewrap,
       captchaToken: input.captchaToken,
-    });
+    }, input.userId);
     if (!res.ok) return { ok: false, code: res.code === "credentials" ? "wrong_current_password" : res.code };
     if (reopened) setTabKey(input.userId, reopened);
     return { ok: true };
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, code: "other" };
   }
 }
@@ -440,7 +447,8 @@ export async function finishPasswordReset(input: { email: string; userId: string
       scope.running = null;
       if (!scope.request) scope.authSecret = null;
     }
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, code: "other" };
   }
 }
@@ -449,7 +457,7 @@ async function resetSteps(input: { email: string; userId: string; password: stri
   forgetTabKey();
   try {
     if (!attempt.request) {
-      const current = await ports.readMailKey({ keyId: null });
+      const current = await ports.readMailKey({ keyId: null }, input.userId);
       if (attempt.disposed) return { ok: false, code: "signed_out" };
       if (!current.ok) return { ok: false, code: keyActionCode(current.error) };
       const expectedCurrentKeyId = current.key?.key_id ?? null;
@@ -465,7 +473,7 @@ async function resetSteps(input: { email: string; userId: string; password: stri
     if (!done.ok) return { ok: false, code: done.code };
     if (done.keyId !== request.keyId) return { ok: false, code: "key_failed" };
     // Another operation may have changed the key/wrap after the server accepted our request.
-    const current = await ports.readMailKey({ keyId: null });
+    const current = await ports.readMailKey({ keyId: null }, input.userId);
     if (attempt.disposed) return { ok: false, code: "signed_out" };
     if (!current.ok) return { ok: false, code: keyActionCode(current.error) };
     if (!current.key || current.key.key_id !== request.keyId) return { ok: false, code: "key_in_use_changed" };
@@ -474,7 +482,8 @@ async function resetSteps(input: { email: string; userId: string; password: stri
     if (!recipient) return { ok: false, code: "key_wrap_changed" };
     setTabKey(input.userId, recipient);
     return { ok: true };
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, code: "other" };
   }
 }

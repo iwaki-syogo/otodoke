@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUser } from "@/lib/supabase/server";
 import { isRememberableDomain } from "@/lib/screen-senders";
 import { formatDateTimeJa } from "@/lib/format";
 import { NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
@@ -9,6 +9,7 @@ import type { Tables } from "@/lib/db/database.types";
 import { forgetSender, markWronglyDropped } from "../actions";
 import { PressButton } from "../press";
 import { SubPage } from "../sub-page";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "読まなかったメール" };
 
@@ -43,6 +44,8 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
   const note = senderNote("flagged", flagged) ?? senderNote("unflagged", unflagged);
   const errorMessage = settingsErrorMessage(error);
   const supabase = await createClient();
+  const user = await getUser();
+  if (!user) redirect("/login");
   // Every dropped mail, newest first: the heading's count is the whole count, and each one can be marked.
   let dropped: DroppedRow[] | null;
   try {
@@ -115,6 +118,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
                 <li key={domain} className="flex items-center gap-3 px-4 py-3">
                   <p className="min-w-0 flex-1 truncate text-sm">{domain}</p>
                   <form action={forgetSender} className="shrink-0">
+                    <input type="hidden" name="expectedUserId" value={user.id} />
                     <input type="hidden" name="domain" value={domain} />
                     <PressButton label="外す" busyLabel="外しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                   </form>

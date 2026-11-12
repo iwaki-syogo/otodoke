@@ -10,7 +10,7 @@ export default async function DeleteAccountPage() {
     <SubPage title="アカウントの削除">
       {/* Whose account goes, before the button that deletes it. */}
       <LoggedInAs email={user.email} />
-      <AccountDeletion />
+      <AccountDeletion userId={user.id} />
     </SubPage>
   );
 }

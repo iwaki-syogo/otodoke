@@ -52,7 +52,7 @@ describe("storage rejection is visible and recoverable", () => {
     const db = noticeDb();
     mocks.db = db;
     const { dismissIntakeNotice } = await import("@/app/app/settings/actions");
-    const data = new FormData(); data.set("limited_at", AT);
+    const data = new FormData(); data.set("expectedUserId", USER); data.set("limited_at", AT);
     db.rows("mail_intake_notices")[0].limited_at = "2026-11-12T01:01:00.000Z";
     await expect(dismissIntakeNotice(data)).rejects.toThrow("NEXT_REDIRECT /app/settings/trouble");
     expect(db.rows("mail_intake_notices")).toHaveLength(1);

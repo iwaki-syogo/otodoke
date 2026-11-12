@@ -141,9 +141,9 @@ afterEach(() => {
 
 describe("the key Actions of 設定 need a fresh session", () => {
   const steps = [
-    ["registerMailKey", () => keys.registerMailKey(REGISTRATION), store.register],
-    ["activateMailKey", () => keys.activateMailKey(ACTIVATION), store.activate],
-    ["rewrapMailKey", () => keys.rewrapMailKey(REWRAP), store.rewrap],
+    ["registerMailKey", () => keys.registerMailKey(REGISTRATION, "user-1"), store.register],
+    ["activateMailKey", () => keys.activateMailKey(ACTIVATION, "user-1"), store.activate],
+    ["rewrapMailKey", () => keys.rewrapMailKey(REWRAP, "user-1"), store.rewrap],
   ] as const;
 
   it.each(steps)("%s goes ahead within 15 minutes of the password, for the token's own user", async (_name, run, step) => {
@@ -157,9 +157,9 @@ describe("the key Actions of 設定 need a fresh session", () => {
 
   it("within 15 minutes of a reset link, only registering goes ahead (the reset's key is put in use by finishReset)", async () => {
     session(token("otp", 60_000));
-    expect((await keys.registerMailKey(REGISTRATION)).ok).toBe(true);
-    expect(await keys.activateMailKey(ACTIVATION)).toEqual({ ok: false, error: KEY_SESSION_STALE });
-    expect(await keys.rewrapMailKey(REWRAP)).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect((await keys.registerMailKey(REGISTRATION, "user-1")).ok).toBe(true);
+    expect(await keys.activateMailKey(ACTIVATION, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
+    expect(await keys.rewrapMailKey(REWRAP, "user-1")).toEqual({ ok: false, error: KEY_SESSION_STALE });
     expect(store.activate).not.toHaveBeenCalled();
     expect(store.rewrap).not.toHaveBeenCalled();
   });
@@ -190,6 +190,6 @@ describe("the key Actions of 設定 need a fresh session", () => {
 
   it("negative control: the same stale session reads a key (the reads do not need a fresh one)", async () => {
     session(token("password", 24 * 3_600_000));
-    expect(await keys.readMailKey({ keyId: null })).toEqual({ ok: true, key: null });
+    expect(await keys.readMailKey({ keyId: null }, "user-1")).toEqual({ ok: true, key: null });
   });
 });

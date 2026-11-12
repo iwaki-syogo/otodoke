@@ -19,6 +19,7 @@ import { SETTINGS_ERROR_PAGES, settingsErrorMessage, settingsErrorPath } from "@
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
+const displayedForm = () => { const data = new FormData(); data.set("expectedUserId", USER); return data; };
 const GRANT = { user_id: USER, decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" };
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown }, redirect: vi.fn(), read: vi.fn() }));
@@ -70,7 +71,7 @@ beforeEach(() => {
 
 describe("読み取る: where each result goes", () => {
   const run = async () => {
-    await expect(readWaitingMail()).rejects.toThrow("NEXT_REDIRECT");
+    await expect(readWaitingMail(displayedForm())).rejects.toThrow("NEXT_REDIRECT");
     return mocks.redirect.mock.calls.map((c) => c[0] as string);
   };
   const result = (over: Record<string, unknown>) => ({ ok: true, read: 0, overLimit: false, unavailable: false, ...over });

@@ -82,6 +82,7 @@ const { deleteAccount } = await import("@/app/app/settings/account-actions");
 
 function form(fields: Record<string, string> = { [ACCOUNT_DELETE_CONFIRM.name]: ACCOUNT_DELETE_CONFIRM.value }): FormData {
   const f = new FormData();
+  f.set("expectedUserId", USER);
   for (const [k, v] of Object.entries(fields)) f.set(k, v);
   return f;
 }
@@ -154,7 +155,9 @@ describe("deleteAccount: only the signed-in user's account", () => {
     const source = withoutComments(readFileSync(path.resolve(__dirname, "../../app/app/settings/account-actions.ts"), "utf8"));
     expect(source).toContain("supabase.auth.getUser()");
     expect(source).not.toMatch(/getSession\(/);
-    expect(source).not.toMatch(/formData\.get\((?!ACCOUNT_DELETE_CONFIRM\.name\))/);
+    expect([...source.matchAll(/formData\.get\(([^)]+)\)/g)].map((match) => match[1]).sort()).toEqual(['"expectedUserId"', "ACCOUNT_DELETE_CONFIRM.name"]);
+    expect(source).toContain("deleteAuthUser(createAdminClient(), user.id)");
+    expect(source).not.toMatch(/deleteAuthUser\([^;]*formData/);
   });
 });
 

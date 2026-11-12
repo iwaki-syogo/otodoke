@@ -110,6 +110,7 @@ const { createManualParcel, updateManualParcel } = await import("@/app/app/parce
 const INITIAL: ManualFormState = { error: null, values: {} };
 const form = (over: Record<string, string>) => {
   const fd = new FormData();
+  fd.set("expectedUserId", USER.id);
   for (const [k, v] of Object.entries({ title: "品", shop: "店", ordered_at: "2026-11-01", status: "shipped", id: ID, updated_at: "2026-11-01T00:00:00Z", ...over })) fd.append(k, v);
   return fd;
 };

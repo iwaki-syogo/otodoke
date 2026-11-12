@@ -118,7 +118,7 @@ describe("changeLoginSecret puts the wrap back with restoreKeyWrap", () => {
   it("Supabase refuses the new login secret: the wrap the browser opened is stored again, over the one this change stored", async () => {
     const { db, oldKek, newKek, keyId, before, after } = await setUp();
     mocks.updateUser.mockResolvedValue(REFUSED);
-    expect(await changeLoginSecret({ currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: rewrapOf(keyId, before, after) })).toEqual({ ok: false, code: "secret_change_refused" });
+    expect(await changeLoginSecret({ currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: rewrapOf(keyId, before, after) }, USER)).toEqual({ ok: false, code: "secret_change_refused" });
 
     expect(wrapOf(stored(db, keyId))).toEqual(before);
     await expect(openStoredKeyWithKek(stored(db, keyId), oldKek, USER)).resolves.toMatchObject({ keyId });
@@ -136,7 +136,7 @@ describe("changeLoginSecret puts the wrap back with restoreKeyWrap", () => {
       Object.assign(stored(db, keyId), before);
       return REFUSED;
     });
-    expect(await changeLoginSecret({ currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: rewrapOf(keyId, before, after) })).toEqual({ ok: false, code: "secret_change_refused" });
+    expect(await changeLoginSecret({ currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: rewrapOf(keyId, before, after) }, USER)).toEqual({ ok: false, code: "secret_change_refused" });
     expect(wrapOf(stored(db, keyId))).toEqual(before);
     await expect(openStoredKeyWithKek(stored(db, keyId), oldKek, USER)).resolves.toMatchObject({ keyId });
   });
@@ -148,7 +148,7 @@ describe("changeLoginSecret puts the wrap back with restoreKeyWrap", () => {
       Object.assign(stored(db, keyId), other);
       return REFUSED;
     });
-    expect(await changeLoginSecret({ currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: rewrapOf(keyId, before, after) })).toEqual({ ok: false, code: "secret_change_refused_key_new" });
+    expect(await changeLoginSecret({ currentAuthSecret: OLD, newAuthSecret: NEW, rewrap: rewrapOf(keyId, before, after) }, USER)).toEqual({ ok: false, code: "secret_change_refused_key_new" });
     expect(wrapOf(stored(db, keyId))).toEqual(other);
   });
 });

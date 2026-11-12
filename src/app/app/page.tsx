@@ -36,7 +36,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   const supabase = await createClient();
   const consent = await readAiReadingConsent(supabase, user.id);
   // Trying the precomputed sample is a choice of view, never a grant to send real mail to Claude.
-  if (consent === "undecided" && !tryingSample) return <ReadingConsent />;
+  if (consent === "undecided" && !tryingSample) return <ReadingConsent userId={user.id} />;
   const readingGranted = consent === "granted";
   const permissionNotice = consent === "unknown" ? (
     <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
