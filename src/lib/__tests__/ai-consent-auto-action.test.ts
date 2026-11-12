@@ -4,17 +4,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import type { ReadWaitingResult } from "@/lib/mail-run";
-import { FakeDb } from "./fake-db";
+import { FakeDb, consentWaitingRetentionMs } from "./fake-db";
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 // Preserve the database's microseconds: rounding this could turn the claim into another attempt.
 const AT = "2026-11-12T01:00:00.123456Z";
-const mocks = vi.hoisted(() => ({ db: null as unknown, user: { id: "00000000-0000-4000-8000-00000000000a" } as { id: string } | null, getUser: vi.fn(), readAfter: vi.fn(), revalidate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ db: null as unknown, user: { id: "00000000-0000-4000-8000-00000000000a" } as { id: string } | null, getUser: vi.fn(), readAfter: vi.fn(), process: vi.fn(), revalidate: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`REDIRECT:${to}`); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mocks.db, getUser: mocks.getUser }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 vi.mock("@/lib/ai-consent-run", () => ({ runReadAfterConsent: mocks.readAfter }));
+vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeingReadError: class MailBeingReadError extends Error {} }));
 // The elapsed-setup integration test uses the real runner with the bounded-client contract.
 vi.mock("@/lib/unread", async (importActual) => ({
   ...await importActual<typeof import("@/lib/unread")>(),
@@ -29,6 +30,7 @@ beforeEach(() => {
   events.length = 0;
   mocks.user = { id: USER };
   mocks.getUser.mockReset().mockImplementation(async () => mocks.user);
+  mocks.process.mockReset();
   db = new FakeDb();
   mocks.db = db;
   const realRpc = db.rpc.bind(db);
@@ -43,11 +45,13 @@ beforeEach(() => {
     events.push("read");
     return { ok: true, read: 1, overLimit: false, unavailable: false };
   });
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("unexpected external request"); }));
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const form = (decision: string, after = "list") => {
@@ -163,6 +167,77 @@ describe("a saved reading permission starts the waiting real mail", () => {
     mocks.readAfter.mockResolvedValue(failure({ onlyBusy: true }));
     await expect(act()).rejects.toThrow("REDIRECT:/app");
     expect(db.rows("ai_reading_consents")[0]).toMatchObject({ decision: "granted" });
+  });
+});
+
+describe("the Web entry reaches the real automatic and manual readers", () => {
+  // These are caller tests. The pipeline's retained outcomes are synthetic; the separate real
+  // pipeline regression proves paid-call behaviour, while this suite proves request routing.
+  const seedWaiting = (count: number, error = "relevance_unverified") => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse(AT) + 1000);
+    const arrived = "2026-11-01T00:00:00Z";
+    const ids = Array.from({ length: count }, (_, index) => `web-waiting-${index + 1}`);
+    db.rows("emails").push(...ids.map((id, index) => ({
+      id, user_id: USER, processing_status: "failed", error, body_state: "plain",
+      provider_email_id: `provider-${id}`, message_id: `<${id}@example.test>`,
+      from_address: "shop@example.test", from_name: null, subject: "Synthetic waiting mail",
+      text_body: "Synthetic retained body", html_body: null,
+      sent_at: new Date(Date.parse(arrived) + index * 1000).toISOString(), created_at: arrived, received_at: arrived,
+      consent_waiting_until: new Date(Date.parse(arrived) + consentWaitingRetentionMs()).toISOString(),
+    })));
+    return ids;
+  };
+  const realAutomaticReader = async () => {
+    const { runReadAfterConsent } = await vi.importActual<typeof import("@/lib/ai-consent-run")>("@/lib/ai-consent-run");
+    mocks.readAfter.mockImplementation((...args: Parameters<typeof runReadAfterConsent>) => runReadAfterConsent(...args));
+  };
+  const calledIds = () => mocks.process.mock.calls.map((call) => (call[2] as { replacesEmailId: string }).replacesEmailId);
+
+  it.each(["noted", "discarded"] as const)("a saved grant processes 21 retained %s mails once and keeps the normal destination", async (kind) => {
+    const ids = seedWaiting(21, kind === "noted" ? "relevance_unverified" : "model_refused");
+    await realAutomaticReader();
+    mocks.process.mockImplementation(async (_admin, _mail, options: { replacesEmailId: string }) =>
+      // Bound the old repeating loop so a regression fails assertions rather than timing out.
+      mocks.process.mock.calls.length > ids.length
+        ? { kind: "over_limit", emailId: options.replacesEmailId, limit: "user" }
+        : { kind, emailId: options.replacesEmailId });
+
+    await expect(act("granted", "welcome")).rejects.toThrow("REDIRECT:/app/welcome");
+    expect(calledIds()).toEqual(ids);
+    expect(new Set(calledIds()).size).toBe(ids.length);
+    expect(db.rows("emails").map((row) => row.id)).toEqual(ids);
+    expect(db.rows("ai_reading_consents")).toEqual([{ user_id: USER, decision: "granted", decided_at: AT, text_version: "v1" }]);
+    expect(db.rpcCalls.filter((call) => call.name === "claim_ai_reading_backlog")).toEqual([{ name: "claim_ai_reading_backlog", args: { p_user_id: USER, p_decided_at: AT } }]);
+    expect(mocks.revalidate).toHaveBeenCalledWith("/app", "layout");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("new manual requests retry the retained IDs, each taking only one 20-mail snapshot", async () => {
+    const ids = seedWaiting(21);
+    db.rows("ai_reading_consents").push({ user_id: USER, decision: "granted", decided_at: AT, text_version: "v1" });
+    const { readWaitingMail } = await import("@/app/app/settings/actions");
+    mocks.process.mockImplementation(async (_admin, _mail, options: { replacesEmailId: string }) => ({ kind: "noted", emailId: options.replacesEmailId }));
+    for (let request = 0; request < 2; request++) {
+      mocks.process.mockClear();
+      await expect(readWaitingMail(form("granted"))).rejects.toThrow("REDIRECT:/app/settings/trouble");
+      expect(calledIds()).toEqual(ids.slice(0, 20));
+    }
+    expect(db.rows("emails").map((row) => row.id)).toEqual(ids);
+    expect(db.rpcCalls.filter((call) => call.name === "claim_ai_reading_backlog")).toEqual([]);
+    expect(mocks.readAfter).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["automatic", "manual"] as const)("%s rejects a changed displayed account before database work", async (kind) => {
+    mocks.user = { id: "00000000-0000-4000-8000-00000000000b" };
+    const { readWaitingMail } = await import("@/app/app/settings/actions");
+    const destination = kind === "automatic" ? "/app/reading" : "/app/settings/trouble";
+    await expect(kind === "automatic" ? act() : readWaitingMail(form("granted"))).rejects.toThrow(`REDIRECT:/account-changed?next=${encodeURIComponent(destination)}`);
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(db.calls).toEqual([]);
+    expect(mocks.readAfter).not.toHaveBeenCalled();
+    expect(mocks.process).not.toHaveBeenCalled();
   });
 });
 

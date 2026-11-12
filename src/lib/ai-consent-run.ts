@@ -52,12 +52,13 @@ export async function runReadAfterConsent(db: AdminClient, userId: string, decid
     return failed("ai_consent_backlog_read_failed");
   }
 
+  const attemptedEmailIds = new Set<string>();
   let read = 0;
   for (;;) {
     if (Date.now() >= deadlineAt) return failed("ai_consent_backlog_time_limit", read);
     let batch: ReadWaitingResult;
     try {
-      batch = await runReadWaitingMail(db, userId, { consentDecidedAt: decidedAt, deadlineAt, minimumMailBudgetMs: timing.MAIL_READ_BUDGET_MS });
+      batch = await runReadWaitingMail(db, userId, { consentDecidedAt: decidedAt, attemptedEmailIds, deadlineAt, minimumMailBudgetMs: timing.MAIL_READ_BUDGET_MS });
     } catch {
       return failed("ai_consent_backlog_read_failed", read);
     }
