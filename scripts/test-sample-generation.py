@@ -5,6 +5,9 @@ or connect outside loopback. Keeps its generated test database for inspection.
 """
 import argparse
 import json
+import os
+import tempfile
+import re
 import select
 import shutil
 import subprocess
@@ -15,20 +18,40 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, required=True)
 parser.add_argument("--psql", default=shutil.which("psql"))
+parser.add_argument("--user", default="postgres")
+parser.add_argument("--negative-parent-prefix", action="store_true", help="In the scratch database only, remove the writer auth-row prefix; the deletion regression must fail with 40P01")
+parser.add_argument("--negative-claim-prefix", action="store_true", help="In the scratch database only, remove the backlog claim auth-row prefix; its deletion regression must fail with 40P01")
+parser.add_argument("--negative-release-prefix", action="store_true", help="In the scratch database only, remove the release auth-row prefix; its deletion regression must fail with 40P01")
+parser.add_argument("--negative-cost-prefix", action="store_true", help="In the scratch database only, remove the v2 claim auth-row prefix; its deletion regression must fail with 40P01")
 args = parser.parse_args()
 if not args.psql:
     parser.error("psql is required")
 root = Path(__file__).resolve().parents[1]
 database = "otodoke_b5_" + uuid.uuid4().hex[:12]
-base = [args.psql, "-X", "-qAt", "-h", "127.0.0.1", "-p", str(args.port), "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose"]
+base = [args.psql, "-X", "-w", "-qAt", "-h", "127.0.0.1", "-p", str(args.port), "-U", args.user, "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose"]
+
+# libpq's PGHOSTADDR can override -h; strip all inherited PG settings without printing
+# their values, and prevent implicit home/system password or service-file reads.
+scratch_parent=root / ".vitest" / "pg"
+scratch_parent.mkdir(parents=True,exist_ok=True)
+client_scratch=Path(tempfile.mkdtemp(prefix="sample-python-",dir=scratch_parent))
+psql_environment={key:value for key,value in os.environ.items() if not key.upper().startswith("PG")}
+psql_environment.update({"LC_ALL":"C","LANG":"C",
+    "PGPASSFILE":str(client_scratch / "no-password-file"),
+    "PGSERVICEFILE":str(client_scratch / "no-service-file"),
+    "PGSYSCONFDIR":str(client_scratch / "no-system-config")})
 checks = []
+
+
+def psql_process(command, **options):
+    return subprocess.Popen(command, env=psql_environment, **options)
 
 
 def run(sql, *, db=None, fail=False, app=None):
     command = base + ["-d", db or database]
     if app:
         sql = "set application_name = '" + app + "';\n" + sql
-    result = subprocess.run(command, input=sql, text=True, capture_output=True, timeout=15)
+    result = subprocess.run(command, input=sql, text=True, capture_output=True, timeout=15, env=psql_environment)
     if fail:
         assert result.returncode != 0, "expected the SQL operation to be rejected"
         return result.stderr
@@ -75,14 +98,14 @@ do $$ begin
 end $$;
 create schema auth;
 create table auth.users(id uuid primary key);
-create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 grant usage on schema auth to anon, authenticated, service_role;
 """)
 baseline = [
     "20261102090000_init.sql", "20261102100000_ordered_at_date.sql", "20261102110000_claude_usage_limit.sql",
     "20261103090000_expected_date_end.sql", "20261103130000_parcel_category_source.sql",
-    "20261106120000_mail_encryption_keys.sql", "20261112020000_claude_call_release.sql",
-    "20261112100000_parcel_received_at.sql", "20261113090000_claude_call_global_lock.sql",
+    "20261106120000_mail_encryption_keys.sql", "20261106190000_claude_usage_keeps_deleted_calls.sql", "20261112020000_claude_call_release.sql",
+    "20261112100000_parcel_received_at.sql", "20261112180000_ai_reading_consent.sql", "20261112181000_ai_consent_auto_read.sql", "20261113090000_claude_call_global_lock.sql", "20261113100000_parcel_write_conflicts.sql",
 ]
 for name in baseline:
     run((root / "supabase/migrations" / name).read_text())
@@ -96,9 +119,10 @@ assert scalar("select count(*) from public.emails where provider_email_id like '
 passed("existing sample metadata backfilled")
 run(migration)
 passed("migration applied twice")
-verdicts = run((root / "supabase/verify/20261113110000_sample_generation.sql").read_text()).splitlines()
-assert len(verdicts) == 6 and all(line.endswith("|t") for line in verdicts), verdicts
-passed("six post-application schema and permission verdicts")
+verify = (root / "supabase/verify/20261113110000_sample_generation.sql").read_text().rstrip().removesuffix(";")
+verdicts = json.loads(run("select row_to_json(checked) from (" + verify + ") checked;"))
+assert verdicts.pop("verdict") == "OK" and len(verdicts) == 7 and all(value is True for value in verdicts.values()), verdicts
+passed("all seven post-application checks true and final verdict OK")
 for role in ["anon", "authenticated"]:
     for function in ["begin_sample_load", "clear_all_parcels"]:
         assert "42501" in run("set role %s; select public.%s('%s');" % (role, function, user), fail=True)
@@ -114,6 +138,30 @@ assert "55000" in run(as_service(store(user, email, lease, "demo:synthetic/one")
 passed("old headerless sample reservation rejected")
 assert "55000" in run(as_service(store(user, email, lease, "demo:synthetic/one"), other, generation), fail=True)
 passed("sample header owner spoof rejected")
+
+# Statement triggers fire even for an RLS-filtered zero-row UPDATE. Reject another user's
+# header before creating/locking that owner's private generation state.
+run("grant select,insert,update,delete on public.emails,public.parcels,public.extractions,public.parcel_items to authenticated;")
+state_before = scalar("select coalesce(jsonb_agg(to_jsonb(g) order by user_id),'[]') from public.sample_generations g")
+for table in ["emails", "parcels", "extractions", "parcel_items"]:
+    forged = "set role authenticated; set request.jwt.claim.sub='%s'; set request.headers=%s; update public.%s set user_id=user_id where false;" % (
+        user, literal({"x-otodoke-sample-user": other, "x-otodoke-sample-generation": generation}).removesuffix("::jsonb"), table)
+    error = run(forged, fail=True)
+    assert "42501" in error and "sample owner must match authenticated user" in error, table
+assert scalar("select coalesce(jsonb_agg(to_jsonb(g) order by user_id),'[]') from public.sample_generations g") == state_before
+passed("authenticated forged sample owner reaches the statement guard and fails before any generation change on all four tables")
+for headers in [{}, {"x-otodoke-sample-user": user, "x-otodoke-sample-generation": generation}]:
+    auth_control = "begin; set local role authenticated; set local request.jwt.claim.sub='%s'; set local request.headers=%s;" % (user,literal(headers).removesuffix("::jsonb"))
+    auth_control += "insert into public.parcels(user_id,shop,title) values ('%s','Synthetic authenticated','Before') returning title;" % user
+    auth_control += "update public.parcels set title='After' where user_id='%s' and shop='Synthetic authenticated' returning title;" % user
+    auth_control += "update public.parcels set status='delivered' where user_id='%s' and shop='Synthetic authenticated' returning current_user,received_at is not null; rollback;" % user
+    assert run(auth_control).splitlines() == ["Before", "After", "authenticated|t"]
+passed("legitimate authenticated parcel insert and update succeed both headerless and with their own current sample header")
+service_control = "begin;" + as_service("insert into public.parcels(user_id,shop,status) values ('%s','Synthetic server delivered','ordered'); update public.parcels set status='delivered' where user_id='%s' and shop='Synthetic server delivered' returning current_user,received_at is null; rollback;" % (user,user))
+assert run(service_control).splitlines()==["service_role|t"]
+passed("statement definer prelock preserves role semantics: authenticated delivery marks received, service mail delivery does not")
+
+
 assert run(as_service(store(user, email, lease, "demo:synthetic/one"), user, generation)) == "ok"
 assert scalar("select sample_generation::text = '%s' from public.emails where id='%s'" % (generation, email)) == "t"
 passed("sample reservation records its generation")
@@ -166,27 +214,57 @@ passed("ordinary mail reservation and owned write remain usable without sample h
 
 # Two independent psql processes prove both sides of the check/write boundary. Gates are SQL
 # markers and pg_stat_activity lock waits, not an assumption about how long a query takes.
+def read_sql_gate(process, observed_chunks=None):
+    # Do not mix TextIOWrapper.readline() with OS readiness: readline may retain the marker
+    # after consuming a preceding void-SELECT newline while select sees an empty OS pipe.
+    pending=b""
+    deadline=time.monotonic()+5
+    while time.monotonic()<deadline:
+        ready,_,_=select.select([process.stdout],[],[],0.1)
+        if ready:
+            chunk=os.read(process.stdout.fileno(),65536)
+            if observed_chunks is not None:
+                observed_chunks.append(chunk)
+            pending+=chunk
+            while b"\n" in pending:
+                line,pending=pending.split(b"\n",1)
+                if line.strip()==b"B5_GATE":
+                    return
+            if not chunk:
+                break
+        if process.poll() is not None and not ready:
+            break
+    error=process.stderr.read() if process.poll() is not None else ""
+    raise AssertionError("SQL gate did not arrive: "+error)
+
+
 def hold(sql):
-    process = subprocess.Popen(base + ["-d", database], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+    process = psql_process(base + ["-d", database], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
     process.stdin.write("begin;\n" + sql + "\nselect 'B5_GATE';\n")
     process.stdin.flush()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        ready, _, _ = select.select([process.stdout], [], [], 0.1)
-        if ready and process.stdout.readline().strip() == "B5_GATE":
-            return process
-        if process.poll() is not None:
-            raise AssertionError(process.stderr.read())
-    raise AssertionError("SQL gate did not arrive")
+    read_sql_gate(process)
+    return process
+
+
+# Wait for this tiny real psql output to finish so its blank row and marker are already in
+# the same OS pipe chunk. A buffered-readline/readiness loop loses the second line here.
+marker_probe=psql_process(base+["-d",database,"-c","copy (select marker from (values (1,''),(2,'B5_GATE')) t(n,marker) order by n) to stdout;"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+marker_probe.wait(timeout=5)
+marker_chunks=[]
+read_sql_gate(marker_probe,marker_chunks)
+_,marker_error=marker_probe.communicate(timeout=5)
+assert marker_probe.returncode==0,marker_error
+assert any(b"\nB5_GATE\n" in chunk for chunk in marker_chunks)
+passed("real psql blank row and SQL marker in one pipe chunk are consumed without buffered-readiness loss")
 
 
 def wait_for_lock(application):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        if scalar("select count(*) from pg_stat_activity where application_name='%s' and wait_event_type='Lock'" % application) == "1":
+        if scalar("select count(*) from pg_stat_activity where datname=current_database() and application_name='%s' and wait_event_type='Lock'" % application) == "1":
             return
         time.sleep(0.02)
-    raise AssertionError("second process did not wait on the generation lock")
+    raise AssertionError("the expected process did not reach its database-local lock gate")
 
 
 def commit(process):
@@ -194,9 +272,161 @@ def commit(process):
     assert process.returncode == 0, error
 
 
+# Pause the real initial backlog claim before its first journal INSERT's FK check. The
+# synthetic advisory gate is released before observing the production auth/consent cycle.
+if args.negative_claim_prefix:
+    claim_wrapper = re.search(r"create or replace function public\.claim_ai_reading_backlog\([\s\S]*?\bas \$\$[\s\S]*?\$\$;",migration).group(0)
+    unprefixed_claim = re.sub(r"  perform id from auth.users[^;]+;\n  if not found then return false; end if;\n", "", claim_wrapper)
+    assert unprefixed_claim!=claim_wrapper
+    run(unprefixed_claim)
+claim_user = str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s'); select public.begin_sample_load('%s');" % (claim_user,claim_user))
+claim_stamp = run("set role authenticated; set request.jwt.claim.sub='%s'; select decided_at from public.set_ai_reading('granted','synthetic-claim-version');" % claim_user)
+assert scalar("select count(*) from public.ai_consent_read_runs where user_id='%s'" % claim_user)=="0"
+run("create function public.b5_pause_claim_journal() returns trigger language plpgsql as $$ begin if new.user_id='%s'::uuid then perform pg_catalog.pg_advisory_xact_lock(62899,62898); end if; return new; end $$; create trigger b5_pause_claim_journal before insert on public.ai_consent_read_runs for each row execute function public.b5_pause_claim_journal();" % claim_user)
+claim_gate = hold("select pg_catalog.pg_advisory_xact_lock(62899,62898);")
+claiming = psql_process(base+["-d",database,"-c","set application_name='b5_claim_journal_gate';"+as_service("select public.claim_ai_reading_backlog('%s','%s');" % (claim_user,claim_stamp))],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_claim_journal_gate")
+claim_deleting = psql_process(base+["-d",database,"-c","set application_name='b5_claim_delete_wait'; delete from auth.users where id='%s';" % claim_user],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_claim_delete_wait")
+commit(claim_gate)
+claim_out,claim_error = claiming.communicate(timeout=10)
+_,claim_delete_error = claim_deleting.communicate(timeout=10)
+assert claiming.returncode==0 and claim_deleting.returncode==0,(claim_error,claim_delete_error)
+assert claim_out.strip()=="t"
+for table in ["auth.users","public.ai_reading_consents","public.ai_consent_read_runs","public.sample_generations"]:
+    column="id" if table=="auth.users" else "user_id"
+    assert scalar("select count(*) from %s where %s='%s'" % (table,column,claim_user))=="0",table
+run("drop trigger b5_pause_claim_journal on public.ai_consent_read_runs; drop function public.b5_pause_claim_journal();")
+passed("initial automatic backlog claim and auth deletion complete without auth-parent/consent deadlock or orphaned consent journal")
+
+# Standalone v2 also appends an auth-owned ledger row after updating existing usage.
+# The owned pipeline already takes the parent prefix; exercise this public service entry too.
+if args.negative_cost_prefix:
+    cost_wrapper=re.search(r"create or replace function public\.claim_claude_call_v2\([\s\S]*?\bas \$\$[\s\S]*?\$\$;",migration).group(0)
+    unsafe_cost=re.sub(r"  perform id from auth.users[^;]+;\n", "",cost_wrapper)
+    assert unsafe_cost!=cost_wrapper
+    run(unsafe_cost)
+cost_user=str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s'); select public.begin_sample_load('%s');" % (cost_user,cost_user))
+assert run(as_service("select public.claim_claude_call('%s',100,2147483647);" % cost_user))=="ok"
+run("create function public.b5_pause_cost_ledger() returns trigger language plpgsql as $$ begin if new.user_id='%s'::uuid then perform pg_catalog.pg_advisory_xact_lock(62899,62896); end if; return new; end $$; create trigger b5_pause_cost_ledger before insert on public.claude_call_claims for each row execute function public.b5_pause_cost_ledger();" % cost_user)
+cost_gate=hold("select pg_catalog.pg_advisory_xact_lock(62899,62896);")
+cost_claiming=psql_process(base+["-d",database,"-c","set application_name='b5_cost_ledger_gate';"+as_service("select verdict from public.claim_claude_call_v2('%s',100,2147483647);" % cost_user)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_cost_ledger_gate")
+cost_deleting=psql_process(base+["-d",database,"-c","set application_name='b5_cost_delete_wait'; delete from auth.users where id='%s';" % cost_user],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_cost_delete_wait")
+commit(cost_gate)
+cost_out,cost_error=cost_claiming.communicate(timeout=10)
+_,cost_delete_error=cost_deleting.communicate(timeout=10)
+assert cost_claiming.returncode==0 and cost_deleting.returncode==0,(cost_error,cost_delete_error)
+assert cost_out.strip()=="ok"
+assert scalar("select count(*) from auth.users where id='%s'" % cost_user)=="0"
+run("drop trigger b5_pause_cost_ledger on public.claude_call_claims; drop function public.b5_pause_cost_ledger();")
+passed("standalone v2 claim with existing usage and auth deletion avoid usage/auth-ledger deadlock")
+
+# Release locks the claim before updating usage. A parent delete used to take those rows
+# in the opposite order. Pause only for synchronization; release the gate before the cycle.
+if args.negative_release_prefix:
+    release_wrapper=re.search(r"create or replace function public\.release_claude_call\([\s\S]*?\bas \$\$[\s\S]*?\$\$;",migration).group(0)
+    unsafe_release=re.sub(r"  perform id from auth.users[^;]+;\n  if not found then return 0; end if;\n", "",release_wrapper)
+    assert unsafe_release!=release_wrapper
+    run(unsafe_release)
+release_user=str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s'); select public.begin_sample_load('%s');" % (release_user,release_user))
+release_id=run(as_service("select claim_id from public.claim_claude_call_v2('%s',100,2147483647);" % release_user))
+release_total=int(scalar("select sum(calls) from public.claude_usage_daily"))
+run("create function public.b5_pause_release_claim() returns trigger language plpgsql as $$ begin if new.user_id='%s'::uuid then perform pg_catalog.pg_advisory_xact_lock(62899,62897); end if; return new; end $$; create trigger b5_pause_release_claim after update on public.claude_call_claims for each row execute function public.b5_pause_release_claim();" % release_user)
+release_gate=hold("select pg_catalog.pg_advisory_xact_lock(62899,62897);")
+releasing=psql_process(base+["-d",database,"-c","set application_name='b5_release_gate';"+as_service("select public.release_claude_call(%s,'%s');" % (release_id,release_user))],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_release_gate")
+release_deleting=psql_process(base+["-d",database,"-c","set application_name='b5_release_delete_wait'; delete from auth.users where id='%s';" % release_user],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_release_delete_wait")
+commit(release_gate)
+release_out,release_error=releasing.communicate(timeout=10)
+_,release_delete_error=release_deleting.communicate(timeout=10)
+assert releasing.returncode==0 and release_deleting.returncode==0,(release_error,release_delete_error)
+assert release_out.strip()=="1"
+assert int(scalar("select sum(calls) from public.claude_usage_daily"))==release_total-1
+assert run(as_service("select public.release_claude_call(%s,'%s');" % (release_id,release_user)))=="0"
+assert "22023" in run(as_service("select public.release_claude_call(null,'%s');" % release_user),fail=True)
+run("drop trigger b5_pause_release_claim on public.claude_call_claims; drop function public.b5_pause_release_claim();")
+passed("release and auth deletion avoid claim/usage deadlock, decrement once, and preserve missing-owner zero versus null-input 22023")
+
+# V1 has no ledger INSERT after updating an existing usage row. Deletion simply waits
+# until the real call commits, then anonymizes its accumulated count.
+v1_user=str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s');" % v1_user)
+assert run(as_service("select public.claim_claude_call('%s',100,2147483647);" % v1_user))=="ok"
+v1_total=int(scalar("select sum(calls) from public.claude_usage_daily"))
+# This trigger sorts before the RI_ConstraintTrigger FK check: the test pauses the actual
+# function before any pending unchanged-key FK trigger could request its auth parent.
+run("create function public.b5_pause_existing_usage() returns trigger language plpgsql as $$ begin if new.user_id='%s'::uuid then perform pg_catalog.pg_advisory_xact_lock(62899,62894); end if; return new; end $$; create trigger \"AAA_b5_pause_existing_usage\" after update on public.claude_usage_daily for each row execute function public.b5_pause_existing_usage();" % v1_user)
+v1_existing_gate=hold("select pg_catalog.pg_advisory_xact_lock(62899,62894);")
+v1_writer=psql_process(base+["-d",database,"-c","set application_name='b5_v1_existing_update_gate';"+as_service("select public.claim_claude_call('%s',100,2147483647);" % v1_user)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_v1_existing_update_gate")
+v1_delete=psql_process(base+["-d",database,"-c","set application_name='b5_v1_existing_delete_wait'; delete from auth.users where id='%s';" % v1_user],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_v1_existing_delete_wait")
+commit(v1_existing_gate)
+v1_out,v1_writer_error=v1_writer.communicate(timeout=10)
+assert v1_writer.returncode==0 and v1_out.strip()=="ok",v1_writer_error
+_,v1_error=v1_delete.communicate(timeout=10)
+assert v1_delete.returncode==0,v1_error
+assert int(scalar("select sum(calls) from public.claude_usage_daily"))==v1_total+1
+run('drop trigger "AAA_b5_pause_existing_usage" on public.claude_usage_daily; drop function public.b5_pause_existing_usage();')
+passed("standalone v1 existing-usage update completes before auth deletion and retains its calls without a backward auth FK request")
+
+# On V1's very first usage insert, a deleting parent can win before the child exists. The
+# actual FK then rejects a vanished owner with 23503, never waits in a usage/auth cycle.
+v1_first=str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s'); create function public.b5_pause_first_usage() returns trigger language plpgsql as $$ begin if new.user_id='%s'::uuid then perform pg_catalog.pg_advisory_xact_lock(62899,62895); end if; return new; end $$; create trigger b5_pause_first_usage before insert on public.claude_usage_daily for each row execute function public.b5_pause_first_usage();" % (v1_first,v1_first))
+v1_gate=hold("select pg_catalog.pg_advisory_xact_lock(62899,62895);")
+v1_inserting=psql_process(base+["-d",database,"-c","set application_name='b5_v1_first_insert_gate';"+as_service("select public.claim_claude_call('%s',100,2147483647);" % v1_first)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_v1_first_insert_gate")
+run("delete from auth.users where id='%s';" % v1_first)
+commit(v1_gate)
+_,v1_first_error=v1_inserting.communicate(timeout=10)
+assert v1_inserting.returncode!=0 and "23503" in v1_first_error and "40P01" not in v1_first_error,v1_first_error
+assert scalar("select count(*) from public.claude_usage_daily where user_id='%s'" % v1_first)=="0"
+run("drop trigger b5_pause_first_usage on public.claude_usage_daily; drop function public.b5_pause_first_usage();")
+passed("standalone v1 first insert after auth deletion fails atomically with the original foreign-key error instead of deadlocking")
+
+# A generation owner must also lock its auth parent before deletion can lock that parent.
+# These are two real connections: no fake mutex or extra advisory lock models the cycle.
+if args.negative_parent_prefix:
+    original_helper = re.search(r"create or replace function public\.lock_sample_owner\([\s\S]*?\bas \$\$[\s\S]*?\$\$;", migration).group(0)
+    unprefixed = re.sub(r"  perform id from auth.users[^;]+;\n  if not found then raise exception 'sample owner no longer exists'[^;]+; end if;\n", "", original_helper)
+    assert unprefixed != original_helper
+    run(unprefixed)
+deleting_user = str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s'); select public.begin_sample_load('%s'); select verdict from public.claim_claude_call_v2('%s',100,2147483647); select verdict from public.claim_claude_call_v2('%s',100,2147483647);" % (deleting_user,deleting_user,deleting_user,other))
+total_calls_before = int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily"))
+null_calls_before = int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily where user_id is null"))
+deleted_calls = int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily where user_id='%s'" % deleting_user))
+assert deleted_calls>0
+deleting_mail,deleting_parcel = str(uuid.uuid4()),str(uuid.uuid4())
+run("insert into public.emails(id,user_id,provider_email_id) values ('%s','%s','synthetic-cascade-seed'); insert into public.parcels(id,user_id,shop) values ('%s','%s','Synthetic cascade seed'); insert into public.parcel_items(parcel_id,user_id,name) values ('%s','%s','Synthetic cascade item'); insert into public.extractions(user_id,email_id,parcel_id,model,result) values ('%s','%s','%s','synthetic','{}');" % (deleting_mail,deleting_user,deleting_parcel,deleting_user,deleting_parcel,deleting_user,deleting_user,deleting_mail,deleting_parcel))
+for table in ["emails","parcels","extractions","parcel_items","sample_generations","claude_usage_daily","claude_call_claims"]:
+    assert int(scalar("select count(*) from public.%s where user_id='%s'" % (table,deleting_user)))>0, table
+other_costs = scalar("select jsonb_agg(to_jsonb(c) order by day) from public.claude_usage_daily c where user_id='%s'" % other)
+parent_writer = hold("select public.lock_sample_owner('%s');" % deleting_user)
+parent_delete = psql_process(base + ["-d",database,"-c", "set application_name='b5_parent_delete_wait'; delete from auth.users where id='%s';" % deleting_user], stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+wait_for_lock("b5_parent_delete_wait")
+writer_out, writer_error = parent_writer.communicate(as_service(store(deleting_user,str(uuid.uuid4()),str(uuid.uuid4()),"synthetic-delete-race")) + "commit;",timeout=10)
+delete_out, delete_error = parent_delete.communicate(timeout=10)
+assert parent_writer.returncode==0 and parent_delete.returncode==0, (writer_error,delete_error)
+assert writer_out.strip()=="ok", writer_out
+assert scalar("select count(*) from auth.users where id='%s'" % deleting_user)=="0"
+for table in ["emails","parcels","extractions","parcel_items","sample_generations","claude_usage_daily","claude_call_claims"]:
+    assert scalar("select count(*) from public.%s where user_id='%s'" % (table,deleting_user))=="0", table
+assert scalar("select jsonb_agg(to_jsonb(c) order by day) from public.claude_usage_daily c where user_id='%s'" % other)==other_costs
+assert int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily"))==total_calls_before
+assert int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily where user_id is null"))==null_calls_before+deleted_calls
+passed("auth deletion and a generation-first writer complete without deadlock, atomically cascade target data and retain deleted calls anonymously without changing the global total or another user's count")
+
 run(as_service("update public.parcels set received_at=null where id='%s';" % new_parcel, user, new_generation))
 receiving = hold(as_service(receive, user, new_generation))
-receive_clear = subprocess.Popen(base + ["-d", database, "-c", "set application_name='b5_receive_clear_wait';" + as_service("select public.clear_all_parcels('%s');" % user)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+receive_clear = psql_process(base + ["-d", database, "-c", "set application_name='b5_receive_clear_wait';" + as_service("select public.clear_all_parcels('%s');" % user)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 wait_for_lock("b5_receive_clear_wait")
 commit(receiving)
 receive_clear_out, receive_clear_error = receive_clear.communicate(timeout=10)
@@ -207,7 +437,7 @@ passed("receive RPC and clear use generation then parcel order without deadlock"
 
 held_parcel = str(uuid.uuid4())
 writer = hold(as_service("insert into public.parcels(id,user_id,shop) values ('%s','%s','In-flight sample');" % (held_parcel, user), user, new_generation))
-clear = subprocess.Popen(base + ["-d", database, "-c", "set application_name='b5_clear_wait';" + as_service("select public.clear_all_parcels('%s');" % user)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+clear = psql_process(base + ["-d", database, "-c", "set application_name='b5_clear_wait';" + as_service("select public.clear_all_parcels('%s');" % user)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 wait_for_lock("b5_clear_wait")
 commit(writer)
 clear_out, clear_error = clear.communicate(timeout=10)
@@ -216,7 +446,7 @@ assert scalar("select count(*) from public.parcels where user_id='%s'" % user) =
 passed("clear waits for an in-flight write and then deletes it")
 latest = clear_out.strip().splitlines()[-1]
 clearing = hold(as_service("select public.clear_all_parcels('%s');" % user))
-late = subprocess.Popen(base + ["-d", database, "-c", "set application_name='b5_write_wait';" + as_service("insert into public.parcels(user_id,shop) values ('%s','Delayed sample');" % user, user, latest)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+late = psql_process(base + ["-d", database, "-c", "set application_name='b5_write_wait';" + as_service("insert into public.parcels(user_id,shop) values ('%s','Delayed sample');" % user, user, latest)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 wait_for_lock("b5_write_wait")
 commit(clearing)
 late_out, late_error = late.communicate(timeout=10)
@@ -227,7 +457,7 @@ passed("write waiting behind clear sees the new generation and cannot insert")
 real_email, real_lease = str(uuid.uuid4()), str(uuid.uuid4())
 assert run(as_service(store(user, real_email, real_lease, "synthetic-real-in-flight"))) == "ok"
 real_writer = hold(as_service(owned(real_email, real_lease, "parcels", "insert", {"user_id": user, "shop": "In-flight real-mail control"})))
-real_clear = subprocess.Popen(base + ["-d", database, "-c", "set application_name='b5_real_clear_wait';" + as_service("select public.clear_all_parcels('%s');" % user)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+real_clear = psql_process(base + ["-d", database, "-c", "set application_name='b5_real_clear_wait';" + as_service("select public.clear_all_parcels('%s');" % user)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 wait_for_lock("b5_real_clear_wait")
 commit(real_writer)
 _, real_clear_error = real_clear.communicate(timeout=10)
