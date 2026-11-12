@@ -30,6 +30,7 @@ struct SettingsApprovalTests {
         await faults(fake)
         let (provider, auth) = try await TestSession.signedIn(fake)
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
@@ -168,16 +169,12 @@ struct SettingsApprovalTests {
     @Test func eachWebButtonOpensThePageThatHoldsIt() {
         let base = "https://otodoke.app"
         let expected: [(SettingsWebAction, String)] = [
-            (.changePassphrase, "/app/settings/password"),
-            (.deleteAccount, "/app/settings/delete"),
-            (.openWeb, "/app"),
             (.privacy, "/privacy"),
         ]
         #expect(Set(expected.map { "\($0.0)" }) == Set(SettingsWebAction.allCases.map { "\($0)" }))
         for (action, path) in expected {
             #expect(SettingsModel.webLink(action).absoluteString == base + path, "\(action)")
         }
-        #expect(WebLink.settingsPassword.absoluteString == base + "/app/settings/password")
         // No old section hash anywhere.
         for action in SettingsWebAction.allCases { #expect(SettingsModel.webLink(action).fragment == nil, "\(action)") }
     }

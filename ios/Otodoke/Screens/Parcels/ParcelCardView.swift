@@ -31,11 +31,11 @@ struct ParcelCardContent: Equatable, Sendable {
         return ParcelCardContent(
             shop: p.shop,
             title: p.title ?? "品名の記載なし",
-            statusLabel: BadgeText.status(p.status),
+            statusLabel: BadgeText.status(p.status, receivedAt: p.receivedAt),
             when: when,
             window: Format.formatWindow(start: p.expectedWindowStart, end: p.expectedWindowEnd),
             undecided: when == nil && p.status == "ordered",
-            presenceBadge: BadgeText.presence(for: p, compact: true),
+            presenceBadge: p.status == "delivered" || ParcelRules.isReceived(p) ? nil : BadgeText.presence(for: p, compact: true),
             needsReview: p.needsReview
         )
     }
@@ -61,7 +61,7 @@ struct ParcelCardView: View {
                         .multilineTextAlignment(.leading)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                StatusBadge(status: parcel.status)
+                StatusBadge(status: parcel.status, receivedAt: parcel.receivedAt)
             }
             WrappingRow(spacing: 12, lineSpacing: 6) {
                 if let when = c.when {

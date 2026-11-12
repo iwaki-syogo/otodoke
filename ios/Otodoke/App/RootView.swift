@@ -22,9 +22,15 @@ struct RootView: View {
 
     var body: some View {
         #if DEBUG
-        if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
+        if let preview = CategorySavingPreview(arguments: ProcessInfo.processInfo.arguments) {
+            preview
+        } else if let preview = ListPreview(arguments: ProcessInfo.processInfo.arguments) {
             if preview.showsWelcome {
                 WelcomeView(auth: preview.previewAuth())
+            } else if let deletion = preview.accountDeletionModel() {
+                NavigationStack { AccountDeletionView(model: deletion, email: nil) }
+            } else if let screens = preview.consentScreens() {
+                MainTabView(screens: screens)
             } else if let login = preview.makeLoginModel() {
                 LoginView(model: login)
             } else if let page = preview.deliveredPageModel() {

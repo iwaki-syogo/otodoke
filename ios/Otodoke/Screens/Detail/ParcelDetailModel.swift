@@ -36,6 +36,9 @@ struct TimelineEntry: Equatable, Sendable, Identifiable {
     var mail: MailDisplay? = nil
     /// emails.id of this mail (the sealed mail's AAD and its body_envelope read).
     var emailID: String? = nil
+    /// The delivery extraction's own evidence, selected before display.
+    var deliveryEvidence: String? = nil
+    var evidenceAt: String = ""
 }
 
 /// A sealed mail in 「メールの履歴」, by what opening it came to.
@@ -100,7 +103,7 @@ struct ParcelDetailFields: Equatable, Sendable {
         return ParcelDetailFields(
             shop: p.shop,
             title: p.title ?? "品名の記載なし",
-            statusLabel: BadgeText.status(p.status),
+            statusLabel: BadgeText.status(p.status, receivedAt: p.receivedAt),
             presenceBadge: BadgeText.presence(for: p, compact: false),
             needsReview: p.needsReview,
             expected: expected,
@@ -129,6 +132,8 @@ final class ParcelDetailModel {
     static let notDeliveredNotSaved = "保存されていませんでした。もう一度押してください。"
     static let categoryNotSaved = "保存されていませんでした。もう一度選んでください。"
 
+    @ObservationIgnored private var retired = false
+
     let id: String
     let reader: ParcelReader
     let writer: ParcelWriter
@@ -141,6 +146,8 @@ final class ParcelDetailModel {
 
     private(set) var isMarkingNotDelivered = false
     private(set) var notDeliveredError: String?
+    private(set) var isChangingReceipt = false
+    private(set) var receiptError: String?
 
     /// The category the chip shows (nil = 未分類), including while a choice is being saved.
     private(set) var shownCategory: ParcelCategory?
@@ -222,7 +229,7 @@ final class ParcelDetailModel {
     /// 「元メールを見る」 on a sealed mail: the key (memory, Face ID, else .unlocking), then body_envelope read
     /// and opened; the kid differing goes through UnlockModel.recipient(forKid:).
     func openSealed(emailID: String) async {
-        guard let unlock, let mailKeys, let stamp = unlock.store.stamp() else { return }
+        guard !retired, let unlock, let mailKeys, let stamp = unlock.store.stamp() else { return }
         unlock.store.hold(self)
         // [B1-2] Opened, or being opened in this period of the key: nothing more is started.
         switch sealedState(emailID: emailID) {
@@ -280,7 +287,7 @@ final class ParcelDetailModel {
     }
 
     private func setSealed(_ emailID: String, _ state: SealedState, _ stamp: UnlockStamp) {
-        guard unlock?.store.isCurrent(stamp) == true else { return }
+        guard !retired, unlock?.store.isCurrent(stamp) == true else { return }
         sealed[emailID] = (state, stamp)
     }
 
@@ -317,6 +324,7 @@ final class ParcelDetailModel {
     /// The three reads at once (parcel, items, mails), each kept apart. The mails' text is made off the
     /// main thread. A parcel read that a write overlapped is not shown but read again.
     func load() async {
+        guard !retired else { return }
         mark.markRead()
         parcelReadNumber += 1
         restReadNumber += 1
@@ -329,6 +337,7 @@ final class ParcelDetailModel {
         async let mailsRead = reader.extractions(parcelID: id)
         let (p, i, x) = await (parcelRead, itemsRead, mailsRead)
         let t = await Self.makeTimeline(x, today: day)
+        guard !retired else { return }
         if restNumber == restReadNumber {
             items = i
             timeline = t
@@ -365,9 +374,27 @@ final class ParcelDetailModel {
         row.flatMap(Self.amazonURL(for:))
     }
 
-    /// Only for a delivered parcel.
+    /// Delivery and receipt are separate; a receipt can be cleared without changing delivery.
     var showsNotDelivered: Bool {
-        row?.status == "delivered"
+        guard let row else { return false }
+        return row.status == "delivered" && !ParcelRules.isReceived(row)
+    }
+
+    var showsMarkReceived: Bool {
+        guard let row else { return false }
+        return row.status != "cancelled" && !ParcelRules.isReceived(row)
+    }
+
+    var showsNotReceived: Bool { row.map(ParcelRules.isReceived) == true }
+
+    /// Same latest-line choice as deliveryEvidence on the Web. A mail without evidence adds no row.
+    var deliveryEvidence: String? {
+        guard case let .loaded(entries)? = timeline else { return nil }
+        var best: TimelineEntry?
+        for entry in entries where entry.deliveryEvidence != nil {
+            if best == nil || !JSText.less(entry.evidenceAt, best!.evidenceAt) { best = entry }
+        }
+        return best?.deliveryEvidence
     }
 
     /// Only for a parcel typed in by hand (source = manual): 編集 opens the form inside the app.
@@ -392,7 +419,7 @@ final class ParcelDetailModel {
     /// 「届いていない」: the spinner from the tap; on success everything is read again. While the last
     /// write is not known, a tap only reads the parcel again.
     func markNotDelivered() async {
-        guard !isMarkingNotDelivered, showsNotDelivered else { return }
+        guard !retired, !isMarkingNotDelivered, !isChangingReceipt, showsNotDelivered else { return }
         isMarkingNotDelivered = true
         notDeliveredError = nil
         defer { isMarkingNotDelivered = false }
@@ -412,6 +439,7 @@ final class ParcelDetailModel {
         beginWrite()
         let result = await writer.markNotDelivered(id: id)
         endWrite()
+        guard !retired else { return }
         switch result {
         case .success:
             await load()
@@ -428,6 +456,69 @@ final class ParcelDetailModel {
         }
     }
 
+    /// 「受け取った」 writes delivery and receipt together, on the version shown.
+    func markReceived() async { await changeReceipt(received: true) }
+
+    /// 「受け取っていない」 leaves the delivery status intact.
+    func markNotReceived() async { await changeReceipt(received: false) }
+
+    private func changeReceipt(received: Bool) async {
+        guard !retired, !isChangingReceipt, !isMarkingNotDelivered, let before = row,
+              received ? showsMarkReceived : showsNotReceived else { return }
+        isChangingReceipt = true
+        receiptError = nil
+        defer { isChangingReceipt = false }
+        if isUnconfirmed {
+            if await rereadParcel() == .applied {
+                if row.map(ParcelRules.isReceived) == received { return }
+                receiptError = Self.notDeliveredNotSaved
+            } else if isUnconfirmed {
+                receiptError = Self.unconfirmed
+            }
+            return
+        }
+        beginWrite()
+        let result: WriteOutcome<ParcelVersion>
+        if received {
+            switch await writer.markDelivered(ParcelVersion(before)) {
+            case let .success(token):
+                result = .success(ParcelVersion(id: token.id, status: "delivered", updatedAt: token.deliveredUpdatedAt,
+                                               receivedAt: token.deliveredReceivedAt, checkDismissedAt: before.checkDismissedAt))
+            case let .notUpdated(reason): result = .notUpdated(reason)
+            case .unknown: result = .unknown
+            }
+        } else {
+            result = await writer.markNotReceived(id: id)
+        }
+        endWrite()
+        guard !retired else { return }
+        switch result {
+        case let .success(version):
+            var updated = row ?? before
+            updated.status = version.status
+            updated.receivedAt = version.receivedAt
+            updated.checkDismissedAt = version.checkDismissedAt
+            updated.updatedAt = version.updatedAt
+            parcel = .loaded(updated)
+            _ = await rereadParcel()
+        case .notUpdated(.conflict):
+            _ = await rereadParcel()
+            guard !retired else { return }
+            receiptError = Self.notDeliveredFailed
+        case .notUpdated:
+            receiptError = Self.notDeliveredFailed
+        case .unknown:
+            isUnconfirmed = true
+            if await rereadParcel() == .applied {
+                if row.map(ParcelRules.isReceived) != received {
+                    receiptError = Self.notDeliveredFailed
+                }
+            } else if isUnconfirmed {
+                receiptError = Self.unconfirmed
+            }
+        }
+    }
+
     /// The chip shows the choice from the tap; a choice that surely was not saved goes back, with the
     /// Web's words. On success the parcel takes the written values (no read needed). While the last
     /// write is not known, a choice only reads the parcel again. true when the choice was saved.
@@ -435,7 +526,7 @@ final class ParcelDetailModel {
     /// lost choice went through late), nothing is written and the parcel is read again.
     @discardableResult
     func setCategory(_ category: ParcelCategory) async -> Bool {
-        guard !isSavingCategory, let before = row else { return false }
+        guard !retired, !isSavingCategory, let before = row else { return false }
         let previous = Self.category(of: before)
 
         if isUnconfirmed {
@@ -443,12 +534,18 @@ final class ParcelDetailModel {
             categoryError = nil
             defer { isSavingCategory = false }
             let outcome = await rereadParcel()
+            guard !retired else { return false }
             if outcome != .applied, isUnconfirmed { categoryError = Self.unconfirmed }
             shownCategory = Self.category(of: row)
-            // The category read is the one shown before: the lost choice had not gone through.
-            // Otherwise the chip now shows what was saved.
-            if outcome == .applied, row != nil, shownCategory == previous, shownCategory != category {
-                categoryError = Self.categoryNotSaved
+            if outcome == .applied {
+                guard let p = row else {
+                    categoryError = Self.categoryNotFound
+                    return false
+                }
+                // This press only reads. A matching automatic category is not a saved user choice.
+                if shownCategory != category || p.categorySource != "user" {
+                    categoryError = Self.categoryNotSaved
+                }
             }
             return false
         }
@@ -461,6 +558,7 @@ final class ParcelDetailModel {
         beginWrite()
         let result = await writer.setCategory(ParcelVersion(before), category: category)
         endWrite()
+        guard !retired else { return false }
         switch result {
         case let .success(written):
             var p = row ?? before
@@ -472,7 +570,9 @@ final class ParcelDetailModel {
             return true
         case .notUpdated(.conflict):
             // Changed since it was shown, or gone: show what is there now.
-            if await rereadParcel() == .applied {
+            let outcome = await rereadParcel()
+            guard !retired else { return false }
+            if outcome == .applied {
                 guard let p = row else {
                     shownCategory = previous
                     categoryError = Self.categoryNotFound
@@ -494,15 +594,18 @@ final class ParcelDetailModel {
             return false
         case .unknown:
             isUnconfirmed = true
-            if await rereadParcel() == .applied {
+            let outcome = await rereadParcel()
+            guard !retired else { return false }
+            if outcome == .applied {
                 guard let p = row else {
                     shownCategory = previous
                     categoryError = Self.categoryNotFound
                     return false
                 }
                 shownCategory = Self.category(of: p)
-                if shownCategory != category { categoryError = Self.categoryFailed }
-                return shownCategory == category
+                let saved = shownCategory == category && p.categorySource == "user"
+                if !saved { categoryError = shownCategory == category ? Self.categoryNotSaved : Self.categoryFailed }
+                return saved
             }
             // Neither saved nor not saved is known: the chip keeps the last value read.
             shownCategory = Self.category(of: row) ?? previous
@@ -539,7 +642,7 @@ final class ParcelDetailModel {
     /// Shows a parcel read when it is the newest and no write overlapped it. A read that is shown
     /// settles an unknown write.
     private func finishParcelRead(number: Int, generation: Int, _ result: LoadResult<ParcelRow?>, keepShownOnFailure: Bool) -> ReadOutcome {
-        guard number == parcelReadNumber else { return .superseded }
+        guard !retired, number == parcelReadNumber else { return .superseded }
         guard generation == writeGeneration, writesInFlight == 0 else { return .stale }
         guard case .loaded = result else {
             if !keepShownOnFailure { show(result) }
@@ -550,6 +653,7 @@ final class ParcelDetailModel {
             isUnconfirmed = false
             if notDeliveredError == Self.unconfirmed { notDeliveredError = nil }
             if categoryError == Self.unconfirmed { categoryError = nil }
+            if receiptError == Self.unconfirmed { receiptError = nil }
         }
         return .applied
     }
@@ -562,7 +666,7 @@ final class ParcelDetailModel {
     private func endWrite() {
         writesInFlight -= 1
         writeGeneration &+= 1
-        if writesInFlight == 0, readAfterWrites {
+        if !retired, writesInFlight == 0, readAfterWrites {
             readAfterWrites = false
             Task { [weak self] in _ = await self?.rereadParcel() }
         }
@@ -637,9 +741,32 @@ final class ParcelDetailModel {
                 body: body,
                 notes: x.notes.jsTruthy,
                 mail: MailBody.display(email),
-                emailID: email.id
+                emailID: email.id,
+                deliveryEvidence: x.relevance == "delivered" ? (x.relevanceEvidence?.trimmingCharacters(in: .whitespacesAndNewlines)).jsTruthy : nil,
+                evidenceAt: email.sentAt ?? x.createdAt
             )
         }
+    }
+
+    /// Drops the account's detail and bodies, and rejects results of work started by the old session.
+    func clearForSignOut() {
+        retired = true
+        parcelReadNumber &+= 1
+        restReadNumber &+= 1
+        writeGeneration &+= 1
+        readAfterWrites = false
+        parcel = nil
+        items = nil
+        timeline = nil
+        shownCategory = nil
+        categoryError = nil
+        notDeliveredError = nil
+        receiptError = nil
+        isUnconfirmed = false
+        isMarkingNotDelivered = false
+        isChangingReceipt = false
+        isSavingCategory = false
+        dropPlaintext()
     }
 
     // MARK: helpers

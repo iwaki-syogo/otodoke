@@ -91,19 +91,20 @@ describe("the account card is the Web's, in the Web's order", () => {
     const block = src.match(/const accountRows: Row\[\] = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
     return [...block.matchAll(/id: "([a-z]+)"/g)].map((m) => m[1]);
   };
-  /** What the iOS account section draws, in order (the rows that the Web has, then the Web-only exit). */
+  /** What the iOS account section draws, in order (the Web's rows, with the full privacy policy in an app sheet). */
   const iosOrder = (src: string) => {
     const block = src.match(/section\(SettingsWebText\.accountGroup\) \{([\s\S]*?)\n                    \}\n/)?.[1] ?? "";
-    const names: Record<string, string> = { loginRow: "login", logoutRow: "logout", "webRow(.privacy": "privacy", "webRow(.deleteAccount": "delete", "webRow(.openWeb": "openWeb" };
-    return [...block.matchAll(/loginRow|logoutRow|webRow\(\.(?:privacy|deleteAccount|openWeb)/g)].map((m) => names[m[0]]);
+    const names: Record<string, string> = { loginRow: "login", logoutRow: "logout", privacyRow: "privacy", "row(.deleteAccount": "delete" };
+    return [...block.matchAll(/loginRow|logoutRow|privacyRow|row\(\.deleteAccount/g)].map((m) => names[m[0]]);
   };
 
   it("the Web's order is read: ログイン中, ログアウト, プライバシーポリシー, アカウントの削除", () => {
     expect(webOrder(WEB_LIST)).toEqual(["login", "logout", "privacy", "delete"]);
   });
 
-  it("iOS draws the same four, in one card, and keeps 「Web で開く」 after them", () => {
-    expect(iosOrder(LIST)).toEqual([...webOrder(WEB_LIST), "openWeb"]);
+  it("iOS draws the same four, in one card, with native deletion", () => {
+    expect(iosOrder(LIST)).toEqual(webOrder(WEB_LIST));
+    expect(LIST).not.toContain("webRow(.openWeb");
     // One card: the section holds a single SettingsCard, and the old footer outside of it is gone.
     const block = LIST.match(/section\(SettingsWebText\.accountGroup\) \{([\s\S]*?)\n                    \}\n/)?.[1] ?? "";
     expect(block.match(/SettingsCard\(\)/g)?.length).toBe(1);
@@ -119,7 +120,7 @@ describe("the account card is the Web's, in the Web's order", () => {
     const swapped = LIST.replace("loginRow\n                            Divider().padding(.leading, 58)\n                            logoutRow", "logoutRow\n                            Divider().padding(.leading, 58)\n                            loginRow");
     expect(swapped).not.toBe(LIST);
     expect(iosOrder(swapped)).not.toEqual(iosOrder(LIST));
-    expect(iosOrder(swapped)).toEqual(["logout", "login", "privacy", "delete", "openWeb"]);
+    expect(iosOrder(swapped)).toEqual(["logout", "login", "privacy", "delete"]);
     expect(LIST.replace("accountGroup", "other")).not.toBe(LIST);
     expect(iosOrder(LIST.replace("accountGroup", "other"))).toEqual([]);
     expect(WEB_LIST.replace("const accountRows", "const rows")).not.toBe(WEB_LIST);

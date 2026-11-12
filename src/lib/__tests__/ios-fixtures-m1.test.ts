@@ -57,7 +57,7 @@ function freezeAt(today: string) {
 }
 
 const PARCEL_COLUMNS = [
-  "carrier", "category", "category_source", "created_at", "expected_date", "expected_date_end", "expected_text",
+  "carrier", "category", "category_source", "check_dismissed_at", "received_at", "created_at", "expected_date", "expected_date_end", "expected_text",
   "expected_window_end", "expected_window_start", "id", "last_email_at", "needs_review", "order_number", "ordered_at",
   "presence_evidence", "requires_presence", "shop", "shop_key", "source", "status", "title", "total_amount",
   "tracking_number", "tracking_url", "updated_at", "user_id",

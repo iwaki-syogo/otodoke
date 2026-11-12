@@ -20,7 +20,9 @@ const NOTE = WEB_STEPS.slice(WEB_STEPS.indexOf("export function ApprovalFilterCo
 
 /** The text of the block opened by the first "{" at or after `from` (braces balanced). */
 function braceBlock(src: string, from: number): string {
+  if (from < 0) return "";
   const open = src.indexOf("{", from);
+  if (open < 0) return "";
   let depth = 0;
   for (let i = open; i < src.length; i++) {
     if (src[i] === "{") depth++;
@@ -28,10 +30,12 @@ function braceBlock(src: string, from: number): string {
   }
   return "";
 }
-/** The branch of the approval section drawn when an approval page is pending (the `if let url` branch only). */
+/** Only the permission-checked, Google-checked pending branch, never the surrounding section. */
 function pendingBranch(src: string): string {
   const at = src.indexOf("var approvalSection");
-  return braceBlock(src, src.indexOf("if let url", at));
+  const section = braceBlock(src, at);
+  const pending = section.indexOf("if model.mayShowReadingAddress, let url = model.confirmURL, SettingsModel.isApprovalPage(url)");
+  return braceBlock(section, pending);
 }
 const copyBoxInPendingBranch = (src: string) => /GmailFilterBox\(\)/.test(pendingBranch(src)) && pendingBranch(src).includes("GmailApprovalText.filterNote");
 
@@ -78,8 +82,12 @@ describe("Gmail approval card: filter text and copy button", () => {
 
   it("negative control: a box outside the pending branch, or a missing one, is caught", () => {
     const outside = ROWS.replace("GmailFilterBox()", "EmptyView()").replace("} else if let note = model.approvalNote {", "} else if let note = model.approvalNote {\n GmailFilterBox()");
+    expect(outside).not.toBe(ROWS);
     expect(copyBoxInPendingBranch(outside)).toBe(false);
     expect(copyBoxInPendingBranch(ROWS.replace("GmailFilterBox()", "EmptyView()"))).toBe(false);
     expect(copyBoxInPendingBranch(ROWS.replace("GmailApprovalText.filterNote", "\"\""))).toBe(false);
+    expect(copyBoxInPendingBranch(ROWS.replace("if model.mayShowReadingAddress, let url", "if let url"))).toBe(false);
+    expect(copyBoxInPendingBranch(ROWS.replace(", SettingsModel.isApprovalPage(url)", ""))).toBe(false);
+    expect(pendingBranch(ROWS.replace("var approvalSection", "var otherSection"))).toBe("");
   });
 });

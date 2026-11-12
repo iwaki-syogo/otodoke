@@ -3,10 +3,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Where the iOS app still sends the user to the Web. Everything that can finish in the app does (the sample, 「読み取る」,
- * 「これは荷物」 and 「荷物を登録する」, the key as signing in again). What may still open Safari is this list and no more:
- * changing the password, deleting the account, the privacy policy, 「Web で開く」, 「パスワードを忘れた」, a parcel's tracking
- * page, the forwarding guide's video and links, the Gmail approval link, and 「Web でログイン」 when the key does not open.
+ * Account operations finish in the app. External browser exits are confined to email authentication,
+ * carrier tracking and settings that belong to another provider. Full policy and public source use
+ * app sheets; guide videos use the native player. Any new opener must be reviewed here.
  */
 const ROOT = path.resolve(__dirname, "../../..");
 const APP = path.join(ROOT, "ios/Otodoke");
@@ -46,19 +45,17 @@ function openers(sources: { file: string; src: string }[]): string[] {
     .sort();
 }
 
-const ALLOWED_WEBLINKS = ["app", "base", "privacy", "settingsDelete", "settingsPassword"];
+const ALLOWED_WEBLINKS = ["base", "privacy"];
 const ALLOWED_OPENERS = [
   "Auth/LoginView.swift", // 「パスワードを忘れた」
   "Auth/TurnstileView.swift", // UIApplication.shared.open: the page the Turnstile check asks to open in a new window
-  "Screens/Detail/ParcelDetailView.swift", // Link(destination: amazon): the Amazon order page, a kind of tracking page
+  "Screens/Consent/AIReadingConsentView.swift", // full privacy policy in an app Safari sheet
   "Screens/Detail/TrackingLinkView.swift", // the carrier's tracking page
   "Screens/Settings/ForwardingGuideView.swift", // the guide's video and links
-  "Screens/Settings/SettingsKeyPage.swift", // 「パスワードを変える」
+  "Screens/Settings/MailHandlingView.swift", // public source is shown in an in-app Safari sheet
   "Screens/Settings/SettingsPages.swift", // the privacy policy, the Gmail approval link
   "Screens/Settings/SettingsParts.swift", // SettingsWeb itself (the one place a settings button hands a page to openURL)
   "Screens/Settings/SettingsStatusRows.swift", // the Gmail approval link
-  "Screens/Settings/SettingsView.swift", // 「Web で開く」, privacy, 「アカウントの削除」
-  "Screens/Shared/UnlockView.swift", // 「Web でログイン」 when the key does not open
 ].sort();
 
 describe("the iOS app opens the Web only for the things that must be there", () => {
@@ -67,10 +64,10 @@ describe("the iOS app opens the Web only for the things that must be there", () 
     for (const name of webLinksUsed(SOURCES)) expect(ALLOWED_WEBLINKS, name).toContain(name);
   });
 
-  it("the settings actions that open the Web are exactly the four", () => {
+  it("the only settings action that opens the Web is the privacy policy", () => {
     const model = read("ios/Otodoke/Screens/Settings/SettingsModel.swift");
     const enumBody = model.match(/enum SettingsWebAction[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? "";
-    expect([...enumBody.matchAll(/\bcase (\w+)/g)].map((m) => m[1]).sort()).toEqual(["changePassphrase", "deleteAccount", "openWeb", "privacy"]);
+    expect([...enumBody.matchAll(/\bcase (\w+)/g)].map((m) => m[1]).sort()).toEqual(["privacy"]);
   });
 
   it("only the allowed files open a URL", () => {

@@ -116,7 +116,7 @@ struct PasswordWordsTests {
         // Signed in through supabase-swift itself: no PasswordSignIn is waiting, so no key step starts.
         try await auth.provider.auth.signIn(email: FakeSupabase.email, password: "s")
         await auth.start()
-        let screens = MainScreens.live(auth: auth)
+        let screens = MainScreens.live(auth: auth, readingConsent: .allowedForTests())
         let unlock = try #require(screens.unlock)
         #expect(unlock.signInEmail() == FakeSupabase.email)
         #expect(screens.keySetup != nil)

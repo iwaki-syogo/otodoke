@@ -567,8 +567,10 @@ actor FakeSupabase {
         var rows = before
         var changed: [Row] = []
         for i in rows.indices where matches(rows[i], request) {
+            let oldStatus = rows[i]["status"]?.string
             for (k, v) in changes { rows[i][k] = JSONValue(any: v) }
             if rows[i]["updated_at"] != nil { rows[i]["updated_at"] = .string(nextTimestamp()) }
+            if table == "parcels" { Self.receiptTrigger(&rows[i], oldStatus: oldStatus) }
             changed.append(rows[i])
         }
         if wantsObject(request), changed.count != 1 {
@@ -601,6 +603,7 @@ actor FakeSupabase {
             let inserted = nextTimestamp()
             if row["created_at"] == nil { row["created_at"] = .string(inserted) }
             if row["updated_at"] == nil { row["updated_at"] = .string(inserted) }
+            if table == "parcels" { Self.receiptTrigger(&row, oldStatus: nil) }
             for column in uniqueColumns[table] ?? [] {
                 if let value = row[column], rows.contains(where: { $0[column] == value }) {
                     return .json(409, [
@@ -621,6 +624,19 @@ actor FakeSupabase {
             return .json(201, added[0].anyObject)
         }
         return .json(201, added.map(\.anyObject))
+    }
+
+    /// The authenticated writer's migration trigger, including the one-write 配達済み sentinel.
+    private static func receiptTrigger(_ row: inout Row, oldStatus: String?) {
+        let none = row["received_at"]?.string == ParcelRules.receivedAtNone
+        if none { row["received_at"] = .null }
+        if oldStatus == "delivered", row["status"]?.string != "delivered" {
+            row["received_at"] = .null
+            row["check_dismissed_at"] = .null
+        } else if row["status"]?.string == "delivered", oldStatus != "delivered",
+                  (row["received_at"] ?? .null) == .null, !none {
+            row["received_at"] = row["updated_at"] ?? .string("2026-11-04T05:00:00Z")
+        }
     }
 
     // MARK: filters and order

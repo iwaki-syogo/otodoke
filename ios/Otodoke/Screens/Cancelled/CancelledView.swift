@@ -23,6 +23,15 @@ final class CancelledModel {
     @ObservationIgnored private var wasCutOff = false
     /// [B2-1, as CX-f2] The newest read's: raised as soon as its task is cancelled, before the read ends.
     @ObservationIgnored private var cutOff: CutOffSignal?
+    @ObservationIgnored private var retired = false
+
+    func clearForSignOut() {
+        retired = true
+        _ = fence.beginRead()
+        cutOff?.raise()
+        parcels = nil
+        isLoading = false
+    }
 
     init(reader: StatusListReader, changes: DataChanges?) {
         self.reader = reader
@@ -50,6 +59,7 @@ final class CancelledModel {
     }
 
     func load() async {
+        guard !retired else { return }
         let ticket = fence.beginRead()
         let signal = CutOffSignal()
         cutOff = signal
@@ -63,7 +73,7 @@ final class CancelledModel {
         }
         // A newer read was started meanwhile: this one is older than what it would replace (and it owns
         // the state: this one being cut off changes nothing, N-new2).
-        guard fence.verdict(ticket) == .current else { return }
+        guard !retired, fence.verdict(ticket) == .current else { return }
         isLoading = false
         // [B2-1] Cut off (the .task cancelled when the tab is left): dropped, not shown as
         // 「読み込めませんでした」, and the next appearance reads again.

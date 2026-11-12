@@ -124,6 +124,13 @@ final class UnlockModel {
     @ObservationIgnored var keySetup: KeySetup?
     /// 「ログインし直す」 signs out through this (MainScreens passes auth.signOut).
     @ObservationIgnored var signOut: @MainActor () async -> Void = {}
+    @ObservationIgnored var recovery: PasswordRecoveryModel?
+
+    func recovered(password: String) async -> Bool {
+        let opened = await submit(password: password)
+        if opened, let key = store.key { keySetup?.noteRecovered(keyID: key.keyID) }
+        return opened
+    }
 
     /// help, else the key step's (.needsWebLogin after the sign-in).
     var shownHelp: Help? {

@@ -277,7 +277,9 @@ describe("the wiring", () => {
     expect(gate).toMatch(/if deciding \{ return \.waiting \}/);
     const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
     expect(tabs).not.toMatch(/fullScreenCover/);
-    expect(tabs).toMatch(/Landing\.of\(\s*deciding: screens\.keySetup\?\.isDeciding == true,\s*outcome: screens\.keySetup\?\.lastOutcome,\s*guideClosed: guideClosed,\s*fromConfirmation: screens\.keySetup\?\.lastRunFromConfirmation == true/);
+    expect(tabs).toContain("var outcome = screens.keySetup?.lastOutcome");
+    expect(tabs).not.toContain("guideClosed || !screens.settings.mayShowReadingAddress");
+    expect(tabs).toMatch(/Landing\.of\(\s*deciding: screens\.keySetup\?\.isDeciding == true,\s*outcome: outcome,\s*guideClosed: guideClosed \|\| screens\.readingConsent\.decision == \.denied,\s*fromConfirmation: screens\.keySetup\?\.lastRunFromConfirmation == true/);
     expect(tabs).toMatch(/\.opacity\(landing == \.tabs \? 1 : 0\)/);
     expect(tabs).toMatch(/\.transition\(\.identity\)/);
     expect(tabs).toMatch(/route\.tab = \.parcels/);

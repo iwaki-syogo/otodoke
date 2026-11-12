@@ -78,7 +78,7 @@ struct KeyOwnerAndOrderTests {
         // The client's .signedIn was handled before signIn returned: the screens come up then (the bad order).
         auth.afterSignInAnswer = {
             _ = await waitFor(.seconds(3)) { await MainActor.run { auth.session.stamp()?.userID == FakeSupabase.me } }
-            made.value = MainScreens.live(auth: auth)
+            made.value = MainScreens.live(auth: auth, readingConsent: .allowedForTests())
         }
         try await w.signIn()
         let screens = try #require(made.value)
@@ -96,7 +96,7 @@ struct KeyOwnerAndOrderTests {
         counter.value = 0
         auth.makeSignedIn = { a in
             counter.value = (counter.value ?? 0) + 1
-            return MainScreens.live(auth: a)
+            return MainScreens.live(auth: a, readingConsent: .allowedForTests())
         }
         try await w.signIn()
         _ = MainTabView(auth: auth)
@@ -160,7 +160,7 @@ struct KeyOwnerAndOrderTests {
         await w.fake.setUserEmail("other@example.com")
         try await w.signIn()
         #expect(w.auth.takeSignInSecret() == nil)
-        let screens = MainScreens.live(auth: w.auth)
+        let screens = MainScreens.live(auth: w.auth, readingConsent: .allowedForTests())
         let setup = try #require(screens.keySetup)
         #expect(setup.lastOutcome == .addressMismatch)
         let unlock = try #require(screens.unlock)
@@ -183,7 +183,7 @@ struct KeyOwnerAndOrderTests {
         let w = try await SignInWorld(keyInUse: false)
         try await w.signIn()
         // The Web's key endpoints are not answered here (as before they are in production): no answer, twice.
-        let screens = MainScreens.live(auth: w.auth)
+        let screens = MainScreens.live(auth: w.auth, readingConsent: .allowedForTests())
         let setup = try #require(screens.keySetup)
         #expect(await waitFor(.seconds(5)) { await MainActor.run { setup.lastOutcome != nil } })
         #expect(setup.lastOutcome == .failed(message: LoginText.network))

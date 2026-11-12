@@ -18,6 +18,7 @@ struct SpendView<Detail: View>: View {
     @State private var path: [SpendRoute] = []
     /// What was pressed for the move on the way (its spinner).
     @State private var pressed: String?
+    @State private var categoryChoiceRequest = 0
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -42,6 +43,22 @@ struct SpendView<Detail: View>: View {
         .task { await model.onAppear() }
         .onChange(of: model.pendingMove == nil) { _, idle in
             if idle { pressed = nil }
+        }
+        // This host survives an order leaving the filter, or the aggregate read failing.
+        .sheet(isPresented: Binding(get: { model.categoryEditorID != nil }, set: { if !$0 { model.closeCategoryEditor() } })) {
+            if let id = model.categoryEditorID {
+                let opening = model.categoryEditorOpening
+                CategorySheet(current: model.editorCategory(for: id), picked: model.categoryPicks[id],
+                              isSaving: model.savingCategory.contains(id) || model.categoryLocked,
+                              error: model.categoryErrors[id]) { chosen in
+                    categoryChoiceRequest += 1
+                    let request = categoryChoiceRequest
+                    if await model.setCategory(parcelID: id, to: chosen),
+                       request == categoryChoiceRequest, model.categoryEditorOpening == opening, model.categoryEditorID == id {
+                        model.closeCategoryEditor()
+                    }
+                } close: { model.closeCategoryEditor() }
+            }
         }
     }
 

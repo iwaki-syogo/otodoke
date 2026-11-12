@@ -45,8 +45,9 @@ struct ParcelWriterTests {
         await fake.insert("parcels", [Rows.parcel(1)])
         let writer = try await writer(fake)
         let next = await fake.peekNextTimestamp()
-        let result = await writer.markDelivered(shown(1))
-        #expect(result == .success(UndoToken(id: Rows.id(1), restoreTo: "shipped", deliveredUpdatedAt: next)))
+        let now = try #require(ISO.date("2026-11-04T03:00:00Z"))
+        let result = await writer.markDelivered(shown(1), now: now)
+        #expect(result == .success(UndoToken(id: Rows.id(1), restoreTo: "shipped", deliveredUpdatedAt: next, deliveredReceivedAt: "2026-11-04T03:00:00.000Z")))
         #expect(await status(fake, 1) == "delivered")
         let sent = await patches(fake)
         #expect(sent.count == 1)
@@ -57,7 +58,7 @@ struct ParcelWriterTests {
         #expect(patch.query("updated_at") == ["eq.\(Self.shownStamp)"])
         #expect(selectColumns(patch).isSuperset(of: ["id", "status", "updated_at"]))
         #expect((patch.header("prefer") ?? "").contains("return=representation"))
-        #expect(NSDictionary(dictionary: patch.jsonDictionary ?? [:]) == NSDictionary(dictionary: ["status": "delivered"]))
+        #expect(NSDictionary(dictionary: patch.jsonDictionary ?? [:]) == NSDictionary(dictionary: ["status": "delivered", "received_at": "2026-11-04T03:00:00.000Z"]))
     }
 
     @Test func updatedAtIsSentExactlyAsRead() async throws {
@@ -121,7 +122,7 @@ struct ParcelWriterTests {
         #expect(await fake.restRequests().isEmpty)
     }
 
-    @Test(arguments: ["delivered", "cancelled", "bogus"])
+    @Test(arguments: ["cancelled", "bogus"])
     func marksOnlyFromAStatusItCanGoBackTo(from: String) async throws {
         let fake = FakeSupabase.make()
         await fake.insert("parcels", [Rows.parcel(1, ["status": .string(from)])])
@@ -199,7 +200,7 @@ struct ParcelWriterTests {
         #expect(undo.query("user_id") == ["eq.\(FakeSupabase.me)"])
         #expect(undo.query("status") == ["eq.delivered"])
         #expect(undo.query("updated_at") == ["eq.\(token.deliveredUpdatedAt)"])
-        #expect(NSDictionary(dictionary: undo.jsonDictionary ?? [:]) == NSDictionary(dictionary: ["status": "attempted"]))
+        #expect(NSDictionary(dictionary: undo.jsonDictionary ?? [:]) == NSDictionary(dictionary: ["status": "attempted", "received_at": NSNull(), "check_dismissed_at": NSNull()]))
     }
 
     @Test func undoDoesNotOverwriteADeliveryMailThatCameInBetween() async throws {
@@ -216,7 +217,7 @@ struct ParcelWriterTests {
         #expect(await stamp(fake, 1) == mail)
     }
 
-    @Test(arguments: ["delivered", "cancelled", "bogus", ""])
+    @Test(arguments: ["cancelled", "bogus", ""])
     func undoGoesBackOnlyToARestorableStatus(to: String) async throws {
         let fake = FakeSupabase.make()
         await fake.insert("parcels", [Rows.parcel(1, ["status": "delivered"])])
@@ -332,7 +333,7 @@ struct ParcelWriterTests {
         #expect(patch.query("user_id") == ["eq.\(FakeSupabase.me)"])
         #expect(patch.query("status") == ["eq.delivered"])
         #expect(patch.query("updated_at") == ["eq.\(read ?? "")"])
-        #expect(NSDictionary(dictionary: patch.jsonDictionary ?? [:]) == NSDictionary(dictionary: ["status": "shipped"]))
+        #expect(NSDictionary(dictionary: patch.jsonDictionary ?? [:]) == NSDictionary(dictionary: ["status": "shipped", "received_at": NSNull()]))
     }
 
     @Test func notDeliveredGoesBackToOrderedWithoutNumberOrCarrier() async throws {

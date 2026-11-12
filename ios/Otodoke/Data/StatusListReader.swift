@@ -25,12 +25,17 @@ struct StatusListReader: Sendable {
     func parcels(_ status: ListStatus) async -> LoadResult<[ParcelRow]> {
         guard let me = await provider.currentUserID() else { return .failed }
         let rows: [ParcelRow]? = await Self.readAll(id: \.id) { after in
-            var query = provider.database.from("parcels").select("*").eq("user_id", value: me).eq("status", value: status.rawValue)
+            var query = provider.database.from("parcels").select("*").eq("user_id", value: me)
+            if status == .delivered {
+                query = query.not("received_at", operator: .is, value: "null").neq("status", value: "cancelled")
+            } else {
+                query = query.eq("status", value: status.rawValue)
+            }
             if let after { query = query.gt("id", value: after) }
             return query.order("id", ascending: true).limit(Self.pageSize)
         }
         guard let rows else { return .failed }
-        return .loaded(Self.webOrder(rows))
+        return .loaded(Self.webOrder(status == .delivered ? rows.filter { ParcelRules.isReceivedAt($0.receivedAt) } : rows))
     }
 
     /// Every parcel_items(parcel_id, name) of the signed-in user (the search reads item names).

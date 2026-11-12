@@ -163,8 +163,8 @@ struct ManualParcelEditTests {
     }
 
     @Test func theStatusChoicesAddOnlyTheOneTheParcelIsAt() {
-        #expect(ManualParcelText.statusChoices(keeping: "shipped").map(\.value) == ["ordered", "shipped", "delivered"])
-        #expect(ManualParcelText.statusChoices(keeping: "cancelled").map(\.value) == ["ordered", "shipped", "delivered", "cancelled"])
+        #expect(ManualParcelText.statusChoices(keeping: "shipped").map(\.value) == ["ordered", "shipped", "delivered", "received"])
+        #expect(ManualParcelText.statusChoices(keeping: "cancelled").map(\.value) == ["ordered", "shipped", "delivered", "received", "cancelled"])
         #expect(ManualParcelText.statusChoices(keeping: "attempted").map(\.name).last == "不在・再配達")
         #expect(ManualParcelText.statusChoices(keeping: "cancelled").map(\.name).last == "キャンセル")
     }

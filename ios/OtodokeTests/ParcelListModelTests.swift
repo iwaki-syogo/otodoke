@@ -71,7 +71,7 @@ struct ParcelListModelTests {
         #expect(ids(model.sections.ordered) == [Rows.id(3)])
         #expect(model.sections == ParcelRules.sections(ParcelRules.baseOrder(model.rows), today: Self.today))
         #expect(model.isEmpty == false)
-        #expect(model.showsSwipeHint == true)
+        #expect(model.showsSwipeHint == false)
         #expect(model.waitingNotice == nil)
     }
 
@@ -162,7 +162,7 @@ struct ParcelListModelTests {
         gate.open()
         await task.value
         #expect(model.saving.isEmpty)
-        #expect(model.toast == ListToast(text: "届いたにしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(!ids(model.sections.soon).contains(Rows.id(1)))
         #expect(model.rowMessages[Rows.id(1)] == nil)
         #expect(await waitFor { sleeper.pendingCount == 1 })
@@ -180,11 +180,11 @@ struct ParcelListModelTests {
         await model.markDelivered(id: Rows.id(1))
         #expect(await waitFor { sleeper.requested.count == 1 })
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "1 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(await waitFor { sleeper.requested.count == 2 })
         if sleeper.pendingCount == 2 { sleeper.fireOldest() }
         try? await Task.sleep(for: .milliseconds(50))
-        #expect(model.toast == ListToast(text: "1 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         sleeper.fireAll()
         #expect(await waitFor { await model.toast == nil })
     }
@@ -208,7 +208,7 @@ struct ParcelListModelTests {
         #expect(ids(model.sections.soon).contains(Rows.id(1)))
     }
 
-    @Test func undoAfterADeliveryMailReloadsAndSaysItCouldNot() async throws {
+    @Test func undoAfterADeliveryMailReloadsAndSaysAReceiptRemains() async throws {
         let fake = FakeSupabase.make()
         await seed(fake)
         let (model, _) = try await make(fake)
@@ -217,7 +217,7 @@ struct ParcelListModelTests {
         await fake.touch("parcels", id: Rows.id(1), ["status": "delivered"])
         let readsBefore = await listReads(fake)
         await model.undo()
-        #expect(model.toast?.text == Self.undoFailed)
+        #expect(model.toast?.text == "受け取り済みのままの荷物があります")
         #expect(model.toast?.canUndo == false)
         #expect(await listReads(fake) > readsBefore)
         #expect(await status(fake, 1) == "delivered")
@@ -313,7 +313,7 @@ struct ParcelListModelTests {
         await model.load()
         #expect(model.deliverAllEnabled == true)
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "3 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(model.sections.toCheck.isEmpty)
         await model.undo()
         #expect(model.toast == nil)
@@ -329,7 +329,7 @@ struct ParcelListModelTests {
         await model.load()
         await fake.touch("parcels", id: Rows.id(7), ["status": "cancelled"])
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "2 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         let before = await fake.count("PATCH", "parcels")
         await model.undo()
         #expect(await fake.count("PATCH", "parcels") - before == 2)
@@ -345,7 +345,7 @@ struct ParcelListModelTests {
         await model.load()
         await fake.fail("PATCH", "parcels", nth: 2, with: .http(500))
         await model.deliverAll()
-        #expect(model.toast == ListToast(text: "2 件を受取済にしました", canUndo: true))
+        #expect(model.toast == ListToast(text: "受け取り済みにしました", canUndo: true))
         #expect(ids(model.sections.toCheck) == [Rows.id(7)])
         #expect(await status(fake, 7) == "ordered")
     }

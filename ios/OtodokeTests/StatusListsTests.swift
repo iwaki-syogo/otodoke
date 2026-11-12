@@ -29,6 +29,7 @@ struct StatusListsTests {
     static func delivered(_ n: Int, _ over: Row = [:]) -> Row {
         var row = over
         row["status"] = row["status"] ?? "delivered"
+        if row["status"] == "delivered" { row["received_at"] = row["received_at"] ?? "2026-11-01T12:00:00Z" }
         return Rows.parcel(n, row)
     }
 
@@ -53,7 +54,13 @@ struct StatusListsTests {
 
     @Test func readsEveryDeliveredParcelOfMineInTheWebsOrder() async throws {
         let rows = (1...1_101).map { n in Self.delivered(n, ["ordered_at": n % 7 == 0 ? nil : .string(String(format: "2026-%02d-%02d", n % 12 + 1, n % 28 + 1))]) }
-        let w = try await world(parcels: rows + [Self.delivered(2_000, ["status": "shipped"]), Self.delivered(2_001, ["user_id": .string(FakeSupabase.other)])])
+        let excluded = [
+            Self.delivered(2_000, ["status": "shipped"]),
+            Self.delivered(2_001, ["user_id": .string(FakeSupabase.other)]),
+            Self.delivered(2_002, ["received_at": nil]),
+            Self.delivered(2_003, ["status": "cancelled", "received_at": "2026-11-01T12:00:00Z"]),
+        ]
+        let w = try await world(parcels: rows + excluded)
         let read = await w.reader.parcels(.delivered)
         let got = try #require(read.value)
         #expect(got.count == 1_101)
@@ -63,7 +70,8 @@ struct StatusListsTests {
         #expect(requests.count >= 2)
         for q in requests {
             #expect(q.query("user_id") == ["eq.\(FakeSupabase.me)"])
-            #expect(q.query("status") == ["eq.delivered"])
+            #expect(q.query("received_at") == ["not.is.null"])
+            #expect(q.query("status") == ["neq.cancelled"])
         }
     }
 
@@ -99,9 +107,9 @@ struct StatusListsTests {
     // MARK: the delivered page
 
     @Test func theWords() {
-        #expect(DeliveredModel.title == "届いた荷物")
+        #expect(DeliveredModel.title == "受け取り済み")
         #expect(DeliveredModel.failedText == "読み込めませんでした")
-        #expect(DeliveredModel.emptyText == "届いた荷物はありません")
+        #expect(DeliveredModel.emptyText == "受け取り済みの荷物はありません")
         #expect(DeliveredModel.noMatchText == "見つかりません")
         #expect(DeliveredModel.searchPlaceholder == "品名・店名")
         #expect(DeliveredModel.clearText == "クリア")
@@ -308,7 +316,7 @@ struct StatusListsTests {
     @Test func theTabsMakeTheModelsWithTheSharedChanges() async throws {
         let fake = FakeSupabase.make()
         let (_, auth) = try await TestSession.signedIn(fake)
-        let screens = MainScreens.live(auth: auth)
+        let screens = MainScreens.live(auth: auth, readingConsent: .allowedForTests())
         #expect(screens.delivered().changes === screens.changes)
         #expect(screens.cancelled().changes === screens.changes)
         // The opened key's store and the one UnlockModel (tasks 16 to 19).

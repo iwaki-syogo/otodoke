@@ -61,6 +61,7 @@ struct TabsScreenshots {
         await settingsFake.setUnreadEmails(2)
         let (settingsProvider, auth) = try await TestSession.signedIn(settingsFake)
         let settings = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: settingsProvider),
             inbox: InboxAddressService(provider: settingsProvider, randomBytes: { Array(repeating: 7, count: $0) }),
             auth: auth,

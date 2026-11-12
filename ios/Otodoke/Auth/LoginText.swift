@@ -62,16 +62,8 @@ enum LoginText {
     /// N4: the Web's address_mismatch of LOGIN_MESSAGES: the sign-in made no key for this address (letters outside
     /// ASCII); signing in again does not help.
     static let addressMismatch = "このアカウントでは、メールの鍵を作れませんでした。"
-    /// The app's own, after keyNotOpened (the Web's key_not_opened).
-    static let webLoginPrompt = "Web でログインしてください。"
-    /// The two, shown as one line.
-    static var keyNeedsWebLogin: String { keyNotOpened + webLoginPrompt }
-    static let openWebLogin = "Web でログイン"
     static let noKeyYet = "メールの鍵がまだできていません。ログインし直すと作れます。"
     static let signInAgain = "ログインし直す"
-    /// Opened in Safari: https://otodoke.app/login
-    static let webLoginURL = URL(string: "https://otodoke.app/login")!
-
     /// Opened in Safari (the reset is done on the Web): https://otodoke.app/login/forgot
     static let forgotPasswordURL = URL(string: "https://otodoke.app/login/forgot")!
 }

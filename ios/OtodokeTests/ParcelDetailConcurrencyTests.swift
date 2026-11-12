@@ -70,11 +70,11 @@ struct ParcelDetailConcurrencyTests {
         await model.markNotDelivered()
         #expect(await fake.count("PATCH", "parcels") == 1)
 
-        // The next read works: the chip shows what was saved, and choices write again.
+        // The next read works: the chip shows the earlier save, but the new choice is still unsaved.
         #expect(await model.setCategory(.daily) == false)
         #expect(model.isUnconfirmed == false)
         #expect(model.shownCategory == .hobby)
-        #expect(model.categoryError == nil)
+        #expect(model.categoryError == ParcelDetailModel.categoryNotSaved)
         #expect(await model.setCategory(.daily) == true)
         #expect(await fake.count("PATCH", "parcels") == 2)
         #expect(await stored(fake, "category") == "daily")

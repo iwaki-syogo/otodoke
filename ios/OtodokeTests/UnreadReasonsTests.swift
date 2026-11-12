@@ -120,6 +120,7 @@ struct UnreadReasonsTests {
             await fake.fail(where: { $0.method == "GET" && ($0.query("select").first ?? "").contains("processing_status") }, with: .http(500))
         }
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,
@@ -154,6 +155,7 @@ struct UnreadReasonsTests {
         await fake.setUnreadEmails(1)
         let (provider, auth) = try await TestSession.signedIn(fake)
         let model = SettingsModel(
+            consent: .allowedForTests(),
             reader: SettingsReader(provider: provider),
             inbox: InboxAddressService(provider: provider, randomBytes: { Array(repeating: 0, count: $0) }),
             auth: auth,

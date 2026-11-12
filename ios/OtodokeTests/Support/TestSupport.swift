@@ -31,6 +31,8 @@ enum Rows {
             "needs_review": false,
             "requires_presence": nil,
             "presence_evidence": nil,
+            "received_at": nil,
+            "check_dismissed_at": nil,
             "total_amount": nil,
             "created_at": "2026-11-01T00:00:00+00:00",
             "updated_at": "2026-11-01T09:30:15.123456+00:00",

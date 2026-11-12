@@ -42,7 +42,8 @@ import {
   yen,
 } from "../src/lib/format";
 import { forwardingConfirmUrl, isForwardingConfirmation } from "../src/lib/forwarding";
-import { faceToFace, faceToFaceAssumed, isLate, lastExpectedDay, needsCheck, type ParcelRow } from "../src/lib/match";
+import { faceToFace, faceToFaceAssumed, isLate, isReceivedAt, lastExpectedDay, needsCheck, type ParcelRow } from "../src/lib/match";
+import { ManualParcelSchema, manualParcelRow, manualParcelFields, manualParcelSchemaFor, type ManualSaved } from "../src/lib/manual-parcel";
 import { MONTH_MIN, monthMax } from "../src/lib/month-url";
 import { parcelSections } from "../src/lib/parcel-sections";
 import { isHttpsUrl } from "../src/lib/safe-url";
@@ -115,10 +116,6 @@ function atNoonJst<T>(today: string, fn: () => T): T {
 const USER = "00000000-0000-4000-8000-0000000000aa";
 
 function parcel(id: string, over: Partial<ParcelRow>): ParcelRow {
-  // The iOS app (build 13) knows only the old meaning of delivered: arrived, off the list. A delivered
-  // row here is a received one (received_at set) so the Web answers as that app does; a row that is
-  // delivered and not received is the Web's new 配達済み, which the app does not have yet.
-  const received_at = over.status === "delivered" ? "2026-11-01T00:00:00+00:00" : null;
   return {
     id,
     user_id: USER,
@@ -143,7 +140,7 @@ function parcel(id: string, over: Partial<ParcelRow>): ParcelRow {
     needs_review: false,
     requires_presence: null,
     presence_evidence: null,
-    received_at,
+    received_at: null,
     check_dismissed_at: null,
     total_amount: null,
     created_at: "2026-10-01T00:00:00+00:00",
@@ -678,15 +675,28 @@ const sectionsB = inDbOrder([
   parcel(pid(Y, 7), { title: "年明けの注文", status: "ordered", expected_date: "2027-01-05" }),
 ]);
 
+const sectionsC = inDbOrder([
+  parcel(pid(4, 6), { title: "古い予定と新しい配達メール", status: "delivered", expected_date: "2026-10-01", last_email_at: "2026-11-03T23:00:00Z" }),
+  parcel(pid(4, 2), { title: "受け取り済み", status: "delivered", expected_date: "2026-10-01", received_at: "2026-10-02T00:00:00Z" }),
+  parcel(pid(4, 5), { title: "まだと回答済み", status: "delivered", expected_date: "2026-10-01", check_dismissed_at: "2026-10-20T00:00:00Z" }),
+  parcel(pid(4, 3), { title: "配達から14日", status: "delivered", expected_date: "2026-10-21", last_email_at: "2026-10-21T03:00:00Z" }),
+  parcel(pid(4, 4), { title: "配達から13日", status: "delivered", expected_date: "2026-10-22" }),
+  parcel(pid(4, 1), { title: "配達済み", status: "delivered", expected_date: "2026-11-03", last_email_at: "2026-11-03T02:00:00Z" }),
+  parcel(pid(4, 7), { title: "有限ではない時刻", status: "delivered", expected_date: "2026-11-03", received_at: "-infinity" }),
+  parcel(pid(4, 9), { title: "日付なし配達から13日", status: "delivered", last_email_at: "2026-10-21T15:00:00Z" }),
+  parcel(pid(4, 8), { title: "日付なし配達から14日", status: "delivered", last_email_at: "2026-10-20T15:00:00Z" }),
+]);
+
 const sectionsCases = [
   { today: "2026-11-04", parcels: sectionsA },
+  { today: "2026-11-04", parcels: sectionsC },
   { today: "2026-12-31", parcels: sectionsB },
   { today: "2027-01-01", parcels: sectionsB },
   { today: "2026-11-04", parcels: [] as ParcelRow[] },
 ].map(({ today, parcels }) => {
   const s = parcelSections(parcels, today);
   const ids = (xs: ParcelRow[]) => xs.map((p) => p.id);
-  return { today, parcels, out: { toCheck: ids(s.toCheck), delivering: ids(s.delivering), soon: ids(s.soon), ordered: ids(s.ordered) } };
+  return { today, parcels, out: { arrived: ids(s.arrived), toCheck: ids(s.toCheck), delivering: ids(s.delivering), soon: ids(s.soon), ordered: ids(s.ordered) } };
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1067,8 +1077,29 @@ const monthChoicesCases = monthChoicesInputs.map((c) => ({ months: c.months, m: 
 
 // ---------------------------------------------------------------------------------------------
 
+const receiptNow = "2026-11-04T03:00:00.000Z";
+const receiptForm = { title: "テスト商品", shop: "テスト店", ordered_at: "2026-10-01", expected_date: "2026-10-20", presence: "", status: "delivered" };
+const receiptSaved = { status: "delivered", received_at: "2026-10-21T00:00:00Z", category: null, ordered_at: "2026-10-01", expected_date: "2026-10-20", expected_date_end: null, last_email_at: "2026-10-20T03:00:00Z", tracking_number: null, carrier: null, requires_presence: null, total_amount: null, updated_at: "2026-10-21T00:00:00.123456Z" };
+const receiptEditInputs: { input: Record<string, string>; saved: typeof receiptSaved }[] = [
+  { input: receiptForm, saved: receiptSaved },
+  { input: { ...receiptForm, expected_date: "2026-10-22" }, saved: { ...receiptSaved, expected_date: "2026-10-22" } },
+  { input: receiptForm, saved: { ...receiptSaved, last_email_at: "2026-11-03T03:00:00Z" } },
+  { input: { ...receiptForm, expected_date: "2026-11-03" }, saved: receiptSaved },
+  { input: { ...receiptForm, status: "received" }, saved: receiptSaved },
+  { input: { ...receiptForm, status: "shipped" }, saved: receiptSaved },
+];
+const receiptCases = {
+  at: [null, "", "-infinity", "infinity", "not a date", "2026-11-04T03:00:00Z", "2026-11-04T12:00:00.123456+09:00", "2026-11-04"].map((value) => ({ value, out: isReceivedAt(value) })),
+  newManual: ["ordered", "shipped", "delivered", "received"].map((status) => {
+    const input = { ...receiptForm, status };
+    return { input, now: receiptNow, out: manualParcelRow(ManualParcelSchema.parse(input), new Date(receiptNow)) };
+  }),
+  editManual: receiptEditInputs.map(({ input, saved }) => ({ input, saved, now: receiptNow, out: manualParcelFields(manualParcelSchemaFor(saved.status, saved.total_amount).parse(input), new Date(receiptNow), saved as ManualSaved) })),
+};
+
 const expected = {
   generatedBy: "scripts/ios-fixtures.ts",
+  received: receiptCases,
   format: {
     todayJst: todayJstCases,
     formatDateJa: formatDateJaCases,
@@ -1161,9 +1192,7 @@ const expected = {
   },
 };
 
-// received_at and check_dismissed_at are the Web's: the app (build 13) does not have the column, so the rows it reads here
-// leave it out. The answers above were worked out with it (see parcel()), which is why they are the old ones.
-const text = `${JSON.stringify(expected, (key, value) => (key === "received_at" || key === "check_dismissed_at" ? undefined : value), 2)}\n`;
+const text = `${JSON.stringify(expected, null, 2)}\n`;
 
 // ---------------------------------------------------------------------------------------------
 // The crypto vectors for iOS (batch 2, task 13). Written outside git; never into web-expected.json.
