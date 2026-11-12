@@ -2,9 +2,11 @@
 
 Only connects to loopback. --prerequisites-ref must pin an already available local Git commit;
 it never fetches, merges, or writes another checkout. No app credentials or real mail are used.
-The fresh test databases are retained for inspection until the dedicated test server is removed.
+Only this run's generated databases and roles are removed on success or ordinary failure.
+The caller remains responsible for stopping and deleting its dedicated test server.
 """
 import argparse
+import atexit
 import hashlib
 import json
 import os
@@ -14,6 +16,7 @@ import select
 import time
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -42,6 +45,9 @@ psql_environment.update({"LC_ALL":"C","LANG":"C",
 checks = []
 phases = []
 hashes = {}
+owned_databases=[]
+owned_roles=[]
+cleanup_counts={"databases_removed":0,"roles_removed":0}
 
 
 def source(path, pinned=False):
@@ -61,6 +67,42 @@ def run(sql, *, db=None, fail=False):
         return result.stderr
     assert result.returncode == 0, result.stderr
     return result.stdout.strip()
+
+
+def create_database(name, template=None):
+    assert name.startswith(database) and re.fullmatch(r"[a-z][a-z0-9_]{0,62}",name)
+    run("create database "+name+(" with template "+template if template else ""),db="postgres")
+    owned_databases.append(name)
+
+
+def create_role(name):
+    assert re.fullmatch(r"(?:m5b_owner_|m5b_update_|sample_acl_probe_)[0-9a-f]{12}",name)
+    run("create role "+name+" nologin;",db="postgres")
+    owned_roles.append(name)
+
+
+def cleanup_objects():
+    # Registrations contain only objects successfully created by this invocation. Shared
+    # substrate roles and databases from other runners are deliberately outside this list.
+    for name in reversed(owned_databases[:]):
+        run("drop database if exists "+name+" with(force);",db="postgres")
+        owned_databases.remove(name)
+        cleanup_counts["databases_removed"]+=1
+    for name in reversed(owned_roles[:]):
+        run("drop role if exists "+name+";",db="postgres")
+        owned_roles.remove(name)
+        cleanup_counts["roles_removed"]+=1
+    shutil.rmtree(client_scratch,ignore_errors=True)
+
+
+def cleanup_after_failure():
+    try:
+        cleanup_objects()
+    except Exception as error:
+        print("local scratch cleanup failed: "+str(error),file=sys.stderr)
+
+
+atexit.register(cleanup_after_failure)
 
 
 def result(sql, *, db=None, prefix="", suffix=""):
@@ -95,7 +137,7 @@ forward = source("supabase/migrations/20261113110000_sample_generation.sql")
 after = source("supabase/verify/20261113110000_sample_generation.sql")
 down = source("supabase/rollback/20261113110000_sample_generation.down.sql")
 
-run("create database " + database, db="postgres")
+create_database(database)
 run("""
 do $$ begin
   if not exists(select 1 from pg_roles where rolname='anon') then create role anon; end if;
@@ -147,7 +189,7 @@ assert row["consent_state"] == "present" and row["auto_read_state"] == "pending_
 
 # Deliberately invalid ordering belongs only to this cloned scratch database.
 hole_db = database + "_hole"
-run("create database " + hole_db + " with template " + database, db="postgres")
+create_database(hole_db,database)
 run(prior_migrations[prior_names[2]], db=hole_db)
 assert verify(before, "negative: prefix 101 refused", db=hole_db, expected="FAILED")["prior_prefix_ok"] is False
 passed("before requires installed gateways and rejects an ordering hole")
@@ -235,6 +277,96 @@ def installed_catalog(db):
 
 saved = saved_data()
 catalog = gateway_catalog()
+
+# A real function owner may have Auth read/trigger permission without permission to lock.
+# Keep auth.users under the administrator, and give this clone's application objects their
+# own role. Only this disposable database and these generated NOLOGIN roles are changed.
+permission_db=database+"_auth_lock"
+permission_owner="m5b_owner_"+uuid.uuid4().hex[:12]
+permission_group="m5b_update_"+uuid.uuid4().hex[:12]
+create_role(permission_owner)
+create_role(permission_group)
+create_database(permission_db,database)
+run("""grant usage,create on schema public to OWNER_ROLE;
+grant usage on schema auth to OWNER_ROLE;
+grant select(id),references(id),trigger on public_placeholder to OWNER_ROLE;
+do $$ declare x record; begin
+  for x in select c.oid::regclass as relation from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relkind in ('r','p') loop
+    execute format('alter table %s owner to %I',x.relation,'OWNER_ROLE');
+  end loop;
+  for x in select p.oid::regprocedure as routine from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.prokind='f' and not exists(select 1 from pg_depend d
+      where d.classid='pg_proc'::regclass and d.objid=p.oid and d.refclassid='pg_extension'::regclass and d.deptype='e') loop
+    execute format('alter function %s owner to %I',x.routine,'OWNER_ROLE');
+  end loop;
+end $$;""".replace("OWNER_ROLE",permission_owner).replace("public_placeholder","auth.users"),db=permission_db)
+permission_prefix="set role "+permission_owner+";"
+permission_probes=[]
+permission_catalog,permission_data=schema_catalog(permission_db),saved_data(permission_db)
+lock_sql="select id from auth.users where false for key share;"
+assert "42501" in run(permission_prefix+lock_sql,db=permission_db,fail=True)
+assert schema_catalog(permission_db)==permission_catalog and saved_data(permission_db)==permission_data
+row=result(before,db=permission_db,prefix=permission_prefix)
+for key,value in row.items():
+    if isinstance(value,bool) and key not in ("can_lock_auth_user_rows","runtime_auth_lock_owners_ok"):
+        assert value is True,("unrelated before requirement",key)
+assert row["verdict"]=="FAILED",("SELECT/TRIGGER without UPDATE must fail before",row)
+assert row["can_lock_auth_user_rows"] is False
+assert "auth.users row-lock privileges" in run(permission_prefix+forward,db=permission_db,fail=True)
+assert schema_catalog(permission_db)==permission_catalog and saved_data(permission_db)==permission_data
+phases.append({"phase":"negative: migration owner lacks Auth UPDATE", "result":row})
+permission_probes.append({"case":"SELECT(id)/TRIGGER without UPDATE", "zero_row_sqlstate":"42501", "before":"FAILED", "forward":"rejected_unchanged"})
+passed("Auth SELECT/TRIGGER alone fails zero-row locking, before and forward without changes")
+
+# Fresh migration keeps the existing application owner rather than mixing new wrappers with
+# different-owned private cores. This is separate from the row-lock capability check above.
+row=result(before,db=permission_db)
+assert row["can_lock_auth_user_rows"] is True
+assert row["verdict"]=="FAILED" and row["migration_owner_matches_existing"] is False,("fresh migration owner differs",row)
+assert "migration role to match the existing application owner" in run(forward,db=permission_db,fail=True)
+assert schema_catalog(permission_db)==permission_catalog and saved_data(permission_db)==permission_data
+phases.append({"phase":"negative: fresh migration role differs from the application owner", "result":row})
+permission_probes.append({"case":"fresh migration role differs from the application owner", "before":"FAILED", "forward":"rejected_unchanged"})
+passed("fresh owner mismatch fails before DDL instead of creating unrollbackable mixed-owner wrappers")
+
+# Column-level permission is sufficient in PostgreSQL; do not require a broader table grant.
+run("grant update(id) on auth.users to "+permission_owner+";",db=permission_db)
+assert run(permission_prefix+lock_sql,db=permission_db)==""
+assert run("select has_table_privilege('"+permission_owner+"','auth.users','UPDATE');",db=permission_db)=="f"
+row=result(before,db=permission_db,prefix=permission_prefix)
+assert row["verdict"]=="OK" and row["can_lock_auth_user_rows"] is True
+permission_probes.append({"case":"column SELECT(id)/UPDATE(id)", "zero_row_lock":"OK", "before":"OK"})
+passed("column-level Auth UPDATE is accepted and actually permits the zero-row lock")
+
+run("alter table auth.users add column synthetic_lock_column text; revoke update(id) on auth.users from "+permission_owner+"; grant update(synthetic_lock_column) on auth.users to "+permission_owner+";",db=permission_db)
+assert run(permission_prefix+lock_sql,db=permission_db)==""
+assert result(before,db=permission_db,prefix=permission_prefix)["verdict"]=="OK"
+permission_probes.append({"case":"SELECT(id)/UPDATE(a different column)", "zero_row_lock":"OK", "before":"OK"})
+passed("Auth row locking accepts UPDATE on a different column from the selected id")
+
+# Effective inherited permission is also valid, without changing any function ACL.
+run("revoke update(synthetic_lock_column) on auth.users from "+permission_owner+"; grant update(synthetic_lock_column) on auth.users to "+permission_group+"; grant "+permission_group+" to "+permission_owner+";",db=permission_db)
+assert run(permission_prefix+lock_sql,db=permission_db)==""
+assert result(before,db=permission_db,prefix=permission_prefix)["verdict"]=="OK"
+permission_probes.append({"case":"inherited column UPDATE", "zero_row_lock":"OK", "before":"OK"})
+run(permission_prefix+forward,db=permission_db)
+assert verify(after,"column/inherited Auth grants support the real function owners",db=permission_db)["runtime_auth_lock_owners_ok"] is True
+passed("inherited Auth permission supports forward migration and the real-owner verifier")
+
+# The administrator can lock Auth, while all actual SECURITY DEFINER owners now cannot.
+run("revoke "+permission_group+" from "+permission_owner+";",db=permission_db)
+permission_catalog,permission_data=schema_catalog(permission_db),saved_data(permission_db)
+assert run(lock_sql,db=permission_db)==""
+assert "42501" in run(permission_prefix+lock_sql,db=permission_db,fail=True)
+assert "42501" in run(after,db=permission_db,fail=True)
+assert "auth.users row-lock privileges" in run(forward,db=permission_db,fail=True)
+assert schema_catalog(permission_db)==permission_catalog and saved_data(permission_db)==permission_data
+permission_probes.append({"case":"administrator has UPDATE, actual definers lack it", "administrator_zero_row_lock":"OK", "definer_zero_row_sqlstate":"42501", "after":"rejected_unchanged", "reapply":"rejected_unchanged"})
+passed("a privileged verifier cannot hide a real definer's missing Auth locking privilege")
+run("grant update(synthetic_lock_column) on auth.users to "+permission_owner+";",db=permission_db)
+assert verify(after,"restored column grant supports the actual definer probe",db=permission_db)["runtime_auth_lock_owners_ok"] is True
+
 # A long read transaction prevents ALTER TABLE's AccessExclusiveLock. Prove the real
 # migration aborts at five seconds without partial metadata, rather than waiting forever.
 held=subprocess.Popen(base+["-d",database],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=psql_environment)
@@ -270,12 +402,12 @@ passed("negative control: removing lock_timeout waits until the seven-second sta
 # Preserve the known implementation and ABI while changing only the ACL. Legitimate custom
 # ACLs require a reviewed gate update; neither migration may silently discard or retain them.
 acl_role="sample_acl_probe_"+uuid.uuid4().hex[:12]
-run("create role "+acl_role+" nologin;",db="postgres")
+create_role(acl_role)
 acl_probes=[("grant_option","grant execute on function public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb) to service_role with grant option;"),
     ("custom_role","grant execute on function public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb) to "+acl_role+";")]
 for label,grant in acl_probes:
     acl_db=database+"_before_acl_"+label
-    run("create database "+acl_db+" with template "+database,db="postgres")
+    create_database(acl_db,database)
     run(grant,db=acl_db)
     acl_catalog,acl_data=schema_catalog(acl_db),saved_data(acl_db)
     row=verify(before,"negative: before ACL "+label,db=acl_db,expected="FAILED")
@@ -292,9 +424,34 @@ assert verify(before, "negative: already installed is not a fresh before", expec
 assert saved_data() == saved
 passed("forward retains all representative saved data")
 
+# The probe must not accept a successful helper call or an unrelated FK exception. Even a
+# successful helper which writes a generation row is rolled back by the outer DO failure.
+for label,body,expected in [
+    ("normal_return","insert into public.sample_generations(user_id) values ('"+other+"') on conflict do nothing;","helper returned normally"),
+    ("other_fk","raise exception 'synthetic unrelated foreign-key failure' using errcode='23503';","unexpected Auth row-lock probe failure"),
+]:
+    probe_db=database+"_probe_"+label
+    create_database(probe_db,database)
+    if label=="normal_return":
+        assert run("select count(*) from public.sample_generations where user_id='"+other+"';",db=probe_db)=="0"
+    run("create or replace function public.lock_sample_owner(p_user_id uuid) returns void language plpgsql security definer set search_path='' as $$ begin "+body+" end $$;",db=probe_db)
+    probe_catalog,probe_state,probe_data=schema_catalog(probe_db),installed_catalog(probe_db),saved_data(probe_db)
+    assert expected in run(after,db=probe_db,fail=True)
+    assert schema_catalog(probe_db)==probe_catalog and installed_catalog(probe_db)==probe_state and saved_data(probe_db)==probe_data
+    permission_probes.append({"case":"helper "+label,"verify":"rejected_unchanged"})
+passed("actual-owner probe rejects normal return and unrelated 23503 without retaining any probe write")
+
+partial_owners_db=database+"_partial_auth_owners"
+create_database(partial_owners_db,database)
+run("drop function public.begin_sample_load(uuid); drop function public.claim_claude_call_v2(uuid,integer,integer); drop function public.release_claude_call(bigint,uuid); drop function public.claim_ai_reading_backlog(uuid,timestamptz);",db=partial_owners_db)
+partial_catalog,partial_data=schema_catalog(partial_owners_db),saved_data(partial_owners_db)
+assert verify(after,"negative: only one Auth-lock owner remains",db=partial_owners_db,expected="FAILED")["runtime_auth_lock_owners_ok"] is False
+assert schema_catalog(partial_owners_db)==partial_catalog and saved_data(partial_owners_db)==partial_data
+passed("after requires all five Auth-lock function owners instead of accepting a valid partial aggregate")
+
 # An external SQL dependency is not ours to remove. DROP RESTRICT must abort the entire down.
 dependency_db = database + "_dependency"
-run("create database " + dependency_db + " with template " + database, db="postgres")
+create_database(dependency_db,database)
 run("create view public.synthetic_sample_dependency as select public.begin_sample_load(null::uuid) as generation;", db=dependency_db)
 dependency_catalog = installed_catalog(dependency_db)
 dependency_data = saved_data(dependency_db)
@@ -304,7 +461,7 @@ passed("unknown dependency refuses rollback and retains every B5/core/data objec
 
 # A missing proconfig must be false, not a NULL which bool_and silently skips.
 path_db=database+"_missing_path"
-run("create database "+path_db+" with template "+database,db="postgres")
+create_database(path_db,database)
 run("alter function public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb) reset search_path;",db=path_db)
 path_catalog,path_data=schema_catalog(path_db),saved_data(path_db)
 assert verify(after,"negative: missing gateway search_path",db=path_db,expected="FAILED")["secure_gateways"] is False
@@ -314,7 +471,7 @@ passed("after verifier refuses a NULL gateway search_path without changing catal
 # Keep the real ABI but replace only the public body, modelling a later integration migration.
 for rpc, returned in [("store_mail_run", "return;"), ("mail_run_write", "return '[]'::jsonb;"), ("create_mail_parcel", "return;"), ("update_mail_parcel", "return;"), ("ensure_mail_parcel_items", "return;"), ("claim_ai_reading_backlog", "return false;"), ("release_claude_call", "return 0;"), ("claim_claude_call_v2", "return;")]:
     changed_db = database + "_new_" + rpc
-    run("create database " + changed_db + " with template " + database, db="postgres")
+    create_database(changed_db,database)
     definition = re.search(r"create or replace function public\." + rpc + r"\([\s\S]*?\bas \$\$[\s\S]*?\$\$;", forward)
     assert definition
     replaced = re.sub(r"\bas \$\$[\s\S]*?\$\$;", lambda _: "as $$ begin " + returned + " end $$;", definition.group(0))
@@ -335,7 +492,7 @@ for label,target,grant in [
     ("custom_setter","public.set_ai_reading(text,text)",acl_role),
 ]:
     acl_db=database+"_down_acl_"+label
-    run("create database "+acl_db+" with template "+database,db="postgres")
+    create_database(acl_db,database)
     run("grant execute on function "+target+" to "+grant+";",db=acl_db)
     if label=="custom_only":
         # Retain exactly one ACL row, matching the private baseline count. Membership must
@@ -352,7 +509,7 @@ passed("nonstandard ACLs on wrappers, cores, helpers, candidate lock and setter 
 
 # Keep the helper count and its standard ACL, breaking only its required signature.
 helper_db=database+"_helper_signature"
-run("create database "+helper_db+" with template "+database,db="postgres")
+create_database(helper_db,database)
 run("drop function public.begin_sample_load(uuid); create function public.begin_sample_load(text) returns uuid language plpgsql security definer set search_path='' as $$ begin return null; end $$; revoke all on function public.begin_sample_load(text) from public,anon,authenticated,service_role; grant execute on function public.begin_sample_load(text) to service_role;",db=helper_db)
 helper_catalog,helper_data=schema_catalog(helper_db),saved_data(helper_db)
 assert "required helper signature is missing" in run(down,db=helper_db,fail=True)
@@ -361,7 +518,7 @@ passed("same-count helper signature substitution with standard ACL refuses rollb
 
 # A partial core rename must fail without deleting anything else, using the actual down file.
 partial_db = database + "_partial"
-run("create database " + partial_db + " with template " + database, db="postgres")
+create_database(partial_db,database)
 run("alter function public.mail_run_write_without_sample_fence(uuid,uuid,text,text,jsonb,jsonb) rename to synthetic_partial_core;", db=partial_db)
 assert "partial core gateways" in run(down, db=partial_db, fail=True)
 assert run("select count(*) from public.emails;", db=partial_db) == str(len(saved["public.emails"]))
@@ -416,4 +573,5 @@ for name, sql in prior_verifiers.items():
     verify(sql, "after reapply: " + name)
 assert saved_data() == saved
 passed("reapplication and all five verifiers succeed with unchanged saved data")
-print(json.dumps({"prerequisites_ref": args.prerequisites_ref, "sha256": hashes, "checks": checks, "phases": phases, "ddl_lock_probes":ddl_lock_probes}, ensure_ascii=False))
+cleanup_objects()
+print(json.dumps({"prerequisites_ref": args.prerequisites_ref, "sha256": hashes, "checks": checks, "phases": phases, "ddl_lock_probes":ddl_lock_probes, "permission_probes":permission_probes, "cleanup":cleanup_counts}, ensure_ascii=False))

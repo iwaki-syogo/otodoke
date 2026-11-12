@@ -10,6 +10,25 @@ do $$ begin
   if not coalesce(has_table_privilege(current_user,to_regclass('auth.users'),'TRIGGER'),false) then
     raise exception 'sample_generation requires TRIGGER privilege on auth.users' using errcode='55000';
   end if;
+  -- New SECURITY DEFINER functions use current_user. Reapplying keeps existing owners.
+  -- Accept effective column grants/inheritance: locking needs SELECT(id), UPDATE on any
+  -- column and schema USAGE, not a broader grant on all Auth data.
+  if not coalesce(has_schema_privilege(current_user,to_regnamespace('auth'),'USAGE')
+      and has_column_privilege(current_user,to_regclass('auth.users'),'id','SELECT')
+      and has_any_column_privilege(current_user,to_regclass('auth.users'),'UPDATE'),false)
+    or ((to_regclass('public.sample_generations') is not null
+      or to_regprocedure('public.begin_sample_load(uuid)') is not null
+      or to_regprocedure('public.lock_sample_owner(uuid)') is not null) and not (
+        select count(*)=5 and bool_and(coalesce(has_schema_privilege(p.proowner,to_regnamespace('auth'),'USAGE')
+          and has_column_privilege(p.proowner,to_regclass('auth.users'),'id','SELECT')
+          and has_any_column_privilege(p.proowner,to_regclass('auth.users'),'UPDATE'),false))
+        from pg_proc p where p.oid in (
+          to_regprocedure('public.begin_sample_load(uuid)'),to_regprocedure('public.lock_sample_owner(uuid)'),
+          to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)'),
+          to_regprocedure('public.release_claude_call(bigint,uuid)'),to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)'))
+      )) then
+    raise exception 'sample_generation requires auth.users row-lock privileges for migration and runtime owners' using errcode='55000';
+  end if;
   if to_regprocedure('public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb)') is null
     or to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') is null
     or to_regprocedure('public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)') is null
@@ -21,6 +40,18 @@ do $$ begin
     or to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)') is null
     or to_regprocedure('public.lock_parcel_candidates()') is null then
     raise exception 'sample_generation requires 20261113090000 six-argument store_mail_run and 20261113100000 parcel gateways' using errcode='55000';
+  end if;
+  -- Fresh wrappers/helpers must share the established application owner. Otherwise private
+  -- calls and the exact rollback owner contract would diverge. Never ALTER OWNER here.
+  if to_regclass('public.sample_generations') is null
+    and to_regprocedure('public.begin_sample_load(uuid)') is null
+    and to_regprocedure('public.lock_sample_owner(uuid)') is null
+    and (current_user is distinct from (select tableowner from pg_tables where schemaname='public' and tablename='emails')
+      or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items',
+          'claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','claim_claude_call','set_ai_reading','lock_parcel_candidates','mail_parcel_snapshot')
+        and p.proowner is distinct from (select relowner from pg_class where oid=to_regclass('public.emails')))) then
+    raise exception 'sample_generation requires migration role to match the existing application owner' using errcode='55000';
   end if;
   -- Support only the measured baseline ACL: owner grants EXECUTE without delegation,
   -- plus service_role on public gateways (authenticated on the consent setter). A custom

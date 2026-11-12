@@ -120,9 +120,10 @@ passed("existing sample metadata backfilled")
 run(migration)
 passed("migration applied twice")
 verify = (root / "supabase/verify/20261113110000_sample_generation.sql").read_text().rstrip().removesuffix(";")
-verdicts = json.loads(run("select row_to_json(checked) from (" + verify + ") checked;"))
-assert verdicts.pop("verdict") == "OK" and len(verdicts) == 7 and all(value is True for value in verdicts.values()), verdicts
-passed("all seven post-application checks true and final verdict OK")
+query_at=verify.index("with checks as (")
+verdicts = json.loads(run(verify[:query_at]+"select row_to_json(checked) from (" + verify[query_at:] + ") checked;"))
+assert verdicts.pop("verdict") == "OK" and len(verdicts) == 8 and all(value is True for value in verdicts.values()), verdicts
+passed("all eight post-application checks and the real-owner lock probe pass with final verdict OK")
 for role in ["anon", "authenticated"]:
     for function in ["begin_sample_load", "clear_all_parcels"]:
         assert "42501" in run("set role %s; select public.%s('%s');" % (role, function, user), fail=True)

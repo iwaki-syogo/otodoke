@@ -146,3 +146,14 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 
 - 原文で裏付けられない `unrelated` を注文へ書き換えない。`relevance_unverified` のfailed/未読メールとして本文を残し、荷物と抽出行を作らない。引用を確認できる無関係判定の破棄は維持し、未読から再試行できる。
 - 公開保存済み結果のoffline集計は `npx tsx scripts/check-public-demo-relevance.ts`。公開2集合と合成対照を分け、unrelatedの分母が0なら条件付き率は未測定として扱う。実メールや課金APIを使わない。
+
+## 再設定の完了確認と期限
+
+- `finishReset` はI1の本人一致と、所有者・challenge・現行active鍵・元wrapの照合を先に行う。完了済みの同じ要求は15分を過ぎても成功確認を返し、Auth secretや鍵を再更新しない。未完了の変更は引き続き15分以内のreset認証を要する。
+- 再試行の時刻試験では、認証AMRを初回時刻に固定する。各呼出しで現在時刻へ更新すると期限切れを再現できない。間に届いたメールの開封と、別の本人/鍵/包み直し操作を成功扱いしない対照も確認する。
+
+## DB適用主体とAuth行ロックの権限
+
+- 110000のfresh適用は既存emails/RPCの標準ownerを適用主体にする。新wrapperと退避coreのownerを混在させず、既存private呼出しとdownの所有者契約を保つ。所有者や権限を自動で変更してgateを通さない。
+- Auth行を直接ロックする5関数には、実効的なauth schema USAGE・SELECT(id)・少なくとも1列のUPDATEが要る。正当な列grant/継承も認め、API呼出し役へ広いAuth権限を付けない。初回は新規DEFINER=current_user、再適用は既存の実owner全件も確認する。
+- beforeの構造検査だけで権限を保証しない。afterは既存helperの実DEFINER権限で0行FOR KEY SHAREを通し、保存する行を作らずに必要ACLを確かめる。SQLエラー・出力無し・false/null・FAILEDなら停止する。全ユーザーのRLS可視性とは別の検査として扱う。

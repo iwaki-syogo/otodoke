@@ -11,6 +11,25 @@ with inventory as (
       and to_regclass('public.emails') is not null and to_regclass('public.parcels') is not null
       and to_regclass('public.extractions') is not null and to_regclass('public.parcel_items') is not null as auth_and_base_ok,
     coalesce(has_table_privilege(current_user,to_regclass('auth.users'),'TRIGGER'),false) as can_create_auth_delete_trigger,
+    case when to_regclass('public.sample_generations') is null
+      and to_regprocedure('public.begin_sample_load(uuid)') is null
+      and to_regprocedure('public.lock_sample_owner(uuid)') is null then
+        coalesce(current_user=(select tableowner from pg_tables where schemaname='public' and tablename='emails'),false)
+      else true end as migration_owner_matches_existing,
+    coalesce(has_schema_privilege(current_user,to_regnamespace('auth'),'USAGE')
+      and has_column_privilege(current_user,to_regclass('auth.users'),'id','SELECT')
+      and has_any_column_privilege(current_user,to_regclass('auth.users'),'UPDATE'),false) as can_lock_auth_user_rows,
+    case when to_regclass('public.sample_generations') is null
+      and to_regprocedure('public.begin_sample_load(uuid)') is null
+      and to_regprocedure('public.lock_sample_owner(uuid)') is null then true else (
+        select count(*)=5 and bool_and(coalesce(has_schema_privilege(p.proowner,to_regnamespace('auth'),'USAGE')
+          and has_column_privilege(p.proowner,to_regclass('auth.users'),'id','SELECT')
+          and has_any_column_privilege(p.proowner,to_regclass('auth.users'),'UPDATE'),false))
+        from pg_proc p where p.oid in (
+          to_regprocedure('public.begin_sample_load(uuid)'),to_regprocedure('public.lock_sample_owner(uuid)'),
+          to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)'),
+          to_regprocedure('public.release_claude_call(bigint,uuid)'),to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)'))
+      ) end as runtime_auth_lock_owners_ok,
     (select count(*) = 3 from pg_roles where rolname in ('anon','authenticated','service_role')) as roles_ok,
     to_regclass('public.ai_reading_consents') is not null as consent_table,
     to_regprocedure('public.set_ai_reading(text,text)') is not null as consent_rpc,
@@ -133,10 +152,10 @@ with inventory as (
     from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as expected_function_acls_ok
   from states
 )
-select auth_and_base_ok, can_create_auth_delete_trigger, roles_ok, consent_state, auto_read_state, prerequisite_state, prior_prefix_ok, sample_absent, expected_structures_ok,
+select auth_and_base_ok, can_create_auth_delete_trigger, migration_owner_matches_existing, can_lock_auth_user_rows, runtime_auth_lock_owners_ok, roles_ok, consent_state, auto_read_state, prerequisite_state, prior_prefix_ok, sample_absent, expected_structures_ok,
   required_store_mail_run_present, required_owned_write_present, required_parcel_gateways_present,
   expected_rpc_abi_ok, expected_guard_definitions_ok, expected_privileges_owner_ok, expected_function_acls_ok, no_extra_overloads,
-  case when auth_and_base_ok and can_create_auth_delete_trigger and roles_ok and consent_state <> 'partial' and auto_read_state <> 'partial' and prerequisite_state <> 'partial'
+  case when auth_and_base_ok and can_create_auth_delete_trigger and migration_owner_matches_existing and can_lock_auth_user_rows and runtime_auth_lock_owners_ok and roles_ok and consent_state <> 'partial' and auto_read_state <> 'partial' and prerequisite_state <> 'partial'
     and required_store_mail_run_present and required_owned_write_present and required_parcel_gateways_present
     and prior_prefix_ok and sample_absent and expected_structures_ok and expected_rpc_abi_ok and expected_guard_definitions_ok and expected_privileges_owner_ok and expected_function_acls_ok and no_extra_overloads
     then 'OK' else 'FAILED' end as verdict
