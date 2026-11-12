@@ -151,3 +151,29 @@ node tests/postgres/run-parcel-conflicts.mjs --self-test
 node tests/postgres/run-parcel-conflicts.mjs --external-test-server
 node tests/postgres/run-parcel-conflicts.mjs --external-test-server --negative-control
 ```
+
+## 受取の証跡と取り消し（130000）
+
+```sh
+node tests/postgres/run-received-receipts.mjs --self-test
+node tests/postgres/run-received-receipts.mjs
+node tests/postgres/run-received-receipts.mjs --negative-control
+node tests/postgres/run-received-receipts.mjs --owner-controls
+node tests/postgres/run-received-receipts.mjs --owner-races
+```
+
+通常・陰性対照・owner modeは専用 `127.0.0.1:65445` にPostgres 17の使い捨てclusterを作ります。接続文字列や外部clusterを指定する入口はありません。今回より前の実migrationを版順に適用し（pg_cronのスケジュールだけ明示skip）、before → 130000を2回適用 → verify → 動作確認 → downを2回 → 110000 verify → 再適用 verifyを実行します。既存parcel表のSupabase基盤grantだけをbootstrapで再現し、新journal/RPCの権限は実migrationのまま確認します。
+
+beforeと本体は110000・120000・121000の実適用履歴と関数を前提にします。台本は各migrationが実際に適用成功した後だけ履歴を記録し、前提を1本ずつ欠落させた場合の無変更拒否も確認します。
+
+動作確認は、別transactionのメール前後・空patchから証拠保存前のundo、本人/receipt_id/版の照合、二重undo、G待機中のjournal置換、501/1,001件の全件分割、過大なraw要求のlock前拒否、保存破棄時の巻き戻し、24時間固定の期限と再送による非延長・期限後の無変更拒否・既存daily purgeによる物理削除と先行の許可待ち掃除の継続、RLS/ACL/search_path、全消去/退会と6workerの自然競合です。`OTODOKE_RECEIPT_PG_ROUNDS` は2〜100、既定10回。実ロック待機を観測し、予期しないSQLSTATE・deadlock・timeout・結果欠落を成功に数えません。`now()`が1transactionで進むと仮定しません。
+
+陰性対照は、旧client statusによる実PATCHと、本物の旧private mail coreの空patchを使い、配達完了が発送済みに戻る要件違反を検出した場合だけ成功します。このmodeの `verdict=OK` は、旧経路の不具合を検出できた意味です。
+
+このrunnerは、自分のclusterの停止 → listener 0 → 作成した専用データ/ログの削除に成功した後に、最終 `verdict=OK` を出します。既存ポートのプロセスは停止しません。中断やエラー時も同じ後片付けを通ります。先の調査用ログ保持型のrunnerとは終了条件が異なります。
+
+`--owner-controls` と `--owner-races` は専用 `127.0.0.1:65445` を使い、573f13cの共有 `lock_parcel_owner(uuid)` との接続を検証します。実効EXECUTEがAPIロールへ漏れる3種類の継承故障、固定鍵を実restoreへ戻す陰性対照、休眠private関数だけに固定鍵がある対照、同一ownerの待機と別ownerの受取/undoの解放前完了も確認します。130000のdownを110000より先に実行し、down2回・110000 verifyの末尾判定列・130000再適用verifyまで通します。
+
+`--owner-races` はP-1の `run-sample-lock-order.mjs --external-test-server --with-receipts` を同じ使い捨てcluster内の新しい専用DBで実行します。元のclear/create-shipped/update-shipped/update-deliveredにreceive/restoreを加え、720試行・4,320終端（実メール/サンプル各360試行）を既定にします。単なる開始gateだけでなく、全試行で本物の行/advisory lockの待機を観測します。メールのlease/世代拒否と受取の結果を区別し、6入口の件数と受取結果の合計も照合します。元台本の引数なしの4入口modeは保ちます。
+
+2026-11-12 13:37 JST: forward SHA256 `f8e7a4f7c749ca77925ab1c8b979bd4a92974f41e2c38eb7752ad839fc4301ae` で実Postgresのowner-racesを完走しました。720試行/4,320終端、全試行の実競合、40P01・その他SQLエラー・timeout・結果欠落すべて0、受取/undo各720の結果を確認しました。別owner分離・実verify陰性・前提/期限/権限/全消去/退会/down再適用も成功しています。専用PGのstop成功、ポート65445のlistener0、専用data/log削除を確認しました。Auth/cronはローカルの基盤近似で、実PostgRESTや本物のAuth・Web/Swiftの通しを測った結果ではありません。自己試験と実SQLの証拠を区別し、最新の統合SHAと実測の詳細はrepo外 `reports/fix-cost.md` に残します。

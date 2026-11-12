@@ -53,11 +53,11 @@ describe("markDelivered and restoreStatuses", () => {
   });
 
   it("put back only the signed-in user's parcels", async () => {
-    for (const id of [MINE, THEIRS]) Object.assign(db.find("parcels", id)!, { status: "delivered", received_at: "2026-11-02T00:00:00Z" });
-    await restoreStatuses([
-      { id: MINE, status: "shipped", written_at: "2026-11-02T00:00:00Z" },
-      { id: THEIRS, status: "shipped", written_at: "2026-11-02T00:00:00Z" },
-    ]);
+    const mine = await parcelActions.markDeliveredForUndo([MINE]);
+    mocks.state.user = { id: OTHER };
+    const theirs = await parcelActions.markDeliveredForUndo([THEIRS]);
+    mocks.state.user = USER;
+    expect(await restoreStatuses([...mine.written, ...theirs.written])).toEqual({ restored: [MINE], changed: [THEIRS], failed: [] });
     expect(db.find("parcels", MINE)!.status).toBe("shipped");
     expect(db.find("parcels", THEIRS)!.status).toBe("delivered");
   });
@@ -65,7 +65,7 @@ describe("markDelivered and restoreStatuses", () => {
   it("write nothing when nobody is signed in", async () => {
     mocks.state.user = null;
     expect(await markDelivered([MINE])).toBe(0);
-    await restoreStatuses([{ id: MINE, status: "ordered", written_at: "2026-11-02T00:00:00Z" }]);
+    await restoreStatuses([{ id: MINE, receipt_id: "00000000-0000-4000-8000-000000000099" }]);
     expect(db.callsOn("parcels", "update")).toHaveLength(0);
   });
 });
