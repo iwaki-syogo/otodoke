@@ -13,12 +13,52 @@ struct SettingsStatusRows: View {
 
     /// The view of 「うまく届かないとき」; the approval card is drawn through `approvalSection` by 「メールの転送」.
     var body: some View {
-        unreadSection
+        VStack(alignment: .leading, spacing: 16) {
+            intakeSection
+            unreadSection
+        }
             // Leaving the page takes the red line of 「読み取る」 with it.
-            .onDisappear { model.mailActions.clearReadNote() }
+            .onDisappear {
+                model.mailActions.clearReadNote()
+                model.mailRecovery.clearIntakeNote()
+            }
     }
 
     // MARK: unread, approval
+
+    @ViewBuilder
+    var intakeSection: some View {
+        switch model.intakeNotice {
+        case let .loaded(stamp?)?:
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsParts.heading(StorageIntakeText.notice)
+                reasonText(StorageIntakeText.body)
+                reasonText(StorageIntakeText.reason)
+                Button {
+                    Task { await model.mailRecovery.dismissIntake(limitedAt: stamp) }
+                } label: {
+                    Text(model.mailRecovery.dismissing ? StorageIntakeText.confirming : StorageIntakeText.confirm)
+                        .font(.subheadline.weight(.medium))
+                        .frame(minHeight: 44)
+                }
+                .disabled(model.mailRecovery.isWorking)
+                .accessibilityIdentifier("intake-notice-confirm")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Palette.amberBackground, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.amberBorder))
+        case .failed?:
+            SettingsParts.errorBox(StorageIntakeText.failed)
+        case .loaded(nil)?:
+            EmptyView()
+        case nil:
+            ProgressView()
+        }
+        if let note = model.mailRecovery.intakeNote {
+            SettingsParts.errorBox(note)
+        }
+    }
 
     @ViewBuilder
     var unreadSection: some View {

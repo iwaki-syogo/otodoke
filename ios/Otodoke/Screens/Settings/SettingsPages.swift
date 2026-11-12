@@ -131,12 +131,55 @@ struct SettingsDroppedPage: View {
             case .failed?, nil:
                 SettingsParts.errorBox(SettingsModel.failedText)
             }
+            rememberedSection
         }
         .refreshableToTheEnd { await model.load() }
         .task { await model.pageShown() }
-        .onDisappear { model.mailActions.clearNotes() }
+        .onDisappear {
+            model.mailActions.clearNotes()
+            model.mailRecovery.clearSenderNote()
+        }
         .navigationTitle(SettingsMenuText.droppedTitle)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Every remembered sender stays removable inside the app, independently of the disclosure.
+    @ViewBuilder
+    var rememberedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsParts.heading(RememberedSenderText.title)
+            switch model.rememberedSenders {
+            case let .loaded(domains)?:
+                ForEach(domains.map { RememberedSenderRule.Entry(domain: $0) }) { entry in
+                    let domain = entry.domain
+                    HStack(spacing: 12) {
+                        Text(verbatim: domain)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button {
+                            Task { await model.mailRecovery.forgetSender(domain: domain) }
+                        } label: {
+                            Text(model.mailRecovery.isForgetting(domain) ? RememberedSenderText.removing : RememberedSenderText.remove)
+                                .font(.subheadline.weight(.medium))
+                                .frame(minHeight: 44)
+                        }
+                        .disabled(model.mailRecovery.isWorking)
+                    }
+                }
+            case .failed?:
+                SettingsParts.errorBox(SettingsModel.failedText)
+            case nil:
+                ProgressView()
+            }
+            if let note = model.mailRecovery.senderNote {
+                Text(note.text)
+                    .font(.subheadline)
+                    .foregroundStyle(note.isError ? OtodokeColor.errorText : Palette.emeraldText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 16)
     }
 
     /// What 「これは荷物」 came to (the Web's SENDER_NOTES): green or red, with 「荷物を登録する」 when the parcel can be registered by hand.
