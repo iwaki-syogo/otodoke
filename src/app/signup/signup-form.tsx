@@ -560,6 +560,7 @@ export function SignupForm() {
           <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
             {resending && ticking("resend") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
           </PendingButton>
+          <p className="text-center text-sm leading-6 text-neutral-600">{CONFIRM_WAIT.loginHelp}</p>
           <Link href="/login" className="self-center py-2 text-sm underline underline-offset-4">ログイン</Link>
           {resent && !resent.ok ? <p role="alert" className="text-sm text-red-800">{resent.text}</p> : null}
           <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-xs text-neutral-500 underline underline-offset-4">

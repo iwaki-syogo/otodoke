@@ -15,6 +15,8 @@ import { CONFIRMED_PATH } from "@/lib/login-errors";
 export const CONFIRM_WAIT = {
   title: "確認のメールを送りました",
   body: "メールのリンクを開いて「確認する」を押すと、この画面が自動で次へ進みます。進まないときは「確認しました」を押してください。",
+  /** Proposed Web-only guidance; the owner will choose the final wording. */
+  loginHelp: "ログイン・パスワードの再設定は「ログイン」から。",
   done: "確認しました",
   resend: "メールを送り直す",
   /** Under 「メールを送り直す」, smaller: the address and the password are let go, and the form is back. */
