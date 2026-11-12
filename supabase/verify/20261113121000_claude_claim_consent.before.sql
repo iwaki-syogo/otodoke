@@ -11,7 +11,9 @@ with checks as (
       and to_regprocedure('public.claim_claude_call_v2_without_sample_fence(uuid,integer,integer)') is not null as prior_quota_gateways,
     exists(select 1 from pg_proc where oid=to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)')
       and prosrc like '%public.lock_sample_owner(v_user_id)%') as owned_parent_prefix,
-    has_table_privilege(current_user,'auth.users','SELECT') and has_table_privilege(current_user,'auth.users','UPDATE')
+    coalesce(has_schema_privilege(current_user,to_regnamespace('auth'),'USAGE')
+      and has_column_privilege(current_user,to_regclass('auth.users'),'id','SELECT')
+      and has_any_column_privilege(current_user,to_regclass('auth.users'),'UPDATE'),false)
       and has_table_privilege(current_user,'public.sample_generations','SELECT') and has_table_privilege(current_user,'public.sample_generations','UPDATE')
       and has_table_privilege(current_user,'public.ai_reading_consents','SELECT') and has_table_privilege(current_user,'public.ai_reading_consents','UPDATE') as required_lock_privileges,
     not has_function_privilege('anon','public.claim_claude_call_v2_without_sample_fence(uuid,integer,integer)','EXECUTE')

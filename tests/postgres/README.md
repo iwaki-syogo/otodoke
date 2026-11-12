@@ -177,3 +177,20 @@ beforeと本体は110000・120000・121000の実適用履歴と関数を前提�
 `--owner-races` はP-1の `run-sample-lock-order.mjs --external-test-server --with-receipts` を同じ使い捨てcluster内の新しい専用DBで実行します。元のclear/create-shipped/update-shipped/update-deliveredにreceive/restoreを加え、720試行・4,320終端（実メール/サンプル各360試行）を既定にします。単なる開始gateだけでなく、全試行で本物の行/advisory lockの待機を観測します。メールのlease/世代拒否と受取の結果を区別し、6入口の件数と受取結果の合計も照合します。元台本の引数なしの4入口modeは保ちます。
 
 2026-11-12 13:37 JST: forward SHA256 `f8e7a4f7c749ca77925ab1c8b979bd4a92974f41e2c38eb7752ad839fc4301ae` で実Postgresのowner-racesを完走しました。720試行/4,320終端、全試行の実競合、40P01・その他SQLエラー・timeout・結果欠落すべて0、受取/undo各720の結果を確認しました。別owner分離・実verify陰性・前提/期限/権限/全消去/退会/down再適用も成功しています。専用PGのstop成功、ポート65445のlistener0、専用data/log削除を確認しました。Auth/cronはローカルの基盤近似で、実PostgRESTや本物のAuth・Web/Swiftの通しを測った結果ではありません。自己試験と実SQLの証拠を区別し、最新の統合SHAと実測の詳細はrepo外 `reports/fix-cost.md` に残します。
+
+## 許可claimのbeforeと列権限（121000）
+
+```sh
+node tests/postgres/run-consent-before-privileges.mjs --self-test
+node tests/postgres/run-consent-before-privileges.mjs
+node tests/postgres/run-consent-before-privileges.mjs --legacy-auth-check
+node tests/postgres/run-consent-before-privileges.mjs --negative-control
+```
+
+自己試験はPostgresを起動せず、beforeの7列すべてと、陰性対照の置換範囲を確認します。通常実行は専用の `127.0.0.1:65446` と `.vitest/pg/consent-before-privs-*` だけを使い、実migrationを120000まで適用してから、本物の121000 beforeを合成roleで実行します。Authとcronの基盤は既存runnerと同じ近似です。121000 forwardを適用・変更する試験ではありません。
+
+正常対照はtable権限、直接の `SELECT(id)` と非id列のUPDATE、同じ列権限の継承です。列権限の2例ではtable-levelのSELECTとUPDATEがどちらもfalseであることを確認します。不足対照はauth schemaのUSAGEなし、id以外のSELECTだけ、UPDATEなし、NOINHERITの継承です。各roleで110000と同じ実効権限式と、実際の0行 `SELECT id ... FOR KEY SHARE` を照らし、beforeは不足時だけ `required_lock_privileges=false`・ほかの5検査true・最終FAILEDを要求します。SQLエラーはFAILEDの正常な検出に数えません。
+
+`--legacy-auth-check` は読み込んだbefore文字列のAuth部分だけを旧table検査へ戻し、正当な列権限の例で非0終了する対照です。`--negative-control` は同じ部分をtrueへ置換し、権限不足を通した時点で非0終了します。どちらもSQLファイルや付与権限を書き換えません。正常性の `verdict=OK` と、陰性対照で期待する `verdict=FAILED` を区別します。
+
+通常・エラー・中断とも、自分が作ったclusterを停止し、pg_ctlの非稼働・TCPのlistener 0を確認してから専用data/logを削除します。既に使われているポートのプロセスは停止しません。接続先URLを指定する引数はなく、既存環境のPG接続設定や認証ファイルは使いません。
