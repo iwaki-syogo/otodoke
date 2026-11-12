@@ -288,6 +288,11 @@ describe("sealing the user's older plaintext mail (automatic, once per request)"
 });
 
 describe("Claude is stopped", () => {
+  it("200 with outcome discarded when a forwarding confirmation collides with a stored mail (no retry loop)", async () => {
+    mocks.processInboundEmail.mockImplementation(async () => ({ kind: "discarded", reason: "forwarding_confirmation_collision" }));
+    expect(await post()).toEqual({ status: 200, body: { ok: true, outcome: "discarded" } });
+  });
+
   it("200 with outcome unavailable (the mail is stored; retrying would not help), and the mail is not logged", async () => {
     const { ClaudeUnavailableError } = await import("@/lib/extract/claude-error");
     mocks.processInboundEmail.mockImplementation(async () => {

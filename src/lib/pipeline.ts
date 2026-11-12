@@ -87,12 +87,13 @@ interface StoredRow {
   processing_run_id: string | null;
   processing_lease_until: string | null;
   provider_email_id: string | null;
+  classification: string | null;
 }
 
 /** The row this mail already has: by its Message-ID, or the row being read again. Throws when it cannot tell. */
 async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | null): Promise<StoredRow | null> {
   if (!mail.messageId && !rowId && !mail.providerEmailId) return null;
-  const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until, provider_email_id").eq("user_id", mail.userId);
+  const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until, provider_email_id, classification").eq("user_id", mail.userId);
   const { data, error } = await (rowId ? query.eq("id", rowId) : mail.messageId ? query.eq("message_id", mail.messageId) : query.eq("provider_email_id", mail.providerEmailId!)).maybeSingle();
   if (error) throw new Error(`emails lookup failed: ${error.message}`);
   return data;
@@ -134,6 +135,13 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // run and pay for a second read, so fail and let the webhook retry later.
   if (stored?.processing_status === "pending" && (stored.processing_lease_until ? Date.parse(stored.processing_lease_until) > Date.now() : Date.now() - new Date(stored.created_at).getTime() < PENDING_GRACE_MS)) {
     throw new MailBeingReadError("this mail is still being read");
+  }
+
+  // A different confirmation delivery must leave a stored non-confirmation mail
+  // and its readings unchanged. Stop before reserving or rewriting that row.
+  // Same-delivery retries and explicit re-reads keep their existing path.
+  if (isForwardingConfirmation && stored && !options.replacesEmailId && stored.classification !== "forwarding_confirmation" && (stored.provider_email_id ?? null) !== (mail.providerEmailId ?? null)) {
+    return { kind: "discarded", reason: "forwarding_confirmation_collision" };
   }
 
   // A clearly unrelated mail needs neither storage nor a key. Borderline and remembered senders
