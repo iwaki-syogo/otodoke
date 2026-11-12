@@ -3,6 +3,7 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { FakeDb } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
@@ -202,16 +203,20 @@ describe("/app/settings: あなたのメールの扱い", () => {
   });
 
   it("says what is not encrypted, what waits unread, and what the backups keep, in short sentences", async () => {
-    const text = textOf(findAll(await render("mail-handling"), (n) => n.tag === "section")[0]);
+    const root = findAll(await render("mail-handling"), (n) => n.tag === "section")[0];
+    const text = textOf(root);
     for (const sentence of [
       "荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は本文の抜粋です。",
       "1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。",
+      AI_CONSENT_TEXT.waitingRetention,
       "暗号化していない状態のメールは、データベースのバックアップにも最大 7 日間残ります。読み取る前のものと、暗号化する前のものです。",
     ]) {
       expect(text).toContain(sentence);
     }
     expect(text).not.toContain("読み取り結果の根拠の行・読み取りメモ、差出人");
     expect(text).not.toContain("読み取る前のものも暗号化する前のものも");
+    expect(findAll(root, (n) => n.tag === "p" && textOf(n) === AI_CONSENT_TEXT.waitingRetention)).toHaveLength(1);
+    expect(findAll(root, (n) => n.tag === "li" && textOf(n) === AI_CONSENT_TEXT.waitingRetention)).toHaveLength(0);
   });
 
   it("with no inbound domain set, it says so and builds no address that looks real", async () => {

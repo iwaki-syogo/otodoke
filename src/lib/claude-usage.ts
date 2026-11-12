@@ -1,5 +1,6 @@
 import { env } from "@/lib/env";
 import type { AdminClient } from "@/lib/supabase/admin";
+import { AiReadingNotAllowedError } from "@/lib/ai-consent";
 
 /** What a claim answered: "ok" (go ahead and call Claude) or the limit that was reached. */
 export type ClaudeVerdict = "ok" | "user_limit" | "global_limit";
@@ -28,6 +29,13 @@ function asVerdict(value: unknown): ClaudeVerdict {
   return value as ClaudeVerdict;
 }
 
+/** Only the DB's fixed consent denial is a permission choice; lease/DB failures stay failures. */
+function claimFailure(error: { code?: string; message: string }): Error {
+  return error.code === "42501" && error.message === "ai_consent_required"
+    ? new AiReadingNotAllowedError("ai_consent_required")
+    : new Error(`claim_claude_call failed: ${error.message}`);
+}
+
 /**
  * Take one paid Claude call from today's allowance (claim_claude_call_v2, which also records the
  * claim so it can be given back). While the database has no v2 yet (before supabase/migrations/
@@ -41,10 +49,10 @@ export async function claimClaudeCall(db: AdminClient, userId: string): Promise<
 
   const { data, error } = await db.rpc("claim_claude_call_v2", args);
   if (error) {
-    if (!functionMissing(error)) throw new Error(`claim_claude_call failed: ${error.message}`);
+    if (!functionMissing(error)) throw claimFailure(error);
     console.warn("claude-usage: claim_claude_call_v2 is missing, so the old claim_claude_call is used (a refused call is not given back)");
     const old = await db.rpc("claim_claude_call", args);
-    if (old.error) throw new Error(`claim_claude_call failed: ${old.error.message}`);
+    if (old.error) throw claimFailure(old.error);
     return { verdict: asVerdict(old.data), release: nothingToRelease };
   }
 

@@ -4,7 +4,7 @@ import { extractEmail, type ExtractionResult } from "@/lib/extract/extract";
 import { isPurchaseMail } from "@/lib/extract/triage";
 import { ClaudeUnavailableError, claudeFailure } from "@/lib/extract/claude-error";
 import { claimClaudeCall, type ClaudeClaim } from "@/lib/claude-usage";
-import { requireAiReadingConsent } from "@/lib/ai-consent";
+import { AiReadingNotAllowedError, requireAiReadingConsent } from "@/lib/ai-consent";
 import {
   isParcelRelevant,
   buildParcelInsert,
@@ -121,6 +121,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // The row this mail already has, looked up before the screen: a mail that was read is never
   // screened, paid for or removed again when it is delivered a second time.
   const stored = await storedRow(db, mail, options.replacesEmailId ?? null);
+  // A backlog snapshot is a retry of its existing row, never a new delivery after a sweep/clear.
+  if (options.replacesEmailId && (!stored || stored.id !== options.replacesEmailId)) throw new MailBeingReadError("the stored mail is no longer available");
   if (stored?.processing_status === "processed") return { kind: "duplicate", emailId: stored.id };
   // Another delivery of this mail is being read right now. Taking its row over would break that
   // run and pay for a second read, so fail and let the webhook retry later.
@@ -184,6 +186,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   if (!reserved) throw new Error("mail reservation returned no verdict");
   if (reserved.verdict === "busy") throw new MailBeingReadError("this mail is still being read");
   if (reserved.verdict === "duplicate") return { kind: "duplicate", emailId: reserved.email_id };
+  if (reserved.verdict === "consent_wait_expired") return { kind: "discarded", reason: "ai_consent_wait_expired" };
   if (reserved.verdict === "user_storage_limit" || reserved.verdict === "global_storage_limit") return { kind: "storage_limit", limit: reserved.verdict };
   if (reserved.verdict !== "ok" || reserved.email_id !== emailId) throw new Error("mail reservation returned an unexpected verdict");
   const emailRow = { id: emailId };
@@ -203,7 +206,16 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   if (!isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
     if (!screen.pass) {
-      const keep = await secondLook(db, mail, screen);
+      let keep: boolean;
+      try {
+        keep = await secondLook(db, mail, screen);
+      } catch (err) {
+        if (err instanceof AiReadingNotAllowedError) {
+          const { error } = await db.from("emails").update({ processing_status: "failed", error: err.code }).eq("id", emailId).eq("user_id", mail.userId);
+          if (error) throw new Error("could not retain mail awaiting reading permission");
+        }
+        throw err;
+      }
       if (keep) {
         await logScreenEvent(db, mail, "rescued", screen.reason);
       } else {
@@ -229,7 +241,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     try {
       claim = await claimClaudeCall(db, mail.userId);
     } catch (err) {
-      await db.from("emails").update({ processing_status: "failed", error: err instanceof Error ? err.message : String(err) }).eq("id", emailRow.id);
+      const { error } = await db.from("emails").update({ processing_status: "failed", error: err instanceof Error ? err.message : String(err) }).eq("id", emailRow.id);
+      if (err instanceof AiReadingNotAllowedError && error) throw new Error("could not retain mail awaiting reading permission");
       throw err;
     }
     if (claim.verdict !== "ok") {
@@ -271,7 +284,8 @@ async function secondLook(db: AdminClient, mail: InboundEmail, screen: ScreenRes
   let claim: ClaudeClaim;
   try {
     claim = await claimClaudeCall(db, mail.userId);
-  } catch {
+  } catch (err) {
+    if (err instanceof AiReadingNotAllowedError) throw err;
     return true;
   }
   if (claim.verdict !== "ok") return true;

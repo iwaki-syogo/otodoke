@@ -20,6 +20,18 @@ export const MAIL_RUN_ALLOWED_COLUMNS = new Map(
 );
 if (MAIL_RUN_ALLOWED_COLUMNS.size !== 4) throw new Error("fake-db: could not read all mail gateway column allowlists");
 
+/** The fake reads the database's one retention constant; it never keeps a second period. */
+let consentWaitingRetention: number | null = null;
+export function consentWaitingRetentionMs(): number {
+  if (consentWaitingRetention !== null) return consentWaitingRetention;
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261113120000_consent_waiting_storage.sql", import.meta.url), "utf8");
+  const body = sql.match(/function public\.ai_consent_waiting_retention\(\)[\s\S]*?as \$\$([\s\S]*?)\$\$/i)?.[1];
+  const days = body?.match(/interval\s+'(\d+) days'/i);
+  if (!days || Number(days[1]) <= 0) throw new Error("fake-db: could not read consent-waiting retention");
+  consentWaitingRetention = Number(days[1]) * 24 * 3600_000;
+  return consentWaitingRetention;
+}
+
 export type Row = Record<string, unknown>;
 
 export interface Filter {
@@ -115,7 +127,7 @@ const PARCEL_DEFAULTS: Row = {
 
 const DEFAULTS: Record<string, Row> = {
   parcels: PARCEL_DEFAULTS,
-  emails: { processing_run_id: null, processing_lease_until: null, classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
+  emails: { processing_run_id: null, processing_lease_until: null, consent_waiting_until: null, classification: null, processing_status: "pending", error: null, sent_at: null, message_id: null, body_state: "plain", body_envelope: null, from_domain: null, forwarding_confirm_url: null },
   extractions: { parcel_id: null, confidence: null },
   parcel_items: { quantity: null, unit_price: null, evidence: null },
 };
@@ -425,16 +437,29 @@ export class FakeDb {
   private storeMailRun(a: StoreArgs, headers: Record<string, string> = {}): Result {
     const answer = (verdict: string): Result => ({ data: [{ verdict, email_id: a.p_email_id }], error: null });
     const old = this.rows("emails").find((r) => r.id === a.p_email_id && r.user_id === a.p_user_id);
+    if (old?.processing_status === "discarded" && old.error === "ai_consent_wait_expired") return answer("consent_wait_expired");
     if (old?.processing_status === "processed") return answer("duplicate");
     if (old?.processing_status === "pending" && Date.parse(String(old.processing_lease_until ?? new Date(Date.parse(String(old.created_at)) + 180_000).toISOString())) > Date.now()) return answer("busy");
     if ((old?.created_at ?? null) !== a.p_expected_created_at) return answer("busy");
+    if (old?.body_state === "plain" && old.processing_status !== "processed" && old.consent_waiting_until && Date.parse(String(old.consent_waiting_until)) <= Date.now()) {
+      if (this.rows("extractions").some((r) => r.email_id === old.id && r.user_id === old.user_id)) {
+        Object.assign(old, { subject: null, from_address: null, from_name: null, text_body: null, html_body: null, body_state: "dropped", body_envelope: null, processing_status: "discarded", error: "ai_consent_wait_expired", forwarding_confirm_url: null, processing_run_id: null, processing_lease_until: null });
+      } else this.tables.emails = this.rows("emails").filter((r) => r !== old);
+      return answer("consent_wait_expired");
+    }
     const bytes = (r: Row) => ["subject","from_address","from_name","text_body","html_body"].reduce((n,k) => n + Buffer.byteLength(String(r[k] ?? ""), "utf8"),0);
     const unread = this.rows("emails").filter((r) => r.id !== a.p_email_id && r.body_state === "plain" && r.processing_status !== "processed");
+    const global = unread.filter((r) => !r.consent_waiting_until);
     const own = unread.filter((r) => r.user_id === a.p_user_id);
+    const now = new Date().toISOString();
+    const arrival = old?.received_at ?? now;
+    const consented = this.rows("ai_reading_consents").some((r) => r.user_id === a.p_user_id && r.decision === "granted");
+    const waitingUntil = old?.consent_waiting_until ?? (!consented && a.p_columns.processing_status !== "processed" && (a.p_columns.body_state ?? "plain") === "plain" && !String(a.p_columns.provider_email_id ?? "").startsWith("demo:")
+      ? new Date(Date.parse(String(arrival)) + consentWaitingRetentionMs()).toISOString() : null);
     let reason: string | null = null;
     if (a.p_columns.processing_status !== "processed" && (a.p_columns.body_state ?? "plain") === "plain" && (!old || bytes(a.p_columns) > bytes(old))) {
       if (own.length + 1 > a.p_limits.user_count || own.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.user_bytes) reason = "user_storage_limit";
-      else if (unread.length + 1 > a.p_limits.global_count || unread.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.global_bytes) reason = "global_storage_limit";
+      else if (!waitingUntil && (global.length + 1 > a.p_limits.global_count || global.reduce((n,r) => n + bytes(r),0) + bytes(a.p_columns) > a.p_limits.global_bytes)) reason = "global_storage_limit";
     }
     if (reason) {
       const notice = this.rows("mail_intake_notices").find((r) => r.user_id === a.p_user_id);
@@ -443,8 +468,7 @@ export class FakeDb {
       return answer(reason);
     }
     if (!old && a.p_columns.provider_email_id && this.rows("emails").some((r) => r.user_id === a.p_user_id && r.provider_email_id === a.p_columns.provider_email_id)) return answer("busy");
-    const now = new Date().toISOString();
-    const columns = { ...a.p_columns, processing_run_id: a.p_run_id, processing_lease_until: new Date(Date.now()+360_000).toISOString(), created_at: now };
+    const columns = { ...a.p_columns, received_at: arrival, consent_waiting_until: waitingUntil, processing_run_id: a.p_run_id, processing_lease_until: new Date(Date.now()+360_000).toISOString(), created_at: now };
     const q = old ? this.from("emails").update(columns).eq("id",a.p_email_id).eq("user_id",a.p_user_id).eq("processing_status",old.processing_status).eq("created_at",old.created_at) : this.from("emails").insert({ id:a.p_email_id,user_id:a.p_user_id,...columns });
     const query = q.select("id").maybeSingle().query;
     query.viaRpc = true;
@@ -585,6 +609,9 @@ export class FakeDb {
    * are exercised on Postgres; this mirrors their rules.
    */
   private claimClaudeCall(a: ClaimArgs, v2: boolean): Result {
+    if (!this.rows("ai_reading_consents").some((row) => row.user_id === a.p_user_id && row.decision === "granted")) {
+      return { data: null, error: { code: "42501", message: "ai_consent_required" } };
+    }
     const day = this.jstDay();
     const usage = this.rows("claude_usage_daily");
     const answer = (verdict: string, claimId: number | null): Result => ({ data: v2 ? [{ verdict, claim_id: claimId }] : verdict, error: null });
@@ -769,7 +796,20 @@ export class FakeDb {
   private update(q: Query): Result {
     const hits = this.matching(q);
     for (const row of hits) {
+      const before = { ...row };
       Object.assign(row, q.values as Row);
+      if (q.table === "emails") {
+        if (before.received_at !== undefined) row.received_at = before.received_at;
+        if (before.consent_waiting_until) row.consent_waiting_until = before.consent_waiting_until;
+        const consented = this.rows("ai_reading_consents").some((c) => c.user_id === row.user_id && c.decision === "granted");
+        if (!row.consent_waiting_until && row.body_state === "plain" && row.processing_status !== "processed"
+          && !String(row.provider_email_id ?? "").startsWith("demo:") && row.classification !== "forwarding_confirmation"
+          && (!consented || row.error === "ai_consent_required" || row.error === "ai_consent_unknown")) {
+          // Seeded legacy fixtures may omit the DB's non-null received_at column.
+          const arrival = row.received_at ?? row.created_at;
+          row.consent_waiting_until = new Date(Date.parse(String(arrival)) + consentWaitingRetentionMs()).toISOString();
+        }
+      }
       // parcels_set_updated_at: every update moves updated_at.
       if (q.table === "parcels") row.updated_at = this.tick();
     }
