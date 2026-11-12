@@ -263,3 +263,10 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 対象のpageはsent_at昇順NULLS LAST/id昇順で取り、既試行だけのpageは末尾の生の時刻/idを境界として続きを探す。時刻の小数を丸めず、同時刻とNULLの境界もidで進む。短いpageを完了と仮定せず、空page・期限・上限・失敗を別々に扱う。未試行を処理した後のbatchは境界無しから探し、別要求の部分削除で後続を飛ばさない。
 - 記録は要求内だけのもので、明示の手動読取や別の許可要求へ持ち越さない。許可のreceiptの一度だけのclaim、到着/保管期限のN2条件、要求開始時の世代、行id/created_atの照合、課金前の現在の許可検査を維持する。
 - WebとiOSの許可後処理は共通runReadAfterConsentを使う。両方の手動入口は共通runReadWaitingMailの単発snapshotで、クライアント側に自動再POSTを足さない。DBに再試行状態やmigrationを追加しない。
+
+## 削除と封印の結果確認（P-055・M-007）
+
+- 無関係メールのdiscardedと、保存済みメールのscreened_outは、owned DELETEのerror無し・返却1行・対象ID一致を確認してから返す。dropイベントもその後だけ記録する。未確認の削除は失敗として上位へ返し、同じ自動要求へ再投入しない。保存済み行の明示再読では、既に消えた行を再作成しない。
+- grounded unrelatedの削除失敗は既存catchがfailed保存を試す。screen分岐やDB拒否継続時はpending leaseが残ることがあるため、lease満了後の明示再試行を保つ。consent_waiting_until無しの一般failed原文に自動TTLを約束しない。明示再試行・全消去・退会が出口であり、許可待ち期限の掃除とは分ける。
+- background封印の取得進捗は選択行数で判断し、書込み件数でEOFを推測しない。別workerの正当な封印/削除によるUPDATE0行は0sealed/0failed、未確認の返却は当該行failedとする。公開sealPlainBatchの返却shapeを維持し、内部の進捗値をAPI/nativeへ追加しない。
+- 0行を一律失敗にしない。単一owned削除の成功確認と、元から対象無しのbulk掃除/同時処理済みは、操作ごとに達成条件を分ける。
