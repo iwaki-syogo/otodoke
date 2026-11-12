@@ -112,7 +112,7 @@ node tests/postgres/run-claude-claim-consent.mjs --negative-lock
 
 ## 許可待ち台本の verify 出力の読み方
 
-`run-consent-waiting-storage.mjs` は、verify ごとに列の契約を指定します。rollback 後の `110000_sample_generation.sql` は 8 列で、先頭 7 列が真、最後の列が `OK` です。`120000_consent_waiting_storage.before.sql` は 11 列で、先頭が `OK`、次の 7 列が真、残り 3 列が非負の件数です。同じ版の after verify も 11 列で、先頭が `OK`、次の 8 列が真、残り 2 列が非負の件数です。先頭と末尾のどちらかに `OK` があればよい、という読み方はしません。列数・判定位置が変わった場合も止まります。
+`run-consent-waiting-storage.mjs` は、verify ごとに列の契約を指定します。rollback 後の `110000_sample_generation.sql` は 11 列で（P-1 で 8 列から増えた）、先頭 10 列が真、最後の列が `OK` です。`120000_consent_waiting_storage.before.sql` は 11 列で、先頭が `OK`、次の 7 列が真、残り 3 列が非負の件数です。同じ版の after verify も 11 列で、先頭が `OK`、次の 8 列が真、残り 2 列が非負の件数です。先頭と末尾のどちらかに `OK` があればよい、という読み方はしません。列数・判定位置が変わった場合も止まります。
 
 実際の before／rollback 検証／再適用後の検証と `--self-test` は、同じ `verifyFile` を通ります。自己試験は PostgreSQL を起動せず、Node の子プロセスから実 stdout を受け取り、上の正常な形と、`FAILED`・欠落列・偽の先頭 `OK`・偽の真偽値・判定の後ろの SQL エラー・終了コード 0 の stderr SQL エラーを確かめます。未知の verify ファイルも受け付けません。Vitest の `consent-waiting-verify-runner.test.ts` が、自己試験だけでなく実行経路もこの境界を使うことを検査します。
 

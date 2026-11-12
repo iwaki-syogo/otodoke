@@ -23,7 +23,7 @@ export function priorMigrations(names) {
 // psql uses -A -t: exactly one unheaded pipe-delimited row. Each file owns its
 // layout; accepting OK in either end would hide a failed or truncated verdict.
 const verifyLayouts = new Map([
-  ["supabase/verify/20261113110000_sample_generation.sql", { columns: 8, verdict: 7, booleans: [0, 1, 2, 3, 4, 5, 6], counts: [] }],
+  ["supabase/verify/20261113110000_sample_generation.sql", { columns: 11, verdict: 10, booleans: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], counts: [] }],
   [`supabase/verify/${target}.before.sql`, { columns: 11, verdict: 0, booleans: [1, 2, 3, 4, 5, 6, 7], counts: [8, 9, 10] }],
   [`supabase/verify/${target}.sql`, { columns: 11, verdict: 0, booleans: [1, 2, 3, 4, 5, 6, 7, 8], counts: [9, 10] }],
 ]);
@@ -69,12 +69,12 @@ async function selfTest() {
   const before = `supabase/verify/${target}.before.sql`;
   const after = `supabase/verify/${target}.sql`;
   const outputFromChild = (output, stderr = "") => () => runCommand(process.execPath, ["-e", `process.stdout.write(${JSON.stringify(output)});process.stderr.write(${JSON.stringify(stderr)});`]);
-  // This is the actual eight-column 110000 result shape observed in the review.
-  await verifyFile(legacy, outputFromChild("t|t|t|t|t|t|t|OK\n"));
+  // The 110000 verify returns eleven columns since the per-user candidate lock (P-1): ten checks, then the verdict.
+  await verifyFile(legacy, outputFromChild("t|t|t|t|t|t|t|t|t|t|OK\n"));
   await verifyFile(before, outputFromChild("OK|t|t|t|t|t|t|t|3|2|1\n"));
   await verifyFile(after, outputFromChild("OK|t|t|t|t|t|t|t|t|3|1\n"));
-  for (const output of ["", "t|t|t|t|t|t|t|FAILED\n", "t|t|t|t|t|t|OK\n", "OK|t|t|t|t|t|t|FAILED\n",
-    "t|t|t|t|t|t|f|OK\n", "t|t|t|t|t|t|t|OK\nERROR: broken SQL\n"]) {
+  for (const output of ["", "t|t|t|t|t|t|t|t|t|t|FAILED\n", "t|t|t|t|t|t|t|t|t|OK\n", "OK|t|t|t|t|t|t|t|t|t|FAILED\n",
+    "t|t|t|t|t|t|t|t|t|f|OK\n", "t|t|t|t|t|t|t|t|t|t|OK\nERROR: broken SQL\n"]) {
     await assert.rejects(verifyFile(legacy, outputFromChild(output)));
   }
   for (const [name, good] of [[before, "OK|t|t|t|t|t|t|t|3|2|1\n"], [after, "OK|t|t|t|t|t|t|t|t|3|1\n"]]) {
