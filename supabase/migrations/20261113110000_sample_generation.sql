@@ -4,6 +4,7 @@
 -- Fence sample writes across requests, runtimes and devices. No long-lived lease is held:
 -- every sample request locks this user's generation only for its write transaction.
 begin;
+set local lock_timeout='5s';
 
 do $$ begin
   if not coalesce(has_table_privilege(current_user,to_regclass('auth.users'),'TRIGGER'),false) then

@@ -10,6 +10,8 @@ import json
 import os
 import tempfile
 import re
+import select
+import time
 import shutil
 import subprocess
 import uuid
@@ -233,6 +235,38 @@ def installed_catalog(db):
 
 saved = saved_data()
 catalog = gateway_catalog()
+# A long read transaction prevents ALTER TABLE's AccessExclusiveLock. Prove the real
+# migration aborts at five seconds without partial metadata, rather than waiting forever.
+held=subprocess.Popen(base+["-d",database],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=psql_environment)
+held.stdin.write("begin; select count(*) from public.emails; select 'DDL_LOCK_GATE';\n");held.stdin.flush()
+pending=b""
+deadline=time.monotonic()+5
+while b"DDL_LOCK_GATE\n" not in pending and time.monotonic()<deadline:
+    ready,_,_=select.select([held.stdout],[],[],0.1)
+    if ready:
+        chunk=os.read(held.stdout.fileno(),65536)
+        assert chunk,"DDL lock holder exited before its gate"
+        pending+=chunk
+assert b"DDL_LOCK_GATE\n" in pending,"DDL lock holder did not reach its gate"
+ddl_lock_probes=[]
+try:
+    unbounded=forward.replace("set local lock_timeout='5s';", "",1)
+    assert unbounded!=forward,"migration must declare its five-second lock timeout"
+    for label,sql,code in [("bounded migration",forward,"55P03"),("negative: missing lock timeout",unbounded,"57014")]:
+        schema_before=schema_catalog()
+        started=time.monotonic()
+        error=run("set statement_timeout='7s'; set lock_timeout='0';"+sql,fail=True)
+        elapsed=time.monotonic()-started
+        assert schema_catalog()==schema_before and saved_data()==saved,"failed DDL must be entirely rolled back"
+        assert code in error,(label,code,error)
+        if code=="55P03": assert 4.5<=elapsed<7,(label,elapsed)
+        else: assert elapsed>=6.5,(label,elapsed)
+        ddl_lock_probes.append({"probe":label,"sqlstate":code,"seconds":round(elapsed,3),"catalog_and_data_unchanged":True})
+finally:
+    _,held_error=held.communicate("rollback;\n",timeout=10)
+    assert held.returncode==0,held_error
+passed("migration DDL stops on a long transaction at five seconds without partial catalog or data")
+passed("negative control: removing lock_timeout waits until the seven-second statement timeout")
 # Preserve the known implementation and ABI while changing only the ACL. Legitimate custom
 # ACLs require a reviewed gate update; neither migration may silently discard or retain them.
 acl_role="sample_acl_probe_"+uuid.uuid4().hex[:12]
@@ -382,4 +416,4 @@ for name, sql in prior_verifiers.items():
     verify(sql, "after reapply: " + name)
 assert saved_data() == saved
 passed("reapplication and all five verifiers succeed with unchanged saved data")
-print(json.dumps({"prerequisites_ref": args.prerequisites_ref, "sha256": hashes, "checks": checks, "phases": phases}, ensure_ascii=False))
+print(json.dumps({"prerequisites_ref": args.prerequisites_ref, "sha256": hashes, "checks": checks, "phases": phases, "ddl_lock_probes":ddl_lock_probes}, ensure_ascii=False))
