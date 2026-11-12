@@ -49,7 +49,7 @@ enum SettingsWebText {
     // MARK: 「読まなかったメール」 (dropped/page.tsx)
 
     /// dropped/page.tsx:68
-    static let droppedLead = "広告など、買い物に関係なさそうなメールです。本文は保存せず、件名と差出人のドメインだけ 14 日間残します。"
+    static let droppedLead = "広告など、買い物に関係なさそうなメールです。本文は保存せず、件名と差出人のドメインを記録します。記録してから 14 日を過ぎた分は、毎日の掃除で消します。「これは荷物」と押したメールは、その差出人を覚えている間は残します。"
     /// dropped/page.tsx:84
     static func droppedSummary(_ n: Int) -> String {
         "荷物のメールが混ざっていないか、\(n) 通を見る"
@@ -64,7 +64,7 @@ enum SettingsWebText {
     /// password-panel.tsx:63
     static let makeKeyLead = "読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。"
     /// src/lib/mail-notices.ts:35 (PLAINTEXT_DROP_NOTICE)
-    static let plainDropNotice = "パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。"
+    static let plainDropNotice = "パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残る分は、11 月 14 日に件名・差出人・本文を消す予定です。荷物と、お使いのメールの受信箱は、そのままです。"
 
     // MARK: 「メールの自動転送の設定」 (forwarding-guide.tsx)
 

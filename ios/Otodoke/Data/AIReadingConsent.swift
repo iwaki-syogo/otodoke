@@ -42,13 +42,12 @@ struct AIReadingConsentClient: AIReadingConsentStoring {
 
     init(provider: SupabaseProvider, isCurrent: @escaping @MainActor @Sendable (SessionStamp) -> Bool) {
         self.isCurrent = isCurrent
+        let tokens = SessionAccessTokenReader(provider: provider, isCurrent: isCurrent)
         database = { stamp in
-            guard await isCurrent(stamp), let session = try? await provider.auth.session,
-                  session.user.id.uuidString.lowercased() == stamp.userID,
-                  await isCurrent(stamp) else { return nil }
+            guard let token = await tokens.read(for: stamp) else { return nil }
             return PostgrestClient(configuration: PostgrestClient.Configuration(
                 url: provider.config.supabaseURL.appending(path: "rest/v1"),
-                headers: ["apikey": provider.config.anonKey, "Authorization": "Bearer \(session.accessToken)"],
+                headers: ["apikey": provider.config.anonKey, "Authorization": "Bearer \(token)"],
                 fetch: { request in try await provider.urlSession.data(for: request) },
                 retryEnabled: false
             ))

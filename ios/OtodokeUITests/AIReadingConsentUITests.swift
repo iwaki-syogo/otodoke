@@ -5,9 +5,9 @@ import XCTest
 final class AIReadingConsentUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
-    private func launch(_ scenario: String) -> XCUIApplication {
+    private func launch(_ scenario: String, flags: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-otodoke-ui-preview", scenario]
+        app.launchArguments = ["-otodoke-ui-preview", scenario, "-ConsentFixtureID", UUID().uuidString] + flags
         app.launch()
         return app
     }
@@ -16,13 +16,118 @@ final class AIReadingConsentUITests: XCTestCase {
         let exists = element.waitForExistence(timeout: 10)
         if !exists { saveDiagnostics("tap-missing", in: app) }
         XCTAssertTrue(exists)
-        for _ in 0..<8 where !element.isHittable { app.swipeUp() }
+        reveal(element, in: app)
+        let readyToTap = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: element)
+        check(XCTWaiter.wait(for: [readyToTap], timeout: 10) == .completed, "tap-never-became-hittable", in: app)
         let hittable = element.isHittable
         if !hittable { saveDiagnostics("tap-not-hittable", in: app) }
         XCTAssertTrue(hittable)
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: element)
         wait(for: [enabled], timeout: 10)
         element.tap()
+    }
+
+    private func control(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    private func check(_ condition: Bool, _ name: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        if !condition { saveDiagnostics(name, in: app) }
+        XCTAssertTrue(condition, name, file: file, line: line)
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        // Safari is a separate presented child. Its close button is outside the consent card.
+        // Never scroll or dismiss that child by sending gestures to the card behind it.
+        if control("ai-reading-consent.privacy-sheet", in: app).exists { return }
+        let modal = control("ai-reading-consent.modal", in: app)
+        for _ in 0..<12 {
+            if !modal.exists {
+                if element.isHittable { return }
+                app.swipeUp()
+            } else {
+                let visible = modal.frame.intersection(control("ai-reading-consent.viewport", in: app).frame)
+                if element.isHittable, visible.insetBy(dx: -1, dy: -1).contains(element.frame) { return }
+                let target = element.frame
+                // A genuinely oversized paragraph must still fail the strict containment assertion.
+                guard target.height <= visible.height, !visible.isEmpty else { return }
+                let safe = visible.insetBy(dx: 8, dy: 8)
+                let missing = target.minY < safe.minY ? target.minY - safe.minY : max(0, target.maxY - safe.maxY)
+                guard abs(missing) > 1 else { return }
+                // UIKit consumes the initial drag slop. A tiny correction must still begin a scroll.
+                let distance = min(max(abs(missing), 32), safe.height * 0.45)
+                let startY = missing > 0 ? safe.maxY - 12 : safe.minY + 12
+                let endY = startY + (missing > 0 ? -distance : distance)
+                let origin = modal.coordinate(withNormalizedOffset: .zero)
+                let start = origin.withOffset(CGVector(dx: visible.midX - modal.frame.minX, dy: startY - modal.frame.minY))
+                let end = origin.withOffset(CGVector(dx: visible.midX - modal.frame.minX, dy: endY - modal.frame.minY))
+                // Move only the missing frame distance, then hold to avoid momentum overshooting it.
+                start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
+            }
+        }
+    }
+
+    private func assertBackgroundUnavailable(in app: XCUIApplication) {
+        for (index, title) in ["荷物", "カレンダー", "支出", "設定"].enumerated() {
+            check(!app.tabBars.buttons[title].exists, "background-tab-visible-\(index)", in: app)
+        }
+        check(!app.buttons["＋ 登録"].exists, "background-registration-visible", in: app)
+        check(!app.buttons["ai-reading-consent.manual"].exists, "manual-bypass-visible", in: app)
+        check(!app.buttons["ai-reading-consent.sample"].exists, "sample-bypass-visible", in: app)
+        check(!control("consent-auto-read.progress", in: app).exists, "background-auto-progress-visible", in: app)
+        check(!control("consent-preview.save-count", in: app).exists, "background-save-probe-visible", in: app)
+        check(!control("consent-preview.auto-read-count", in: app).exists, "background-auto-probe-visible", in: app)
+        assertForwardingHidden(in: app)
+    }
+
+    private func assertPopup(in app: XCUIApplication) {
+        let modal = control("ai-reading-consent.modal", in: app)
+        check(modal.waitForExistence(timeout: 10), "popup-missing", in: app)
+        check(app.staticTexts["ai-reading-consent.title"].waitForExistence(timeout: 10), "popup-title-missing", in: app)
+        check(app.buttons["ai-reading-consent.allow"].waitForExistence(timeout: 10), "allow-missing", in: app)
+        check(app.buttons["ai-reading-consent.deny"].waitForExistence(timeout: 10), "deny-missing", in: app)
+        assertBackgroundUnavailable(in: app)
+    }
+
+    private func assertReachableLayout(in app: XCUIApplication) {
+        assertPopup(in: app)
+        let modal = control("ai-reading-consent.modal", in: app)
+        let viewport = control("ai-reading-consent.viewport", in: app)
+        check(viewport.waitForExistence(timeout: 10), "viewport-missing", in: app)
+        check(!modal.frame.isEmpty, "popup-empty-frame", in: app)
+        check(viewport.frame.insetBy(dx: -1, dy: -1).contains(modal.frame), "popup-outside-viewport", in: app)
+        check(abs(modal.frame.midX - viewport.frame.midX) <= 2, "popup-center-x", in: app)
+        check(abs(modal.frame.midY - viewport.frame.midY) <= 2, "popup-center-y", in: app)
+        for identifier in ["ai-reading-consent.title", "ai-reading-consent.body", "ai-reading-consent.explanation", "ai-reading-consent.privacy", "ai-reading-consent.allow", "ai-reading-consent.deny"] {
+            let element = control(identifier, in: app)
+            check(element.exists, "missing-\(identifier)", in: app)
+            reveal(element, in: app)
+            check(element.isHittable, "unreachable-\(identifier)", in: app)
+            check(modal.frame.intersection(viewport.frame).insetBy(dx: -1, dy: -1).contains(element.frame), "clipped-\(identifier)", in: app)
+            if ["ai-reading-consent.privacy", "ai-reading-consent.allow", "ai-reading-consent.deny"].contains(identifier) {
+                XCTAssertGreaterThanOrEqual(element.frame.height, 44, identifier)
+                XCTAssertGreaterThanOrEqual(element.frame.width, 44, identifier)
+            }
+        }
+    }
+
+    private func savePopup(_ name: String, in app: XCUIApplication) throws {
+        guard let path = ProcessInfo.processInfo.environment["OTODOKE_SCREENSHOT_DIR"] else { return }
+        let directory = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let viewport = control("ai-reading-consent.viewport", in: app)
+        XCTAssertTrue(viewport.exists)
+        try viewport.screenshot().pngRepresentation.write(to: directory.appendingPathComponent(name))
+    }
+
+    private func showBothChoicesForScreenshot(in app: XCUIApplication) {
+        reveal(app.buttons["ai-reading-consent.allow"], in: app)
+        let visible = control("ai-reading-consent.modal", in: app).frame.intersection(control("ai-reading-consent.viewport", in: app).frame)
+        for identifier in ["ai-reading-consent.deny", "ai-reading-consent.allow"] {
+            let button = app.buttons[identifier]
+            check(visible.insetBy(dx: -1, dy: -1).contains(button.frame), "choices-image-clipped-\(identifier)", in: app)
+            check(button.isHittable, "choices-image-unreachable-\(identifier)", in: app)
+        }
     }
 
     private func settingsPage(_ title: String, in app: XCUIApplication) {
@@ -73,15 +178,17 @@ final class AIReadingConsentUITests: XCTestCase {
 
     private func assertForwardingHidden(in app: XCUIApplication, address: String? = nil) {
         for identifier in ["forwarding-address", "forwarding-copy", "forwarding-approval"] {
-            XCTAssertFalse(forwardingControl(identifier, in: app).exists, identifier)
+            check(!forwardingControl(identifier, in: app).exists, "exposed-\(identifier)", in: app)
         }
         XCTAssertFalse(app.buttons["承認ページを開く"].exists)
         if let address { XCTAssertFalse(app.staticTexts[address].exists) }
     }
 
     private func assertConsentSaveCount(_ count: Int, in app: XCUIApplication) {
-        let counter = app.descendants(matching: .any).matching(identifier: "consent-preview.save-count").firstMatch
-        XCTAssertTrue(counter.waitForExistence(timeout: 10))
+        let identifier = control("ai-reading-consent.modal", in: app).exists ? "consent-preview.modal-save-count" : "consent-preview.save-count"
+        let counter = control(identifier, in: app)
+        check(counter.waitForExistence(timeout: 10), "save-count-probe-missing", in: app)
+        if counter.value as? String != String(count) { saveDiagnostics("save-count-mismatch", in: app) }
         XCTAssertEqual(counter.value as? String, String(count))
     }
 
@@ -95,8 +202,9 @@ final class AIReadingConsentUITests: XCTestCase {
     }
 
     private func assertAPICallCount(_ count: Int, identifier: String, in app: XCUIApplication) {
-        let counter = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-        XCTAssertTrue(counter.waitForExistence(timeout: 10))
+        let target = control("ai-reading-consent.modal", in: app).exists ? identifier.replacingOccurrences(of: "consent-preview.", with: "consent-preview.modal-") : identifier
+        let counter = control(target, in: app)
+        check(counter.waitForExistence(timeout: 10), "api-count-probe-missing", in: app)
         let value = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", String(count)), object: counter)
         wait(for: [value], timeout: 10)
         XCTAssertEqual(counter.value as? String, String(count))
@@ -117,18 +225,26 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         XCTAssertEqual(title.label, "メールの読み取り")
         XCTAssertTrue(app.staticTexts["届いたメールは、Anthropic の Claude で読み取ります。"].exists)
+        XCTAssertEqual(app.staticTexts["ai-reading-consent.explanation"].label, "メールの件名・差出人・本文を送り、荷物の情報を取り出します。")
         XCTAssertTrue(app.buttons["ai-reading-consent.allow"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["ai-reading-consent.deny"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.buttons["ai-reading-consent.allow"].label, "許可する")
         XCTAssertEqual(app.buttons["ai-reading-consent.deny"].label, "許可しない")
         XCTAssertEqual(app.buttons["ai-reading-consent.privacy"].label, "プライバシーポリシー")
-        assertForwardingHidden(in: app)
-        assertAutoReadCount(0, in: app)
-        if let path = ProcessInfo.processInfo.environment["OTODOKE_SCREENSHOT_DIR"] {
-            let directory = URL(fileURLWithPath: path)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try XCUIScreen.main.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("b14-ai-reading-consent.png"))
-        }
+        assertReachableLayout(in: app)
+        try savePopup("b14-ai-reading-consent.png", in: app)
+        // This audits the modal-only accessibility tree, not VoiceOver's spoken output.
+        if #available(iOS 17.0, *) { try app.performAccessibilityAudit(for: [.hitRegion, .textClipped, .contrast]) }
+    }
+
+    func testDarkAppearancePopupPassesTheSameUnfilteredAccessibilityAudit() throws {
+        let app = launch("consent-required", flags: ["-ConsentDarkAppearance"])
+        assertReachableLayout(in: app)
+        let appearance = control("consent-preview.modal-color-scheme", in: app)
+        check(appearance.waitForExistence(timeout: 10), "appearance-probe-missing", in: app)
+        check(appearance.value as? String == "dark", "dark-appearance-was-not-applied", in: app)
+        try savePopup("b14-ai-reading-consent-dark.png", in: app)
+        if #available(iOS 17.0, *) { try app.performAccessibilityAudit(for: [.hitRegion, .textClipped, .contrast]) }
     }
 
     func testAllowingAndDecliningControlTheSameForwardingDetails() {
@@ -161,7 +277,9 @@ final class AIReadingConsentUITests: XCTestCase {
     }
 
     func testDeniedUserCanRegisterAParcelByHand() {
-        let app = launch("consent-denied")
+        let app = launch("consent-required")
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
         tap(app.tabBars.buttons["荷物"], in: app)
         assertAutoReadCount(0, in: app)
         tap(app.buttons["＋ 登録"], in: app)
@@ -189,12 +307,12 @@ final class AIReadingConsentUITests: XCTestCase {
         assertAutoReadCount(0, in: app)
     }
 
-    func testUndecidedUserCanLoadSamplesWithoutSavingAConsentDecision() {
+    func testDecliningThePromptStillLetsTheUserLoadSamplesWithoutGrantingReading() {
         let app = launch("consent-required")
-        assertConsentSaveCount(0, in: app)
-        assertAutoReadCount(0, in: app)
-        tap(app.buttons["ai-reading-consent.sample"], in: app)
-        XCTAssertTrue(app.navigationBars["サンプルで試す"].waitForExistence(timeout: 10))
+        assertPopup(in: app)
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        settingsPage("サンプルで試す", in: app)
         tap(app.buttons["demo-load"], in: app)
         XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.tabBars.buttons["荷物"].isSelected)
@@ -203,7 +321,7 @@ final class AIReadingConsentUITests: XCTestCase {
         settingsPage("あなたのメールの扱い", in: app)
         XCTAssertTrue(app.buttons["読み取りを許可する"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["読み取りをやめる"].exists)
-        assertConsentSaveCount(0, in: app)
+        assertConsentSaveCount(1, in: app)
         assertAutoReadCount(0, in: app)
     }
 
@@ -220,6 +338,24 @@ final class AIReadingConsentUITests: XCTestCase {
         assertForwardingHidden(in: app)
         assertConsentSaveCount(1, in: app)
         assertAutoReadCount(0, in: app)
+    }
+
+    func testMailHandlingShowsRetainedResultsThenTheWaitingDeadlineOnceEach() {
+        let app = launch("consent-denied")
+        settingsPage("あなたのメールの扱い", in: app)
+        let retainedCopy = "読み取りを許可しているときだけ、Anthropic の Claude に送ります。すでに読み取った荷物と結果は残ります。設定の「サンプルで試す」にある「すべての荷物を消す」で消せます。"
+        let deadlineCopy = "許可を待つメールは、届いてから 14 日で消えます。"
+        let retained = app.staticTexts[retainedCopy]
+        let deadline = app.staticTexts[deadlineCopy]
+        check(retained.waitForExistence(timeout: 10), "retained-results-paragraph-missing", in: app)
+        reveal(retained, in: app)
+        check(retained.isHittable, "retained-results-paragraph-not-visible", in: app)
+        check(deadline.waitForExistence(timeout: 10), "waiting-deadline-paragraph-missing", in: app)
+        reveal(deadline, in: app)
+        check(deadline.isHittable, "waiting-deadline-paragraph-not-visible", in: app)
+        check(retained.frame.maxY <= deadline.frame.minY + 1, "consent-settings-paragraphs-reordered", in: app)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", retainedCopy)).count, 1)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", deadlineCopy)).count, 1)
     }
 
     func testAnExistingGrantDoesNotStartReadingOnLoadOrRelaunch() {
@@ -240,7 +376,9 @@ final class AIReadingConsentUITests: XCTestCase {
     }
 
     func testGrantingFromSettingsReadsWaitingMailAndWithdrawalKeepsTheResult() {
-        let app = launch("consent-denied")
+        let app = launch("consent-required")
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
         settingsPage("あなたのメールの扱い", in: app)
         assertAutoReadCount(0, in: app)
         tap(app.buttons["読み取りを許可する"], in: app)
@@ -250,7 +388,7 @@ final class AIReadingConsentUITests: XCTestCase {
         settingsPage("あなたのメールの扱い", in: app)
         tap(app.buttons["読み取りをやめる"], in: app)
         XCTAssertTrue(app.buttons["読み取りを許可する"].waitForExistence(timeout: 10))
-        assertConsentSaveCount(2, in: app)
+        assertConsentSaveCount(3, in: app)
         assertAutomaticParcelIsVisible(in: app)
         settingsPage("メールの転送", in: app)
         assertForwardingHidden(in: app)
@@ -344,6 +482,7 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertTrue(policy.waitForNonExistence(timeout: 10))
         XCTAssertTrue(app.buttons["ai-reading-consent.allow"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["ai-reading-consent.deny"].exists)
+        assertBackgroundUnavailable(in: app)
     }
 
     func testReadFailureDoesNotPretendToBeAnUndecidedConsent() {
@@ -352,8 +491,7 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["ai-reading-consent.allow"].exists)
         XCTAssertFalse(app.buttons["ai-reading-consent.deny"].exists)
-        assertForwardingHidden(in: app)
-        assertAutoReadCount(0, in: app)
+        assertBackgroundUnavailable(in: app)
     }
 
     func testFirstGuideStaysAliveDuringASlowConsentRecheck() {
@@ -388,5 +526,220 @@ final class AIReadingConsentUITests: XCTestCase {
         XCTAssertTrue(guide.waitForNonExistence(timeout: 10))
         XCTAssertTrue(app.navigationBars["荷物"].waitForExistence(timeout: 10))
         assertAutoReadCount(0, in: app)
+    }
+
+    func testBackgroundTapAndSwipeNeverDecideOrDismissThePopup() {
+        let app = launch("consent-required")
+        assertPopup(in: app)
+        let viewport = control("ai-reading-consent.viewport", in: app).frame
+        let modal = control("ai-reading-consent.modal", in: app)
+        let point = CGPoint(x: viewport.minX + 3, y: viewport.midY)
+        XCTAssertFalse(modal.frame.contains(point), "the test must tap outside the card")
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+        assertPopup(in: app)
+        modal.swipeDown()
+        assertPopup(in: app)
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertPopup(in: app)
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testAnUnansweredPopupReturnsAfterRelaunch() {
+        let app = launch("consent-required")
+        assertPopup(in: app)
+        app.terminate()
+        app.launch()
+        assertPopup(in: app)
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testADeclinedChoiceDoesNotReturnAfterRelaunch() {
+        let app = launch("consent-required")
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["荷物"].waitForExistence(timeout: 10))
+        XCTAssertFalse(control("ai-reading-consent.modal", in: app).exists)
+        settingsPage("メールの転送", in: app)
+        assertForwardingHidden(in: app)
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testAGrantedChoiceDoesNotReturnOrReadTheBacklogAgainAfterRelaunch() {
+        let app = launch("consent-required")
+        tap(app.buttons["ai-reading-consent.allow"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        assertAutomaticParcelIsVisible(in: app)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["荷物"].waitForExistence(timeout: 10))
+        XCTAssertFalse(control("ai-reading-consent.modal", in: app).exists)
+        settingsPage("メールの転送", in: app)
+        XCTAssertTrue(forwardingControl("forwarding-address", in: app).waitForExistence(timeout: 10))
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    private func assertFailedSaveKeepsTheChoice(_ scenario: String) {
+        let app = launch(scenario)
+        assertPopup(in: app)
+        for (attempt, identifier) in ["ai-reading-consent.allow", "ai-reading-consent.deny"].enumerated() {
+            tap(app.buttons[identifier], in: app)
+            let error = control("ai-reading-consent.error", in: app)
+            XCTAssertTrue(error.waitForExistence(timeout: 10))
+            XCTAssertTrue(error.label.contains("読み取りの許可を保存できませんでした。もう一度お試しください。"))
+            assertPopup(in: app)
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons[identifier])
+            wait(for: [ready], timeout: 10)
+            assertConsentSaveCount(attempt + 1, in: app)
+            assertAutoReadCount(0, in: app)
+        }
+        app.terminate()
+        app.launch()
+        assertPopup(in: app)
+        assertConsentSaveCount(0, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testAServerRefusalCannotDismissOrPersistAnUnconfirmedChoice() {
+        assertFailedSaveKeepsTheChoice("consent-save-error")
+    }
+
+    func testAnOfflineSaveCannotDismissOrPersistAnUnconfirmedChoice() {
+        assertFailedSaveKeepsTheChoice("consent-save-offline")
+    }
+
+    func testTheInitialUnreadDecisionShowsNoChoicesUntilTheHeldReadCompletes() {
+        let app = launch("consent-loading")
+        let release = app.buttons["consent-preview.finish-initial-load"]
+        XCTAssertTrue(release.waitForExistence(timeout: 10))
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).exists)
+        XCTAssertFalse(app.buttons["ai-reading-consent.allow"].exists)
+        XCTAssertFalse(app.buttons["ai-reading-consent.deny"].exists)
+        assertBackgroundUnavailable(in: app)
+        assertConsentSaveCount(0, in: app)
+        tap(release, in: app)
+        check(release.waitForNonExistence(timeout: 10), "initial-load-release-still-visible", in: app)
+        assertPopup(in: app)
+        assertConsentSaveCount(0, in: app)
+    }
+
+    func testAConsentRequestAppearsAboveAnOpenManualSheetAndKeepsItsInput() {
+        let app = launch("consent-sheet-request")
+        check(app.tabBars.buttons["荷物"].waitForExistence(timeout: 10), "manual-background-tab-missing", in: app)
+        tap(app.buttons["＋ 登録"], in: app)
+        check(app.navigationBars["荷物を登録"].waitForExistence(timeout: 10), "manual-sheet-missing", in: app)
+        let title = app.textFields["品名"]
+        tap(title, in: app)
+        let input = "架空の入力を保持する本"
+        title.typeText(input)
+        XCTAssertEqual(title.value as? String, input)
+        check(app.keyboards.firstMatch.waitForExistence(timeout: 10), "manual-keyboard-was-not-shown", in: app)
+
+        // This fixture calls the real requestReadingConsent method after an actual background/return.
+        // The existing manual sheet and its model must survive the new native presentation above it.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        assertPopup(in: app)
+        check(app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "manual-keyboard-visible-over-popup", in: app)
+        check(!app.navigationBars["荷物を登録"].exists, "manual-sheet-accessible-behind-popup", in: app)
+        check(!title.exists, "manual-input-accessible-behind-popup", in: app)
+        assertConsentSaveCount(0, in: app)
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        check(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10), "manual-popup-did-not-close-after-denial", in: app)
+        check(app.navigationBars["荷物を登録"].waitForExistence(timeout: 10), "manual-sheet-was-discarded", in: app)
+        check(title.waitForExistence(timeout: 10), "manual-input-was-discarded", in: app)
+        if title.value as? String != input { saveDiagnostics("manual-input-not-retained", in: app) }
+        XCTAssertEqual(title.value as? String, input)
+        tap(app.buttons["閉じる"], in: app)
+        check(app.navigationBars["荷物を登録"].waitForNonExistence(timeout: 10), "manual-sheet-did-not-close", in: app)
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    private func privacyRoundTrip(in app: XCUIApplication) {
+        tap(app.buttons["ai-reading-consent.privacy"], in: app)
+        let policy = control("ai-reading-consent.privacy-sheet", in: app)
+        XCTAssertTrue(policy.waitForExistence(timeout: 10))
+        XCTAssertEqual(app.state, .runningForeground)
+        tap(app.buttons["閉じる"], in: app)
+        XCTAssertTrue(policy.waitForNonExistence(timeout: 10))
+        assertPopup(in: app)
+        // A long scrollable card need not expose its tiny instrumentation at every scroll offset.
+        // These layout tests inspect the counters on the real tabs after the explicit denial below.
+    }
+
+    func testSmallViewportContainsTheRealPopupAndKeepsAllControlsReachable() throws {
+        let app = launch("consent-required", flags: ["-ConsentSmallViewport"])
+        assertReachableLayout(in: app)
+        let viewport = control("ai-reading-consent.viewport", in: app)
+        XCTAssertEqual(viewport.frame.width, 375, accuracy: 1)
+        XCTAssertEqual(viewport.frame.height, 667, accuracy: 1)
+        try savePopup("b14-ai-reading-consent-small.png", in: app)
+        privacyRoundTrip(in: app)
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testMaximumAccessibilityTextKeepsTheRealPopupReadableAndOperable() throws {
+        let app = launch("consent-required", flags: ["-ConsentAccessibilitySize"])
+        assertReachableLayout(in: app)
+        reveal(app.staticTexts["ai-reading-consent.title"], in: app)
+        try savePopup("b14-ai-reading-consent-large-text.png", in: app)
+        showBothChoicesForScreenshot(in: app)
+        try savePopup("b14-ai-reading-consent-large-text-choices.png", in: app)
+        privacyRoundTrip(in: app)
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testSmallViewportAndMaximumAccessibilityTextKeepTheChoicesReachable() throws {
+        let app = launch("consent-required", flags: ["-ConsentSmallViewport", "-ConsentAccessibilitySize"])
+        assertReachableLayout(in: app)
+        showBothChoicesForScreenshot(in: app)
+        try savePopup("b14-ai-reading-consent-small-large-text-choices.png", in: app)
+        privacyRoundTrip(in: app)
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testShortViewportScrollsToPrivacyAndBothChoicesWithoutClippingTheCard() throws {
+        let app = launch("consent-required", flags: ["-ConsentShortViewport"])
+        assertReachableLayout(in: app)
+        XCTAssertLessThanOrEqual(control("ai-reading-consent.viewport", in: app).frame.height, 375)
+        try savePopup("b14-ai-reading-consent-short-viewport-choices.png", in: app)
+        privacyRoundTrip(in: app)
+        tap(app.buttons["ai-reading-consent.deny"], in: app)
+        XCTAssertTrue(control("ai-reading-consent.modal", in: app).waitForNonExistence(timeout: 10))
+        assertConsentSaveCount(1, in: app)
+        assertAutoReadCount(0, in: app)
+    }
+
+    func testDeviceRotationKeepsThePopupAndRestoresPortrait() throws {
+        let app = launch("consent-required")
+        assertPopup(in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        assertReachableLayout(in: app)
+        let landscape = app.frame.width > app.frame.height
+        try savePopup(landscape ? "b14-ai-reading-consent-landscape.png" : "b14-ai-reading-consent-landscape-request-portrait-locked.png", in: app)
+        let evidence = XCTAttachment(string: "B14 device requested landscapeLeft; app viewport=\(app.frame). The app declares portrait-only supported orientations.")
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        assertBackgroundUnavailable(in: app)
+        assertConsentSaveCount(0, in: app)
     }
 }

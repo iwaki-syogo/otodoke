@@ -368,9 +368,11 @@ struct ExistingAddressTests {
         #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .sent)
         await fake.forceAuth("signup", status: 422, code: "user_already_exists")
         #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .existing)
-        // The answers that do not say whether the address has an account stay "sent".
+        // Mail delivery pressure is distinct from the address-dependent neutral answers.
         await fake.forceAuth("signup", status: 429, code: "over_email_send_rate_limit")
-        #expect(try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil) == .sent)
+        await #expect(throws: LoginFailure.mailBusy) {
+            try await auth.signUp(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        }
     }
 
     @Test func otherRefusalsOfTheWaitDoNotSayIt() async {

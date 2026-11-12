@@ -364,4 +364,127 @@ private actor FakeDemoAPI: DemoAPI {
         ParcelWriter.announceOutsideChange(changes)
         #expect(changes.version == before + 1)
     }
+
+    @Test(arguments: ["load", "clear"])
+    func anEndedGenerationDoesNotEvenRequestATokenOrResetTheBusyNote(_ action: String) async {
+        let api = FakeDemoAPI()
+        var tokenCalls = 0, told = 0
+        let model = DemoModel(api: api, isCurrent: { false }, accessToken: { tokenCalls += 1; return "old-token" }, changed: { told += 1 })
+        model.showsBusyNote = true
+
+        if action == "load" { await model.load() }
+        else { #expect(await model.clear(confirmed: true) == false) }
+
+        #expect(tokenCalls == 0 && told == 0)
+        #expect(await api.loads == 0)
+        #expect(await api.clears == 0)
+        #expect(model.notice == DemoModel.Notice() && model.loadedCount == 0 && model.clearedCount == 0)
+        #expect(model.showsBusyNote && model.phase == .idle)
+    }
+
+    @Test(arguments: ["load", "clear"])
+    func aTokenReturnedAfterTheGenerationEndsCannotBeSentOrShown(_ action: String) async throws {
+        let api = FakeDemoAPI(), started = Gate(), release = Gate()
+        defer { release.open() }
+        let fake = FakeSupabase.make(), storage = InMemorySessionStorage()
+        let otherEmail = "other@example.com"
+        await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
+        await fake.addPasswordAccount(email: otherEmail, secret: PW.secret(email: otherEmail, password: PW.good), userID: FakeSupabase.other)
+        let auth = PW.auth(fake, storage: storage)
+        auth.makeSignedIn = { MainScreens.live(auth: $0, readingConsent: .allowedForTests(), withKeys: false) }
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        let oldStamp = try #require(auth.session.stamp())
+        var told = 0, didClear = false
+        let model = DemoModel(api: api, isCurrent: { auth.session.isCurrent(oldStamp) }, accessToken: {
+            started.open(); await release.wait()
+            return auth.provider.auth.currentSession?.accessToken
+        }, changed: { told += 1 })
+        let run = Task {
+            if action == "load" { await model.load() }
+            else { didClear = await model.clear(confirmed: true) }
+        }
+        await started.wait()
+        #expect(model.phase == (action == "load" ? .loading : .clearing))
+        await fake.setUserEmail(otherEmail)
+        try await auth.signIn(email: otherEmail, password: PW.good, captchaToken: nil)
+        let currentStamp = try #require(auth.session.stamp())
+        let currentSession = try #require(auth.provider.auth.currentSession)
+        let bytes = try #require(try storage.retrieve(key: SupabaseProvider.storageKey(for: fake.config)))
+        let screens = try #require(auth.signedInObject() as? MainScreens)
+        let keys = try UnlockWorld(session: auth.session)
+        keys.plantVaultKey(user: FakeSupabase.other)
+        let opened = OpenedKey(userID: FakeSupabase.other, recipient: try keys.v.testRecipient())
+        let keyStamp = try #require(keys.store.stamp())
+        #expect(keys.store.put(opened, stamp: keyStamp))
+        try #require(currentStamp != oldStamp && currentStamp.userID == FakeSupabase.other)
+        try #require(currentSession.user.id.uuidString.lowercased() == FakeSupabase.other)
+        release.open()
+        await run.value
+
+        #expect(await api.loads == 0)
+        #expect(await api.clears == 0)
+        #expect(told == 0 && !didClear)
+        #expect(model.notice == DemoModel.Notice() && model.loadedCount == 0 && model.clearedCount == 0)
+        #expect(!model.showsBusyNote && model.phase == .idle)
+        #expect(auth.session.isCurrent(currentStamp) && auth.state == .signedIn(userID: FakeSupabase.other))
+        #expect(auth.provider.auth.currentSession?.accessToken == currentSession.accessToken)
+        #expect(try storage.retrieve(key: SupabaseProvider.storageKey(for: fake.config)) == bytes)
+        #expect(auth.signedInObject() === screens && keys.store.key?.userID == FakeSupabase.other && keys.vaultCount == 1)
+    }
+
+    @Test(arguments: ["load", "clear"], ["success", "failure", "unknown"])
+    func anAPIAnswerAfterTheGenerationEndsCannotChangeTheDemoPageOrOtherTabs(_ action: String, _ answer: String) async throws {
+        let release = Gate(), api = FakeDemoAPI(gate: release)
+        defer { release.open() }
+        if answer == "success" { await api.set(load: .success(DemoLoaded(processed: 5, busy: true))) }
+        if answer == "failure" { await api.set(load: .failure(.answered(.demoFailed, processed: 3)), clear: .failure(.answered(.clearFailed, processed: nil))) }
+        if answer == "unknown" { await api.set(load: .failure(.unknown), clear: .failure(.unknown)) }
+        var current = true, told = 0, didClear = false
+        let model = DemoModel(api: api, isCurrent: { current }, accessToken: { "old-token" }, changed: { told += 1 })
+        let run = Task {
+            if action == "load" { await model.load() }
+            else { didClear = await model.clear(confirmed: true) }
+        }
+        try #require(await waitFor {
+            let loads = await api.loads, clears = await api.clears
+            return loads + clears == 1
+        })
+        #expect(model.phase == (action == "load" ? .loading : .clearing))
+        current = false
+        release.open()
+        await run.value
+
+        #expect(told == 0 && !didClear)
+        #expect(model.notice == DemoModel.Notice() && model.loadedCount == 0 && model.clearedCount == 0)
+        #expect(!model.showsBusyNote && model.phase == .idle)
+    }
+
+    @Test(arguments: ["load", "clear"])
+    func leavingOnlyThePageKeepsTheGenerationsUnknownResultReadback(_ action: String) async throws {
+        let release = Gate(), api = FakeDemoAPI(gate: release)
+        defer { release.open() }
+        await api.set(load: .failure(.unknown), clear: .failure(.unknown))
+        var told = 0, didClear = false
+        let model = DemoModel(api: api, isCurrent: { true }, accessToken: { "current-token" }, changed: { told += 1 })
+        var pageReference: DemoModel? = model
+        let run = Task {
+            if action == "load" { await model.load() }
+            else { didClear = await model.clear(confirmed: true) }
+        }
+        try #require(await waitFor {
+            let loads = await api.loads, clears = await api.clears
+            return loads + clears == 1
+        })
+        #expect(pageReference?.isBusy == true)
+        pageReference = nil
+        release.open()
+        await run.value
+
+        #expect(pageReference == nil && told == 1 && !didClear)
+        #expect(model.loadedCount == (action == "load" ? 1 : 0) && model.clearedCount == 0)
+        #expect(model.notice == DemoModel.Notice() && model.phase == .idle)
+        #expect(await api.loads == (action == "load" ? 1 : 0))
+        #expect(await api.clears == (action == "clear" ? 1 : 0))
+    }
 }

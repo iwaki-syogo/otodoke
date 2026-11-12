@@ -205,6 +205,86 @@ struct PasswordLoginModelTests {
         #expect(model.isExistingAddress)
     }
 
+    @Test(arguments: [
+        (429, Optional("over_email_send_rate_limit")),
+        (400, Optional("over_email_send_rate_limit")),
+        (429, nil),
+        (500, nil),
+    ])
+    func aBusySignupCreatesNoConfirmationWaitAndAnExplicitRetryCanSucceed(_ reply: (Int, String?)) async {
+        let fake = FakeSupabase.make()
+        await fake.forceAuth("signup", status: reply.0, code: reply.1)
+        let (model, auth) = make(fake)
+        defer { model.leaveWait() }
+        model.isInFront = false
+        model.setMode(.signUp)
+        model.password = PW.good; model.passwordAgain = PW.good
+
+        await model.submit()
+
+        #expect(model.errorMessage == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
+        #expect(model.notice == nil && model.shownNotice == nil && model.toast == nil)
+        #expect(!model.isWaitingForConfirmation && model.confirmationAddress == nil)
+        #expect(!model.isHoldingPassword && !model.canCheckConfirmation && !model.canResendConfirmation)
+        #expect(!model.isExistingAddress && !model.isWorking)
+        #expect(model.password.isEmpty && model.passwordAgain.isEmpty)
+        #expect(auth.provider.auth.currentSession == nil && auth.takeSignInSecret() == nil)
+        #expect(await fake.count("POST", "signup") == 1)
+        // Neither a foreground check nor the explicit check can send a sign-in for a wait that never began.
+        await model.checkConfirmation()
+        await model.checkConfirmation(pressed: true)
+        #expect(await fake.count("POST", "token") == 0)
+
+        await fake.clearForcedAuth("signup")
+        model.setMode(.signUp)
+        model.password = PW.good; model.passwordAgain = PW.good
+        await model.submit()
+        #expect(model.errorMessage == nil && model.notice == LoginText.signupExistsOrSent)
+        #expect(model.isWaitingForConfirmation && model.isHoldingPassword && model.canCheckConfirmation)
+        #expect(model.canResendConfirmation && model.confirmationAddress == FakeSupabase.email)
+        #expect(await fake.count("POST", "signup") == 2)
+        #expect(await fake.count("POST", "token") == 0)
+    }
+
+    @Test(arguments: ["not-confirmed", "waiting"], [
+        (429, Optional("over_email_send_rate_limit")),
+        (400, Optional("over_email_send_rate_limit")),
+        (429, nil),
+        (500, nil),
+    ])
+    func aBusyResendShowsNoNewSuccessAndAnExplicitRetryCanSucceed(_ screen: String, _ reply: (Int, String?)) async {
+        let fake = FakeSupabase.make()
+        let (model, _) = make(fake)
+        defer { model.leaveWait() }
+        model.isInFront = false
+        if screen == "waiting" {
+            model.setMode(.signUp)
+            model.password = PW.good; model.passwordAgain = PW.good
+        } else {
+            await account(fake, confirmed: false)
+            model.password = PW.good
+        }
+        await model.submit()
+        #expect(model.canResendConfirmation && model.toast == nil)
+        await fake.forceAuth("resend", status: reply.0, code: reply.1)
+
+        await model.resendConfirmation()
+
+        #expect(model.errorMessage == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
+        #expect(model.notice == nil && model.toast == nil)
+        #expect(!model.isWorking && model.canResendConfirmation)
+        #expect(model.isWaitingForConfirmation == (screen == "waiting"))
+        #expect(model.isHoldingPassword == (screen == "waiting"))
+        #expect(await fake.count("POST", "resend") == 1)
+
+        await fake.clearForcedAuth("resend")
+        await model.resendConfirmation()
+        #expect(model.errorMessage == nil)
+        if screen == "waiting" { #expect(model.toast == OnboardingText.resent && model.notice == nil) }
+        else { #expect(model.notice == LoginText.confirmationSent && model.toast == nil) }
+        #expect(await fake.count("POST", "resend") == 2)
+    }
+
     @Test func aNonASCIIAddressIsRefusedWithTheWebsWords() async {
         let fake = FakeSupabase.make()
         let (model, _) = make(fake)

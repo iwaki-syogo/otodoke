@@ -251,11 +251,13 @@ final class UnlockModel {
             recipient = try await deriver.open(row, password: password, email: email, userID: stamp.session.userID)
         } catch {
             lastOpenDuration = clock.now - started
+            guard !Task.isCancelled else { return finish(stamp, message: nil) }
             // A typo as far as this field can tell: no help (the Web's login is offered only by the key step,
             // after a password the server checked).
             return finish(stamp, message: error == .wrongPassword ? Self.wrongPassphraseText : Self.failedText)
         }
         lastOpenDuration = clock.now - started
+        guard !Task.isCancelled else { return finish(stamp, message: nil) }
 
         let key = OpenedKey(userID: stamp.session.userID, recipient: recipient)
         // The background, a sign-out or another account while PBKDF2 ran: nothing is kept (CX2).

@@ -185,7 +185,6 @@ struct MainTabView: View {
     @State private var boxClosed = false
     /// The app went to the background since it was last in front.
     @State private var wasInBackground = false
-    @State private var consentBypassed = false
     @Environment(\.scenePhase) private var scenePhase
 
     /// The signed-in generation's screens (MainScreens.of): the same ones every time this View is made again
@@ -224,6 +223,43 @@ struct MainTabView: View {
     private var selection: MainTab { route.tab }
 
     var body: some View {
+        applicationContent
+            .disabled(showsReadingConsent)
+            .allowsHitTesting(!showsReadingConsent)
+            .accessibilityHidden(showsReadingConsent)
+            .background {
+                ConsentModalPresenter(isPresented: showsReadingConsent) {
+                    consentChoice
+                        .disabled(false)
+                        .task {
+                            if screens.settings.requestsReadingConsent { await screens.readingConsent.load() }
+                        }
+                        #if DEBUG
+                        .modifier(ConsentPreviewViewport())
+                        #endif
+                }
+                .frame(width: 0, height: 0)
+            }
+            #if DEBUG
+            .modifier(ConsentPreviewAccessibility(settings: screens.settings))
+            .modifier(ConsentPreviewViewport())
+            #endif
+    }
+
+    private var showsReadingConsent: Bool {
+        landing == .consent || screens.settings.requestsReadingConsent
+    }
+
+    private var consentChoice: AIReadingConsentView {
+        #if DEBUG
+        AIReadingConsentView(model: screens.readingConsent, saveChoice: screens.settings.chooseReadingConsent,
+                             debugConsentSettings: screens.settings)
+        #else
+        AIReadingConsentView(model: screens.readingConsent, saveChoice: screens.settings.chooseReadingConsent)
+        #endif
+    }
+
+    private var applicationContent: some View {
         TabView(selection: $route.tab) {
             ForEach(MainTab.allCases, id: \.self) { tab in
                 screen(tab)
@@ -234,13 +270,6 @@ struct MainTabView: View {
         .task { await screens.settings.load() }
         .sheet(item: $manualForm) { form in
             ManualParcelView(model: form) { manualForm = nil }
-        }
-        .sheet(isPresented: Binding(get: { screens.settings.requestsReadingConsent }, set: { if !$0 { screens.settings.dismissReadingConsent() } })) {
-            NavigationStack {
-                AIReadingConsentView(model: screens.readingConsent, saveChoice: screens.settings.chooseReadingConsent)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(ManualParcelText.close) { screens.settings.dismissReadingConsent() } } }
-            }
-            .task { await screens.readingConsent.load() }
         }
         // [N3] The front is the selected tab's top screen.
         .onChange(of: selection, initial: true) { _, tab in
@@ -288,24 +317,15 @@ struct MainTabView: View {
         }
         // The delivered and cancelled pages the 荷物 and カレンダー tabs open (StatusPages.swift).
         .environment(\.statusPages, screens.statusPages)
-        // The landing (Landing): the tabs stay built but unseen while the key step of a password sign-in is running,
-        // then the guide covers them (no slide, so the tabs are never in view first), or they are shown.
-        .opacity(landing == .tabs ? 1 : 0)
+        // Consent keeps the tabs visible behind its blocking dimmer. The other landing states cover
+        // them while the key step runs or the first forwarding guide is shown.
+        .opacity(landing == .tabs || landing == .consent ? 1 : 0)
         .allowsHitTesting(landing == .tabs)
         .accessibilityHidden(landing != .tabs)
         .overlay {
             switch landing {
             case .consent:
-                AIReadingConsentView(model: screens.readingConsent, saveChoice: screens.settings.chooseReadingConsent, openManual: {
-                    consentBypassed = true
-                    guideClosed = true
-                    route.tab = .parcels
-                    manualForm = ManualParcelModel.live(list: screens.list)
-                }, openSample: {
-                    consentBypassed = true
-                    guideClosed = true
-                    route.showSample()
-                })
+                EmptyView()
             case .waiting:
                 ProgressView()
                     .accessibilityLabel(SettingsMenuText.loadingLabel)
@@ -337,9 +357,6 @@ struct MainTabView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) { AIReadingAutomaticStatusView(model: screens.settings.mailActions) }
-        #if DEBUG
-        .modifier(ConsentPreviewAccessibility(settings: screens.settings))
-        #endif
     }
 
     private var landing: Landing {
@@ -354,7 +371,7 @@ struct MainTabView: View {
             fromConfirmation: screens.keySetup?.lastRunFromConfirmation == true,
             boxClosed: boxClosed,
             gaveUp: screens.keySetup?.landingGaveUp == true,
-            needsConsent: !consentBypassed && (screens.readingConsent.decision == nil || screens.readingConsent.needsPrompt)
+            needsConsent: screens.readingConsent.requiresInitialChoice
         )
     }
 

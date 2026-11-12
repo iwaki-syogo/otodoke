@@ -123,8 +123,8 @@ final class AuthService {
     /// auth_secret, redirectTo: AppConfig.authRedirect, captchaToken:). The password's rule is LoginModel's, on
     /// the password as typed. Answers `.existing` for a user with `identities: []` and for a user_already_exists
     /// refusal, `.sent` for any other accepted answer and for the refusals that do not tell whether the address has an
-    /// account (over_email_send_rate_limit, email_exists, user_not_found, a 429 without a code); the other refusals
-    /// (captcha, rate, invalid address, network, other) are thrown as LoginFailure.
+    /// account (email_exists, user_not_found). Mail delivery pressure (over_email_send_rate_limit, an otherwise
+    /// unclassified 429, or 500) and the other refusals are thrown as LoginFailure.
     @discardableResult
     func signUp(email: String, password: String, captchaToken: String?) async throws(LoginFailure) -> SignUpOutcome {
         let address = PasswordV1.emailNorm(email)
@@ -289,11 +289,12 @@ final class AuthService {
         master.resetBytes(in: 0..<master.count)
     }
 
-    /// signOut(scope: .local). Always ends signed out on this device. First, on this device: ① the generation
+    /// Signs out the current generation on this device (scope: .local). First, on this device: ① the generation
     /// moves on ② work in flight is cancelled ③ the key and the plaintext in memory go ④ the Keychain item goes.
     func signOut() async {
         session.advance()
         session.follow(userID: nil)
+        let signedOutGeneration = session.value
         clearPendingSignIn()
         pendingMismatch = nil
         keyStep = nil
@@ -309,6 +310,8 @@ final class AuthService {
             // The client drops the local session before it calls the server; an unreachable server
             // does not keep the user signed in here.
         }
+        // The SDK emits signedOut before waiting for logout; a replacement login may already own storage.
+        guard session.value == signedOutGeneration, signingIn == 0 else { return }
         if provider.auth.currentSession != nil {
             provider.clearStoredSession()
         }
@@ -317,11 +320,20 @@ final class AuthService {
 
     /// Reauthenticate this same account for the key-recovery rewrap, without starting another key setup.
     func authenticateForKeyRecovery(authSecret: String, captchaToken: String?) async throws(LoginFailure) -> String {
-        guard case let .signedIn(userID) = state, let email = signedInEmail else { throw .other }
-        let stamp = session.stamp()
+        guard let stamp = session.stamp(), let email = provider.auth.currentSession?.user.email else { throw .other }
+        let address = PasswordV1.emailNorm(email)
+        let stillCurrent = { [self] in
+            guard !Task.isCancelled, session.isCurrent(stamp), case let .signedIn(userID) = state,
+                  userID == stamp.userID, let shared = provider.auth.currentSession,
+                  shared.user.id.uuidString.lowercased() == stamp.userID,
+                  let currentEmail = shared.user.email else { return false }
+            return PasswordV1.emailNorm(currentEmail) == address
+        }
+        guard stillCurrent() else { throw .other }
         do {
-            let result = try await provider.auth.signIn(email: email, password: authSecret, captchaToken: Self.token(captchaToken))
-            guard let stamp, session.isCurrent(stamp), result.user.id.uuidString.lowercased() == userID else { throw LoginFailure.other }
+            let result = try await provider.makeRecoveryAuthClient().signIn(email: address, password: authSecret, captchaToken: Self.token(captchaToken))
+            guard stillCurrent(), result.user.id.uuidString.lowercased() == stamp.userID,
+                  let resultEmail = result.user.email, PasswordV1.emailNorm(resultEmail) == address else { throw LoginFailure.other }
             return result.accessToken
         } catch let error as LoginFailure { throw error }
         catch { throw Self.signInFailure(error) }
@@ -423,7 +435,8 @@ final class AuthService {
             if code == "captcha_failed" { return .failed(.captcha) }
             if code == "over_request_rate_limit" { return .failed(.rate) }
             if code == "email_address_invalid" || code == "validation_failed" { return .failed(.invalidEmail) }
-            if ["user_already_exists", "email_exists", "user_not_found", "over_email_send_rate_limit"].contains(code ?? "") || status == 429 { return .sent }
+            if ["user_already_exists", "email_exists", "user_not_found"].contains(code ?? "") { return .sent }
+            if code == "over_email_send_rate_limit" || status == 429 || status == 500 { return .failed(.mailBusy) }
             if status >= 500 { return .failed(.network) }
             return .failed(.other)
         }

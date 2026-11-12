@@ -95,7 +95,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - DB のトリガー `parcels_received_at`（本人のセッション＝ `current_user = 'authenticated'` が delivered にしたとき now() を入れ、delivered から他へ変わったら誰でも null にする）が、received_at を知らない古い iOS のスワイプを受ける。Web は status と received_at を同じ更新で明示して書く
 - Web が「配達済み」（delivered で受け取っていない）を別の状態から書くときは、同じ書き込みで `received_at = '-infinity'` を送る（トリガーは null で保存し、自動で now() を入れない）。アプリの判定は有限の時刻だけを受け取り済みと読む（`isReceivedAt`）
 - 配達済みのまま 14 日たつと「要確認」に入る（`needsCheck`）。自動では受け取り済みにしない。要確認の「まだ」（`dismissCheck`）と「受け取っていない」は `check_dismissed_at` を入れ、もう聞かない（delivered から外れるとトリガーが空にする）
-- `STATUS_LABEL`（`format.ts`）は iOS が写して照合テストで固定しているので、delivered の語は「届いた」のまま。Web の画面は `parcelStatusLabel` で出し分ける。iOS が追いつくとき（ビルド 14）に両方そろえて変える
+- `STATUS_LABEL`（`format.ts`）とiOSの`Format.statusLabel`はdeliveredを「配達済み」とし、本人が受け取ったかはreceived_atで出し分ける。共有文言は実ソース同士の照合を維持する。
 
 ## メールのふるいと費用（`src/lib/screen.ts`）
 
@@ -136,7 +136,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 実メールは保存後、`src/lib/ai-consent.ts` の共通確認を通ってから Claude のふるいと抽出へ進む。未決定と拒否は `ai_consent_required`、確認不能は `ai_consent_unknown` で区別し、既存の `failed` 状態で未読として保持する。`unread.ts` の条件で後から読み直せる。
 - 未決定者は `/app` で許可画面へ進む。welcome と転送設定は許可前に転送先アドレスを作成・表示しない。拒否後も手動登録とサンプルを使える。
 - サンプルは作り物のメールと保存済みの抽出だけを使い、Claude API を呼ばない。専用のサンプル操作から戻った `/app?sample=1` は、未決定でも結果を見られる。同意を記録する操作ではない。
-- 設定の「あなたのメールの扱い」から許可を取り消せる。既存の荷物と結果は残り、消したい人は既存の削除操作を使う。許可の保存成功直後、届いている許可待ちメールを既存の日次上限内で自動読取する。読取失敗でも許可は保持し、後から既存の「読み取る」で再試行できる（2026-11-12 マスター決定）。
+- 設定の「あなたのメールの扱い」から許可を取り消せる。既存の荷物と結果は残り、消したい人は既存の削除操作を使う。許可の保存成功直後、届いている許可待ちメールを既存の日次上限内で自動読取する。読取失敗でも許可は保持し、後から既存の「読み取る」で再試行できる。
 - 同じ選択・文の版の再送では `decided_at` を保つ。自動読取は service role 専用の `claim_ai_reading_backlog` で同じ許可日時につき一度だけ開始し、失敗後も起動記録を戻さない。明示的な手動再試行はこの起動記録に制限されない。iOS は RPC が返した日時文字列を丸めず `after_consent` に渡す。
 - 自動読取は費用の守りの `unread.ts` の timeout・1 通全体・request 全体の予算を使い、次の 1 通を終える余裕がある場合だけ開始する。この契約がない旧 SDK 構成では起動しない。費用の守りの SDK timeout / retry・owned lease・容量制限と合わせて統合する。
 - iOS の同意と未読再開 API の契約は `docs/api/mail.md`。DB だけを当てても旧 Web の呼出は止まらないため、新しいガード版 Web と DB を続けて反映する。本番反映と DB 適用は別途承認の対象。
@@ -148,31 +148,29 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - private coreの `_without_sample_fence` はAPI roleから直接実行しない。新しいservice処理も公開RPCの入口を通す。header無しの任意複数表/複数利用者DMLやTRUNCATEは保守操作としてwriter停止・drainを要する。
 - 統合時は `tests/postgres/run-sample-lock-order.mjs` の自然競合と旧順序の陰性対照、`scripts/test-sample-generation.py`、`scripts/test-sample-generation-lifecycle.py` を使い捨てPGで確認する。前提・集計・後片付けは `tests/postgres/README.md`。検証終了は専用PGの停止・待ち受け0・専用データ削除まで。
 
-## ビルド14の受け取り状態（2026-11-11）
+## iOSの画面と共有文言
 
-- ビルド14では `STATUS_LABEL.delivered` とiOSの `Format.statusLabel` を「配達済み」にそろえた。上の受け取り済み節にある「iOSの照合のため届いたのまま」はビルド13までの説明。本人の受取は有限の `received_at` で出し分ける。
-- マスターからの報告: `20261112100000_parcel_received_at.sql` は2026-11-11 23:23 JSTに本番へ適用され、verifyも成功。Webの受け取り済みはdevのPreviewへ反映された。Codexが本番DBへ適用・検証したという記録ではない。
-- iOS用の削除・パスワード変更APIは `docs/api/account.md`。これらのAPIをWeb本番へ反映してから、呼び出すiOS版を配布する。
+- WebとiOSの配達状態名は「配達済み」。本人の受取は有限のreceived_atで区別する。削除・パスワードAPIの契約はdocs/api/account.mdに合わせる。
+- 読み取り許可は未回答者の通常画面より前面の小窓で求める。背景操作・VoiceOverで背面へ移れず、保存成功後に閉じる。手入力とサンプルは拒否後の通常画面から使え、設定で撤回・再許可できる。
+- 許可はai_reading_consentsの本人行を読み、set_ai_reading(p_decision,p_text_version)で保存する。0行と取得失敗を区別し、文の版が変わっただけでは聞き直さない。
+- 本文2文と期限の正本はsrc/lib/ai-consent-text.ts。iOSの独立定数と実際のTextを、Webの実段落と値・表示順・回数で照合する。コメントや文字列中のTextを表示と数えない。
+- MailHandlingText.itemsの14項目はWebのliと全文・表示順を合わせる。SettingsWebTextのplainDropNoticeとdroppedLeadも実Webと照合し、文の変更で空振りする陰性対照を残さない。
+- mail_busyをSHOWN_KEYSへ含め、実際のLoginTextとLOGIN_MESSAGESを照合する。未登録定数・対応するNative定数のない共有キー追加・一覧からの欠落・一字違いを同じcheckerで検出する。固定Web入力はGit blobと照合し、出典名だけを一致の証拠にしない。
+- 許可の保存直後はRPCが返したdecided_at原文字列をafter_consentへ渡し、既存の日次上限内で一度だけ自動読取する。失敗後の手動再試行・既読の荷物と結果の保持を維持し、起動やforegroundから自動POSTを再送しない。
+- 分類シートは保存確認後だけ閉じる。受取undoは今回書いた荷物と受取日時・更新版を照合し、保存0件でundoを付けない。例外の案内に件数を出さない。
+- DEBUG計測もsheetを持つcontentの構造を安定させる。操作用の制御は非操作probeと区別して前景へ置き、呼出回数だけでなく次のUI状態を待つ。foreground試験は実際のbackgroundからの復帰で行う。
 
-## AIによるメールの読み取り許可（2026-11-12 本人指定）
+## iOSの本人境界と認証
 
-- ログイン後、転送先アドレスを見せる前に「メールの読み取り」を1回表示する。未選択の既存利用者も対象。拒否/未確認ではアドレスを出さず、手入力と作り物のサンプルは使えるようにする。
-- 本文は「届いたメールは、Anthropic の Claude で読み取ります。」。許可/拒否と、アプリ内で開くプライバシーポリシーを用意し、設定の「あなたのメールの扱い」から撤回/再許可できるようにする。
-- Webとの契約は `ai_reading_consents` の本人行を読み、`set_ai_reading(p_decision,p_text_version)` で `granted` / `declined` と `v1` を保存する。0行と取得失敗を区別し、文の版違いだけでは再質問しない。許可を押しただけで有料の読取を開始しない。
+- APIトークンはモデル作成時のstampを固定し、共通readerでSDK session取得の前後の世代と取得した本人IDを照合する。後から現在のstampを取り直して別人へ追従しない。Demoのload/clearも操作前・token取得後・API応答後に旧世代の反映を止める。同世代のページ離脱・正常完了・結果不明時の再読は保つ。
+- 削除POST後の200/401は現行の本人だけを既存cleanupへ進める。SDKに別人がいれば旧応答で消さず、SDKが空になった場合は削除後の片付けを許容する。このnil許容を送信前のtoken取得へ流用しない。
+- パスワード変更APIは使い捨てAuthで更新する。成功またはsecret_change_unknownの後は既存signOutで鍵・保存session・読み込んだ画面を片付ける。通常の拒否や送信前の接続失敗はsessionを保つ。
+- signOutの遅い末尾は開始世代と進行中signInを照合し、新しい保存sessionや表示を消さない。元の世代の鍵・本文・作業・画面の先行消去は維持する。
+- 鍵復旧の再認証は共有AuthClientを汚さず、前後のstamp・SDK本人・正規化emailを照合する。ログアウト・別人切替・画面離脱後の遅い成功を復旧へ使わず、取消をAPI送信前とlocal cache保存前にも反映する。
 
-## AI読み取り許可の更新（2026-11-12 本人決定）
+## XcodeとSimulatorの負荷管理
 
-- 上の「許可を押しただけで読取を開始しない」は旧方針。許可を保存した直後は、それまでに届いて待っていたメールを1日の上限内で自動で読み取り、もう一度押す操作を要求しない。Web側の最新契約にそろえる。
-- 読み取りをやめても、既に読み取った荷物と結果は残す。許可の取消とデータ削除は別で、消したい人は既存の削除操作を使う。
-- 受け取りの例外の文は「元に戻せない荷物があります」「受け取り済みのままの荷物があります」。この2場面も件数を表示しない。
-- 許可の自動読取は、`set_ai_reading` が返した `decided_at` を原文字列のまま `POST /api/mail/read-waiting` の `after_consent` に渡す。日時を再生成しない。Web/DBが同じ許可の二重実行を防ぎ、対象の続くバッチと日次上限を扱う。
-- 読取失敗でも許可を取り消した扱いにしない。POSTを自動で再送せず、後から本人が「読み取る」を押すときは従来の空の本文を送る。通常の起動・foreground・許可の再確認から新しい自動読取を開始しない。
-
-## ビルド14の分類保存とundo（2026-11-12 追加依頼）
-
-- 分類の選択シートは、選択した値が `category_source=user` で保存できたと確認したときだけ成功として閉じる。競合・結果不明・再読失敗は、エラー文が空であることだけを成功としない。
-- 受取のundoは、今回の操作が実際に書いた荷物だけを対象にし、現在の受取日時が今回書いた値と一致する行だけを戻す。保存0件ではundoを付けない。既存の更新版による上書き防止も維持する。
-
+- xcodebuildと起動中Simulatorはそれぞれ同時に1本・1台まで。開始前に既存プロセスと端末を確認し、他担当の実行は止めない。-jobs 1 -parallel-testing-enabled NOを使い、終了後は自分のSimulatorをshutdownする。
 ## 許可待ちメールの保管
 
 - `20261113120000_consent_waiting_storage` は110000までの変更と既存の毎日の掃除に依存する。許可待ちは既存の利用者別保管上限を使い、全体の未読保管枠から分ける。許可後の日次上限待ちも、元の待ちメールの期限と区分を保つ。
@@ -243,7 +241,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 
 - 公開時は最小修正とし、signup/resend/resetのover_email_send_rate_limit・分類されない429・メール要求の500をmail_busy失敗へ返す。文の正本はLOGIN_MESSAGES.mail_busy。新規signupを確認待ちへ進めず、送信済み/未送信やaccount作成の有無を文で断定しない。通常sign-in・通信例外・他の5xxの分類は保つ。
 - user_already_exists等の非送信の中立応答は維持する。公式Authが送信前に成功する状態と、送信拒否になる状態のI6差は公開時の既知制約として受け入れる。全状態へ同じ429を返すmockで隠さず、3入口の不存在/未確認/確認済みを分けて試験する。送信枠の消費/返却差も共通受付の将来設計で扱う。
-- 根本の共通受付は公開後。native iOSの同文対応は別担当へ引き継ぎ、この作業でSupabaseの送信設定を変更しない。仮文はPreviewで本人へ見せ、確定を代行しない。詳細な状態表と設計要点はrepo外のreports/fix-auth-extract.md。
+- 認証やSMTPの設定は文の調整に伴って変更しない。文の正本と状態別の実際の応答を照合する。
 
 ## Webの受取証跡と取り消し（2026-11-12 レビューAの修正）
 
@@ -254,7 +252,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - journalは荷物/利用者のcascadeで消える。期限の正本は `public.parcel_receipt_retention()`。作成から24時間に固定し、受取の再送・undo・再送undoで延長しない。期限後のundoは変更しない。既存daily purgeへ期限切れの削除を合成し、許可待ちメールとscreen_eventsの掃除を保つ。正常に24時間毎の掃除が続く場合の物理残存は作成から48時間未満で、ジョブ停止中の物理削除は保証しない。
 - 手動受取は課金しないのでCを使わず、U → G → E → L → R → journalの順。forwardの3入口とdownの復元coreはP-1の共有 `lock_parcel_owner` を使う。mark/restoreはU/G/E後・R前、mail coreは本人/run/lease確認後に呼ぶ。before/verify/downはhelperのABI/owner/ACLと固定キー不在を確認し、誤った戻し順は変更前に止める。authenticatedの既存 `parcels UPDATE` grantは変更しない。B-4の通信予算と、DBの利用者別ロックP-1は別の守り。
 - 新Webの仮文は `UNDO_CHANGED_NOTICE` の「ほかで変更された荷物があります」。本人の決定までは仮置き。旧 `PARTLY_RESTORED_NOTICE` と `CANNOT_UNDO_NOTE` はiOSで使う値を維持する。Webの実装とTS parityの期待を同じ変更に含め、Swift/ios配下はiOS担当の版を保つ。iOSの三区分・新しい文・混在表示・Swift試験更新は別担当へ報告する。
-- STATUS_LABEL.deliveredはビルド14で「配達済み」へ更新済み。上の受取節にある「届いた」の保持説明は旧契約で、新しいWeb差分から戻さない。試験台本は `tests/postgres/run-received-receipts.mjs` と、受取/undoを追加した `run-sample-lock-order.mjs` の `--with-receipts`。専用Postgresでowner分離・固定キーの陰性・自然競合・戻し/再適用を測り、停止と削除まで確認する。
+- STATUS_LABEL.deliveredとiOSのFormat.statusLabelは「配達済み」で共有する。試験台本は `tests/postgres/run-received-receipts.mjs` と、受取/undoを追加した `run-sample-lock-order.mjs` の `--with-receipts`。専用Postgresでowner分離・固定キーの陰性・自然競合・戻し/再適用を測り、停止と削除まで確認する。
 - DB試験台本のverify出力は、共有の `tests/postgres/run-cost-guards.mjs` のファイル別形式で判定する。110000 afterは末尾の判定列を読む。任意の列にあるOKでは代用せず、列数・必須真偽値・件数・動作試験結果も照合する。verifyのSELECTを変えたら共有形式と正常/異常の自己試験も同じ変更で合わせ、実Postgresの測定とは区別する。
 
 ## 自動読み取り内の再試行（R4-2）

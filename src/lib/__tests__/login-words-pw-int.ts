@@ -1,22 +1,23 @@
 /**
- * A copy of the Web's words for the Web/iOS contract, from integrate/password-v1 (pinned at fd0e7d4):
+ * A copy of the Web's words for the Web/iOS contract, from integrate/password-v1 (pinned at fd0e7d4),
+ * with mail_busy from the fixed mail-limit source below:
  *  - LOGIN_MESSAGES of src/lib/login-errors.ts (every key, in order);
  *  - the password rule of src/lib/crypto/password-v1.ts (PASSWORD_RULE and passwordProblem's three answers).
  * The copy is here only while this branch's src/ does not have those files yet. ios-password-login.test.ts
- * compares it with the Web's own files (this tree's when they arrive, else the tip of integrate/password-v1 read
- * through git) and fails when they differ, so the copy cannot quietly go stale. Not a test file (no tests here).
+ * compares it with the Web's own files (OTODOKE_AUTH_WEB_ROOT when explicitly set; otherwise this tree or
+ * integrate/password-v1 through git) and fails when they differ. Not a test file (no tests here).
  */
 export const COPY_SOURCE = { ref: "integrate/password-v1", pinned: "fd0e7d4" } as const;
+export const MAIL_LIMIT_SOURCE = "7749afe3836dd18cab4ca76ba6f6c38e10098ac9";
 
 export const LOGIN_MESSAGES_COPY: Record<string, string> = {
   credentials: "メールアドレスかパスワードが違います。",
   not_confirmed: "メールアドレスの確認がまだです。届いたメールのリンクを開いてください。",
   rate: "回数が多いため、しばらく時間をおいてから、もう一度お試しください。",
+  mail_busy: "いま混み合っています。少し時間をおいて、もう一度お試しください。",
   captcha: "確認が切れました。もう一度お試しください。",
   network: "つながりませんでした。少し時間をおいて、もう一度お試しください。",
   other: "うまくいきませんでした。もう一度お試しください。",
-  // Web-only until the native mail-failure handoff is implemented.
-  mail_busy: "いま混み合っています。少し時間をおいて、もう一度お試しください。",
   invalid_email: "メールアドレスの形式を確認してください。",
   email_not_ascii: "半角の英数字と記号だけのメールアドレスをお使いください。",
   not_configured: "いまは受け付けられません。少し時間をおいて、もう一度お試しください。",

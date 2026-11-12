@@ -242,6 +242,205 @@ struct AuthServiceTests {
         #expect(await auth.provider.currentUserID() == nil)
     }
 
+    @Test(arguments: ["success", "offline"])
+    func anOldLogoutAnswerCannotEraseAReplacementSignedInGeneration(_ answer: String) async throws {
+        let fake = FakeSupabase.make(), storage = InMemorySessionStorage(), release = Gate()
+        await account(fake)
+        await fake.insert("parcels", [Rows.parcel(1, ["status": "shipped"])])
+        let auth = make(fake, storage: storage)
+        auth.makeSignedIn = { MainScreens.live(auth: $0, readingConsent: .allowedForTests(), withKeys: false) }
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        let original = try await loadedGeneration(auth)
+        defer { original.work.cancel(); release.open() }
+        let originalStamp = try #require(auth.session.stamp())
+        await holdLogout(fake, until: release, answer: answer)
+
+        let signingOut = Task { await auth.signOut() }
+        try #require(await waitFor {
+            let state = await auth.state
+            let requests = await fake.count("POST", "logout")
+            return state == .signedOut && requests == 1
+        })
+        #expect(RootScreen.of(auth.state) == .login)
+        #expect(storage.isEmpty && auth.provider.auth.currentSession == nil)
+        #expect(original.work.isCancelled && original.plaintext.drops == 1)
+        #expect(original.keys.store.key == nil && original.keys.vaultCount == 0)
+        #expect(original.screens.list.rows.isEmpty)
+
+        // The SDK has already emitted signedOut while the old HTTP logout is still waiting.
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        let replacementStamp = try #require(auth.session.stamp())
+        let replacementSession = try #require(auth.provider.auth.currentSession)
+        #expect(replacementStamp != originalStamp)
+        let replacement = try await loadedGeneration(auth)
+        defer { replacement.work.cancel() }
+        #expect(auth.state == .signedIn(userID: FakeSupabase.me) && !storage.isEmpty)
+        #expect(replacement.keys.store.key != nil && replacement.keys.vaultCount == 1)
+        #expect(!replacement.screens.list.rows.isEmpty)
+        release.open()
+        await signingOut.value
+
+        #expect(auth.state == .signedIn(userID: FakeSupabase.me))
+        #expect(RootScreen.of(auth.state) == .main && auth.session.isCurrent(replacementStamp))
+        #expect(auth.provider.auth.currentSession?.accessToken == replacementSession.accessToken)
+        #expect(auth.provider.auth.currentSession?.refreshToken == replacementSession.refreshToken && !storage.isEmpty)
+        #expect(auth.signedInEmail == FakeSupabase.email)
+        #expect(auth.signedInObject() === replacement.screens)
+        #expect(replacement.keys.store.key != nil && replacement.keys.vaultCount == 1)
+        #expect(!replacement.work.isCancelled && replacement.plaintext.drops == 0)
+        #expect(!replacement.screens.list.rows.isEmpty)
+        #expect(auth.takeSignInSecret()?.master == PW.master(email: FakeSupabase.email, password: PW.good))
+        #expect(await fake.count("POST", "logout") == 1)
+        #expect(await fake.count("POST", "token") == 2)
+        #expect(await fake.requests("POST", "logout").first?.query("scope") == ["local"])
+    }
+
+    @Test(arguments: ["success", "offline"])
+    func aLocalSignOutStillCleansEverythingWithoutAReplacementLogin(_ answer: String) async throws {
+        let fake = FakeSupabase.make(), storage = InMemorySessionStorage()
+        await account(fake)
+        await fake.insert("parcels", [Rows.parcel(1, ["status": "shipped"])])
+        let auth = make(fake, storage: storage)
+        auth.makeSignedIn = { MainScreens.live(auth: $0, readingConsent: .allowedForTests(), withKeys: false) }
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        let original = try await loadedGeneration(auth)
+        defer { original.work.cancel() }
+        let stamp = try #require(auth.session.stamp())
+        if answer == "offline" { await fake.fail("POST", "logout", with: .transport(.notConnectedToInternet)) }
+
+        await auth.signOut()
+
+        #expect(auth.state == .signedOut && RootScreen.of(auth.state) == .login)
+        #expect(storage.isEmpty && auth.provider.auth.currentSession == nil)
+        #expect(!auth.session.isCurrent(stamp) && auth.session.stamp() == nil)
+        #expect(auth.signedInObject() == nil && auth.takeSignInSecret() == nil)
+        #expect(original.keys.store.key == nil && original.keys.vaultCount == 0)
+        #expect(original.work.isCancelled && original.plaintext.drops == 1)
+        #expect(original.screens.list.rows.isEmpty && original.screens.settings.keyPanel == nil)
+        #expect(await fake.count("POST", "logout") == 1)
+        #expect(await fake.count("POST", "token") == 1)
+    }
+
+    @Test(arguments: ["success", "offline"])
+    func aRefusedReplacementLoginDoesNotRestoreTheSignedOutAccount(_ answer: String) async throws {
+        let fake = FakeSupabase.make(), storage = InMemorySessionStorage(), release = Gate()
+        await account(fake)
+        let auth = make(fake, storage: storage)
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        await holdLogout(fake, until: release, answer: answer)
+        defer { release.open() }
+        let signingOut = Task { await auth.signOut() }
+        try #require(await waitFor {
+            let state = await auth.state
+            let requests = await fake.count("POST", "logout")
+            return state == .signedOut && requests == 1
+        })
+
+        await #expect(throws: LoginFailure.credentials) {
+            try await auth.signIn(email: FakeSupabase.email, password: "a different password", captchaToken: nil)
+        }
+        release.open()
+        await signingOut.value
+
+        #expect(auth.state == .signedOut && RootScreen.of(auth.state) == .login)
+        #expect(auth.provider.auth.currentSession == nil && storage.isEmpty)
+        #expect(auth.takeSignInSecret() == nil && auth.session.stamp() == nil)
+        #expect(await fake.count("POST", "logout") == 1)
+        #expect(await fake.count("POST", "token") == 2)
+    }
+
+    @Test(arguments: ["success", "offline"])
+    func aLoginStillInFlightWhenAnOldLogoutReturnsCanFinishNormally(_ answer: String) async throws {
+        let fake = FakeSupabase.make(), storage = InMemorySessionStorage(), releaseLogout = Gate(), releaseLogin = Gate()
+        await account(fake)
+        let auth = make(fake, storage: storage)
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        await holdLogout(fake, until: releaseLogout, answer: answer)
+        defer { releaseLogout.open(); releaseLogin.open() }
+        let signingOut = Task { await auth.signOut() }
+        try #require(await waitFor {
+            let state = await auth.state
+            let requests = await fake.count("POST", "logout")
+            return state == .signedOut && requests == 1
+        })
+        await fake.fail("POST", "token", nth: 2, with: .hold(releaseLogin))
+        let signingIn = Task { try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil) }
+        try #require(await waitFor { await fake.count("POST", "token") == 2 })
+        #expect(auth.provider.auth.currentSession == nil && storage.isEmpty)
+        releaseLogout.open()
+        await signingOut.value
+        #expect(auth.state == .signedOut && storage.isEmpty)
+        releaseLogin.open()
+        try await signingIn.value
+
+        #expect(auth.state == .signedIn(userID: FakeSupabase.me) && RootScreen.of(auth.state) == .main)
+        #expect(auth.provider.auth.currentSession != nil && !storage.isEmpty)
+        #expect(auth.takeSignInSecret()?.master == PW.master(email: FakeSupabase.email, password: PW.good))
+        #expect(await fake.count("POST", "logout") == 1)
+        #expect(await fake.count("POST", "token") == 2)
+    }
+
+    @Test(arguments: ["success", "offline"])
+    func anOldLogoutCannotEraseAnAnsweredLoginBeforeItIsPublished(_ answer: String) async throws {
+        let fake = FakeSupabase.make(), storage = InMemorySessionStorage()
+        let releaseLogout = Gate(), loginAnswered = Gate(), releaseLoginPublication = Gate()
+        await account(fake)
+        let auth = make(fake, storage: storage)
+        await auth.start()
+        try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        await holdLogout(fake, until: releaseLogout, answer: answer)
+        defer { releaseLogout.open(); releaseLoginPublication.open() }
+        let signingOut = Task { await auth.signOut() }
+        try #require(await waitFor {
+            let state = await auth.state
+            let requests = await fake.count("POST", "logout")
+            return state == .signedOut && requests == 1
+        })
+        auth.afterSignInAnswer = {
+            loginAnswered.open()
+            await releaseLoginPublication.wait()
+        }
+        let signingIn = Task { try await auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil) }
+        await loginAnswered.wait()
+        let replacementSession = try #require(auth.provider.auth.currentSession)
+        #expect(!storage.isEmpty && auth.state == .signedOut)
+
+        releaseLogout.open()
+        await signingOut.value
+
+        #expect(auth.provider.auth.currentSession?.accessToken == replacementSession.accessToken && !storage.isEmpty)
+        releaseLoginPublication.open()
+        try await signingIn.value
+        #expect(auth.state == .signedIn(userID: FakeSupabase.me) && RootScreen.of(auth.state) == .main)
+        #expect(auth.provider.auth.currentSession?.refreshToken == replacementSession.refreshToken)
+        #expect(auth.takeSignInSecret()?.master == PW.master(email: FakeSupabase.email, password: PW.good))
+        #expect(await fake.count("POST", "logout") == 1)
+        #expect(await fake.count("POST", "token") == 2)
+    }
+
+    private func holdLogout(_ fake: FakeSupabase, until release: Gate, answer: String) async {
+        if answer == "offline" { await fake.fail("POST", "logout", with: .holdThen(release, .transport(.notConnectedToInternet))) }
+        else { await fake.fail("POST", "logout", with: .hold(release)) }
+    }
+
+    private func loadedGeneration(_ auth: AuthService) async throws -> (screens: MainScreens, keys: UnlockWorld, plaintext: PlaintextProbe, work: Task<Void, Never>) {
+        let screens = try require_(auth.signedInObject() as? MainScreens)
+        let keys = try UnlockWorld(session: auth.session)
+        keys.plantVaultKey(); try keys.putKeyInMemory()
+        let plaintext = PlaintextProbe()
+        keys.store.hold(plaintext)
+        let work = Task<Void, Never> { try? await Task.sleep(for: .seconds(30)) }
+        keys.store.track(work)
+        auth.cleanup = keys.store
+        auth.clearLoadedData = { screens.clearForSignOut() }
+        await screens.list.load(); await screens.calendar.load(); await screens.spend.load(); await screens.settings.load()
+        return (screens, keys, plaintext, work)
+    }
+
     @Test func theRootScreenFollowsTheState() {
         #expect(RootScreen.of(.unknown) == .loading)
         #expect(RootScreen.of(.signedOut) == .login)

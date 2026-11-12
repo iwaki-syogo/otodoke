@@ -26,6 +26,7 @@ struct PasswordWordsTests {
         #expect(LoginText.emailNotAscii == "半角の英数字と記号だけのメールアドレスをお使いください。")
         #expect(LoginText.signupExistsOrSent == "確認のメールを送りました。メールのリンクを開いてから、ログインしてください。")
         #expect(LoginText.confirmationSent == "確認のメールを送りました。")
+        #expect(LoginText.mailBusy == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
         #expect(LoginText.signedOut == "ログインし直してください。")
         #expect(LoginText.staleSession == "続けるには、もう一度ログインしてください。")
     }
@@ -44,13 +45,14 @@ struct PasswordWordsTests {
         #expect(LoginFailure.credentials.message == LoginText.credentials)
         #expect(LoginFailure.notConfirmed.message == LoginText.notConfirmed)
         #expect(LoginFailure.rate.message == LoginText.rate)
+        #expect(LoginFailure.mailBusy.message == LoginText.mailBusy)
         #expect(LoginFailure.captcha.message == LoginText.captcha)
         #expect(LoginFailure.network.message == LoginText.network)
         #expect(LoginFailure.other.message == LoginText.other)
         #expect(LoginFailure.invalidEmail.message == LoginText.invalidEmail)
         #expect(LoginFailure.emailNotAscii.message == LoginText.emailNotAscii)
         // The raw value is the Web's code.
-        #expect(LoginFailure.allCases.map(\.rawValue) == ["credentials", "not_confirmed", "rate", "captcha", "network", "other", "invalid_email", "email_not_ascii"])
+        #expect(LoginFailure.allCases.map(\.rawValue) == ["credentials", "not_confirmed", "rate", "mail_busy", "captcha", "network", "other", "invalid_email", "email_not_ascii"])
     }
 
     @Test func thePasswordRuleIsTheWebs() {

@@ -12,6 +12,7 @@ const WEB_CONSENT_VIEW_PATH = path.join(WEB_ROOT, "src/app/app/reading/reading-c
 const WEB_HANDLING_VIEW_PATH = path.join(WEB_ROOT, "src/app/app/settings/mail-handling.tsx");
 const WEB_MAIL_HANDLER_PATH = path.join(WEB_ROOT, "src/app/api/mail/handler.ts");
 const SWIFT_ROOT = path.join(ROOT, "ios/Otodoke");
+const MAIL_CONTENT_EXPLANATION = "メールの件名・差出人・本文を送り、荷物の情報を取り出します。";
 const APPROVED_COPY = [
   "メールの読み取り",
   "届いたメールは、Anthropic の Claude で読み取ります。",
@@ -199,7 +200,7 @@ function assertNativeConsentParagraph(web: string, native: string, consentText: 
   expect(calls).toMatch(new RegExp(`Text\\(MailHandlingText\\.${declaration![1]}\\)`));
 }
 
-/** Strict future contract: both native paragraphs must be declared, displayed once and ordered. */
+/** Both actual native paragraphs must be declared, displayed once and ordered. */
 function assertNativeConsentParagraphs(web: string[], native: string, consentText: string) {
   expect(web).toHaveLength(2);
   const code = swiftCode(native);
@@ -219,24 +220,36 @@ function assertNativeConsentParagraphs(web: string[], native: string, consentTex
   expect(displayed, "native consent paragraphs must match both Web values once, in display order").toEqual(web);
 }
 
-/** A test-only future Swift source; never an assertion about the unmodified native implementation. */
-function nativeWithWaitingParagraph(native: string, waiting: string): string {
-  return native.replace("static let items:", `static let waitingRetention = ${JSON.stringify(waiting)}\n    static let items:`)
-    .replace("ForEach(Array(MailHandlingText.items.enumerated())", "Text(MailHandlingText.waitingRetention)\n                ForEach(Array(MailHandlingText.items.enumerated())");
-}
-
-/** Diagnostic fixture of ebdcbee's all-shared-paragraph predicate and single-paragraph gate. */
-function assertLegacySingleMailHandlingParagraph(source: string) {
-  const file = ts.createSourceFile("mail-handling.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let paragraphs = 0;
+/** Read the actual disclosure paragraphs, preserving their JSX structure and displayed order. */
+function readingConsentParagraphs(source: string, textSource: string): string[] {
+  const file = ts.createSourceFile("reading-consent.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const paragraphs: Array<{ properties: string[]; text: string }> = [];
   const visit = (node: ts.Node) => {
-    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(file) === "p"
-      && node.children.some((child) => ts.isJsxExpression(child) && child.expression
-        && ts.isPropertyAccessExpression(child.expression) && child.expression.expression.getText(file) === "AI_CONSENT_TEXT")) paragraphs++;
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(file) === "p") {
+      const properties = node.children.flatMap((child) => ts.isJsxExpression(child) && child.expression
+        && ts.isPropertyAccessExpression(child.expression) && child.expression.expression.getText(file) === "AI_CONSENT_TEXT"
+        ? [child.expression.name.text] : []);
+      if (properties.some((property) => property === "body" || property === "detail")) {
+        const text = node.children.map((child) => {
+          if (ts.isJsxText(child)) return child.text;
+          if (ts.isJsxExpression(child) && child.expression && ts.isPropertyAccessExpression(child.expression)
+            && child.expression.expression.getText(file) === "AI_CONSENT_TEXT") {
+            return exportedCopyProperty(textSource, child.expression.name.text);
+          }
+          throw new Error("the consent disclosure paragraph contains unreadable content");
+        }).join("").replace(/\s+/g, " ").trim();
+        if (!text) throw new Error("the consent disclosure paragraph is empty");
+        paragraphs.push({ properties, text });
+      }
+    }
     ts.forEachChild(node, visit);
   };
   visit(file);
-  if (paragraphs !== 1) throw new Error("exactly one mail-handling consent paragraph must be present");
+  if (paragraphs.length !== 2 || paragraphs[0].properties.join(",") !== "body"
+    || paragraphs[1].properties.join(",") !== "detail") {
+    throw new Error("the actual consent view must display body then detail in two separate paragraphs exactly once each");
+  }
+  return paragraphs.map((paragraph) => paragraph.text);
 }
 
 /** Read the actual schema used by the endpoint, rather than pinning a private schema's name. */
@@ -353,14 +366,96 @@ function assertSharedCopy(web: string[], native: string[]) {
   expect(nativeValues).toEqual(agreedWebValues);
 }
 
+function assertIndependentExplanation(webSource: string, nativeSource: string, webViewSource: string) {
+  const webParagraphs = readingConsentParagraphs(webViewSource, webSource);
+  const code = swiftCode(nativeSource);
+  const calls = swiftCode(nativeSource, false);
+  const constants = [...code.matchAll(/\bstatic\s+let\s+(\w+)(?:\s*:\s*String)?\s*=\s*("(?:[^"\\]|\\.)*")/g)];
+  const declarations = constants.filter((match) => JSON.parse(match[2]) === MAIL_CONTENT_EXPLANATION);
+  expect(declarations, "the second sentence has one independent native constant").toHaveLength(1);
+  const start = calls.indexOf("struct AIReadingConsentView: View");
+  const end = calls.indexOf("struct AIReadingConsentSettingsControl: View");
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  const popup = code.slice(start, end);
+  const popupCalls = calls.slice(start, end);
+  const references = [...popupCalls.matchAll(/Text\(AIReadingConsentText\.(\w+)\)/g)];
+  const rendered = references.flatMap((match, index) => {
+    const tail = popup.slice(match.index, references[index + 1]?.index ?? popup.length);
+    const identifier = tail.match(/\.accessibilityIdentifier\("ai-reading-consent\.(body|explanation)"\)/)?.[1];
+    if (!identifier) return [];
+    const declaration = constants.find((entry) => entry[1] === match[1]);
+    if (!declaration) throw new Error(`the rendered native ${identifier} has no actual text constant`);
+    return [{ identifier, value: JSON.parse(declaration[2]) as string, reference: match[0] }];
+  });
+  expect(rendered.map((entry) => entry.identifier), "both actual Text views must be present in disclosure order").toEqual(["body", "explanation"]);
+  expect(rendered.map((entry) => entry.value), "both actual native Text values must match the actual Web paragraphs separately and in order").toEqual(webParagraphs);
+  const bodyReference = rendered[0].reference;
+  expect(popupCalls.split(bodyReference).length - 1, "the popup renders the actual body constant once, including views without an AX id").toBe(1);
+  const reference = `Text(AIReadingConsentText.${declarations[0][1]})`;
+  expect(popupCalls.split(reference).length - 1, "the popup renders the actual explanation constant once").toBe(1);
+  expect(rendered[1].reference).toBe(reference);
+  return { declaration: declarations[0][0], reference, bodyReference };
+}
+
 describe("AI reading consent copy is shared with the actual Web values", () => {
-  // TODO (integration owner/coordinator): integrate the iOS popup SHA and verify
-  // AI_CONSENT_TEXT.detail at that exact SHA, then restore this case to `it` before publication.
-  it.skip("compares exported Web copy with native strings, including every approved sentence", () => {
+  it("compares exported Web copy with native strings, including every approved sentence", () => {
     expect(existsSync(WEB_TEXT_PATH), "integrate the Web-owned src/lib/ai-consent-text.ts before declaring parity complete").toBe(true);
     const web = exportedStrings(readFileSync(WEB_TEXT_PATH, "utf8"));
+    const consentSource = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
+    assertIndependentExplanation(readRequired(WEB_TEXT_PATH), consentSource, readRequired(WEB_CONSENT_VIEW_PATH));
     const native = swiftStrings(swiftConsentSources().join("\n"));
     assertSharedCopy(web, native);
+  });
+
+  it("the second sentence is a single independent native constant rendered in the popup", () => {
+    assertIndependentExplanation(readRequired(WEB_TEXT_PATH), readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8"), readRequired(WEB_CONSENT_VIEW_PATH));
+  });
+
+  it("negative control: missing, substituted or unrendered second sentences cannot pass parity", () => {
+    const web = readRequired(WEB_TEXT_PATH);
+    const view = readRequired(WEB_CONSENT_VIEW_PATH);
+    const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
+    const { declaration, reference, bodyReference } = assertIndependentExplanation(web, native, view);
+    expect(() => assertIndependentExplanation(web, native.replace(declaration, ""), view)).toThrow();
+    expect(() => assertIndependentExplanation(web, native.replace(MAIL_CONTENT_EXPLANATION, "本文を送りません。"), view)).toThrow();
+    expect(() => assertIndependentExplanation(web, native.replace(reference, "EmptyView()"), view)).toThrow();
+    expect(() => assertIndependentExplanation(web.replace(MAIL_CONTENT_EXPLANATION, "本文を送りません。"), native, view)).toThrow();
+    expect(() => assertIndependentExplanation(web, native.replace(declaration, `${declaration}\nstatic let duplicatedExplanation = ${JSON.stringify(MAIL_CONTENT_EXPLANATION)}`), view)).toThrow();
+    expect(() => assertIndependentExplanation(web, native.replace(bodyReference, `${bodyReference}\n${bodyReference}`), view)).toThrow();
+    const swapped = native.replace(bodyReference, "__first_disclosure__").replace(reference, bodyReference).replace("__first_disclosure__", reference);
+    expect(swapped).not.toBe(native);
+    expect(() => assertIndependentExplanation(web, swapped, view)).toThrow();
+    for (const call of [bodyReference, reference]) {
+      for (const replacement of [
+        `EmptyView() // ${call}`, `EmptyView() /* ${call} */`,
+        `let unused = ${JSON.stringify(call)}`,
+        `let unused = #"${call}"#`, `let unused = """\n${call}\n"""`,
+      ]) {
+        const hidden = native.replace(call, replacement);
+        expect(hidden).not.toBe(native);
+        expect(() => assertIndependentExplanation(web, hidden, view)).toThrow();
+      }
+    }
+  });
+
+  it("negative controls reject missing, merged, duplicate or reordered real Web disclosure paragraphs", () => {
+    const web = readRequired(WEB_TEXT_PATH);
+    const view = readRequired(WEB_CONSENT_VIEW_PATH);
+    const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
+    assertIndependentExplanation(web, native, view);
+    const paragraphs = [...view.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/g)].map((match) => match[0]).filter((value) => /AI_CONSENT_TEXT\.(body|detail)\b/.test(value));
+    expect(paragraphs).toHaveLength(2);
+    const [first, second] = paragraphs;
+    for (const changed of [
+      view.replace(first, ""), view.replace(second, ""),
+      view.replace(first, `${first}${first}`), view.replace(second, `${second}${second}`),
+      view.replace(first, "__first_disclosure__").replace(second, first).replace("__first_disclosure__", second),
+      view.replace(first, first.replace("</p>", "{AI_CONSENT_TEXT.detail}</p>")).replace(second, ""),
+    ]) {
+      expect(changed).not.toBe(view);
+      expect(() => assertIndependentExplanation(web, native, changed)).toThrow();
+    }
   });
 
   it("compares the actual Web text version with AIReadingConsentContract.textVersion", () => {
@@ -404,79 +499,61 @@ describe("AI reading consent copy is shared with the actual Web values", () => {
     ]);
   });
 
-  it("reproduces the current integration base's old one-paragraph failure with its all-shared-paragraph predicate", () => {
-    const view = readRequired(WEB_HANDLING_VIEW_PATH);
-    expect(() => assertLegacySingleMailHandlingParagraph(view)).toThrow("exactly one mail-handling consent paragraph must be present");
-    const waitingParagraph = [...view.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/g)].map((match) => match[0]).find((value) => value.includes("AI_CONSENT_TEXT.waitingRetention"));
-    expect(waitingParagraph).toBeTruthy();
-    assertLegacySingleMailHandlingParagraph(view.replace(waitingParagraph!, ""));
-  });
-
-  it("explicitly detects that the actual iOS view still lacks the second waiting-retention paragraph", () => {
+  it("compares both actual mail-handling paragraphs once in order, including retained results and the deadline", () => {
     const web = mailHandlingConsentParagraphs(readRequired(WEB_HANDLING_VIEW_PATH), readRequired(WEB_TEXT_PATH));
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
-    // This active gap detector is not a declaration of full native parity. Once iOS adds this
-    // paragraph, replace this known-gap assertion with the strict comparison below.
-    expect(() => assertNativeConsentParagraphs(web, native, consentText))
-      .toThrow(`native mail-handling paragraph 2 is missing, changed or not displayed: ${web[1]}`);
+    assertNativeConsentParagraphs(web, native, consentText);
   });
 
-  it("the strict two-paragraph helper accepts a future completed native fixture, not the current iOS implementation", () => {
-    const web = mailHandlingConsentParagraphs(readRequired(WEB_HANDLING_VIEW_PATH), readRequired(WEB_TEXT_PATH));
-    const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
-    const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
-    const completedFixture = nativeWithWaitingParagraph(native, web[1]);
-    assertNativeConsentParagraphs(web, completedFixture, consentText);
-    expect(completedFixture).not.toBe(native);
-  });
-
-  it("negative controls reject missing, duplicate or reordered Web paragraphs", () => {
+  it("negative controls reject missing, duplicate or reordered actual Web paragraphs", () => {
     const view = readRequired(WEB_HANDLING_VIEW_PATH);
     const text = readRequired(WEB_TEXT_PATH);
-    const sourceParagraphs = [...view.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/g)].map((match) => match[0]).filter((value) => value.includes("AI_CONSENT_TEXT."));
-    expect(sourceParagraphs).toHaveLength(2);
-    const [first, second] = sourceParagraphs;
-    for (const changed of [view.replace(first, ""), view.replace(second, ""), view.replace(first, `${first}${first}`), view.replace(second, `${second}${second}`), view.replace(`${first}\n      ${second}`, `${second}\n      ${first}`)]) {
+    const paragraphs = [...view.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/g)].map((match) => match[0]).filter((value) => value.includes("AI_CONSENT_TEXT."));
+    expect(paragraphs).toHaveLength(2);
+    const [first, second] = paragraphs;
+    for (const changed of [view.replace(first, ""), view.replace(second, ""), view.replace(first, `${first}${first}`), view.replace(second, `${second}${second}`), view.replace(first, "__first_paragraph__").replace(second, first).replace("__first_paragraph__", second)]) {
       expect(changed).not.toBe(view);
       expect(() => mailHandlingConsentParagraphs(changed, text)).toThrow();
     }
   });
 
-  it("negative controls reject an undeclared, hidden, changed, duplicate or reordered native deadline in the future fixture", () => {
+  it("negative controls reject an undeclared, unrendered, duplicate, reordered or changed actual native deadline", () => {
     const web = mailHandlingConsentParagraphs(readRequired(WEB_HANDLING_VIEW_PATH), readRequired(WEB_TEXT_PATH));
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
-    const fixture = nativeWithWaitingParagraph(native, web[1]);
-    assertNativeConsentParagraphs(web, fixture, consentText);
+    assertNativeConsentParagraphs(web, native, consentText);
     const display = "Text(MailHandlingText.waitingRetention)";
     const firstDisplay = "Text(MailHandlingText.readingPermission)";
     for (const changed of [
-      fixture.replace(/static let waitingRetention = [^\n]+\n/, ""),
-      fixture.replace(display, "EmptyView()"),
-      fixture.replace(web[1], web[1].replace("14 日", "15 日")),
-      fixture.replace(display, `${display}\n${display}`),
-      fixture.replace(firstDisplay, "__first__").replace(display, firstDisplay).replace("__first__", display),
+      native.replace(/static let waitingRetention = [^\n]+\n/, ""),
+      native.replace(display, "EmptyView()"),
+      native.replace(display, `${display}\n${display}`),
+      native.replace(firstDisplay, "__first_paragraph__").replace(display, firstDisplay).replace("__first_paragraph__", display),
     ]) {
-      expect(changed).not.toBe(fixture);
+      expect(changed).not.toBe(native);
       expect(() => assertNativeConsentParagraphs(web, changed, consentText)).toThrow();
     }
+    const waiting = exportedCopyProperty(readRequired(WEB_TEXT_PATH), "waitingRetention");
+    const changedText = consentText.replace(waiting, waiting.replace("14 日", "15 日"));
+    expect(changedText).not.toBe(consentText);
+    expect(() => assertNativeConsentParagraphs(web, native, changedText)).toThrow();
   });
 
   it.each(["line", "block"] as const)("negative control: a %s-commented native Text is not a displayed deadline or retained paragraph", (style) => {
     const web = mailHandlingConsentParagraphs(readRequired(WEB_HANDLING_VIEW_PATH), readRequired(WEB_TEXT_PATH));
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
-    const fixture = nativeWithWaitingParagraph(native, web[1]);
+    const fixture = native;
     assertNativeConsentParagraphs(web, fixture, consentText);
     const comment = (text: string) => style === "line" ? `// ${text}` : `/* ${text} */`;
     const deadline = "Text(MailHandlingText.waitingRetention)";
     expect(() => assertNativeConsentParagraphs(web, fixture.replace(deadline, comment(deadline)), consentText)).toThrow();
     const retained = "Text(MailHandlingText.readingPermission)";
     expect(() => assertNativeConsentParagraph(web[0], native.replace(retained, comment(retained)), consentText)).toThrow();
-    const declaration = `static let waitingRetention = ${JSON.stringify(web[1])}`;
-    expect(fixture).toContain(declaration);
-    expect(() => assertNativeConsentParagraphs(web, fixture.replace(declaration, comment(declaration)), consentText)).toThrow();
+    const declaration = fixture.match(/static let waitingRetention(?:\s*:\s*String)?\s*=\s*"[^"\n]*"/)?.[0];
+    expect(declaration).toBeTruthy();
+    expect(() => assertNativeConsentParagraphs(web, fixture.replace(declaration!, comment(declaration!)), consentText)).toThrow();
     const retainedValue = exportedCopyProperty(readRequired(WEB_TEXT_PATH), "retainedResults");
     const oldComment = comment(`static let retainedResults = ${JSON.stringify(retainedValue)}`);
     const changedConsent = `${oldComment}\n${consentText.replace(retainedValue, "結果は残りません。")}`;
@@ -505,7 +582,7 @@ describe("AI reading consent copy is shared with the actual Web values", () => {
     const web = mailHandlingConsentParagraphs(readRequired(WEB_HANDLING_VIEW_PATH), readRequired(WEB_TEXT_PATH));
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
-    const fixture = nativeWithWaitingParagraph(native, web[1]);
+    const fixture = native;
     const unused = (call: string) => style === "normal" ? `let unused = ${JSON.stringify(call)}`
       : style === "raw" ? `let unused = #"${call}"#` : `let unused = """\n${call}\n"""`;
     const deadline = "Text(MailHandlingText.waitingRetention)";
@@ -533,21 +610,23 @@ describe("AI reading consent copy is shared with the actual Web values", () => {
   it("negative control: removing or changing the actual consent paragraph cannot pass parity", () => {
     const view = readRequired(WEB_HANDLING_VIEW_PATH);
     const text = readRequired(WEB_TEXT_PATH);
-    const web = mailHandlingConsentParagraphs(view, text)[0];
+    const web = mailHandlingConsentParagraphs(view, text);
     const native = readFileSync(path.join(SWIFT_ROOT, "Screens/Settings/MailHandlingView.swift"), "utf8");
     const consentText = readFileSync(path.join(SWIFT_ROOT, "Screens/Consent/AIReadingConsentView.swift"), "utf8");
-    assertNativeConsentParagraph(web, native, consentText);
+    assertNativeConsentParagraphs(web, native, consentText);
     expect(() => mailHandlingConsentParagraphs(view.replace(/<p\b[^>]*>[\s\S]*?<\/p>/, ""), text)).toThrow();
-    const changed = mailHandlingConsentParagraphs(view.replace("Claude に送ります。", "Claude に送りません。"), text)[0];
-    expect(changed).not.toBe(web);
-    expect(() => assertNativeConsentParagraph(changed, native, consentText)).toThrow();
-    expect(() => assertNativeConsentParagraph(web, native.replace(/Text\(MailHandlingText\.\w+\)/g, "EmptyView()"), consentText)).toThrow();
+    const changed = mailHandlingConsentParagraphs(view.replace("Claude に送ります。", "Claude に送りません。"), text);
+    expect(changed).not.toEqual(web);
+    expect(() => assertNativeConsentParagraphs(changed, native, consentText)).toThrow();
+    expect(() => assertNativeConsentParagraphs(web, native.replace(/Text\(MailHandlingText\.\w+\)/g, "EmptyView()"), consentText)).toThrow();
     const retained = exportedCopyProperty(text, "retainedResults");
     const changedResults = text.replace(retained, retained.replace("結果は残ります。", "結果は消えます。"));
-    expect(mailHandlingConsentParagraphs(view, changedResults)[0]).not.toBe(web);
-    expect(() => assertNativeConsentParagraph(web, native, consentText.replace(retained, "結果は残りません。"))).toThrow();
+    expect(mailHandlingConsentParagraphs(view, changedResults)).not.toEqual(web);
+    expect(() => assertNativeConsentParagraphs(web, native, consentText.replace(retained, "結果は残りません。"))).toThrow();
     const webCopy = exportedStrings(text);
+    assertIndependentExplanation(text, consentText, readRequired(WEB_CONSENT_VIEW_PATH));
     const nativeCopy = swiftStrings(swiftConsentSources().join("\n"));
+    assertSharedCopy(webCopy, nativeCopy);
     expect(() => assertSharedCopy(webCopy, nativeCopy.filter((value) => value !== retained))).toThrow();
   });
 

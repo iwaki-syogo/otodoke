@@ -89,6 +89,7 @@ actor FakeSupabase {
     /// [password-v1] Accounts by address (as Supabase keeps it): the password Supabase was given (auth_secret)
     /// and whether the address was confirmed.
     private var passwordAccounts: [String: (secret: String, confirmed: Bool)] = [:]
+    private var passwordUserIDs: [String: String] = [:]
     /// [password-v1] Answers forced on signup / token?grant_type=password / resend: (status, error code or nil).
     private var forcedAuth: [String: (status: Int, code: String?)] = [:]
     /// [password-v1] The address in the user object (Supabase's own form of it).
@@ -105,6 +106,7 @@ actor FakeSupabase {
     private var sessions = 0
     private var accessTokens: Set<String> = []
     private var refreshTokens: Set<String> = []
+    private var tokenUserIDs: [String: String] = [:]
     private var faults: [Fault] = []
     private var predicateFaults: [PredicateFault] = []
     private var hooks: [Hook] = []
@@ -140,8 +142,9 @@ actor FakeSupabase {
     // MARK: password-v1 accounts
 
     /// An account that signs in with `secret` (the auth_secret Supabase keeps as the password).
-    func addPasswordAccount(email: String, secret: String, confirmed: Bool = true) {
+    func addPasswordAccount(email: String, secret: String, confirmed: Bool = true, userID: String = FakeSupabase.me) {
         passwordAccounts[email] = (secret, confirmed)
+        passwordUserIDs[email] = userID
     }
 
     /// The account of `email` as signUp left it (nil when none).
@@ -168,6 +171,7 @@ actor FakeSupabase {
 
     /// An access token this fake issued (for a fake web endpoint that checks the Bearer).
     func isAccessToken(_ token: String) -> Bool { accessTokens.contains(token) }
+    func userID(forAccessToken token: String) -> String? { accessTokens.contains(token) ? tokenUserIDs[token] : nil }
 
     /// The nth (1-based) request of this method to this resource ("parcels", "otp", ...) gets `kind`.
     func fail(_ method: String, _ resource: String, nth: Int = 1, with kind: FaultKind) {
@@ -324,13 +328,13 @@ actor FakeSupabase {
                 return Self.gotrueError(request, 400, "invalid_credentials", "Invalid login credentials")
             }
             guard account.confirmed else { return Self.gotrueError(request, 400, "email_not_confirmed", "Email not confirmed") }
-            return .json(200, newSession())
+            return .json(200, newSession(userID: passwordUserIDs[address] ?? Self.me))
         case ("POST", "token"):
             let refresh = request.jsonDictionary?["refresh_token"] as? String
             guard request.query("grant_type").first == "refresh_token", refreshMode == .ok, let refresh, refreshTokens.contains(refresh) else {
                 return Self.gotrueError(request, 400, "refresh_token_not_found", "Invalid Refresh Token: Refresh Token Not Found")
             }
-            return .json(200, newSession())
+            return .json(200, newSession(userID: tokenUserIDs[refresh] ?? Self.me))
         case ("POST", "signup"):
             if let forced = forcedAuth["signup"] { return forcedReply(request, forced) }
             let body = request.jsonDictionary ?? [:]
@@ -369,7 +373,8 @@ actor FakeSupabase {
             guard bearerIsValid(request) else {
                 return Self.gotrueError(request, 401, "bad_jwt", "invalid JWT")
             }
-            return .json(200, user())
+            let token = String((request.header("authorization") ?? "").dropFirst("Bearer ".count))
+            return .json(200, user(userID: tokenUserIDs[token] ?? Self.me))
         default:
             return Self.gotrueError(request, 404, "not_found", "not found")
         }
@@ -395,26 +400,29 @@ actor FakeSupabase {
         return accessTokens.contains(String(auth.dropFirst("Bearer ".count)))
     }
 
-    private func newSession() -> [String: Any] {
+    private func newSession(userID: String = FakeSupabase.me) -> [String: Any] {
         sessions += 1
         let now = Int(Date().timeIntervalSince1970)
-        let access = Self.jwt(exp: now + sessionLifetime, iat: now, n: sessions)
+        let access = Self.jwt(exp: now + sessionLifetime, iat: now, n: sessions, userID: userID, address: userEmail)
         let refresh = "refresh-\(sessions)-\(UUID().uuidString.prefix(8).lowercased())"
         accessTokens.insert(access)
         refreshTokens.insert(refresh)
+        tokenUserIDs[access] = userID
+        tokenUserIDs[refresh] = userID
         return [
             "access_token": access,
             "token_type": "bearer",
             "expires_in": sessionLifetime,
             "expires_at": now + sessionLifetime,
             "refresh_token": refresh,
-            "user": user(),
+            "user": user(userID: userID),
         ]
     }
 
     /// The user object with the address of setUserEmail.
-    private func user() -> [String: Any] {
+    private func user(userID: String = FakeSupabase.me) -> [String: Any] {
         var u = Self.user()
+        u["id"] = userID
         u["email"] = userEmail
         return u
     }
@@ -440,7 +448,7 @@ actor FakeSupabase {
         ]
     }
 
-    private static func jwt(exp: Int, iat: Int, n: Int) -> String {
+    private static func jwt(exp: Int, iat: Int, n: Int, userID: String = FakeSupabase.me, address: String = FakeSupabase.email) -> String {
         func part(_ object: [String: Any]) -> String {
             let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
             return data.base64EncodedString()
@@ -450,7 +458,7 @@ actor FakeSupabase {
         }
         let header = part(["alg": "HS256", "typ": "JWT"])
         let payload = part([
-            "sub": me, "role": "authenticated", "aud": "authenticated", "email": email,
+            "sub": userID, "role": "authenticated", "aud": "authenticated", "email": address,
             "exp": exp, "iat": iat, "session_id": "00000000-0000-4000-8000-\(String(format: "%012d", n))",
         ])
         return "\(header).\(payload).ZmFrZS1zaWduYXR1cmU"

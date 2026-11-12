@@ -281,6 +281,123 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     const union = src.match(/export type MailApiCode\s*=\s*([^;]+);/)?.[1] ?? "";
     return [...union.matchAll(/"(\w+)"/g)].map((m) => m[1]).sort();
   };
+  const answeredCodes = (src: string) => {
+    const file = ts.createSourceFile("handler.ts", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const aliases = file.statements.filter(ts.isTypeAliasDeclaration).filter((node) => node.name.text === "MailApiCode"
+      && node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
+    if (aliases.length !== 1) throw new Error("MailApiCode must have one readable literal domain");
+    const type = aliases[0].type;
+    const members = ts.isUnionTypeNode(type) ? type.types : [type];
+    return members.map((member) => {
+      if (!ts.isLiteralTypeNode(member) || !ts.isStringLiteral(member.literal)) throw new Error("unreadable MailApiCode member");
+      return member.literal.text;
+    }).sort();
+  };
+  const supportedAnsweredCodes = (src: string) => {
+    const file = ts.createSourceFile("handler.ts", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const functions = new Map<string, ts.FunctionDeclaration>();
+    const imports = new Set<string>();
+    for (const statement of file.statements) {
+      if (ts.isFunctionDeclaration(statement) && statement.name && statement.body) {
+        if (functions.has(statement.name.text)) throw new Error(`duplicate handler function: ${statement.name.text}`);
+        functions.set(statement.name.text, statement);
+      }
+      if (ts.isImportDeclaration(statement)) {
+        const clause = statement.importClause;
+        if (clause?.name) imports.add(clause.name.text);
+        if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+          for (const binding of clause.namedBindings.elements) imports.add(binding.name.text);
+        }
+      }
+    }
+    const found = new Set<string>(), visited = new Set<string>();
+    const literal = (value: ts.Expression | undefined): string => {
+      if (!value || !ts.isStringLiteral(value)) throw new Error("unreadable reachable failure code");
+      return value.text;
+    };
+    const propertyName = (name: ts.PropertyName): string => {
+      if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
+      if (ts.isComputedPropertyName(name)) return literal(name.expression);
+      throw new Error("unreadable reachable response property");
+    };
+    const isResponseJSON = (expression: ts.Expression): boolean => {
+      if (!ts.isPropertyAccessExpression(expression) && !ts.isElementAccessExpression(expression)) return false;
+      const receiver = expression.expression;
+      if (!ts.isIdentifier(receiver) || receiver.text !== "Response") return false;
+      const method = ts.isPropertyAccessExpression(expression) ? expression.name.text : literal(expression.argumentExpression);
+      return method === "json";
+    };
+    const responseFields = (call: ts.CallExpression): Map<string, ts.Expression> => {
+      if (!isResponseJSON(call.expression)) throw new Error("unreadable reachable JSON response call");
+      const object = call.arguments[0];
+      if (!object || !ts.isObjectLiteralExpression(object)) throw new Error("unreadable reachable JSON response");
+      const fields = new Map<string, ts.Expression>();
+      for (const property of object.properties) {
+        if (ts.isSpreadAssignment(property)) throw new Error("unreadable reachable JSON response spread");
+        const key = propertyName(property.name);
+        if (fields.has(key)) throw new Error(`duplicate reachable response property: ${key}`);
+        if (ts.isPropertyAssignment(property)) fields.set(key, property.initializer);
+        else if (ts.isShorthandPropertyAssignment(property)) fields.set(key, property.name);
+        else throw new Error("unreadable reachable response property value");
+      }
+      return fields;
+    };
+    // Collecting failure("x") proves the reply only if the helper forwards that same argument.
+    const failure = functions.get("failure");
+    const parameter = failure?.parameters[0];
+    const statement = failure?.body?.statements[0];
+    if (!failure || failure.parameters.length !== 1 || !parameter || !ts.isIdentifier(parameter.name)
+      || parameter.initializer || parameter.dotDotDotToken || parameter.questionToken || failure.asteriskToken
+      || failure.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword)
+      || failure.body?.statements.length !== 1 || !statement || !ts.isReturnStatement(statement)
+      || !statement.expression || !ts.isCallExpression(statement.expression)) {
+      throw new Error("failure must directly return its one unchanged code parameter");
+    }
+    const fields = responseFields(statement.expression);
+    const forwarded = fields.get("code");
+    if (fields.size !== 2 || fields.get("ok")?.kind !== ts.SyntaxKind.FalseKeyword
+      || !forwarded || !ts.isIdentifier(forwarded) || forwarded.text !== parameter.name.text) {
+      throw new Error("failure must forward its code parameter unchanged");
+    }
+    const follow = (name: string) => {
+      if (visited.has(name)) return;
+      const fn = functions.get(name);
+      if (!fn?.body) throw new Error(`unreadable reachable handler function: ${name}`);
+      visited.add(name);
+      const visit = (node: ts.Node) => {
+        if (ts.isCallExpression(node)) {
+          if (ts.isIdentifier(node.expression)) {
+            const callee = node.expression.text;
+            if (callee === "failure") {
+              if (node.arguments.length !== 1) throw new Error("unreadable reachable failure arguments");
+              found.add(literal(node.arguments[0]));
+            } else if (functions.has(callee)) follow(callee);
+            else if (!imports.has(callee)) throw new Error(`unreadable reachable call: ${callee}`);
+          } else if (isResponseJSON(node.expression)) {
+            const code = responseFields(node).get("code");
+            if (code) found.add(literal(code));
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(fn.body);
+    };
+    for (const root of ["markParcelStep", "readWaitingStep"]) follow(root);
+    return [...found].sort();
+  };
+  const supported = ["ai_consent_required", "invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"];
+  const all = [...supported, "dismiss_failed", "forget_failed"].sort();
+  const assertContract = (native: string, documentation: string, source: string) => {
+    const documented = documentedCodes(documentation);
+    expect(documented).toEqual(all);
+    expect(answeredCodes(source)).toEqual(documented);
+    const reachable = supportedAnsweredCodes(source);
+    expect(reachable).toEqual(supported);
+    expect(codes(native)).toEqual(reachable);
+    for (const code of reachable) expect(documented).toContain(code);
+    expect(source).toMatch(/ai_consent_required:\s*403/);
+    expect(documentation).toMatch(/^\| 403 \| `ai_consent_required` \|/m);
+  };
   const documentedMarkAndReadCodes = (src: string) => {
     const reachable = new Set(markAndReadCodes(handler));
     return documentedCodes(src).filter((code) => reachable.has(code));
@@ -293,9 +410,10 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     expect(doc).toContain("POST /api/mail/read-waiting");
   });
 
-  it("keeps the six established mappings and only adds the consent refusal, safely rejected by an older iOS client", () => {
+  it("the supported routes keep six established mappings and the consent refusal, safely rejected by an older iOS client", () => {
     // A code may be documented for more than one failure source (503 unavailable: auth or consent).
     const web = documentedMarkAndReadCodes(doc);
+    expect(supportedAnsweredCodes(handler)).toEqual(web);
     const established = ["invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"];
     expect(web).toEqual(["ai_consent_required", ...established]);
     const mapped = codes(client);
@@ -319,7 +437,7 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     for (const c of web) expect(handler, c).toContain(c);
   });
 
-  it("the codes iOS maps are exactly the codes the Web answers with", () => {
+  it("the global type and docs agree exactly, while iOS maps exactly its reachable endpoint failures", () => {
     // unavailable is documented for both auth and consent lookup failures; it is one response code.
     const web = documentedMarkAndReadCodes(doc);
     expect(web).toEqual(["ai_consent_required", "invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"]);
@@ -335,6 +453,11 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     expect(documentedMarkAndReadCodes(doc.replace(/^\| 403 \| `ai_consent_required`[^\n]*\n/gm, ""))).not.toEqual(web);
     expect(markAndReadCodes(handler.replace('return failure("ai_consent_required");', 'return failure("unavailable");'))).not.toEqual(web);
     expect(declaredCodes(handler.replace(' | "ai_consent_required"', ""))).not.toEqual(documentedCodes(doc));
+    assertContract(client, doc, handler);
+    // No one source can silently omit the new contract while the others have it.
+    expect(codes(client.replace('case "ai_consent_required": throw .aiConsentRequired', ""))).not.toEqual(supported);
+    expect(documentedCodes(doc.replace(/^\| 403 \| `ai_consent_required`[^\n]*\n/gm, ""))).not.toEqual(all);
+    expect(answeredCodes(handler.replace(' | "ai_consent_required"', ""))).not.toEqual(all);
   });
 
   it("negative control: scope follows reachable responses rather than ignoring particular code names", () => {
@@ -350,6 +473,56 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
     // Shared auth failures count; comments and an unrelated endpoint's declarations do not.
     expect(markAndReadCodes(handler.replace('return failure("unauthorized");', 'return failure("invalid_input");'))).not.toEqual(web);
     expect(markAndReadCodes(`${handler}\n// return failure("comment_only");`)).toEqual(web);
+  });
+
+  it("an unrelated endpoint does not expand iOS support, but a new reachable failure does", () => {
+    const unrelated = `${handler}\nexport function anotherEndpoint() { return failure("forget_failed"); }\n`;
+    expect(() => assertContract(client, doc, unrelated)).not.toThrow();
+    const entry = "export async function markParcelStep(request: Request): Promise<Response> {";
+    expect(handler).toContain(entry);
+    const expanded = handler.replace(entry, `${entry}\n  if (request.headers.has("x-test-failure")) return failure("forget_failed");`);
+    expect(supportedAnsweredCodes(expanded)).toContain("forget_failed");
+    expect(() => assertContract(client, doc, expanded)).toThrow();
+    const inline = handler.replace(entry, `${entry}\n  if (request.headers.has("x-test-failure")) return Response.json({ ok: false, code: "dismiss_failed" });`);
+    expect(supportedAnsweredCodes(inline)).toContain("dismiss_failed");
+    expect(() => assertContract(client, doc, inline)).toThrow();
+    for (const response of [
+      'Response.json({ ok: false, ["code"]: "forget_failed" })',
+      'Response["json"]({ ok: false, code: "forget_failed" })',
+      'Response["json"]({ ok: false, ["code"]: "forget_failed" })',
+    ]) {
+      const computed = handler.replace(entry, `${entry}\n  if (request.headers.has("x-test-failure")) return ${response};`);
+      expect(supportedAnsweredCodes(computed)).toContain("forget_failed");
+      expect(() => assertContract(client, doc, computed)).toThrow();
+    }
+  });
+
+  it("failure forwards its parameter unchanged, with no assignment or hidden branch", () => {
+    const payload = "{ ok: false, code }";
+    expect(handler).toContain(payload);
+    for (const forwarded of ["{ ok: false, code: code }", '{ ok: false, ["code"]: code }']) {
+      expect(() => assertContract(client, doc, handler.replace(payload, forwarded))).not.toThrow();
+    }
+    const changed = handler.replace(payload, '{ ok: false, code: "forget_failed" }');
+    expect(answeredCodes(changed)).toEqual(all);
+    expect(() => assertContract(client, doc, changed)).toThrow("failure must forward its code parameter unchanged");
+    const reply = `return Response.json(${payload}`;
+    expect(handler).toContain(reply);
+    for (const beforeReturn of ['code = "forget_failed";', 'if (code === "mark_failed") return failure("forget_failed");']) {
+      expect(() => assertContract(client, doc, handler.replace(reply, `${beforeReturn}\n  ${reply}`)))
+        .toThrow("failure must directly return its one unchanged code parameter");
+    }
+  });
+
+  it("losing the actual consent refusal or making a reachable failure unreadable is rejected", () => {
+    const refused = 'return failure("ai_consent_required");';
+    expect(handler).toContain(refused);
+    const missing = handler.replace(refused, "return Response.json({ ok: true });");
+    expect(answeredCodes(missing)).toEqual(all);
+    expect(documentedCodes(doc)).toEqual(all);
+    expect(() => assertContract(client, doc, missing)).toThrow();
+    const dynamic = handler.replace('failure("unauthorized")', "failure(codeFromAnotherSource)");
+    expect(() => supportedAnsweredCodes(dynamic)).toThrow("unreadable reachable failure code");
   });
 
   it("the outcomes iOS knows are the Web's four", () => {

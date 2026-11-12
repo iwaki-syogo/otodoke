@@ -43,6 +43,10 @@ final class AIReadingConsentModel {
 
     var needsPrompt: Bool { isCurrent && decision == .notDetermined }
 
+    /// Unknown still blocks the address without pretending a successful unanswered read occurred.
+    /// The view shows only loading or retry until the server has actually answered.
+    var requiresInitialChoice: Bool { isCurrent && (decision == nil || needsPrompt) }
+
     /// Permission is separate from the last displayed value: a failed withdrawal must not reveal
     /// an address merely because the last successful read had said allowed.
     var mayShowAddress: Bool {

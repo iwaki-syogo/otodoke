@@ -4,6 +4,7 @@ import SwiftUI
 enum AIReadingConsentText {
     static let title = "メールの読み取り"
     static let body = "届いたメールは、Anthropic の Claude で読み取ります。"
+    static let explanation = "メールの件名・差出人・本文を送り、荷物の情報を取り出します。"
     static let privacy = "プライバシーポリシー"
     static let allow = "許可する"
     static let deny = "許可しない"
@@ -15,64 +16,115 @@ enum AIReadingConsentText {
     static let sample = "サンプルで試す"
     static let manual = "手で登録する"
     static let retainedResults = "すでに読み取った荷物と結果は残ります。設定の「サンプルで試す」にある「すべての荷物を消す」で消せます。"
+    static let waitingRetention = "許可を待つメールは、届いてから 14 日で消えます。"
 }
 
-/// Explicit choice before any forwarding address is revealed. Manual parcels and samples remain usable.
+/// A blocking choice above the app. Manual parcels and samples remain available after declining.
 struct AIReadingConsentView: View {
     let model: AIReadingConsentModel
     let saveChoice: @MainActor (Bool) async -> Bool
     var onChanged: @MainActor () async -> Void = {}
-    var openManual: (() -> Void)?
-    var openSample: (() -> Void)?
+    #if DEBUG
+    var debugConsentSettings: SettingsModel? = nil
+    #endif
     @State private var showsPrivacy = false
+    @AccessibilityFocusState private var titleIsFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.consentModalIsPresented) private var presentationReady
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(AIReadingConsentText.title)
-                    .font(.title.bold())
-                    .accessibilityIdentifier("ai-reading-consent.title")
-                Text(AIReadingConsentText.body)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(AIReadingConsentText.privacy) { showsPrivacy = true }
-                    .accessibilityIdentifier("ai-reading-consent.privacy")
-                if model.isLoading || model.isSaving { ProgressView() }
-                if let message = model.message {
-                    SettingsParts.errorBox(message)
-                        .accessibilityIdentifier("ai-reading-consent.error")
-                    Button(AIReadingConsentText.retry) { Task { await model.load() } }
-                        .accessibilityIdentifier("ai-reading-consent.retry")
-                        .disabled(model.isLoading || model.isSaving)
-                }
-                if model.decision != nil {
-                    VStack(spacing: 12) {
-                        choice(AIReadingConsentText.allow, allowed: true, id: "ai-reading-consent.allow")
-                        choice(AIReadingConsentText.deny, allowed: false, id: "ai-reading-consent.deny")
+        AIReadingConsentModal {
+            VStack(spacing: 16) {
+                // Unknown is not unselected: an answered account must never flash a question while loading.
+                if model.decision == nil, model.message == nil {
+                    ProgressView()
+                        .accessibilityLabel(SettingsMenuText.loadingLabel)
+                        .padding(12)
+                } else {
+                    Text(AIReadingConsentText.title)
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityFocused($titleIsFocused)
+                        .accessibilityIdentifier("ai-reading-consent.title")
+                    if model.decision != nil {
+                        Text(AIReadingConsentText.body)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("ai-reading-consent.body")
+                        Text(AIReadingConsentText.explanation)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("ai-reading-consent.explanation")
+                        Button { showsPrivacy = true } label: {
+                            Text(AIReadingConsentText.privacy)
+                                .foregroundStyle(Color.primary)
+                                .underline()
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                            .accessibilityIdentifier("ai-reading-consent.privacy")
                     }
-                    .disabled(model.isSaving || model.isLoading)
-                }
-                if let openManual {
-                    Button(AIReadingConsentText.manual, action: openManual)
-                        .accessibilityIdentifier("ai-reading-consent.manual")
-                }
-                if let openSample {
-                    Button(AIReadingConsentText.sample, action: openSample)
-                        .accessibilityIdentifier("ai-reading-consent.sample")
+                    if model.isLoading || model.isSaving { ProgressView() }
+                    if let message = model.message {
+                        SettingsParts.errorBox(message)
+                            .accessibilityIdentifier("ai-reading-consent.error")
+                        Button { Task { await model.load() } } label: {
+                            Text(AIReadingConsentText.retry)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                            .accessibilityIdentifier("ai-reading-consent.retry")
+                            .disabled(model.isLoading || model.isSaving)
+                    }
+                    if model.decision != nil {
+                        choices
+                            .disabled(model.isSaving || model.isLoading)
+                    }
                 }
             }
-            .frame(maxWidth: 480, alignment: .leading)
-            .frame(maxWidth: .infinity)
-            .padding(24)
+            .multilineTextAlignment(.center)
+            #if DEBUG
+            .overlay {
+                if let debugConsentSettings { ConsentPreviewModalCounters(settings: debugConsentSettings) }
+            }
+            #endif
         }
-        .background(Color(.systemBackground).ignoresSafeArea())
-        .sheet(isPresented: $showsPrivacy) { AIReadingPrivacySheet() }
+        // The window's links and choices use the adaptive label color, including their bordered fills.
+        .tint(Color.primary)
+        .sheet(isPresented: $showsPrivacy, onDismiss: { titleIsFocused = true }) { AIReadingPrivacySheet() }
+        .onChange(of: presentationReady, initial: true) { _, ready in
+            titleIsFocused = ready && (model.decision != nil || model.message != nil)
+        }
+        .onChange(of: model.decision) { _, decision in
+            if presentationReady, decision != nil { titleIsFocused = true }
+        }
+        .onChange(of: model.message) { _, message in
+            if presentationReady, message != nil { titleIsFocused = true }
+        }
+    }
+
+    @ViewBuilder private var choices: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) { choiceButtons }
+        } else {
+            HStack(spacing: 8) { choiceButtons }
+        }
+    }
+
+    @ViewBuilder private var choiceButtons: some View {
+        choice(AIReadingConsentText.deny, allowed: false, id: "ai-reading-consent.deny")
+        choice(AIReadingConsentText.allow, allowed: true, id: "ai-reading-consent.allow")
     }
 
     private func choice(_ title: String, allowed: Bool, id: String) -> some View {
         Button {
             Task { if await saveChoice(allowed) { await onChanged() } }
         } label: {
-            Text(title).frame(maxWidth: .infinity).padding(.vertical, 10)
+            Text(title)
+                .font(.body.weight(allowed ? .semibold : .regular))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier(id)
@@ -81,7 +133,6 @@ struct AIReadingConsentView: View {
 
 struct AIReadingConsentSettingsControl: View {
     let model: SettingsModel
-    @State private var showsChoice = false
     @State private var showsPrivacy = false
 
     var body: some View {
@@ -95,20 +146,12 @@ struct AIReadingConsentSettingsControl: View {
                 if model.readingConsent.decision == .allowed {
                     Task { _ = await model.chooseReadingConsent(false) }
                 } else {
-                    showsChoice = true
+                    model.requestReadingConsent()
                 }
             }
             .disabled(model.readingConsent.isLoading || model.readingConsent.isSaving)
             .accessibilityIdentifier("settings.ai-reading")
             if model.readingConsent.isLoading || model.readingConsent.isSaving { ProgressView() }
-        }
-        .sheet(isPresented: $showsChoice) {
-            NavigationStack {
-                AIReadingConsentView(model: model.readingConsent, saveChoice: model.chooseReadingConsent, onChanged: {
-                    showsChoice = false
-                })
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(ManualParcelText.close) { showsChoice = false } } }
-            }
         }
         .sheet(isPresented: $showsPrivacy) { AIReadingPrivacySheet() }
     }

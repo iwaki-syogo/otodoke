@@ -17,6 +17,14 @@ const ROOT = path.resolve(__dirname, "../../..");
 const read = (p: string) => (existsSync(path.join(ROOT, p)) ? readFileSync(path.join(ROOT, p), "utf8") : "");
 const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"])\/\/.*$/gm, "$1");
 
+/** Explicit canonical input has no local fallback; other Web pages still belong to this tree. */
+function readWebAuth(): string {
+  const root = process.env.OTODOKE_AUTH_WEB_ROOT;
+  if (root === undefined) return read("src/lib/login-auth.ts");
+  if (!path.isAbsolute(root)) throw new Error("OTODOKE_AUTH_WEB_ROOT must name an absolute directory");
+  return readFileSync(path.join(root, "src/lib/login-auth.ts"), "utf8");
+}
+
 /** LoginView's `var body: some View { … }` (up to the next declaration of the type). */
 function viewBody(src: string): string {
   const start = src.indexOf("var body: some View {");
@@ -61,7 +69,7 @@ describe("the guidance box is above the form (as the Web's /login)", () => {
 });
 
 describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
-  const web = read("src/lib/login-auth.ts");
+  const web = readWebAuth();
   const webSignup = web.slice(web.indexOf("export async function signUp("), web.indexOf("export async function resendSignupMail("));
   const swift = stripComments(read("ios/Otodoke/Auth/AuthService.swift"));
   const genericWebSignup = (src: string) => src.includes('return { ok: true, code: "signup_exists_or_sent" };') && !/signup_existing|identities/.test(src);
@@ -90,6 +98,29 @@ describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
     return problems;
   }
 
+  const mailBody = (src: string, native: boolean) => {
+    const pattern = native ? /private static func mailRefusal\([^\n]*\{([\s\S]*?)\n    \}/ : /function mailRefusal\([^\n]*\{([\s\S]*?)\n\}/;
+    const body = stripComments(src).match(pattern)?.[1];
+    expect(body).toBeDefined();
+    return body!;
+  };
+
+  function assertNeutralBeforeBusy(native: string, canonical: string): void {
+    const n = mailBody(native, true);
+    const w = mailBody(canonical, false);
+    expect(webSent(w)).toEqual(["email_exists", "user_already_exists", "user_not_found"]);
+    expect(swiftSent(n)).toEqual(webSent(w));
+    const webNeutral = w.match(/if \(\["user_already_exists", "email_exists", "user_not_found"\]\.includes\(error\.code \?\? ""\)\) return "sent";/)?.[0];
+    const nativeNeutral = n.match(/if \["user_already_exists", "email_exists", "user_not_found"\]\.contains\(code \?\? ""\) \{ return \.sent \}/)?.[0];
+    const webBusy = w.match(/if \(error\.code === "over_email_send_rate_limit" \|\| error\.status === 429 \|\| error\.status === 500\) return "mail_busy";/)?.[0];
+    const nativeBusy = n.match(/if code == "over_email_send_rate_limit" \|\| status == 429 \|\| status == 500 \{ return \.failed\(\.mailBusy\) \}/)?.[0];
+    for (const branch of [webNeutral, nativeNeutral, webBusy, nativeBusy]) expect(branch).toBeDefined();
+    expect(w.indexOf(webNeutral!)).toBeLessThan(w.indexOf(webBusy!));
+    expect(n.indexOf(nativeNeutral!)).toBeLessThan(n.indexOf(nativeBusy!));
+    expect(w.indexOf('return "invalid_email"')).toBeLessThan(w.indexOf(webNeutral!));
+    expect(n.indexOf("return .failed(.invalidEmail)")).toBeLessThan(n.indexOf(nativeNeutral!));
+  }
+
   it("iOS still reads empty identities as existing; Web sign-up returns only the generic success", () => {
     expect(webSignup).toContain("export async function signUp(");
     expect(genericWebSignup(webSignup)).toBe(true);
@@ -105,6 +136,10 @@ describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
 
   it("shares exactly three non-send aliases while Web delivery refusals are mail_busy", () => {
     expect(mailContractProblems(web, swift)).toEqual([]);
+  });
+
+  it("only the three address-dependent codes say sent, before the distinct 429/500 mail_busy branch", () => {
+    assertNeutralBeforeBusy(swift, web);
   });
 
   it("the other refusals are the same too: captcha, the per-IP rate, an invalid address", () => {
@@ -168,6 +203,30 @@ describe("legacy iOS existing-address handling and Web sign-up privacy", () => {
     expect(swift.replace("identities.isEmpty", "identities.count > 1")).not.toMatch(/identities\.isEmpty \{ return \.existing \}/);
     const withStatus = 'if case let .refused(status, code) = Self.answer(of: error), status == 422, code == "user_already_exists" { return .existing }';
     expect(withStatus).not.toMatch(/\.refused\(_, code\) = Self\.answer\(of: error\), code == "user_already_exists"/);
+  });
+
+  it("negative control: a changed list, a status in the check or a missing identities test is caught", () => {
+    expect(swiftSent(swift.replace('"email_exists", ', ""))).not.toEqual(webSent(web));
+    const missing = web.replace(', "user_not_found"', "");
+    expect(missing).not.toBe(web);
+    expect(webSent(missing)).not.toEqual(swiftSent(swift));
+    expect(swift.replace("identities.isEmpty", "identities.count > 1")).not.toMatch(/identities\.isEmpty \{ return \.existing \}/);
+    const withStatus = 'if case let .refused(status, code) = Self.answer(of: error), status == 422, code == "user_already_exists" { return .existing }';
+    expect(withStatus).not.toMatch(/\.refused\(_, code\) = Self\.answer\(of: error\), code == "user_already_exists"/);
+  });
+
+  it("negative control: neutral/pressure merged, pressure returned as sent, or priority reversed is caught", () => {
+    const nativeNeutral = 'if ["user_already_exists", "email_exists", "user_not_found"].contains(code ?? "") { return .sent }';
+    const nativeBusy = 'if code == "over_email_send_rate_limit" || status == 429 || status == 500 { return .failed(.mailBusy) }';
+    const changed = [
+      swift.replace('"email_exists", "user_not_found"', '"email_exists", "user_not_found", "over_email_send_rate_limit"'),
+      swift.replace(nativeBusy, nativeBusy.replace(".failed(.mailBusy)", ".sent")),
+      swift.replace(`${nativeNeutral}\n            ${nativeBusy}`, `${nativeBusy}\n            ${nativeNeutral}`),
+    ];
+    for (const mutation of changed) {
+      expect(mutation).not.toBe(swift);
+      expect(() => assertNeutralBeforeBusy(mutation, web)).toThrow();
+    }
   });
 
   it("negative control: restoring the Web existing-address result violates the source contract", () => {

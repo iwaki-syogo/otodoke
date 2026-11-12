@@ -35,11 +35,13 @@ final class DemoModel {
 
     @ObservationIgnored private let api: any DemoAPI
     @ObservationIgnored private let accessToken: @MainActor () async -> String?
+    @ObservationIgnored private let isCurrent: @MainActor () -> Bool
     /// Tells the other tabs the parcels changed (DataChanges, through ParcelWriter.announceOutsideChange).
     @ObservationIgnored private let changed: @MainActor () -> Void
 
-    init(api: any DemoAPI, accessToken: @escaping @MainActor () async -> String?, changed: @escaping @MainActor () -> Void) {
+    init(api: any DemoAPI, isCurrent: @escaping @MainActor () -> Bool = { true }, accessToken: @escaping @MainActor () async -> String?, changed: @escaping @MainActor () -> Void) {
         self.api = api
+        self.isCurrent = isCurrent
         self.accessToken = accessToken
         self.changed = changed
     }
@@ -47,16 +49,20 @@ final class DemoModel {
     var isBusy: Bool { phase != .idle }
 
     func load() async {
-        guard phase == .idle else { return }
+        guard isCurrent(), phase == .idle else { return }
         phase = .loading
         notice = Notice()
         showsBusyNote = false
         defer { phase = .idle }
-        guard let token = await accessToken() else {
+        let token = await accessToken()
+        guard isCurrent() else { return }
+        guard let token else {
             notice.error = LoginText.signedOut
             return
         }
-        switch await api.load(accessToken: token) {
+        let result = await api.load(accessToken: token)
+        guard isCurrent() else { return }
+        switch result {
         case let .success(loaded):
             changed()
             showsBusyNote = loaded.busy
@@ -92,7 +98,7 @@ final class DemoModel {
     /// Returns true when everything was cleared (the page closes the box).
     @discardableResult
     func clear(confirmed: Bool) async -> Bool {
-        guard phase == .idle else { return false }
+        guard isCurrent(), phase == .idle else { return false }
         phase = .clearing
         notice = Notice()
         showsBusyNote = false
@@ -101,11 +107,15 @@ final class DemoModel {
             notice.error = DemoText.clearConfirm
             return false
         }
-        guard let token = await accessToken() else {
+        let token = await accessToken()
+        guard isCurrent() else { return false }
+        guard let token else {
             notice.error = LoginText.signedOut
             return false
         }
-        switch await api.clear(accessToken: token) {
+        let result = await api.clear(accessToken: token)
+        guard isCurrent() else { return false }
+        switch result {
         case .success:
             changed()
             clearedCount += 1

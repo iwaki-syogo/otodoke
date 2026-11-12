@@ -102,7 +102,12 @@ describe("「サンプルで試す」 (iOS) says the Web's words", () => {
     expect(client).toMatch(/loadTimeout: TimeInterval = 310/);
     expect(client).toContain('"api/demo/\\(endpoint)"');
     const model = read("ios/Otodoke/Screens/Settings/DemoModel.swift");
-    expect(model.match(/guard phase == \.idle else \{ return \}/g)?.length).toBe(1);
-    expect(model.match(/guard phase == \.idle else \{ return false/g)?.length).toBe(1);
+    const loadGuard = /guard (?:isCurrent\(\),\s*)?phase == \.idle else \{ return \}/g;
+    const clearGuard = /guard (?:isCurrent\(\),\s*)?phase == \.idle else \{ return false \}/g;
+    expect(model.match(loadGuard)?.length).toBe(1);
+    expect(model.match(clearGuard)?.length).toBe(1);
+    const noBusyGuard = model.replaceAll("phase == .idle", "true");
+    expect(noBusyGuard.match(loadGuard)).toBeNull();
+    expect(noBusyGuard.match(clearGuard)).toBeNull();
   });
 });

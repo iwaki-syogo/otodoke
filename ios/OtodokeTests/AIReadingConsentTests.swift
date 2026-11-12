@@ -62,6 +62,51 @@ struct AIReadingConsentTests {
         #expect(model.message == nil)
     }
 
+    @Test func theInitialChoiceGuardBlocksUnknownWithoutPretendingItIsAnUnselectedAnswer() async {
+        let store = FakeAIReadingConsentStore()
+        let model = model(store, session: session())
+        #expect(model.requiresInitialChoice)
+        #expect(model.decision == nil)
+        #expect(!model.needsPrompt)
+        await store.enqueueRead(.failed)
+        await model.load()
+        #expect(model.requiresInitialChoice)
+        #expect(model.decision == nil)
+        #expect(!model.needsPrompt)
+        #expect(model.message == "read failed")
+        await model.load()
+        #expect(model.requiresInitialChoice)
+        #expect(model.needsPrompt)
+        #expect(model.decision == .notDetermined)
+        model.retire()
+        #expect(!model.requiresInitialChoice)
+    }
+
+    @Test(arguments: [AIReadingDecision.allowed, .denied])
+    func anAnsweredAccountDoesNotAskAgainDuringRefreshOrAfterRestart(_ decision: AIReadingDecision) async {
+        let store = FakeAIReadingConsentStore()
+        let session = session()
+        await store.set(decision, userID: FakeSupabase.me)
+        let first = model(store, session: session)
+        await first.load()
+        #expect(!first.requiresInitialChoice)
+        let gate = Gate()
+        await store.enqueueRead(.failed, gate: gate)
+        let refresh = Task { await first.load() }
+        #expect(await waitFor { await first.isLoading })
+        #expect(!first.requiresInitialChoice)
+        #expect(!first.needsPrompt)
+        gate.open()
+        await refresh.value
+        #expect(!first.requiresInitialChoice)
+        #expect(first.decision == decision)
+        first.retire()
+        let restarted = model(store, session: session)
+        await restarted.load()
+        #expect(!restarted.requiresInitialChoice)
+        #expect(restarted.decision == decision)
+    }
+
     @Test func anOfflineReadIsNeitherAnUnselectedNorARefusedChoiceAndCanBeRetried() async {
         let store = FakeAIReadingConsentStore()
         await store.enqueueRead(.failed)
@@ -75,6 +120,7 @@ struct AIReadingConsentTests {
         await model.load()
         #expect(model.decision == .notDetermined)
         #expect(model.needsPrompt)
+        #expect(model.requiresInitialChoice)
         #expect(model.message == nil)
     }
 

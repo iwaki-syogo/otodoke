@@ -182,7 +182,8 @@ describe("the settings words copied from the Web's dev branch", () => {
     const web = stripTsx(read(`${WEB}/dropped/page.tsx`));
     const lead = constant(src, "droppedLead")!;
     expect(web.includes(lead)).toBe(true);
-    const changed = constant(src.replace("件名と差出人のドメインだけ", "件名だけ"), "droppedLead")!;
+    const changed = constant(src.replace("件名と差出人のドメインを記録します。", "件名だけを記録します。"), "droppedLead")!;
+    expect(changed).not.toBe(lead);
     expect(web.includes(changed)).toBe(false);
     // A sentence standing only in a comment is not the Web's.
     expect(stripTsx(`// ${lead}\nconst a = 1;`).includes(lead)).toBe(false);

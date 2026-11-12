@@ -6,8 +6,17 @@ actor PasswordStub: PasswordAccountAPI {
     var changes: [PasswordChangeInput] = []
     var wraps: [PasswordRewrap] = []
     var code: String?
+    private var changeStarted: Gate?
+    private var changeGate: Gate?
     func setCode(_ code: String?) { self.code = code }
-    func change(_ input: PasswordChangeInput, accessToken: String) async -> String? { changes.append(input); return code }
+    func holdChange(started: Gate, until gate: Gate) { changeStarted = started; changeGate = gate }
+    func change(_ input: PasswordChangeInput, accessToken: String) async -> String? {
+        changes.append(input)
+        let answer = code
+        changeStarted?.open()
+        if let changeGate { await changeGate.wait() }
+        return answer
+    }
     func rewrap(_ input: PasswordRewrap, accessToken: String) async -> String? { wraps.append(input); return code }
 }
 
@@ -33,8 +42,8 @@ struct PasswordManagementTests {
         return StoredKeyRow(keyId: row.keyID, publicKey: row.publicKey, wrappedPrivateKey: row.wrappedPrivateKey, wrapIv: row.wrapIv, kdfSalt: row.kdfSalt, kdfIterations: row.kdfIterations)
     }
 
-    private func makeModel(_ row: StoredKeyRow?, api: PasswordStub) -> PasswordChangeModel {
-        let model = PasswordChangeModel(keys: PasswordKeys(row: row), api: api, deriver: deriver, identity: { [user, email] in (user, email) }, accessToken: { "test-token" }, signOut: {})
+    private func makeModel(_ row: StoredKeyRow?, api: PasswordStub, signOut: @escaping @MainActor () async -> Void = {}) -> PasswordChangeModel {
+        let model = PasswordChangeModel(keys: PasswordKeys(row: row), api: api, deriver: deriver, identity: { [user, email] in (user, email) }, accessToken: { "test-token" }, signOut: signOut)
         model.current = current; model.next = next; model.again = next
         model.turnstile.receive(.token("test-captcha"), generation: 0)
         return model
@@ -87,6 +96,76 @@ struct PasswordManagementTests {
         await model.submit()
         #expect(model.current.isEmpty && model.next.isEmpty && model.again.isEmpty)
         #expect(model.message == PasswordChangeText.unknown && model.offersSignIn)
+    }
+
+    @Test(arguments: ["success", "secret_change_unknown"])
+    func aFinishedChangeAutomaticallySignsOutOnceAndClearsEveryPassword(_ outcome: String) async {
+        let api = PasswordStub(), started = Gate(), release = Gate()
+        await api.setCode(outcome == "success" ? nil : outcome)
+        await api.holdChange(started: started, until: release)
+        var signOuts = 0
+        let model = makeModel(nil, api: api, signOut: { signOuts += 1 })
+        let run = Task { await model.submit() }
+        await started.wait()
+        #expect(model.isWorking)
+        #expect(signOuts == 0)
+        #expect(model.current == current && model.next == next && model.again == next)
+
+        release.open()
+        await run.value
+
+        #expect(signOuts == 1)
+        #expect(model.current.isEmpty && model.next.isEmpty && model.again.isEmpty)
+        #expect(model.succeeded == (outcome == "success"))
+        #expect(model.message == (outcome == "success" ? PasswordChangeText.changed : PasswordChangeText.unknown))
+        #expect(!model.isWorking)
+        #expect(await api.changes.count == 1)
+    }
+
+    @Test(arguments: ["secret_change_refused", "secret_change_refused_key_new", "credentials", "wrong_current_password", "network", "unavailable", "rate", "captcha"])
+    func aDefiniteChangeFailurePreservesTheSessionAndTheInputs(_ code: String) async {
+        let api = PasswordStub()
+        await api.setCode(code)
+        var signOuts = 0
+        let model = makeModel(nil, api: api, signOut: { signOuts += 1 })
+
+        await model.submit()
+
+        #expect(signOuts == 0)
+        #expect(model.current == current && model.next == next && model.again == next)
+        #expect(!model.succeeded && !model.offersSignIn)
+        #expect(model.message == PasswordChangeText.message(code))
+        #expect(!model.isWorking)
+        #expect(await api.changes.count == 1)
+    }
+
+    @Test(arguments: ["success", "secret_change_unknown"], ["another-account", "new-generation"])
+    func aLateChangeAnswerNeverSignsOutANewerIdentity(_ outcome: String, _ transition: String) async {
+        let api = PasswordStub(), started = Gate(), release = Gate()
+        await api.setCode(outcome == "success" ? nil : outcome)
+        await api.holdChange(started: started, until: release)
+        var identityID = user, currentGeneration = true, signOuts = 0
+        let model = PasswordChangeModel(
+            keys: PasswordKeys(row: nil), api: api, deriver: deriver,
+            identity: { [email] in (identityID, email) }, isCurrent: { currentGeneration },
+            accessToken: { "test-token" }, signOut: { signOuts += 1 }
+        )
+        model.current = current; model.next = next; model.again = next
+        model.turnstile.receive(.token("test-captcha"), generation: 0)
+        let run = Task { await model.submit() }
+        await started.wait()
+        #expect(model.isWorking && signOuts == 0)
+
+        if transition == "another-account" { identityID = FakeSupabase.other }
+        else { currentGeneration = false }
+        release.open()
+        await run.value
+
+        #expect(signOuts == 0)
+        #expect(!model.succeeded && !model.offersSignIn)
+        #expect(model.message == nil)
+        #expect(!model.isWorking)
+        #expect(await api.changes.count == 1)
     }
 
     @Test(arguments: ["weak", "mismatch", "same"])

@@ -47,7 +47,12 @@ final class AccountDeletionModel {
             await completed()
         } catch {
             guard isCurrent() else { return }
-            message = error == .unauthorized ? LoginText.signedOut : AccountDeletionText.failed
+            if error == .unauthorized {
+                // This reply follows a confirmed deletion POST; token lookup failures returned before sending.
+                await completed()
+            } else {
+                message = AccountDeletionText.failed
+            }
         }
     }
 }

@@ -7,7 +7,8 @@ import { COPY_SOURCE, LOGIN_MESSAGES_COPY, PASSWORD_WORDS_COPY } from "./login-w
 
 /**
  * [iOS password login (password-login)] Checks on ios/ that no Swift test can see:
- *  - the Web's words: the copy (login-words-pw-int.ts) is the Web's file (this tree's src/lib/login-errors.ts and
+ *  - the Web's words: the copy (login-words-pw-int.ts) is the Web's file (OTODOKE_AUTH_WEB_ROOT when set, or
+ *    this tree's src/lib/login-errors.ts and
  *    src/lib/crypto/password-v1.ts once they have the password-v1 words, else the tip of integrate/password-v1
  *    read through git; neither found fails), and every LoginText constant named after a Web key is that word;
  *    the app's own words are exactly the listed ones (a new one must be added to the list, for review);
@@ -77,8 +78,16 @@ function parsePasswordWords(src: string): Record<string, string> | null {
   return { PASSWORD_RULE: fill(rule), too_short: answers[0], weak: answers[1], mismatch: answers[2] };
 }
 
-/** A Web file: this tree's when it has the words, else the tip of integrate/password-v1 through git. */
-function webSource(file: string, has: (src: string) => boolean): { from: string; src: string } {
+/** An explicit input never falls back to another tree or Git, even if it is missing or outdated. */
+function webSource(file: string, has: (src: string) => boolean, sourceRoot = process.env.OTODOKE_AUTH_WEB_ROOT): { from: string; src: string } {
+  if (sourceRoot !== undefined) {
+    if (!path.isAbsolute(sourceRoot)) throw new Error("OTODOKE_AUTH_WEB_ROOT must name an absolute directory");
+    const from = path.join(sourceRoot, file);
+    if (!existsSync(from) || !statSync(from).isFile()) throw new Error(`the explicit Web input is missing: ${from}`);
+    const src = readFileSync(from, "utf8");
+    if (!has(src)) throw new Error(`the explicit Web input has no required password-v1 words: ${from}`);
+    return { from, src };
+  }
   const own = read(file);
   if (own && has(own)) return { from: file, src: own };
   try {
@@ -95,6 +104,7 @@ const SHOWN_KEYS = [
   "credentials",
   "not_confirmed",
   "rate",
+  "mail_busy",
   "captcha",
   "network",
   "other",
@@ -148,15 +158,132 @@ const APP_OWN_WORDS: Record<string, string> = {
  */
 const TO_BE_WEB_WORDS: Record<string, string> = {};
 
+/** The original shown-word check, shared by the positive test and real-source mutations. */
+function assertShownWebWords(swift: string, shownKeys: readonly string[] = SHOWN_KEYS): void {
+  for (const key of shownKeys) {
+    expect(LOGIN_MESSAGES_COPY[key], `the copy has ${key}`).toBeDefined();
+    expect(swiftConstant(swift, camel(key)), `LoginText.${camel(key)}`).toBe(LOGIN_MESSAGES_COPY[key]);
+  }
+  for (const [name, key] of Object.entries(PASSWORD_NAMES)) {
+    expect(swiftConstant(swift, name), `LoginText.${name}`).toBe(PASSWORD_WORDS_COPY[key]);
+  }
+}
+
+/** The original exact own-word registry check, with the shown-key list injectable for negative controls. */
+function assertRegisteredNativeWords(swift: string, shownKeys: readonly string[] = SHOWN_KEYS): void {
+  const all = swiftConstants(swift);
+  const own = [...all.entries()].filter(([name]) => !shownKeys.map(camel).includes(name) && !(name in PASSWORD_NAMES) && !(name in TO_BE_WEB_WORDS));
+  expect(Object.fromEntries(own)).toEqual(APP_OWN_WORDS);
+  for (const [name, words] of Object.entries(TO_BE_WEB_WORDS)) expect(all.get(name), `LoginText.${name}`).toBe(words);
+  // Not in the copy yet: when the Web adds it, it moves to SHOWN_KEYS (this fails then, as a reminder).
+  for (const words of Object.values(TO_BE_WEB_WORDS)) expect(Object.values(LOGIN_MESSAGES_COPY)).not.toContain(words);
+  for (const words of Object.values(APP_OWN_WORDS)) expect(words).not.toMatch(/合言葉/);
+}
+
+/** The refusal function uses the same explicit Web input as the words. */
+function webMailRefusalSource(): string {
+  return webSource("src/lib/login-auth.ts", (src) => /function mailRefusal\(/.test(src)).src;
+}
+
+function assertLoginCopy(web: string): void {
+  expect(parseLoginMessages(web)).toEqual(LOGIN_MESSAGES_COPY);
+}
+
+/**
+ * Compare the actual ordered branches, values and display path. Swift runtime tests separately exercise SDK
+ * input conversion: 5xx has no code by this point, so this does not claim a native 500+neutral-code outcome.
+ * Only the one-line conditions/returns used here are supported; an unreadable branch fails the check.
+ */
+function assertMailBusyContract(text: string, service: string, model: string, webWords: string, webAuth: string): void {
+  const swift = stripComments(text);
+  const serviceCode = stripComments(service);
+  const messages = parseLoginMessages(webWords);
+  expect(messages?.mail_busy).toBeDefined();
+  expect(swiftConstant(swift, "mailBusy")).toBe(messages?.mail_busy);
+  const literal = JSON.stringify(messages?.mail_busy);
+  expect(swift.split(literal).length - 1, "one native copy of the displayed words").toBe(1);
+  expect(swift).toMatch(/^\s*case mailBusy = "mail_busy"$/m);
+  expect(swift).toMatch(/^\s*case \.mailBusy: LoginText\.mailBusy$/m);
+
+  const enumBody = swift.match(/enum LoginFailure[^\{]*\{([\s\S]*?)\n\}/)?.[1];
+  expect(enumBody).toBeDefined();
+  const codes = new Map([...enumBody!.matchAll(/^\s*case (\w+)(?: = "(\w+)")?$/gm)].map((m) => [m[1], m[2] ?? m[1]]));
+  const nativeBody = serviceCode.match(/private static func mailRefusal\([^\n]*\{([\s\S]*?)\n    \}/)?.[1];
+  const webBody = stripComments(webAuth).match(/function mailRefusal\([^\n]*\{([\s\S]*?)\n\}/)?.[1];
+  expect(nativeBody).toBeDefined();
+  expect(webBody).toBeDefined();
+  const condition = (src: string) => src.replace(/error\./g, "").replace(/===/g, "==").replace(/\.includes\(/g, ".contains(").replace(/\s+/g, "");
+  const native = [...nativeBody!.matchAll(/^\s*if (.+) \{ return (\.sent|\.failed\(\.(\w+)\)) \}$/gm)].map((m) => {
+    const result = m[2] === ".sent" ? "sent" : codes.get(m[3]);
+    expect(result, `the actual enum code of ${m[2]}`).toBeDefined();
+    return { condition: condition(m[1]), result };
+  });
+  const web = [...webBody!.matchAll(/^\s*if \((.+)\) return "(\w+)";$/gm)].map((m) => ({ condition: condition(m[1]), result: m[2] }));
+  expect(native).toHaveLength(6);
+  expect(web).toHaveLength(6);
+  expect(nativeBody!.match(/\bif\b/g)).toHaveLength(native.length);
+  expect(webBody!.match(/\bif\b/g)).toHaveLength(web.length);
+  expect(native.slice(0, 5), "code priority, neutral addresses, and 429/500 mail_busy").toEqual(web.slice(0, 5));
+  expect(native[5]).toEqual({ condition: "status>=500", result: web[5].result });
+  expect(web[5]).toEqual({ condition: "isOutage(error)", result: "network" });
+  expect(nativeBody).toMatch(/case \.noAnswer: return \.failed\(\.network\)/);
+  expect(nativeBody).toMatch(/case \.unknown: return \.failed\(\.network\)/);
+  expect(nativeBody).toMatch(/return \.failed\(\.other\)\s*\}\s*$/);
+
+  const modelCode = stripComments(model);
+  const submit = modelCode.match(/func submit\(\) async \{([\s\S]*?)\n    \}/)?.[1];
+  const resend = modelCode.match(/private func resendOnce\(\) async \{([\s\S]*?)\n    \}/)?.[1];
+  for (const body of [submit, resend]) expect(body, "signup and both resend contexts display the failure's words").toMatch(/catch\s*\{\s*errorMessage = error\.message/);
+}
+
 describe("the Web's words", () => {
   it("the copy of LOGIN_MESSAGES is the Web's, key for key and word for word", () => {
     const web = webSource("src/lib/login-errors.ts", (s) => parseLoginMessages(s)?.credentials !== undefined);
-    expect(parseLoginMessages(web.src), web.from).toEqual(LOGIN_MESSAGES_COPY);
+    assertLoginCopy(web.src);
   });
 
   it("the copy of the password rule is the Web's", () => {
     const web = webSource("src/lib/crypto/password-v1.ts", (s) => parsePasswordWords(s) !== null);
     expect(parsePasswordWords(web.src), web.from).toEqual({ ...PASSWORD_WORDS_COPY });
+  });
+
+  it.each(["missing", "unreadable-words", "outdated"])("explicit Web input %s fails without a local/Git fallback", (variant) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "otodoke-auth-web-"));
+    try {
+      const file = "src/lib/login-errors.ts";
+      if (variant !== "missing") {
+        mkdirSync(path.join(tmp, "src/lib"), { recursive: true });
+        writeFileSync(path.join(tmp, file), variant === "unreadable-words" ? "export const OTHER = {};" : 'export const LOGIN_MESSAGES = {\n  credentials: "old words",\n} as const;');
+      }
+      expect(() => assertLoginCopy(webSource(file, (s) => parseLoginMessages(s)?.credentials !== undefined, tmp).src)).toThrow();
+      expect(() => webSource(file, () => true, "")).toThrow();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("mail_busy uses the actual Web words, ordered refusal branches, enum message and model display", () => {
+    const words = webSource("src/lib/login-errors.ts", (s) => parseLoginMessages(s)?.credentials !== undefined).src;
+    assertMailBusyContract(read("ios/Otodoke/Auth/LoginText.swift"), read("ios/Otodoke/Auth/AuthService.swift"), read("ios/Otodoke/Auth/LoginModel.swift"), words, webMailRefusalSource());
+  });
+
+  it.each(["native-word", "web-word", "enum-message", "enum-code", "429-sent", "500-network", "neutral-last"])("negative control: actual mail_busy source mutation %s is rejected", (mutation) => {
+    let text = read("ios/Otodoke/Auth/LoginText.swift");
+    let service = read("ios/Otodoke/Auth/AuthService.swift");
+    let words = webSource("src/lib/login-errors.ts", (s) => parseLoginMessages(s)?.credentials !== undefined).src;
+    const before = { text, service, words };
+    const value = parseLoginMessages(words)!.mail_busy;
+    if (mutation === "native-word") text = text.replace(value, `${value}。`);
+    if (mutation === "web-word") words = words.replace(value, `${value}。`);
+    if (mutation === "enum-message") text = text.replace("case .mailBusy: LoginText.mailBusy", "case .mailBusy: LoginText.network");
+    if (mutation === "enum-code") text = text.replace('case mailBusy = "mail_busy"', 'case mailBusy = "mail_busi"');
+    const pressure = 'if code == "over_email_send_rate_limit" || status == 429 || status == 500 { return .failed(.mailBusy) }';
+    const neutral = 'if ["user_already_exists", "email_exists", "user_not_found"].contains(code ?? "") { return .sent }';
+    if (mutation === "429-sent") service = service.replace(pressure, `if status == 429 { return .sent }\n            ${pressure}`);
+    if (mutation === "500-network") service = service.replace(pressure, pressure.replace(" || status == 500", ""));
+    if (mutation === "neutral-last") service = service.replace(`${neutral}\n            ${pressure}`, `${pressure}\n            ${neutral}`);
+    expect({ text, service, words }, "the mutation must alter real source").not.toEqual(before);
+    expect(() => assertMailBusyContract(text, service, read("ios/Otodoke/Auth/LoginModel.swift"), words, webMailRefusalSource())).toThrow();
   });
 
   it("negative control: the parsers see a word changed by one character, and a key added", () => {
@@ -172,23 +299,40 @@ describe("the Web's words", () => {
 
   it("every LoginText constant named after a Web key is the Web's word", () => {
     const swift = stripComments(read("ios/Otodoke/Auth/LoginText.swift"));
-    for (const key of SHOWN_KEYS) {
-      expect(LOGIN_MESSAGES_COPY[key], `the copy has ${key}`).toBeDefined();
-      expect(swiftConstant(swift, camel(key)), `LoginText.${camel(key)}`).toBe(LOGIN_MESSAGES_COPY[key]);
-    }
-    for (const [name, key] of Object.entries(PASSWORD_NAMES)) {
-      expect(swiftConstant(swift, name), `LoginText.${name}`).toBe(PASSWORD_WORDS_COPY[key]);
-    }
+    assertShownWebWords(swift);
   });
 
   it("LoginText has the Web's words and the listed words of the app's own, nothing else", () => {
-    const all = swiftConstants(stripComments(read("ios/Otodoke/Auth/LoginText.swift")));
-    const own = [...all.entries()].filter(([name]) => !SHOWN_KEYS.map(camel).includes(name) && !(name in PASSWORD_NAMES) && !(name in TO_BE_WEB_WORDS));
-    expect(Object.fromEntries(own)).toEqual(APP_OWN_WORDS);
-    for (const [name, words] of Object.entries(TO_BE_WEB_WORDS)) expect(all.get(name), `LoginText.${name}`).toBe(words);
-    // Not in the copy yet: when the Web adds it, it moves to SHOWN_KEYS (this fails then, as a reminder).
-    for (const words of Object.values(TO_BE_WEB_WORDS)) expect(Object.values(LOGIN_MESSAGES_COPY)).not.toContain(words);
-    for (const words of Object.values(APP_OWN_WORDS)) expect(words).not.toMatch(/合言葉/);
+    const swift = stripComments(read("ios/Otodoke/Auth/LoginText.swift"));
+    assertRegisteredNativeWords(swift);
+  });
+
+  it.each(["unregistered-native", "mail-busy-omitted", "unsupported-web-key", "mail-busy-word"])("negative control: the shown-word registry rejects %s", (mutation) => {
+    const original = stripComments(read("ios/Otodoke/Auth/LoginText.swift"));
+    assertShownWebWords(original);
+    assertRegisteredNativeWords(original);
+    let swift = original;
+    let shownKeys = [...SHOWN_KEYS];
+    if (mutation === "unregistered-native") swift = swift.replace("enum LoginText {", 'enum LoginText {\n    static let unlistedShownWord = "新しい表示文"');
+    if (mutation === "mail-busy-omitted") shownKeys = shownKeys.filter((key) => key !== "mail_busy");
+    if (mutation === "unsupported-web-key") {
+      expect(LOGIN_MESSAGES_COPY.not_configured).toBeDefined();
+      expect(swiftConstant(original, camel("not_configured"))).toBeNull();
+      shownKeys.push("not_configured");
+    }
+    if (mutation === "mail-busy-word") {
+      const word = swiftConstant(original, "mailBusy");
+      expect(word).not.toBeNull();
+      expect(word!.endsWith("。")).toBe(true);
+      const changed = `${word!.slice(0, -1)}！`;
+      expect([...word!].filter((character, index) => character !== [...changed][index])).toHaveLength(1);
+      swift = swift.replace(`"${word}"`, `"${changed}"`);
+    }
+    expect({ swift, shownKeys }, "the actual source or shown-key array must change").not.toEqual({ swift: original, shownKeys: SHOWN_KEYS });
+    expect(() => {
+      assertShownWebWords(swift, shownKeys);
+      assertRegisteredNativeWords(swift, shownKeys);
+    }).toThrow();
   });
 
   it("「パスワードを忘れた」 is the Web's page, over https", () => {

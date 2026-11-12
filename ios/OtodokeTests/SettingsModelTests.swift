@@ -410,7 +410,7 @@ struct SettingsModelTests {
         #expect(MailHandlingText.heading == "あなたのメールの扱い")
         // M2 task 19 adds the item about keeping the key in the Keychain with Face ID (12 → 13); the Web later added an item about mail that is read and found not to be about shopping (13 → 14).
         #expect(MailHandlingText.items.count == 14)
-        #expect(MailHandlingText.items.first == "届いたメールは、読み取る数秒のあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。")
+        #expect(MailHandlingText.items.first == "届いたメールは、読み取りのあいだ、サーバーと Claude API が中身を扱います。Anthropic は API のデータを、既定では学習に使いません。")
         #expect(MailHandlingText.items.last == "運営者が正しいプログラムを動かしていることが前提です。コードはすべて公開しています。")
         #expect(MailHandlingText.repositoryURL.absoluteString == "https://github.com/iwaki-syogo/otodoke")
         // M2 task 19: exactly one item about the Face ID key (FaceIDSettingsTests checks its words).

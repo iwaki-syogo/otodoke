@@ -12,6 +12,8 @@ enum LoginText {
     static let credentials = "メールアドレスかパスワードが違います。"
     static let notConfirmed = "メールアドレスの確認がまだです。届いたメールのリンクを開いてください。"
     static let rate = "回数が多いため、しばらく時間をおいてから、もう一度お試しください。"
+    // Provisional wording shared with LOGIN_MESSAGES.mail_busy at 58f6831.
+    static let mailBusy = "いま混み合っています。少し時間をおいて、もう一度お試しください。"
     static let captcha = "確認が切れました。もう一度お試しください。"
     static let network = "つながりませんでした。少し時間をおいて、もう一度お試しください。"
     static let other = "うまくいきませんでした。もう一度お試しください。"
@@ -68,12 +70,13 @@ enum LoginText {
     static let forgotPasswordURL = URL(string: "https://otodoke.app/login/forgot")!
 }
 
-/// The six categories shared with the Web (login-errors.ts CommonFailure), and the address checks.
+/// The login and mail-request failures shared with the Web, and the address checks.
 /// The raw value is the Web's code.
 enum LoginFailure: String, Error, Equatable, Sendable, CaseIterable {
     case credentials
     case notConfirmed = "not_confirmed"
     case rate
+    case mailBusy = "mail_busy"
     case captcha
     case network
     case other
@@ -86,6 +89,7 @@ enum LoginFailure: String, Error, Equatable, Sendable, CaseIterable {
         case .credentials: LoginText.credentials
         case .notConfirmed: LoginText.notConfirmed
         case .rate: LoginText.rate
+        case .mailBusy: LoginText.mailBusy
         case .captcha: LoginText.captcha
         case .network: LoginText.network
         case .other: LoginText.other

@@ -182,9 +182,13 @@ final class PasswordChangeModel {
             if let code {
                 message = PasswordChangeText.message(code)
                 offersSignIn = ["secret_change_unknown", "signed_out", "unauthorized", "stale_session"].contains(code)
-                if code == "secret_change_unknown" { clearPasswords() }
+                if code == "secret_change_unknown" {
+                    clearPasswords()
+                    await signOut()
+                }
             } else {
                 clearPasswords(); succeeded = true; offersSignIn = true; message = PasswordChangeText.changed
+                await signOut()
             }
         } catch { if isCurrent() { message = LoginText.keyFailed } }
     }

@@ -131,6 +131,13 @@ private struct SessionStorageBridge: AuthLocalStorage {
     func remove(key: String) throws { try storage.remove(key: key) }
 }
 
+/// Password confirmation returns a fresh token without storing an app session.
+private struct RecoveryAuthStorage: AuthLocalStorage {
+    func store(key: String, value: Data) throws {}
+    func retrieve(key: String) throws -> Data? { nil }
+    func remove(key: String) throws {}
+}
+
 final class SupabaseProvider: Sendable {
     let config: AppConfig
     let storage: any SessionStorage
@@ -196,6 +203,21 @@ final class SupabaseProvider: Sendable {
     /// The app's provider: the session without a disk cache and the Keychain.
     static func live(config: AppConfig) -> SupabaseProvider {
         SupabaseProvider(config: config, urlSession: liveURLSession(), storage: KeychainSessionStorage())
+    }
+
+    /// Uses the same CAPTCHA transport and one-POST policy without sharing app storage or event subscriptions.
+    func makeRecoveryAuthClient() -> AuthClient {
+        AuthClient(
+            url: config.supabaseURL.appending(path: "auth/v1"),
+            headers: ["apikey": config.anonKey],
+            flowType: .implicit,
+            redirectToURL: AppConfig.authRedirect,
+            storageKey: "key-recovery-\(UUID().uuidString)",
+            localStorage: RecoveryAuthStorage(),
+            fetch: Self.authFetch(urlSession),
+            autoRefreshToken: false,
+            emitLocalSessionAsInitialSession: false
+        )
     }
 
     /// The signed-in user's id (lowercase UUID text), or nil when signed out.

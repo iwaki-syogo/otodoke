@@ -64,6 +64,78 @@ const GUIDANCE: Record<string, string> = { existingAddress: EXISTING_ACCOUNT_NOT
 
 const APP_ONLY: Record<string, string> = { ...KEY_BOX };
 
+/** Evaluate only the small boolean vocabulary used by the actual landing modifiers. */
+function landingBoolean(expression: string, landing: string, requested: boolean, consentExpression: string): boolean {
+  const expanded = expression.replace(/\bshowsReadingConsent\b/g, `(${consentExpression})`)
+    .replace(/screens\.settings\.requestsReadingConsent/g, String(requested))
+    .replace(/landing\s*(==|!=)\s*\.(\w+)/g, (_, operator: string, state: string) => String(operator === "==" ? landing === state : landing !== state));
+  const tokens = expanded.match(/true|false|&&|\|\||!|\(|\)/g) ?? [];
+  if (tokens.join("") !== expanded.replace(/\s/g, "")) throw new Error(`unsupported actual landing predicate: ${expression}`);
+  let index = 0;
+  const atom = (): boolean => {
+    const token = tokens[index++];
+    if (token === "!") return !atom();
+    if (token === "(") {
+      const value = or();
+      if (tokens[index++] !== ")") throw new Error("unbalanced landing predicate");
+      return value;
+    }
+    if (token !== "true" && token !== "false") throw new Error("missing landing predicate value");
+    return token === "true";
+  };
+  const and = (): boolean => {
+    let value = atom();
+    while (tokens[index] === "&&") { index++; const next = atom(); value = value && next; }
+    return value;
+  };
+  const or = (): boolean => {
+    let value = and();
+    while (tokens[index] === "||") { index++; const next = and(); value = value || next; }
+    return value;
+  };
+  const value = or();
+  if (index !== tokens.length) throw new Error("unused landing predicate input");
+  return value;
+}
+
+function actualLandingParts(source: string) {
+  const main = source.slice(source.indexOf("struct MainTabView: View"));
+  const application = main.slice(main.indexOf("private var applicationContent:"), main.indexOf("private var landing:"));
+  const root = main.slice(main.indexOf("var body: some View"), main.indexOf("private var showsReadingConsent:"));
+  const consent = main.match(/private var showsReadingConsent: Bool\s*\{\s*([^}\n]+)/)?.[1]?.trim();
+  expect(consent, "read the actual request/initial-consent gate").toBeTruthy();
+  const modifier = (body: string, name: string) => {
+    const value = body.match(new RegExp(`\\.${name}\\(([^\\n]+)\\)`))?.[1];
+    expect(value, `the actual ${name} modifier must exist`).toBeTruthy();
+    return value!;
+  };
+  return { application, root, consent: consent!, modifier };
+}
+
+function assertLandingVisibility(source: string) {
+  const { application, consent, modifier } = actualLandingParts(source);
+  const opacity = modifier(application, "opacity").match(/^(.+)\?\s*([01])\s*:\s*([01])\s*$/);
+  expect(opacity, "read the opacity's real predicate and both real results").toBeTruthy();
+  for (const landing of ["tabs", "consent", "waiting", "guide", "keyBox"]) {
+    const visible = landingBoolean(opacity![1], landing, false, consent) ? Number(opacity![2]) : Number(opacity![3]);
+    expect(visible, `${landing} visibility`).toBe(landing === "tabs" || landing === "consent" ? 1 : 0);
+  }
+}
+
+function assertLandingInteraction(source: string) {
+  const { application, root, consent, modifier } = actualLandingParts(source);
+  for (const landing of ["tabs", "consent", "waiting", "guide", "keyBox"]) {
+    for (const requested of [false, true]) {
+      const evaluate = (expression: string) => landingBoolean(expression, landing, requested, consent);
+      const touchable = evaluate(modifier(application, "allowsHitTesting")) && evaluate(modifier(root, "allowsHitTesting"));
+      const hidden = evaluate(modifier(application, "accessibilityHidden")) || evaluate(modifier(root, "accessibilityHidden"));
+      expect(touchable, `${landing}/requested=${requested} background touch`).toBe(landing === "tabs" && !requested);
+      expect(hidden, `${landing}/requested=${requested} background accessibility`).toBe(landing !== "tabs" || requested);
+      expect(evaluate(modifier(root, "disabled")), `${landing}/requested=${requested} explicit consent lock`).toBe(landing === "consent" || requested);
+    }
+  }
+}
+
 describe("the words", () => {
   const swift = () => swiftConstants(stripComments(read("ios/Otodoke/Auth/OnboardingText.swift")));
 
@@ -280,7 +352,7 @@ describe("the wiring", () => {
     expect(tabs).toContain("var outcome = screens.keySetup?.lastOutcome");
     expect(tabs).not.toContain("guideClosed || !screens.settings.mayShowReadingAddress");
     expect(tabs).toMatch(/Landing\.of\(\s*deciding: screens\.keySetup\?\.isDeciding == true,\s*outcome: outcome,\s*guideClosed: guideClosed \|\| screens\.readingConsent\.decision == \.denied,\s*fromConfirmation: screens\.keySetup\?\.lastRunFromConfirmation == true/);
-    expect(tabs).toMatch(/\.opacity\(landing == \.tabs \? 1 : 0\)/);
+    assertLandingVisibility(tabs);
     expect(tabs).toMatch(/\.transition\(\.identity\)/);
     expect(tabs).toMatch(/route\.tab = \.parcels/);
     // The tabs are not built conditionally (their lists read while the landing is held).
@@ -290,6 +362,30 @@ describe("the wiring", () => {
     expect(keys).toMatch(/KeySetup\.LandingHold\(setup\)[\s\S]*await setup\.run\(signIn\)\s*limit\.cancel\(\)\s*hold\.release\(\)/);
     expect(keys).toMatch(/landingSleep\(KeySetup\.landingLimit\)[\s\S]*hold\.timeOut\(\)/);
     expect(stripComments(read("ios/Otodoke/Crypto/KeySetup.swift"))).toMatch(/static let landingLimit = Duration\.seconds\(30\)/);
+  });
+
+  it("consent shows the background but blocks its touches and accessibility, including an explicit request over tabs", () => {
+    assertLandingInteraction(stripComments(read("ios/Otodoke/Screens/MainTabView.swift")));
+  });
+
+  it("negative control: losing consent visibility or revealing key/guide waiting states is detected", () => {
+    const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
+    const oldOpacity = tabs.replace("landing == .tabs || landing == .consent ? 1 : 0", "landing == .tabs ? 1 : 0");
+    expect(oldOpacity).not.toBe(tabs);
+    expect(() => assertLandingVisibility(oldOpacity)).toThrow();
+    const alwaysVisible = tabs.replace(/\.opacity\([^\n]+\)/, ".opacity(true ? 1 : 0)");
+    expect(alwaysVisible).not.toBe(tabs);
+    expect(() => assertLandingVisibility(alwaysVisible)).toThrow();
+  });
+
+  it("negative control: enabling background touches or accessibility while consent is up is detected", () => {
+    const tabs = stripComments(read("ios/Otodoke/Screens/MainTabView.swift"));
+    for (const before of [".allowsHitTesting(!showsReadingConsent)", ".accessibilityHidden(showsReadingConsent)", ".disabled(showsReadingConsent)", ".allowsHitTesting(landing == .tabs)", ".accessibilityHidden(landing != .tabs)"]) {
+      const after = before.startsWith(".allowsHitTesting") ? ".allowsHitTesting(true)" : before.startsWith(".disabled") ? ".disabled(false)" : ".accessibilityHidden(false)";
+      const changed = tabs.replace(before, after);
+      expect(changed, before).not.toBe(tabs);
+      expect(() => assertLandingInteraction(changed), before).toThrow();
+    }
   });
 
   it("the sign-in after the mail's link is the existing one (AuthService.signIn), not a new route", () => {

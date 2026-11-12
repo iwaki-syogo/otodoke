@@ -24,6 +24,8 @@ extension MainScreens {
         settings.faceID = faceID
         auth.cleanup = store
         let provider = auth.provider
+        let generation = auth.session.stamp()
+        let tokens = SessionAccessTokenReader(provider: provider, isCurrent: { [weak auth] stamp in auth?.session.isCurrent(stamp) == true })
         let setup = KeySetup(
             store: store,
             keys: reader,
@@ -31,12 +33,11 @@ extension MainScreens {
             api: parts.api,
             vault: vault,
             policy: policy,
-            accessToken: { try? await provider.auth.session.accessToken }
+            accessToken: { await tokens.read(for: generation) }
         )
         keySetup = setup
         unlock?.keySetup = setup
         unlock?.signOut = { await auth.signOut() }
-        let generation = auth.session.stamp()
         unlock?.recovery = PasswordRecoveryModel(
             keys: reader, api: PasswordAccountClient(session: provider.urlSession), deriver: auth.deriver,
             identity: { [weak auth] in

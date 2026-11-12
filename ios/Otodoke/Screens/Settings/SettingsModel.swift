@@ -75,6 +75,8 @@ final class SettingsModel {
 
     @ObservationIgnored private let inbox: InboxAddressService
     @ObservationIgnored private let auth: AuthService
+    @ObservationIgnored private let generation: SessionStamp?
+    @ObservationIgnored private let tokenReader: SessionAccessTokenReader
     @ObservationIgnored private let inboundDomain: String
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let mark: ChangeMark
@@ -115,10 +117,12 @@ final class SettingsModel {
         self.reader = reader
         self.inbox = inbox
         self.auth = auth
+        generation = auth.session.stamp()
+        tokenReader = SessionAccessTokenReader(provider: auth.provider, isCurrent: { [weak auth] stamp in auth?.session.isCurrent(stamp) == true })
         self.inboundDomain = inboundDomain
         self.mark = ChangeMark(changes)
         self.now = now
-        let stamp = auth.session.stamp()
+        let stamp = generation
         isCurrentMailIdentity = { [weak auth] in
             guard let auth, let stamp else { return false }
             return auth.session.isCurrent(stamp)
@@ -147,9 +151,11 @@ final class SettingsModel {
             now: { Date() }
         )
         let provider = auth.provider
+        let tokens = model.tokenReader, stamp = model.generation
         model.demo = DemoModel(
             api: DemoAPIClient(session: provider.urlSession),
-            accessToken: { try? await provider.auth.session.accessToken },
+            isCurrent: { [weak auth] in guard let auth, let stamp else { return false }; return auth.session.isCurrent(stamp) },
+            accessToken: { await tokens.read(for: stamp) },
             changed: { ParcelWriter.announceOutsideChange(changes) }
         )
         return model
@@ -205,18 +211,16 @@ final class SettingsModel {
 
     /// 「これは荷物」 and 「読み取る」, done in the app through the Web's mail endpoints (MailActionsModel). Made on first use
     /// with the signed-in session; a test sets its own.
-    @ObservationIgnored lazy var mailActions: MailActionsModel = {
+    @ObservationIgnored lazy var mailActions: MailActionsModel = makeMailActions()
+
+    @MainActor private func makeMailActions() -> MailActionsModel {
+        let auth = self.auth
         let provider = auth.provider
-        let stamp = auth.session.stamp()
+        let tokens = tokenReader
+        let stamp = generation
         return MailActionsModel(
             api: MailActionsClient(session: provider.urlSession),
-            accessToken: { [weak auth] in
-                guard let auth, let stamp, auth.session.isCurrent(stamp),
-                      let session = try? await provider.auth.session,
-                      session.user.id.uuidString.lowercased() == stamp.userID,
-                      auth.session.isCurrent(stamp) else { return nil }
-                return session.accessToken
-            },
+            accessToken: { await tokens.read(for: stamp) },
             reload: { [weak self] in await self?.load() },
             announceChange: { [changes = mark.changes] in ParcelWriter.announceOutsideChange(changes) },
             mayRead: { [weak self] in self?.mayShowReadingAddress == true },
@@ -226,20 +230,23 @@ final class SettingsModel {
             isCurrentGrant: { [weak self] receipt in self?.readingConsent.isCurrentGrant(receipt) == true },
             permissionGeneration: { [weak self] in self?.readingConsent.choiceGeneration ?? -1 }
         )
-    }()
+    }
 
     /// The person who created this settings model owns both the displayed data and these writes.
-    @ObservationIgnored lazy var mailRecovery: SettingsMailRecoveryModel = {
+    @ObservationIgnored lazy var mailRecovery: SettingsMailRecoveryModel = makeMailRecovery()
+
+    @MainActor private func makeMailRecovery() -> SettingsMailRecoveryModel {
+        let auth = self.auth
         let provider = auth.provider
-        let stamp = auth.session.stamp()
+        let tokens = tokenReader
+        let stamp = generation
         return SettingsMailRecoveryModel(
             api: SettingsMailActionsClient(session: provider.urlSession),
-            accessToken: { [weak self, weak auth] in
-                guard let self, let auth, let stamp, self.isCurrentMailIdentity(), auth.session.isCurrent(stamp),
-                      let session = try? await provider.auth.session,
-                      session.user.id.uuidString.lowercased() == stamp.userID,
-                      self.isCurrentMailIdentity(), auth.session.isCurrent(stamp) else { return nil }
-                return session.accessToken
+            accessToken: { [weak self] in
+                guard let self, self.isCurrentMailIdentity() else { return nil }
+                let token = await tokens.read(for: stamp)
+                guard self.isCurrentMailIdentity() else { return nil }
+                return token
             },
             isCurrent: { [weak self, weak auth] in
                 guard let self, let auth, let stamp else { return false }
@@ -249,25 +256,35 @@ final class SettingsModel {
             beginWrite: { [weak self] in self?.fence.beginWrite() },
             endWrite: { [weak self] in self?.fence.endWrite() }
         )
-    }()
+    }
 
-    @ObservationIgnored lazy var accountDeletion: AccountDeletionModel = {
+    @ObservationIgnored lazy var accountDeletion: AccountDeletionModel = makeAccountDeletion()
+
+    @MainActor private func makeAccountDeletion() -> AccountDeletionModel {
+        let auth = self.auth
         let provider = auth.provider
-        let stamp = auth.session.stamp()
+        let tokens = tokenReader
+        let stamp = generation
         return AccountDeletionModel(
             api: AccountAPIClient(session: provider.urlSession),
-            accessToken: { try? await provider.auth.session.accessToken },
+            accessToken: { await tokens.read(for: stamp) },
             isCurrent: { [weak auth] in
-                guard let auth, let stamp else { return false }
-                return auth.session.isCurrent(stamp)
+                guard let auth, let stamp, auth.session.isCurrent(stamp) else { return false }
+                // A missing SDK session after a confirmed POST still needs the existing local cleanup.
+                guard let session = provider.auth.currentSession else { return true }
+                return session.user.id.uuidString.lowercased() == stamp.userID
             },
             completed: { [weak auth] in await auth?.signOut() }
         )
-    }()
+    }
 
-    @ObservationIgnored lazy var passwordChange: PasswordChangeModel = {
+    @ObservationIgnored lazy var passwordChange: PasswordChangeModel = makePasswordChange()
+
+    @MainActor private func makePasswordChange() -> PasswordChangeModel {
+        let auth = self.auth
         let provider = auth.provider
-        let stamp = auth.session.stamp()
+        let tokens = tokenReader
+        let stamp = generation
         return PasswordChangeModel(
             keys: MailKeyReader(provider: provider), api: PasswordAccountClient(session: provider.urlSession), deriver: auth.deriver,
             identity: { [weak auth] in
@@ -275,9 +292,9 @@ final class SettingsModel {
                 return (id, email)
             },
             isCurrent: { [weak auth] in guard let auth, let stamp else { return false }; return auth.session.isCurrent(stamp) },
-            accessToken: { try? await provider.auth.session.accessToken }, signOut: { [weak auth] in await auth?.signOut() }
+            accessToken: { await tokens.read(for: stamp) }, signOut: { [weak auth] in await auth?.signOut() }
         )
-    }()
+    }
 
     func clearForSignOut() {
         retired = true
