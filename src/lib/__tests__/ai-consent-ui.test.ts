@@ -59,12 +59,13 @@ describe("the first reading-permission screen", () => {
     const paragraphs = findAll(root, (n) => n.tag === "p");
     expect(paragraphs.slice(0, 2).map(textOf)).toEqual([
       "届いたメールは、Anthropic の Claude で読み取ります。",
-      "メールの本文を送り、荷物の情報だけを取り出します。",
+      "メールの件名・差出人・本文を送り、荷物の情報を取り出します。",
     ]);
     expect(paragraphs[1]?.parent).toBe(paragraphs[0].parent);
     const siblings = paragraphs[0].parent!.children.filter((node) => typeof node !== "string");
     expect(siblings[siblings.indexOf(paragraphs[0]) + 1]).toBe(paragraphs[1]);
-    expect(paragraphs.filter((n) => textOf(n) === "メールの本文を送り、荷物の情報だけを取り出します。")).toHaveLength(1);
+    expect(paragraphs.filter((n) => textOf(n) === "メールの件名・差出人・本文を送り、荷物の情報を取り出します。")).toHaveLength(1);
+    expect(textOf(root)).not.toContain("メールの本文を送り、荷物の情報だけを取り出します。");
     expect(AI_CONSENT_TEXT_VERSION).toBe("v1");
   });
 
