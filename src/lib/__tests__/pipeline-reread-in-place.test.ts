@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboundEmail } from "@/lib/pipeline";
+import { screenMail } from "@/lib/screen";
 import { FakeDb, type Query } from "./fake-db";
-import { USER, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+import { USER, asAdmin, asConsentingAdmin, item, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
 
 /**
  * Review R1-3, turned into regression tests: reading a stored unread mail again (設定 「読み取る」,
@@ -18,7 +19,8 @@ const mocks = vi.hoisted(() => ({ extractEmail: vi.fn(), isPurchaseMail: vi.fn()
 vi.mock("@/lib/extract/extract", () => ({ extractEmail: mocks.extractEmail }));
 vi.mock("@/lib/extract/triage", () => ({ isPurchaseMail: mocks.isPurchaseMail }));
 
-const { processInboundEmail } = await import("@/lib/pipeline");
+const { processInboundEmail, MailBeingReadError } = await import("@/lib/pipeline");
+const { runClearAllParcels } = await import("@/lib/demo-run");
 
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
@@ -140,6 +142,30 @@ describe("a redelivered mail that was read", () => {
     expect(db.rows("emails")).toHaveLength(0);
     // Gone from emails, so it is listed in 読まなかったメール, with its subject.
     expect(db.rows("screen_events").map((e) => [e.decision, e.subject])).toEqual([["dropped", "今週のおすすめ"]]);
+  });
+
+  it("A2: a cached reread cleared before the free screen never writes a dropped screen event", async () => {
+    const mail = promo();
+    const db = seeded(mail, "failed");
+    expect(db.rows("emails")).toHaveLength(1);
+    const row = structuredClone(db.rows("emails")[0]);
+    if (!row || typeof row.id !== "string" || typeof row.created_at !== "string") throw new Error("cached mail fixture requires a string id and created_at");
+    const snapshot = { id: row.id, createdAt: row.created_at, mail: structuredClone(mail) };
+    expect(screenMail(snapshot.mail)).toMatchObject({ pass: false, borderline: false });
+    expect(await runClearAllParcels(asAdmin(db), USER)).toBeNull();
+    expect(db.rows("emails")).toEqual([]);
+
+    // A fresh scope after clear isolates the missing-row guard from the later generation fence.
+    const outcome = await processInboundEmail(asConsentingAdmin(db), snapshot.mail, {
+      replacesEmailId: snapshot.id, replacesCreatedAt: snapshot.createdAt,
+    }).catch((error: unknown) => error);
+    expect(db.rows("screen_events"), `cached reread outcome: ${JSON.stringify(outcome)}`).toEqual([]);
+    expect(db.callsOn("screen_events", "insert")).toEqual([]);
+    expect(outcome).toBeInstanceOf(MailBeingReadError);
+    expect(outcome).toHaveProperty("message", "the stored mail is no longer available");
+    expect(mocks.isPurchaseMail).not.toHaveBeenCalled();
+    expect(mocks.extractEmail).not.toHaveBeenCalled();
+    expect(db.rpcCalls.filter((call) => call.name === "store_mail_run")).toEqual([]);
   });
 
   it("a stored mail another delivery took over meanwhile is not removed from under it (review R3-5)", async () => {
