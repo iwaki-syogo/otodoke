@@ -99,6 +99,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
                     <span className="shrink-0 text-xs text-emerald-800">荷物として記録済み</span>
                   ) : (
                     <form action={markWronglyDropped} className="shrink-0">
+                      <input type="hidden" name="expectedUserId" value={user.id} />
                       <input type="hidden" name="id" value={d.id} />
                       <PressButton label="これは荷物" busyLabel="記録しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                     </form>
