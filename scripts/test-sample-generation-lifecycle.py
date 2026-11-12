@@ -130,12 +130,21 @@ def verify(sql, phase, *, db=None, expected="OK"):
 
 
 prior_names = ["20261112180000_ai_reading_consent", "20261112181000_ai_consent_auto_read", "20261113090000_claude_call_global_lock", "20261113100000_parcel_write_conflicts"]
-prior_migrations = {name: source("supabase/migrations/" + name + ".sql", True) for name in prior_names}
-prior_verifiers = {name: source("supabase/verify/" + name + ".sql", True) for name in prior_names}
+# The first three dependencies are pinned history. P-1 changes 100000 and 110000 together;
+# always exercise the local 100000 bundle, never silently replace it with the old global lock.
+prior_migrations = {name: source("supabase/migrations/" + name + ".sql", i<3) for i,name in enumerate(prior_names)}
+prior_verifiers = {name: source("supabase/verify/" + name + ".sql", i<3) for i,name in enumerate(prior_names)}
+for kind in ["migrations","verify","rollback"]:
+    local_path="supabase/"+kind+"/"+prior_names[3]+(".down.sql" if kind=="rollback" else ".sql")
+    hashes["local:"+local_path]=hashlib.sha256((root/local_path).read_bytes()).hexdigest()
+local_parcel_before="supabase/verify/"+prior_names[3]+".before.sql"
+hashes["local:"+local_parcel_before]=hashlib.sha256((root/local_parcel_before).read_bytes()).hexdigest()
 before = source("supabase/verify/20261113110000_sample_generation.before.sql")
 forward = source("supabase/migrations/20261113110000_sample_generation.sql")
 after = source("supabase/verify/20261113110000_sample_generation.sql")
 down = source("supabase/rollback/20261113110000_sample_generation.down.sql")
+parcel_before=source("supabase/verify/20261113100000_parcel_write_conflicts.before.sql")
+parcel_down=source("supabase/rollback/20261113100000_parcel_write_conflicts.down.sql")
 
 create_database(database)
 run("""
@@ -180,6 +189,14 @@ def missing_dependencies_unchanged(label):
     assert schema_catalog() == snapshot, "failed dependency preflight must not change any public schema object"
     assert "sample_generation requires" in error, (label, "forward must explain its missing dependencies before any DDL")
 
+
+no_owned_db=database+"_no_owned"
+create_database(no_owned_db,database)
+no_owned_catalog=schema_catalog(no_owned_db)
+assert "expected restored cost gateway is missing or changed" in run(parcel_down,db=no_owned_db,fail=True)
+assert schema_catalog(no_owned_db)==no_owned_catalog
+assert run("select (select count(*) from public.parcels)+(select count(*) from public.emails);",db=no_owned_db)=="0"
+passed("parcel rollback refuses a database without its cost prerequisite instead of creating an owned writer")
 
 missing_dependencies_unchanged("missing cost and parcel gateways")
 run(prior_migrations[prior_names[0]])
@@ -235,16 +252,19 @@ passed("before rejects partial prerequisites and extra overloads")
 user, other = str(uuid.uuid4()), str(uuid.uuid4())
 mail, parcel = str(uuid.uuid4()), str(uuid.uuid4())
 run("""
+begin;
 insert into auth.users(id) values ('%s'),('%s');
 insert into public.ai_reading_consents(user_id,decision,text_version) values ('%s','granted','synthetic-version');
 insert into public.ai_consent_read_runs(user_id,consent_decided_at) select user_id,decided_at from public.ai_reading_consents where user_id='%s';
 insert into public.emails(id,user_id,provider_email_id,processing_status,subject,text_body) values ('%s','%s','demo:synthetic/lifecycle','failed','Synthetic subject','Synthetic body');
+select set_config('otodoke.parcel_owner','%s',true);
 insert into public.parcels(id,user_id,shop,title,status,total_amount) values ('%s','%s','Synthetic shop','Synthetic parcel','delivered',1234);
 insert into public.parcel_items(user_id,parcel_id,name,quantity) values ('%s','%s','Synthetic item',2);
 insert into public.extractions(user_id,email_id,parcel_id,model,result) values ('%s','%s','%s','synthetic','{}');
 insert into public.mail_intake_notices(user_id,reason) values ('%s','user_storage_limit');
 select verdict from public.claim_claude_call_v2('%s',10,2147483647);
-""" % (user, other, user, user, mail, user, parcel, user, user, parcel, user, mail, parcel, user, user))
+commit;
+""" % (user, other, user, user, mail, user, user, parcel, user, user, parcel, user, mail, parcel, user, user))
 
 
 def saved_data(db=None):
@@ -268,7 +288,7 @@ def installed_catalog(db):
           'store_mail_run_without_sample_fence','mail_run_write_without_sample_fence',
           'create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','lock_parcel_candidates','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete',
           'create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog','claim_ai_reading_backlog_without_sample_fence','release_claude_call','release_claude_call_without_sample_fence','claim_claude_call_v2','claim_claude_call_v2_without_sample_fence')),
-      'triggers',(select jsonb_agg(to_jsonb(t) order by t.oid) from pg_trigger t where tgname in ('sample_generation_fence','sample_generation_statement_fence','parcels_candidate_write_lock','parcel_items_candidate_write_lock','sample_generation_owner_delete')),
+      'triggers',(select jsonb_agg(to_jsonb(t) order by t.oid) from pg_trigger t where tgname in ('sample_generation_fence','sample_generation_statement_fence','parcels_candidate_write_lock','parcel_items_candidate_write_lock','parcels_candidate_owner','parcel_items_candidate_owner','parcel_candidate_owner_delete')),
       'column',(select jsonb_agg(to_jsonb(a) order by a.attnum) from pg_attribute a where a.attrelid=to_regclass('public.emails') and a.attname='sample_generation' and not a.attisdropped),
       'generations',(select jsonb_agg(to_jsonb(g) order by g.user_id) from public.sample_generations g),
       'mail_metadata',(select jsonb_agg(jsonb_build_object('id',id,'generation',sample_generation) order by id) from public.emails)
@@ -366,6 +386,40 @@ permission_probes.append({"case":"administrator has UPDATE, actual definers lack
 passed("a privileged verifier cannot hide a real definer's missing Auth locking privilege")
 run("grant update(synthetic_lock_column) on auth.users to "+permission_owner+";",db=permission_db)
 assert verify(after,"restored column grant supports the actual definer probe",db=permission_db)["runtime_auth_lock_owners_ok"] is True
+
+# CREATE OR REPLACE needs only TRIGGER plus callback EXECUTE. Final removal of that
+# Auth trigger needs the table owner, so reject a less privileged rollback before any DDL.
+permission_rollback=database+"_auth_rollback"
+create_database(permission_rollback,permission_db)
+run(permission_prefix+down,db=permission_rollback)
+assert result(before,db=permission_rollback,prefix=permission_prefix)["verdict"]=="OK"
+permission_catalog,permission_data=schema_catalog(permission_rollback),saved_data(permission_rollback)
+assert "auth.users owner to remove its callback" in run(permission_prefix+parcel_down,db=permission_rollback,fail=True)
+assert schema_catalog(permission_rollback)==permission_catalog and saved_data(permission_rollback)==permission_data
+passed("TRIGGER-only migration owner can replace Auth callbacks, but final removal fails atomically without table ownership")
+run(parcel_down,db=permission_rollback)
+for name in prior_names[:3]:
+    verify(prior_verifiers[name],"after parcel rollback: "+name,db=permission_rollback)
+assert saved_data(permission_rollback)==permission_data
+rolled_catalog=schema_catalog(permission_rollback)
+unknown_cost_db=database+"_unknown_cost"
+create_database(unknown_cost_db,permission_rollback)
+unknown_writer=re.search(r"create or replace function public\.mail_run_write\([\s\S]*?\bas \$\$[\s\S]*?\$\$;",parcel_down).group(0)
+unknown_writer=re.sub(r"\bas \$\$[\s\S]*?\$\$;","as $$ begin return '[]'::jsonb; end $$;",unknown_writer)
+run(unknown_writer,db=unknown_cost_db)
+unknown_catalog,unknown_data=schema_catalog(unknown_cost_db),saved_data(unknown_cost_db)
+assert "expected restored cost gateway is missing or changed" in run(parcel_down,db=unknown_cost_db,fail=True)
+assert schema_catalog(unknown_cost_db)==unknown_catalog and saved_data(unknown_cost_db)==unknown_data
+passed("second parcel rollback refuses an unknown restored writer without overwriting its definition or data")
+run(parcel_down,db=permission_rollback)
+assert schema_catalog(permission_rollback)==rolled_catalog and saved_data(permission_rollback)==permission_data
+verify(permission_prefix+"\n"+parcel_before,"second parcel rollback before",db=permission_rollback)
+run(permission_prefix+prior_migrations[prior_names[3]],db=permission_rollback)
+verify(prior_verifiers[prior_names[3]],"reapplied local parcel owner bundle",db=permission_rollback)
+run(permission_prefix+forward,db=permission_rollback)
+verify(after,"reapplied sample after both rollbacks",db=permission_rollback)
+assert saved_data(permission_rollback)==permission_data
+passed("local parcel rollback twice and reapplication restore cost guards, saved data and the stacked boundary")
 
 # A long read transaction prevents ALTER TABLE's AccessExclusiveLock. Prove the real
 # migration aborts at five seconds without partial metadata, rather than waiting forever.
@@ -537,12 +591,13 @@ passed("all four preceding real verifiers remain OK after rollback")
 # Old sample reservations and the older application's two-DELETE clear path work again. The
 # probes are rolled back, so this lifecycle check itself never consumes the representative data.
 legacy = """begin; set local role service_role;
+select set_config('otodoke.parcel_owner','%s',true);
 select verdict from public.store_mail_run('%s',gen_random_uuid(),gen_random_uuid(),
   '{"provider_email_id":"demo:synthetic/legacy-probe","processing_status":"pending"}',null,
   '{"user_count":1000,"global_count":10000,"user_bytes":1000000,"global_bytes":10000000}');
 delete from public.parcels where user_id='%s'; delete from public.emails where user_id='%s';
-select (select count(*) from public.parcels where user_id='%s')+(select count(*) from public.emails where user_id='%s'); rollback;""" % (user,user,user,user,user)
-assert run(legacy).splitlines() == ["ok", "0"]
+select (select count(*) from public.parcels where user_id='%s')+(select count(*) from public.emails where user_id='%s'); rollback;""" % (user,user,user,user,user,user)
+assert run(legacy).splitlines() == [user,"ok", "0"]
 assert saved_data() == saved
 passed("old headerless sample reservation and two-DELETE clear restored without removing saved rows")
 

@@ -175,7 +175,8 @@ for table in ["emails", "parcels", "extractions", "parcel_items"]:
     forged = "set role authenticated; set request.jwt.claim.sub='%s'; set request.headers=%s; update public.%s set user_id=user_id where false;" % (
         user, literal({"x-otodoke-sample-user": other, "x-otodoke-sample-generation": generation}).removesuffix("::jsonb"), table)
     error = run(forged, fail=True)
-    assert "42501" in error and "sample owner must match authenticated user" in error, table
+    expected_message = "parcel header owner must match authenticated user" if table in ["parcels", "parcel_items"] else "sample owner must match authenticated user"
+    assert "42501" in error and expected_message in error, table
 assert scalar("select coalesce(jsonb_agg(to_jsonb(g) order by user_id),'[]') from public.sample_generations g") == state_before
 passed("authenticated forged sample owner reaches the statement guard and fails before any generation change on all four tables")
 for headers in [{}, {"x-otodoke-sample-user": user, "x-otodoke-sample-generation": generation}]:
@@ -185,7 +186,7 @@ for headers in [{}, {"x-otodoke-sample-user": user, "x-otodoke-sample-generation
     auth_control += "update public.parcels set status='delivered' where user_id='%s' and shop='Synthetic authenticated' returning current_user,received_at is not null; rollback;" % user
     assert run(auth_control).splitlines() == ["Before", "After", "authenticated|t"]
 passed("legitimate authenticated parcel insert and update succeed both headerless and with their own current sample header")
-service_control = "begin;" + as_service("insert into public.parcels(user_id,shop,status) values ('%s','Synthetic server delivered','ordered'); update public.parcels set status='delivered' where user_id='%s' and shop='Synthetic server delivered' returning current_user,received_at is null; rollback;" % (user,user))
+service_control = "begin;" + as_service("insert into public.parcels(user_id,shop,status) values ('%s','Synthetic server delivered','ordered'); update public.parcels set status='delivered' where user_id='%s' and shop='Synthetic server delivered' returning current_user,received_at is null; rollback;" % (user,user),user,generation)
 assert run(service_control).splitlines()==["service_role|t"]
 passed("statement definer prelock preserves role semantics: authenticated delivery marks received, service mail delivery does not")
 
@@ -202,7 +203,8 @@ passed("valid BEFORE UPDATE writes NEW")
 other_generation = run(as_service("select public.begin_sample_load('%s');" % other))
 other_parcel = str(uuid.uuid4())
 run(as_service("insert into public.parcels(id,user_id,shop) values ('%s','%s','Other synthetic shop');" % (other_parcel, other), other, other_generation))
-assert "55000" in run(as_service("update public.parcels set title='Wrong owner' where id='%s';" % other_parcel, user, generation), fail=True)
+owner_error=run(as_service("update public.parcels set title='Wrong owner' where id='%s';" % other_parcel, user, generation), fail=True)
+assert "42501" in owner_error and "parcel row does not match its transaction owner" in owner_error
 passed("cross-owner direct write rejected")
 new_generation = run(as_service("select public.clear_all_parcels('%s');" % user))
 assert new_generation != generation
@@ -217,7 +219,7 @@ assert run(as_service(store(user, fresh_email, fresh_lease, "demo:synthetic/fres
 new_parcel = json.loads(run(as_service(owned(fresh_email, fresh_lease, "parcels", "insert", {"user_id": user, "shop": "New sample", "status": "delivered"}), user, new_generation)))[0]["id"]
 run(as_service(owned(fresh_email, fresh_lease, "extractions", "insert", {"user_id": user, "email_id": fresh_email, "parcel_id": new_parcel, "model": "synthetic-test", "result": {}}), user, new_generation))
 real_parcel = str(uuid.uuid4())
-run(as_service("insert into public.parcels(id,user_id,shop,status) values ('%s','%s','Synthetic real parcel','delivered');" % (real_parcel, user)))
+run(as_service("insert into public.parcels(id,user_id,shop,status) values ('%s','%s','Synthetic real parcel','delivered');" % (real_parcel, user),user,new_generation))
 run(as_service("update public.parcels set status='delivered' where id='%s';" % other_parcel, other, other_generation))
 receive = "select public.receive_sample_parcels('%s',array['%s','%s','%s']::uuid[],'2026-11-12T00:00:00Z');" % (user, new_parcel, real_parcel, other_parcel)
 run(as_service(receive, user, new_generation))
@@ -433,7 +435,7 @@ null_calls_before = int(scalar("select coalesce(sum(calls),0) from public.claude
 deleted_calls = int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily where user_id='%s'" % deleting_user))
 assert deleted_calls>0
 deleting_mail,deleting_parcel = str(uuid.uuid4()),str(uuid.uuid4())
-run("insert into public.emails(id,user_id,provider_email_id) values ('%s','%s','synthetic-cascade-seed'); insert into public.parcels(id,user_id,shop) values ('%s','%s','Synthetic cascade seed'); insert into public.parcel_items(parcel_id,user_id,name) values ('%s','%s','Synthetic cascade item'); insert into public.extractions(user_id,email_id,parcel_id,model,result) values ('%s','%s','%s','synthetic','{}');" % (deleting_mail,deleting_user,deleting_parcel,deleting_user,deleting_parcel,deleting_user,deleting_user,deleting_mail,deleting_parcel))
+run("begin; select set_config('otodoke.parcel_owner','%s',true); insert into public.emails(id,user_id,provider_email_id) values ('%s','%s','synthetic-cascade-seed'); insert into public.parcels(id,user_id,shop) values ('%s','%s','Synthetic cascade seed'); insert into public.parcel_items(parcel_id,user_id,name) values ('%s','%s','Synthetic cascade item'); insert into public.extractions(user_id,email_id,parcel_id,model,result) values ('%s','%s','%s','synthetic','{}'); commit;" % (deleting_user,deleting_mail,deleting_user,deleting_parcel,deleting_user,deleting_parcel,deleting_user,deleting_user,deleting_mail,deleting_parcel))
 for table in ["emails","parcels","extractions","parcel_items","sample_generations","claude_usage_daily","claude_call_claims"]:
     assert int(scalar("select count(*) from public.%s where user_id='%s'" % (table,deleting_user)))>0, table
 other_costs = scalar("select jsonb_agg(to_jsonb(c) order by day) from public.claude_usage_daily c where user_id='%s'" % other)
@@ -451,6 +453,62 @@ assert scalar("select jsonb_agg(to_jsonb(c) order by day) from public.claude_usa
 assert int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily"))==total_calls_before
 assert int(scalar("select coalesce(sum(calls),0) from public.claude_usage_daily where user_id is null"))==null_calls_before+deleted_calls
 passed("auth deletion and a generation-first writer complete without deadlock, atomically cascade target data and retain deleted calls anonymously without changing the global total or another user's count")
+
+marker_user=str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s');" % marker_user)
+run("""begin;
+delete from auth.users where id='%s';
+set local role service_role;
+do $$ begin
+  if current_setting('otodoke.parcel_delete_owner',true) is distinct from '%s' then raise exception 'private deletion marker missing'; end if;
+  begin
+    insert into public.parcels(user_id,shop) values ('%s','Synthetic post-delete insert');
+    raise exception 'deleted-owner write bypassed its FK';
+  exception when foreign_key_violation then null;
+  end;
+  perform set_config('otodoke.parcel_owner','%s',true);
+  begin
+    insert into public.parcels(user_id,shop) values ('%s','Synthetic mismatched deletion scope');
+    raise exception 'deletion marker accepted another owner';
+  exception when insufficient_privilege then
+    if sqlerrm is distinct from 'parcel deletion scope does not match its transaction owner' then raise; end if;
+  end;
+end $$;
+rollback;""" % (marker_user,marker_user,marker_user,other,other))
+assert scalar("select count(*) from auth.users where id='%s'" % marker_user)=="1"
+assert scalar("select count(*) from public.parcels where user_id='%s'" % marker_user)=="0"
+forged_marker="set role service_role;set request.headers=%s;insert into public.parcels(user_id,shop) values ('%s','Synthetic forged marker');" % (
+    literal({"x-otodoke-parcel-delete-owner":user}).removesuffix("::jsonb"),user)
+marker_error=run(forged_marker,fail=True)
+assert "55000" in marker_error and "parcel write requires an explicit owner scope" in marker_error
+passed("private deletion reentry preserves owner/FK checks, rejects scope switching and cannot be selected by request headers")
+
+marker_other,marker_mail,marker_parcel,marker_extraction,marker_item=[str(uuid.uuid4()) for _ in range(5)]
+run("""begin;
+insert into auth.users(id) values ('%s');
+select set_config('otodoke.parcel_owner','%s',true);
+insert into public.emails(id,user_id,provider_email_id) values ('%s','%s','synthetic-marker-other');
+insert into public.parcels(id,user_id,shop) values ('%s','%s','Synthetic marker other');
+insert into public.parcel_items(id,parcel_id,user_id,name) values ('%s','%s','%s','Synthetic marker item');
+insert into public.extractions(id,user_id,email_id,parcel_id,model,result) values ('%s','%s','%s','%s','synthetic','{}');
+commit;""" % (marker_other,marker_other,marker_mail,marker_other,marker_parcel,marker_other,marker_item,marker_parcel,marker_other,marker_extraction,marker_other,marker_mail,marker_parcel))
+marker_results={}
+for table,row_id in [("emails",marker_mail),("extractions",marker_extraction),("parcels",marker_parcel),("parcel_items",marker_item)]:
+    marker_results[table]=run("""begin;
+delete from auth.users where id='%s';set local role service_role;
+do $$ begin
+  begin
+    delete from public.%s where id='%s';
+    raise exception using errcode='OTRBK',message='accepted another owner';
+  exception when insufficient_privilege then
+    if sqlerrm not in ('parcel deletion row does not match its transaction owner','parcel row does not match its transaction owner') then raise; end if;
+    perform set_config('otodoke.marker_probe','refused',true);
+  when sqlstate 'OTRBK' then perform set_config('otodoke.marker_probe','accepted',true);
+  end;
+end $$;
+select current_setting('otodoke.marker_probe');rollback;""" % (marker_user,table,row_id))
+assert set(marker_results.values())=={"refused"},("deletion marker must reject other-owner rows on every fenced table",marker_results)
+passed("Auth deletion reentry refuses another owner's rows on emails, extractions, parcels and items")
 
 run(as_service("update public.parcels set received_at=null where id='%s';" % new_parcel, user, new_generation))
 receiving = hold(as_service(receive, user, new_generation))

@@ -39,7 +39,8 @@ export function originalFunctions(source) {
   return functions.map((name) => {
     const found = source.match(new RegExp(`^create or replace function public\\.${name}\\([\\s\\S]+?end \\$\\$;`, "m"));
     assert.ok(found, `original ${name} must exist`);
-    assert.match(found[0], /for update;\s*perform pg_catalog\.pg_advisory_xact_lock\(62803,0\)/);
+    assert.match(found[0], /for update;[\s\S]+set_config\('otodoke\.parcel_owner',v_mail\.user_id::text,true\)[\s\S]+pg_advisory_xact_lock\(62803,pg_catalog\.hashtext\(v_mail\.user_id::text\)\)/);
+    assert.doesNotMatch(found[0], /pg_advisory_xact_lock\(62803,\s*0\)/);
     assert.doesNotMatch(found[0], /lock_sample_owner|assert_sample_generation/);
     return found[0];
   });
@@ -73,7 +74,7 @@ function one(output) {
   return JSON.parse(results[0]);
 }
 
-function startChild(executable, args, { environment, input, interactive = false, timeout = 20_000 } = {}) {
+export function startChild(executable, args, { environment, input, interactive = false, timeout = 20_000 } = {}) {
   const child = spawn(executable, args, { cwd: root, env: environment, stdio: ["pipe", "pipe", "pipe"] });
   const state = { stdout: "", stderr: "", code: null, signal: null, timedOut: false, exited: false };
   const timer = setTimeout(() => { state.timedOut = true; child.kill("SIGTERM"); }, timeout);
@@ -134,6 +135,7 @@ async function selfTest() {
   const source = await readFile(path.join(root, "supabase/migrations", legacy), "utf8");
   assert.equal(originalFunctions(source).length, 3);
   assert.throws(() => originalFunctions(source.replace("public.create_mail_parcel(", "public.missing_create(")));
+  assert.throws(() => originalFunctions(source.replaceAll("pg_catalog.hashtext(v_mail.user_id::text)", "0")), "an old global key is not the per-user lock-order negative control");
   assert.match(workerQuery("ensure", { snapshot: [], version: "2026-11-12T00:00:00Z" }), /from \(select \* from public\.ensure_mail_parcel_items/);
   const dummy = (source, options = {}) => startChild(process.execPath, ["-e", source], options).complete;
   assert.equal(classify(await dummy("process.stdout.write('RESULT:{\"verdict\":\"ok\"}\\n')"), mail).kind, "ok");
@@ -187,17 +189,21 @@ async function main(negative, controlsOnly = false) {
   };
   const summary = { mode: negative ? "negative-control" : controlsOnly ? "controls-only" : "natural", trials_started: 0, trials_completed: 0, operations_started: 0, operations_completed: 0,
     outcomes: { ok: 0, retry: 0, expected_refusal: 0, deadlock: 0, sql_error: 0, timeout: 0, invalid_result: 0 }, sqlstates: {}, gate_workers_observed: 0, production_waiters_observed: 0,
-    controls: { single: 0, old_lease_refusal: 0, fresh_intake: 0, fresh_parcel: 0 }, target_sha256: null, negative_source_sha256: null };
+    controls: { single: 0, old_lease_refusal: 0, fresh_intake: 0, fresh_parcel: 0 }, target_sha256: null, negative_source_sha256: null,
+    sql_sha256: {}, sql_source: "working tree", negative_order: negative ? "local 100000 E -> per-user L -> 110000 G, without the public G prefix" : null };
   const record = (value) => {
     summary.operations_completed++;
     summary.outcomes[value.kind]++;
     if (value.state) summary.sqlstates[value.state] = (summary.sqlstates[value.state] ?? 0) + 1;
   };
-  const seed = async (sample) => one(await sql(`begin; set local request.headers='{}';
-    truncate public.parcels cascade; truncate public.emails cascade;
+  const seed = async (sample) => one(await sql(`select public.clear_all_parcels('${user}'); select public.clear_all_parcels('${other}');
+    begin;
+    select set_config('request.headers',jsonb_build_object('x-otodoke-sample-user','${other}',
+      'x-otodoke-sample-generation',public.begin_sample_load('${other}'))::text,true);
     insert into public.parcels(id,user_id,shop,status) values('${otherParcel}','${other}','Other synthetic shop','ordered');
-    select set_config('request.headers',case when ${sample} then jsonb_build_object('x-otodoke-sample-user','${user}',
-      'x-otodoke-sample-generation',public.begin_sample_load('${user}'))::text else '{}' end,true);
+    commit; begin;
+    select set_config('request.headers',jsonb_build_object('x-otodoke-sample-user','${user}',
+      'x-otodoke-sample-generation',public.begin_sample_load('${user}'))::text,true);
     insert into public.emails(id,user_id,provider_email_id,processing_status,processing_run_id,processing_lease_until) values
       ${emails.map((email, index) => `('${email}','${user}','${sample ? "demo:" : "synthetic:"}lock-${index}','pending','${runs[index]}',clock_timestamp()+interval '360 seconds')`).join(",")};
     insert into public.parcels(id,user_id,shop,status) values('${parcel}','${user}','Synthetic shop','ordered');
@@ -255,8 +261,9 @@ async function main(negative, controlsOnly = false) {
     await waitFor(async () => Number(await scalar(`select count(*) from pg_stat_activity a join pg_locks l on l.pid=a.pid where a.application_name='${writerName}' and a.datname=current_database()
       and a.wait_event_type='Lock' and a.wait_event in ('transactionid','tuple')
       and exists(select 1 from pg_stat_activity b where b.pid=any(pg_blocking_pids(a.pid)) and b.application_name='${clearName}' and b.datname=current_database())
-      and l.locktype='advisory' and l.classid=62803 and l.objid=0 and l.granted;`)) === 1,
-    "old writer owns 62803 and waits for generation", [writer, clearer]);
+      and l.locktype='advisory' and l.classid=62803
+      and l.objid::bigint=(pg_catalog.hashtext('${user}'::uuid::text)::bigint+4294967296)%4294967296 and l.granted;`)) === 1,
+    "old writer owns this user's 62803 key and waits for generation", [writer, clearer]);
     summary.production_waiters_observed++;
     clearer.child.stdin.end(`${workerQuery("clear", seeded)} commit;\n`);
     const values = (await Promise.all([clearer.complete, writer.complete])).map((result, index) => classify(result, { kind: index === 0 ? "clear" : kind, sample: false }));
@@ -315,6 +322,7 @@ async function main(negative, controlsOnly = false) {
       if (name === "20261106180000_screen_events_daily_purge.sql") console.log(`SKIP: ${name} (pg_cron-only schedule)`);
       else {
         const source = await readFile(path.join(root, "supabase/migrations", name), "utf8");
+        if (name === target || name === legacy) summary.sql_sha256[name] = createHash("sha256").update(source).digest("hex");
         if (name === target) summary.target_sha256 = createHash("sha256").update(source).digest("hex");
         await sql(source);
       }
@@ -324,7 +332,7 @@ async function main(negative, controlsOnly = false) {
       const source = await readFile(path.join(root, "supabase/migrations", legacy), "utf8");
       summary.negative_source_sha256 = createHash("sha256").update(source).digest("hex");
       for (const definition of originalFunctions(source)) await sql(definition);
-      console.log("NEGATIVE CONTROL: original 100000 create/update/ensure restored only in this scratch database; source files unchanged");
+      console.log("NEGATIVE CONTROL: local 100000 E -> per-user L bodies replace the public G-prefix wrappers only in this scratch database; source files unchanged");
       await controls();
       for (const kind of ["create-shipped", "update-shipped", "ensure"]) await synchronizedNegative(kind);
     } else {

@@ -64,7 +64,13 @@ with checks as (
     from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as secure_gateways,
     (select count(*)=2 from pg_trigger where tgname='sample_generation_statement_fence' and not tgisinternal and tgenabled='O')
       and exists(select 1 from pg_proc where oid=to_regprocedure('public.lock_parcel_candidates()')
-        and prosrc like '%perform public.prelock_sample_request();%pg_advisory_xact_lock(62803,0)%') and (select count(*)=1 from pg_trigger where tgrelid=to_regclass('auth.users') and tgname='sample_generation_owner_delete' and not tgisinternal and tgenabled='O') as statement_prelocks
+        and prosrc like '%perform public.prelock_sample_request();%pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text))%')
+      and (select count(*)=2 from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
+        and tgtype=31 and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal and tgenabled='O'
+        and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+        and tgqual is null and tgattr=''::int2vector and tgnargs=0)
+      and (select count(*)=1 from pg_trigger where tgrelid=to_regclass('auth.users') and tgname='parcel_candidate_owner_delete'
+        and tgtype=11 and tgfoid=to_regprocedure('public.prelock_sample_owner_delete()') and not tgisinternal and tgenabled='O' and tgqual is null and tgnargs=0) as statement_prelocks
 )
 select checks.*, case when four_write_fences and sample_metadata_backfilled and private_generation_state
   and service_only_entrypoints and core_helpers_private and secure_gateways and statement_prelocks and runtime_auth_lock_owners_ok then 'OK' else 'FAILED' end as verdict

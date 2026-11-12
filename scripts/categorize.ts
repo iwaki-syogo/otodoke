@@ -54,6 +54,7 @@ async function main() {
   const { CATEGORIES, categoryLabel } = await import("../src/lib/category");
   const { categoryForUpdate } = await import("../src/lib/match/category");
   const { createAdminClient } = await import("../src/lib/supabase/admin");
+  const { beginMailGeneration } = await import("../src/lib/sample-generation-db");
   const { readAll } = await import("../src/lib/supabase/read-all");
   const { requireEnv } = await import("../src/lib/env");
   const { PRICES } = await import("./prices");
@@ -61,8 +62,10 @@ async function main() {
   const price = PRICES[MODEL];
   if (!price) throw new Error(`no price known for ${MODEL}; add it to scripts/prices.ts after checking the pricing page`);
 
-  const db = createAdminClient();
+  let db = createAdminClient();
   const userId = await findUserId(db, args.user);
+  // An apply run fixes its owner and clear generation before any paid work; dry-run stays read-only.
+  if (args.apply) db = await beginMailGeneration(db, userId);
 
   // Only parcels with no category that the person has not set themselves.
   const parcels = await readAll<{ id: string; shop: string; title: string | null; category_source: string | null }>(() =>

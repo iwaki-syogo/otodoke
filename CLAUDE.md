@@ -157,3 +157,12 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 110000のfresh適用は既存emails/RPCの標準ownerを適用主体にする。新wrapperと退避coreのownerを混在させず、既存private呼出しとdownの所有者契約を保つ。所有者や権限を自動で変更してgateを通さない。
 - Auth行を直接ロックする5関数には、実効的なauth schema USAGE・SELECT(id)・少なくとも1列のUPDATEが要る。正当な列grant/継承も認め、API呼出し役へ広いAuth権限を付けない。初回は新規DEFINER=current_user、再適用は既存の実owner全件も確認する。
 - beforeの構造検査だけで権限を保証しない。afterは既存helperの実DEFINER権限で0行FOR KEY SHAREを通し、保存する行を作らずに必要ACLを確かめる。SQLエラー・出力無し・false/null・FAILEDなら停止する。全ユーザーのRLS可視性とは別の検査として扱う。
+
+## 利用者ごとの荷物候補ロック（P-1）
+
+- 上の62803は利用者ごとの `(62803, hashtext(user_id::text))`。authenticatedの直接DMLはauth.uid()、owned mail RPCはロックしたemails.user_idを正本にする。本人の0行UPDATEも自分の鍵だけを取り、既存grantとRLSは維持する。hashは排他の識別にだけ使い、所有者・lease・候補・snapshotの照合はUUIDのまま。hash衝突は待ち時間だけを増やす。
+- 最終110000まで揃えた通常の書込みは U(Auth行) → G(世代行) → E(必要なメール行) → L(利用者の候補鍵) → R(荷物/明細行)。100000単独はGの無い途中段階なので、その段階でwriterを再開しない。
+- serviceの直接parcels/items DMLには単一利用者のscopeが必要。実メールpipelineはwithMailRun/mail_run_write、サンプルと適用付きcategorizeはbeginMailGenerationの同じ世代付きclientを最後まで使う。categorizeは有料処理より前にscopeを確定する。header/context無しは拒否し、全員共通の鍵へ戻さない。
+- 一つのtransactionでownerを切り替えない。退会のprivate callbackだけが削除対象UUIDのcontextを作り、cascadeの再入では削除済み親行を取り直さない。任意headerを削除contextの根拠にしない。
+- TRUNCATEは通常のtriggerで常に拒否する。writer停止/drainだけでは許可されない。複数利用者にまたがる保守は単一owner transactionへ分割するか、別途レビューした手順を用意する。
+- 100000/110000の本体・before・verify・downは同じ版で取り込む。Auth callbackは共通名のCREATE OR REPLACE TRIGGERで切り替える。100000を最終的に戻してtriggerを削除するにはAuth tableowner/memberが必要で、適用時のTRIGGER権限とは分けて確認する。利用者分離の実PG対照はtests/postgres/run-parcel-user-locks.mjs。

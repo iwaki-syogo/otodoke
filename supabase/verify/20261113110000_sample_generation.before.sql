@@ -119,7 +119,7 @@ with inventory as (
     )) as expected_rpc_abi_ok,
     (prerequisite_state <> 'present' or (
       exists(select 1 from pg_proc where oid = to_regprocedure('public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb)') and md5(prosrc) = '3ea94d29e7f03b05060d3cd428b6f645')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') and md5(prosrc) = case when parcel_rpcs then '2672195186996d6c1da415ce09216014' else '09f1ab05ad5ccac3c31a8f5512dc9c0c' end)
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)') and md5(prosrc) = case when parcel_rpcs then '3757d8a83849ed61c14ebfc75ae4685d' else '09f1ab05ad5ccac3c31a8f5512dc9c0c' end)
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.claim_claude_call(uuid,integer,integer)') and md5(prosrc) = 'ab7586c4c396b0ca1db60c4d63225b60')
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)') and md5(prosrc) = '9cac5bf34db2a84a7f9554569e3940ba')
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.release_claude_call(bigint,uuid)') and md5(prosrc) = 'c32011cb8f66c469cd947af2a2be4461')
@@ -127,14 +127,20 @@ with inventory as (
       and md5(prosrc) = case when auto_read_state = 'present' then '3a0d1452f9a11dc8396691b04e95448b' else 'da05fd2061bc698db9809bc1741b62c3' end))
     and (auto_read_state <> 'present' or exists(select 1 from pg_proc where oid = to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)') and md5(prosrc) = '6d302317a1265f556b7a7457c5975908'))
     and (not parcel_rpcs or (
-      exists(select 1 from pg_proc where oid = to_regprocedure('public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = 'c4c8cd221d81a65693501f1f76c6da43' and pronargdefaults=2
+      exists(select 1 from pg_proc where oid = to_regprocedure('public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = 'ab89b9744cb0d227c817be76e6ea354d' and pronargdefaults=2
         and proargnames=array['p_snapshot','p_values','p_items','p_email_id','p_run_id','verdict','parcel_id'] and pg_get_function_result(oid)='TABLE(verdict text, parcel_id uuid)')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = '1f31656cb496ae7332d5ce722ef5039a' and pronargdefaults=2
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)') and md5(prosrc) = '4c13f09288c69d8492563b176948efba' and pronargdefaults=2
         and proargnames=array['p_snapshot','p_parcel_id','p_expected_updated_at','p_values','p_category','p_items','p_email_id','p_run_id','verdict','parcel_id','parcel_row'] and pg_get_function_result(oid)='TABLE(verdict text, parcel_id uuid, parcel_row jsonb)')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)') and md5(prosrc) = '9b794fc0498e1a85e6058a68e0895755' and pronargdefaults=2
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)') and md5(prosrc) = '3257efac3e652297308d7e2d45ef481a' and pronargdefaults=2
         and proargnames=array['p_parcel_id','p_expected_updated_at','p_items','p_email_id','p_run_id','verdict'] and pg_get_function_result(oid)='TABLE(verdict text)')
       and exists(select 1 from pg_proc where oid = to_regprocedure('public.mail_parcel_snapshot(uuid)') and md5(prosrc)='93b25c57e72edd8476fa87b9276daaca')
-      and exists(select 1 from pg_proc where oid = to_regprocedure('public.lock_parcel_candidates()') and md5(prosrc) = '9b397e6fa6a3471f713395ee78ccd9b9')
+      and exists(select 1 from pg_proc where oid = to_regprocedure('public.lock_parcel_candidates()') and md5(prosrc) = 'e9aef24709226d459d89eac8d85e2464')
+      and (select count(*)=2 from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
+        and tgtype=31 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal
+        and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+        and tgqual is null and tgattr=''::int2vector and tgnargs=0)
+      and (select count(*)=1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete'
+        and tgtype=11 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal and tgqual is null and tgnargs=0)
     )) as expected_guard_definitions_ok,
     not exists(select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname in ('store_mail_run','mail_run_write','set_ai_reading','claim_ai_reading_backlog','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','claim_claude_call_v2','release_claude_call') and (

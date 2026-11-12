@@ -39,10 +39,10 @@ begin
   end if;
   for x in select * from (values
       ('store_mail_run','uuid,uuid,uuid,jsonb,timestamptz,jsonb','3ea94d29e7f03b05060d3cd428b6f645','9b376382ace9f7b90e85c6db747a790c',array['p_user_id','p_email_id','p_run_id','p_columns','p_expected_created_at','p_limits','verdict','email_id'],'TABLE(verdict text, email_id uuid)',0),
-      ('mail_run_write','uuid,uuid,text,text,jsonb,jsonb','2672195186996d6c1da415ce09216014','7de48eb9d022e5bb73e76c70cd76d7cb',array['p_email_id','p_run_id','p_table','p_operation','p_values','p_filters'],'jsonb',0),
-      ('create_mail_parcel','jsonb,jsonb,jsonb,uuid,uuid','c4c8cd221d81a65693501f1f76c6da43','70f30aad142f93aa95ce73a48bf8d9cb',array['p_snapshot','p_values','p_items','p_email_id','p_run_id','verdict','parcel_id'],'TABLE(verdict text, parcel_id uuid)',2),
-      ('update_mail_parcel','jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid','1f31656cb496ae7332d5ce722ef5039a','fe9df2cb9b9833c1a18fdbc1988114be',array['p_snapshot','p_parcel_id','p_expected_updated_at','p_values','p_category','p_items','p_email_id','p_run_id','verdict','parcel_id','parcel_row'],'TABLE(verdict text, parcel_id uuid, parcel_row jsonb)',2),
-      ('ensure_mail_parcel_items','uuid,timestamptz,jsonb,uuid,uuid','9b794fc0498e1a85e6058a68e0895755','193a3dbf00b515c93ab412de7fc25eb6',array['p_parcel_id','p_expected_updated_at','p_items','p_email_id','p_run_id','verdict'],'TABLE(verdict text)',2),
+      ('mail_run_write','uuid,uuid,text,text,jsonb,jsonb','3757d8a83849ed61c14ebfc75ae4685d','7de48eb9d022e5bb73e76c70cd76d7cb',array['p_email_id','p_run_id','p_table','p_operation','p_values','p_filters'],'jsonb',0),
+      ('create_mail_parcel','jsonb,jsonb,jsonb,uuid,uuid','ab89b9744cb0d227c817be76e6ea354d','70f30aad142f93aa95ce73a48bf8d9cb',array['p_snapshot','p_values','p_items','p_email_id','p_run_id','verdict','parcel_id'],'TABLE(verdict text, parcel_id uuid)',2),
+      ('update_mail_parcel','jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid','4c13f09288c69d8492563b176948efba','fe9df2cb9b9833c1a18fdbc1988114be',array['p_snapshot','p_parcel_id','p_expected_updated_at','p_values','p_category','p_items','p_email_id','p_run_id','verdict','parcel_id','parcel_row'],'TABLE(verdict text, parcel_id uuid, parcel_row jsonb)',2),
+      ('ensure_mail_parcel_items','uuid,timestamptz,jsonb,uuid,uuid','3257efac3e652297308d7e2d45ef481a','193a3dbf00b515c93ab412de7fc25eb6',array['p_parcel_id','p_expected_updated_at','p_items','p_email_id','p_run_id','verdict'],'TABLE(verdict text)',2),
       ('claim_ai_reading_backlog','uuid,timestamptz','6d302317a1265f556b7a7457c5975908','3bff58f66dec66c0f838e10571e2d3dd',array['p_user_id','p_decided_at'],'boolean',0),
       ('release_claude_call','bigint,uuid','c32011cb8f66c469cd947af2a2be4461','8ff987a5ce6a60eedf56d429f23cbb98',array['p_claim_id','p_user_id'],'integer',0),
       ('claim_claude_call_v2','uuid,integer,integer','9cac5bf34db2a84a7f9554569e3940ba','7a8227959c7525cf265a713ab844dfc1',array['p_user_id','p_user_limit','p_global_limit','verdict','claim_id'],'TABLE(verdict text, claim_id bigint)',0)
@@ -66,11 +66,20 @@ begin
     end if;
   end loop;
   if not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_candidates()')
-    and md5(p.prosrc)=case when v_installed then '9f7ee53462feefb38eb3f83c4f9a8ea8' else '9b397e6fa6a3471f713395ee78ccd9b9' end
+    and md5(p.prosrc)=case when v_installed then 'd795d34a9bc3d46417da188bc6374b94' else 'e9aef24709226d459d89eac8d85e2464' end
     and p.prosecdef and p.proconfig=array['search_path=""'] and pg_get_userbyid(p.proowner)=v_owner
     and has_function_privilege('service_role',p.oid,'EXECUTE') and not has_function_privilege('anon',p.oid,'EXECUTE')
     and not has_function_privilege('authenticated',p.oid,'EXECUTE')) then
     raise exception 'sample rollback: candidate lock boundary changed; stop and inspect';
+  end if;
+  if (select count(*) from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
+    and tgtype=31 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal
+    and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+    and tgqual is null and tgattr=''::int2vector and tgnargs=0)<>2
+    or not exists(select 1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete'
+      and tgtype=11 and tgenabled='O' and not tgisinternal and tgqual is null and tgnargs=0 and tgfoid=case when v_installed
+        then to_regprocedure('public.prelock_sample_owner_delete()') else to_regprocedure('public.lock_parcel_candidates()') end) then
+    raise exception 'sample rollback: parcel owner callbacks changed; stop and inspect';
   end if;
   if v_installed then
     if to_regprocedure('public.begin_sample_load(uuid)') is null
@@ -88,7 +97,8 @@ begin
       or (select count(*) from pg_attribute where attrelid=to_regclass('public.emails') and attname='sample_generation' and not attisdropped)<>1
       or (select count(*) from pg_trigger where tgname='sample_generation_fence' and not tgisinternal)<>4
       or (select count(*) from pg_trigger where tgname='sample_generation_statement_fence' and not tgisinternal)<>2
-      or (select count(*) from pg_trigger where tgrelid=to_regclass('auth.users') and tgname='sample_generation_owner_delete' and not tgisinternal)<>1
+      or (select count(*) from pg_trigger where tgrelid=to_regclass('auth.users') and tgname='parcel_candidate_owner_delete'
+        and tgtype=11 and tgenabled='O' and tgfoid=to_regprocedure('public.prelock_sample_owner_delete()') and not tgisinternal)<>1
       or (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence'))<>17 then
       raise exception 'sample rollback: partial sample installation; stop and inspect';
     end if;
@@ -100,7 +110,6 @@ begin
   end if;
 end $$;
 
-drop trigger if exists sample_generation_owner_delete on auth.users;
 drop trigger if exists sample_generation_statement_fence on public.emails;
 drop trigger if exists sample_generation_statement_fence on public.extractions;
 drop trigger if exists sample_generation_fence on public.emails;
@@ -125,10 +134,52 @@ end $$;
 
 create or replace function public.lock_parcel_candidates() returns trigger
 language plpgsql security definer set search_path='' as $$
+declare
+  v_owner uuid;
+  v_context text := nullif(current_setting('otodoke.parcel_owner',true),'');
+  v_header text := coalesce(nullif(current_setting('request.headers',true),''),'{}')::jsonb->>'x-otodoke-sample-user';
 begin
-  perform pg_catalog.pg_advisory_xact_lock(62803,0);
+  if tg_table_schema='auth' and tg_table_name='users' and tg_op='DELETE' then
+    if v_context is not null and v_context is distinct from old.id::text then
+      raise exception 'parcel transaction owner cannot change' using errcode='42501';
+    end if;
+    perform set_config('otodoke.parcel_owner',old.id::text,true);
+    perform id from public.emails where user_id=old.id order by id for update;
+    perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(old.id::text));
+    return old;
+  end if;
+  if tg_level='ROW' then
+    if v_context is null then raise exception 'parcel write requires an explicit owner scope' using errcode='55000'; end if;
+    if (tg_op<>'INSERT' and old.user_id::text is distinct from v_context)
+      or (tg_op<>'DELETE' and new.user_id::text is distinct from v_context) then
+      raise exception 'parcel row does not match its transaction owner' using errcode='42501';
+    end if;
+    if tg_op='DELETE' then return old; end if;
+    return new;
+  end if;
+  if tg_op='TRUNCATE' then raise exception 'parcel truncate requires drained maintenance' using errcode='55000'; end if;
+  if current_setting('role',true)='authenticated' then
+    v_owner := auth.uid();
+    if v_header is not null and v_header is distinct from v_owner::text then
+      raise exception 'parcel header owner must match authenticated user' using errcode='42501';
+    end if;
+  else
+    if v_context is not null and v_header is not null and v_context is distinct from v_header then
+      raise exception 'parcel header and transaction owner differ' using errcode='42501';
+    end if;
+    v_owner := coalesce(v_context,v_header)::uuid;
+  end if;
+  if v_owner is null then raise exception 'parcel write requires an explicit owner scope' using errcode='55000'; end if;
+  if v_context is not null and v_context is distinct from v_owner::text then
+    raise exception 'parcel transaction owner cannot change' using errcode='42501';
+  end if;
+  perform set_config('otodoke.parcel_owner',v_owner::text,true);
+  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text));
   return null; -- statement trigger: no row is suppressed or replaced
 end $$;
+
+create or replace trigger parcel_candidate_owner_delete before delete on auth.users
+for each row execute function public.lock_parcel_candidates();
 
 drop function if exists public.prelock_sample_owner_delete();
 drop function if exists public.prelock_sample_statement();

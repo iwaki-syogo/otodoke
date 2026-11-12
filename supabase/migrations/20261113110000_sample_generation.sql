@@ -41,6 +41,15 @@ do $$ begin
     or to_regprocedure('public.lock_parcel_candidates()') is null then
     raise exception 'sample_generation requires 20261113090000 six-argument store_mail_run and 20261113100000 parcel gateways' using errcode='55000';
   end if;
+  if (select count(*) from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
+    and tgtype=31 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal
+    and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
+    and tgqual is null and tgattr=''::int2vector and tgnargs=0)<>2
+    or not exists(select 1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete'
+      and tgtype=11 and tgenabled='O' and not tgisinternal and tgqual is null and tgnargs=0 and tgfoid=case when to_regclass('public.sample_generations') is null
+        then to_regprocedure('public.lock_parcel_candidates()') else to_regprocedure('public.prelock_sample_owner_delete()') end) then
+    raise exception 'sample_generation requires the per-user parcel owner boundary' using errcode='55000';
+  end if;
   -- Fresh wrappers/helpers must share the established application owner. Otherwise private
   -- calls and the exact rollback owner contract would diverge. Never ALTER OWNER here.
   if to_regclass('public.sample_generations') is null
@@ -98,6 +107,11 @@ create or replace function public.lock_sample_owner(p_user_id uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 begin
   if p_user_id is null then return; end if;
+  if nullif(current_setting('otodoke.parcel_owner',true),'') is not null
+    and current_setting('otodoke.parcel_owner',true) is distinct from p_user_id::text then
+    raise exception 'parcel transaction owner cannot change' using errcode='42501';
+  end if;
+  perform set_config('otodoke.parcel_owner',p_user_id::text,true);
   -- Auth deletion holds this row before its cascades. Acquire the same parent first so a
   -- generation owner cannot later wait for its own parent FK behind a deleting transaction.
   perform id from auth.users where id=p_user_id for key share;
@@ -111,12 +125,20 @@ end $$;
 create or replace function public.prelock_sample_owner_delete() returns trigger
 language plpgsql security definer set search_path='' as $$
 begin
+  if nullif(current_setting('otodoke.parcel_owner',true),'') is not null
+    and current_setting('otodoke.parcel_owner',true) is distinct from old.id::text then
+    raise exception 'parcel transaction owner cannot change' using errcode='42501';
+  end if;
+  perform set_config('otodoke.parcel_owner',old.id::text,true);
+  perform set_config('otodoke.parcel_delete_owner',old.id::text,true);
   perform generation from public.sample_generations where user_id=old.id for update;
   perform id from public.emails where user_id=old.id order by id for update;
+  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(old.id::text));
   return old;
 end $$;
-drop trigger if exists sample_generation_owner_delete on auth.users;
-create trigger sample_generation_owner_delete before delete on auth.users
+-- Replace, rather than DROP, the established Auth callback: table TRIGGER plus callback
+-- EXECUTE suffices even when the migration owner does not own auth.users.
+create or replace trigger parcel_candidate_owner_delete before delete on auth.users
   for each row execute function public.prelock_sample_owner_delete();
 
 create or replace function public.assert_sample_generation(p_user_id uuid, p_required boolean default false) returns uuid
@@ -139,7 +161,7 @@ begin
   return v_generation;
 end $$;
 
--- Statement boundaries run before any parcel row lock and before the global candidate lock.
+-- Statement boundaries run before any parcel row lock and before this user's candidate lock.
 -- Direct authenticated writes know their owner through auth.uid(); sample requests carry it.
 create or replace function public.prelock_sample_request() returns void
 language plpgsql security definer set search_path='' as $$
@@ -147,6 +169,15 @@ declare
   v_headers jsonb := coalesce(nullif(current_setting('request.headers',true),''),'{}')::jsonb;
   v_owner uuid;
 begin
+  -- Only the private Auth BEFORE DELETE callback sets this marker. Cascades run after
+  -- auth.users or generation rows disappear; the callback already owns U/G/E/L.
+  if nullif(current_setting('otodoke.parcel_delete_owner',true),'') is not null then
+    if current_setting('otodoke.parcel_delete_owner',true) is distinct from nullif(current_setting('otodoke.parcel_owner',true),'')
+      or (v_headers ? 'x-otodoke-sample-user' and v_headers->>'x-otodoke-sample-user' is distinct from current_setting('otodoke.parcel_owner',true)) then
+      raise exception 'parcel deletion scope does not match its transaction owner' using errcode='42501';
+    end if;
+    return;
+  end if;
   if v_headers ? 'x-otodoke-sample-generation' or v_headers ? 'x-otodoke-sample-user' then
     if coalesce(v_headers->>'x-otodoke-sample-user','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
       raise exception 'sample generation or owner is missing' using errcode='55000';
@@ -160,6 +191,8 @@ begin
   elsif current_setting('role',true) = 'authenticated' then
     v_owner := auth.uid();
     if v_owner is not null then perform public.lock_sample_owner(v_owner); end if;
+  elsif nullif(current_setting('otodoke.parcel_owner',true),'') is not null then
+    perform public.lock_sample_owner(current_setting('otodoke.parcel_owner',true)::uuid);
   end if;
 end $$;
 
@@ -172,9 +205,39 @@ end $$;
 
 create or replace function public.lock_parcel_candidates() returns trigger
 language plpgsql security definer set search_path='' as $$
+declare
+  v_owner uuid;
+  v_context text := nullif(current_setting('otodoke.parcel_owner',true),'');
+  v_header text := coalesce(nullif(current_setting('request.headers',true),''),'{}')::jsonb->>'x-otodoke-sample-user';
 begin
+  if tg_level='ROW' then
+    if v_context is null then raise exception 'parcel write requires an explicit owner scope' using errcode='55000'; end if;
+    if (tg_op<>'INSERT' and old.user_id::text is distinct from v_context)
+      or (tg_op<>'DELETE' and new.user_id::text is distinct from v_context) then
+      raise exception 'parcel row does not match its transaction owner' using errcode='42501';
+    end if;
+    if tg_op='DELETE' then return old; end if;
+    return new;
+  end if;
+  if tg_op='TRUNCATE' then raise exception 'parcel truncate requires drained maintenance' using errcode='55000'; end if;
+  if current_setting('role',true)='authenticated' then
+    v_owner := auth.uid();
+    if v_header is not null and v_header is distinct from v_owner::text then
+      raise exception 'parcel header owner must match authenticated user' using errcode='42501';
+    end if;
+  else
+    if v_context is not null and v_header is not null and v_context is distinct from v_header then
+      raise exception 'parcel header and transaction owner differ' using errcode='42501';
+    end if;
+    v_owner := coalesce(v_context,v_header)::uuid;
+  end if;
+  if v_owner is null then raise exception 'parcel write requires an explicit owner scope' using errcode='55000'; end if;
+  if v_context is not null and v_context is distinct from v_owner::text then
+    raise exception 'parcel transaction owner cannot change' using errcode='42501';
+  end if;
+  perform set_config('otodoke.parcel_owner',v_owner::text,true);
   perform public.prelock_sample_request();
-  perform pg_catalog.pg_advisory_xact_lock(62803,0);
+  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text));
   return null;
 end $$;
 
@@ -190,6 +253,14 @@ language plpgsql security definer set search_path = '' as $$
 declare v_owner uuid; v_generation uuid; v_required boolean := false;
 begin
   if tg_op = 'DELETE' then v_owner := old.user_id; else v_owner := new.user_id; end if;
+  if nullif(current_setting('otodoke.parcel_delete_owner',true),'') is not null then
+    if current_setting('otodoke.parcel_delete_owner',true) is distinct from v_owner::text
+      or current_setting('otodoke.parcel_owner',true) is distinct from v_owner::text
+      or (tg_op='UPDATE' and old.user_id is distinct from new.user_id) then
+      raise exception 'parcel deletion row does not match its transaction owner' using errcode='42501';
+    end if;
+    if tg_op='DELETE' then return old; end if;
+  end if;
   if tg_table_name = 'emails' and tg_op = 'INSERT' then
     v_required := new.provider_email_id like 'demo:%';
   end if;

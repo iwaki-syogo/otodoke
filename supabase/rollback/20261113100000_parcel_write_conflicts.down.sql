@@ -2,8 +2,67 @@
 -- Removing these guards restores the former creation/update races. No data is merged/deleted.
 begin;
 set local lock_timeout='5s';
+do $$
+declare v_count integer; x record;
+begin
+  if to_regclass('public.sample_generations') is not null then
+    raise exception 'parcel rollback requires sample generation rollback first' using errcode='55000';
+  end if;
+  if exists(select 1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete' and not tgisinternal)
+    and not ((select rolsuper from pg_roles where rolname=current_user)
+      or pg_has_role(current_user,(select relowner from pg_class where oid='auth.users'::regclass),'USAGE')) then
+    raise exception 'parcel rollback requires the auth.users owner to remove its callback' using errcode='55000';
+  end if;
+  select count(*) into v_count from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+    and p.proname in ('lock_parcel_candidates','mail_parcel_snapshot','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items');
+  if v_count not in (0,5) then raise exception 'parcel rollback: partial parcel gateways' using errcode='55000'; end if;
+  if v_count=5 then
+    for x in select * from (values
+      ('lock_parcel_candidates()','e9aef24709226d459d89eac8d85e2464'),
+      ('mail_parcel_snapshot(uuid)','93b25c57e72edd8476fa87b9276daaca'),
+      ('create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)','ab89b9744cb0d227c817be76e6ea354d'),
+      ('update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)','4c13f09288c69d8492563b176948efba'),
+      ('ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)','3257efac3e652297308d7e2d45ef481a'),
+      ('mail_run_write(uuid,uuid,text,text,jsonb,jsonb)','3757d8a83849ed61c14ebfc75ae4685d')
+    ) m(signature,body_hash) loop
+      if not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.'||x.signature)
+        and md5(p.prosrc)=x.body_hash and p.prosecdef and p.proconfig=array['search_path=""']
+        and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+        and (select count(*)=2 and bool_and(a.grantor=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable
+          and a.grantee in (p.proowner,'service_role'::regrole::oid)) from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) then
+        raise exception 'parcel rollback: gateway changed; review its rollback: %',x.signature using errcode='55000';
+      end if;
+    end loop;
+    if not exists(select 1 from pg_trigger where tgrelid='auth.users'::regclass and tgname='parcel_candidate_owner_delete'
+      and tgtype=11 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and tgqual is null and tgnargs=0 and not tgisinternal)
+      or (select count(*) from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
+        and tgtype=31 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and tgqual is null and tgattr=''::int2vector and tgnargs=0 and not tgisinternal
+        and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end)<>2 then
+      raise exception 'parcel rollback: owner callbacks changed' using errcode='55000';
+    end if;
+    if (select count(*) from pg_trigger where tgname in ('parcels_candidate_write_lock','parcel_items_candidate_write_lock')
+      and tgtype=62 and tgenabled='O' and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and tgqual is null and tgattr=''::int2vector and tgnargs=0 and not tgisinternal
+      and tgrelid=case tgname when 'parcels_candidate_write_lock' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end)<>2 then
+      raise exception 'parcel rollback: statement callbacks changed' using errcode='55000';
+    end if;
+  elsif exists(select 1 from pg_trigger where tgname in ('parcel_candidate_owner_delete','parcels_candidate_owner','parcel_items_candidate_owner','parcels_candidate_write_lock','parcel_items_candidate_write_lock') and not tgisinternal) then
+    raise exception 'parcel rollback: partial rolled-back callbacks' using errcode='55000';
+  elsif not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)')
+    and md5(p.prosrc)='09f1ab05ad5ccac3c31a8f5512dc9c0c'
+    and p.proargnames=array['p_email_id','p_run_id','p_table','p_operation','p_values','p_filters']
+    and pg_get_function_result(p.oid)='jsonb' and p.pronargdefaults=0
+    and p.prosecdef and p.proconfig=array['search_path=""']
+    and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+    and (select count(*)=2 and bool_and(a.grantor=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable
+      and a.grantee in (p.proowner,'service_role'::regrole::oid)) from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) then
+    raise exception 'parcel rollback: expected restored cost gateway is missing or changed' using errcode='55000';
+  end if;
+end $$;
+drop trigger if exists parcel_candidate_owner_delete on auth.users;
 drop trigger if exists parcels_candidate_write_lock on public.parcels;
 drop trigger if exists parcel_items_candidate_write_lock on public.parcel_items;
+drop trigger if exists parcels_candidate_owner on public.parcels;
+drop trigger if exists parcel_items_candidate_owner on public.parcel_items;
 drop function if exists public.update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid);
 drop function if exists public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid);
 drop function if exists public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid);

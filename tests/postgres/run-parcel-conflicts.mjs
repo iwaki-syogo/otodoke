@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,6 @@ import { requireVerdict, runCommand, taggedResults } from "./run-cost-guards.mjs
 // Only the CLI's --self-test path is exercised while this runner is authored.
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const migration = "20261113100000_parcel_write_conflicts";
-const port = 65441;
 const gate = "183765132, 1";
 const bin = process.env.OTODOKE_PG_BINDIR ?? "";
 const uuid = (number) => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
@@ -73,7 +73,7 @@ function oneResult(output) {
   return JSON.parse(results[0]);
 }
 
-async function listening() {
+async function listening(port) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
     const finish = (result) => { socket.destroy(); resolve(result); };
@@ -121,8 +121,10 @@ async function selfTest() {
   console.log("NOT RUN: PostgreSQL startup, migrations, SQL behaviour, concurrent scenarios and SQL negative control");
 }
 
-async function main(negative) {
-  assert.equal(await listening(), false, `port ${port} is occupied; no existing process was stopped`);
+async function main(negative, external) {
+  const port = external ? Number(process.env.OTODOKE_PARCEL_PG_PORT) : 65441;
+  assert.ok(Number.isSafeInteger(port) && port >= 1024 && port <= 65535, "a dedicated test port is required");
+  if (!external) assert.equal(await listening(port), false, `port ${port} is occupied; no existing process was stopped`);
   const rounds = Number(process.env.OTODOKE_PARCEL_PG_ROUNDS ?? 5);
   assert.ok(Number.isSafeInteger(rounds) && rounds >= 1 && rounds <= 100, "round count must be an integer from 1 to 100");
   const parent = path.join(root, ".vitest/pg");
@@ -130,15 +132,21 @@ async function main(negative) {
   const scratch = await mkdtemp(path.join(parent, "parcel-"));
   const data = path.join(scratch, "data");
   const environment = cleanEnvironment(scratch);
+  const database = external ? `otodoke_parcel_conflicts_${Date.now()}_${process.pid}` : "postgres";
+  const source = await readFile(path.join(root, `supabase/migrations/${migration}.sql`));
+  const summary = { mode: negative ? "legacy-duplicate-negative-control" : "parcel-conflicts", database, port, rounds,
+    sql_source: "working tree", sql_sha256: negative ? {} : { [`${migration}.sql`]: createHash("sha256").update(source).digest("hex") }, verdict: "FAILED" };
   let interrupted = false;
   let startAttempted = false;
   let passed = false;
   let cleanupPromise;
   const raw = (name, args, options = {}) => runCommand(path.join(bin, name), args, { environment, ...options });
   const command = (name, args, options) => interrupted ? Promise.reject(new Error("test interrupted; cleaning up")) : raw(name, args, options);
-  const psqlArgs = ["-X", "-w", "-q", "-A", "-t", "-h", "127.0.0.1", "-p", String(port), "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"];
-  const sql = (input) => command("psql", psqlArgs, { input: `set statement_timeout='10s'; set lock_timeout='5s'; ${input}` });
-  const file = (name) => command("psql", [...psqlArgs, "-f", path.join(root, name)]);
+  const psqlArgs = ["-X", "-w", "-q", "-A", "-t", "-h", "127.0.0.1", "-p", String(port), "-U", "postgres", "-d", database, "-v", "ON_ERROR_STOP=1"];
+  const sql = (input) => command("psql", psqlArgs, { input: `set statement_timeout='10s'; set lock_timeout='5s'; set request.headers=${quote(JSON.stringify({ "x-otodoke-sample-user": user }))}; ${input}` });
+  const file = (name) => name === `supabase/migrations/${migration}.sql`
+    ? command("psql", psqlArgs, { input: source })
+    : command("psql", [...psqlArgs, "-f", path.join(root, name)]);
   const verify = async (name) => {
     const output = await file(name);
     requireVerdict(output, name);
@@ -149,7 +157,7 @@ async function main(negative) {
   const scalar = async (query) => (await sql(query)).trim();
   const count = async (table) => Number(await scalar(`select count(*) from public.${table};`));
   const reset = async () => {
-    await sql(`truncate public.parcels cascade; truncate public.emails cascade;
+    await sql(`delete from public.parcels where user_id='${user}'; delete from public.emails where user_id='${user}';
       insert into public.emails(id,user_id,processing_status,processing_run_id,processing_lease_until) values
       ${emails.map((email, index) => `('${email}','${user}','pending','${runs[index]}',clock_timestamp()+interval '360 seconds')`).join(",")};`);
   };
@@ -206,11 +214,18 @@ async function main(negative) {
   };
 
   const cleanup = () => (cleanupPromise ??= (async () => {
+    await writeFile(path.join(scratch, "summary.json"), JSON.stringify(summary, null, 2));
+    if (external) {
+      console.log(`SUMMARY:${JSON.stringify(summary)}`);
+      console.log(`External test cluster was not stopped; database ${database} retained`);
+      console.log(`Local logs retained under ${path.relative(root, scratch)}`);
+      return;
+    }
     // Inspect only this disposable directory even when a timed-out start might have succeeded.
     if (startAttempted && await raw("pg_ctl", ["-D", data, "status"]).then(() => true, () => false)) {
       await raw("pg_ctl", ["-D", data, "-t", "10", "-m", "fast", "stop"]);
     }
-    assert.equal(await listening(), false, `listener remains on 127.0.0.1:${port}`);
+    assert.equal(await listening(port), false, `listener remains on 127.0.0.1:${port}`);
     console.log(`OK: cleanup, no listener on 127.0.0.1:${port}`);
     console.log(`Local logs retained under ${path.relative(root, scratch)}`);
   })());
@@ -218,15 +233,25 @@ async function main(negative) {
   process.once("SIGINT", requestStop);
   process.once("SIGTERM", requestStop);
   try {
-    assert.match(await command("initdb", ["--version"]), /PostgreSQL\) 17\./);
-    await command("initdb", ["-D", data, "-U", "postgres", "--no-sync", "-c", "dynamic_shared_memory_type=mmap", "-c", "shared_memory_type=mmap"]);
-    startAttempted = true;
-    await command("pg_ctl", ["-D", data, "-l", path.join(scratch, "server.log"), "-t", "10", "-o",
-      `-k '${parent.replaceAll("'", "'\\''")}' -h 127.0.0.1 -p ${port} -c dynamic_shared_memory_type=mmap -c shared_memory_type=mmap`, "start"]);
-    assert.equal(await listening(), true);
+    if (external) {
+      const adminArgs = psqlArgs.map((arg) => arg === database ? "postgres" : arg);
+      assert.match(await command("psql", adminArgs, { input: "show server_version;" }), /^17\./);
+      assert.equal((await command("psql", adminArgs, { input: "show listen_addresses;" })).trim(), "127.0.0.1");
+      await command("psql", adminArgs, { input: `create database "${database}";` });
+    } else {
+      assert.match(await command("initdb", ["--version"]), /PostgreSQL\) 17\./);
+      await command("initdb", ["-D", data, "-U", "postgres", "--no-sync", "-c", "dynamic_shared_memory_type=mmap", "-c", "shared_memory_type=mmap"]);
+      startAttempted = true;
+      await command("pg_ctl", ["-D", data, "-l", path.join(scratch, "server.log"), "-t", "10", "-o",
+        `-k '${parent.replaceAll("'", "'\\''")}' -h 127.0.0.1 -p ${port} -c dynamic_shared_memory_type=mmap -c shared_memory_type=mmap`, "start"]);
+    }
+    assert.equal(await listening(port), true);
     assert.equal(await scalar("show listen_addresses;"), "127.0.0.1");
     assert.equal(Number(await scalar("show port;")), port);
-    await file("tests/postgres/bootstrap.sql");
+    if (external) {
+      assert.equal(Number(await scalar("select count(*) from pg_roles where rolname in ('anon','authenticated','service_role');")), 3);
+      await sql((await readFile(path.join(root, "tests/postgres/bootstrap.sql"), "utf8")).replace(/^create role (?:anon|authenticated|service_role)\b[^;]*;\s*/gm, ""));
+    } else await file("tests/postgres/bootstrap.sql");
     for (const name of priorMigrations(await readdir(path.join(root, "supabase/migrations")))) {
       if (name === "20261106180000_screen_events_daily_purge.sql") console.log(`SKIP: ${name} (pg_cron schedule only; vanilla local PostgreSQL has no pg_cron)`);
       else await file(`supabase/migrations/${name}`);
@@ -330,10 +355,11 @@ async function main(negative) {
       assert.equal(await count("parcel_items"), 0);
       console.log("OK: B1/B2 create, ensure and update all roll back when a later first item fails");
 
-      await sql("truncate public.parcels cascade; truncate public.emails cascade;");
+      await sql(`delete from public.parcels where user_id='${user}'; delete from public.emails where user_id='${user}';`);
       await steps(afterSteps);
     }
     passed = true;
+    summary.verdict = "OK";
   } finally {
     await cleanup();
     process.removeListener("SIGINT", requestStop);
@@ -346,11 +372,12 @@ async function main(negative) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length > 1 || (args.length && !["--self-test", "--negative-control"].includes(args[0]))) {
-    console.error("Usage: node tests/postgres/run-parcel-conflicts.mjs [--self-test|--negative-control]");
+  const allowed = new Set(["--self-test", "--negative-control", "--external-test-server"]);
+  if (args.some((arg) => !allowed.has(arg)) || new Set(args).size !== args.length || args.includes("--self-test") && args.length !== 1) {
+    console.error("Usage: node tests/postgres/run-parcel-conflicts.mjs [--self-test|--negative-control] [--external-test-server]");
     process.exitCode = 2;
   } else {
-    (args[0] === "--self-test" ? selfTest() : main(args[0] === "--negative-control")).catch((error) => {
+    (args[0] === "--self-test" ? selfTest() : main(args.includes("--negative-control"), args.includes("--external-test-server"))).catch((error) => {
       console.error(`verdict=FAILED: ${error instanceof Error ? error.message : String(error)}`);
       process.exitCode = 1;
     });
