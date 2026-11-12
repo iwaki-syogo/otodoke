@@ -73,7 +73,8 @@ describe("N2: migration-marked pre-consent mail participates in the first automa
     expect(await start(db)).toMatchObject({ ok: true, read: 1 });
     expect(mocks.extract).toHaveBeenCalledTimes(1);
     expect(db.rows("emails").slice(0, notCandidates.length)).toEqual(untouched);
-    expect(backlogQueries(db).every((q) => q.limit === 20)).toBe(true);
+    // The automatic run pages with range(0, 19) (R4-2, to exclude already-tried rows); other readers use limit(20).
+    expect(backlogQueries(db).every((q) => q.limit === 20 || (q.range?.[0] === 0 && q.range[1] === 19))).toBe(true);
     expect(backlogQueries(db).every((q) => q.filters.filter((f) => f.method === "or").length === 1)).toBe(true);
   });
 
