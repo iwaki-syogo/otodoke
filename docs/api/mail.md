@@ -1,11 +1,13 @@
 # Mail API for the iOS app
 
-The iOS app cannot call the web's Server Actions, so 「届くはずの荷物として覚える」 and 「読めていないメールを読む」
-(`markWronglyDropped`, `readWaitingMail` in `src/app/app/settings/actions.ts`) are also served over HTTP. Both
-call the same functions as the web (`src/lib/mail-run.ts`). Code: `src/app/api/mail/**`. Tests:
-`src/lib/__tests__/mail-api.test.ts`.
+The iOS app cannot call the web's Server Actions, so mail settings operations are also served over
+HTTP. 「届くはずの荷物として覚える」 and 「読めていないメールを読む」 share `src/lib/mail-run.ts` with
+`markWronglyDropped` / `readWaitingMail`; removing a remembered sender and acknowledging an intake
+notice share `src/lib/settings-mail-actions.ts` with `forgetSender` / `dismissIntakeNotice` in
+`src/app/app/settings/actions.ts`. Code: `src/app/api/mail/**`. Tests:
+`src/lib/__tests__/mail-api.test.ts`, `settings-mail-api.test.ts`, and `settings-mail-web.test.ts`.
 
-## Common to both endpoints
+## Common to the mail endpoints
 
 Same as `docs/api/demo.md`: `POST` only, JSON in and out, no CORS; `Authorization: Bearer <access_token>`
 (checked by `getUser(token)`; the user is the token's, never the body's); no freshness rule; body at most
@@ -18,6 +20,8 @@ Same as `docs/api/demo.md`: `POST` only, JSON in and out, no CORS; `Authorizatio
 | 404 | `not_found` | (mark-parcel) No dropped mail of this user with that id. |
 | 500 | `mark_failed` | (mark-parcel) The database failed. |
 | 500 | `read_failed` | (read-waiting) A mail could not be read, or the waiting list could not be fetched. |
+| 500 | `forget_failed` | (forget-sender) The remembered sender could not be removed. |
+| 500 | `dismiss_failed` | (dismiss-intake) The intake notice could not be acknowledged. |
 | 503 | `unavailable` | Supabase Auth could not be asked. Try again later. |
 
 ## POST /api/mail/mark-parcel
@@ -32,6 +36,39 @@ Answer: `200 { "ok": true, "outcome": "<outcome>" }`. `outcome` is one of:
 - `own`: the mail came from the user's own address domain: not remembered.
 
 The web shows any failure as `flagged=failed`; here it is `404 not_found` or `500 mark_failed`.
+
+## POST /api/mail/forget-sender
+
+Remove this person's remembered sender: request `{ "domain": "<original from_domain>" }`.
+The domain must be a nonempty string of at most 255 characters. Send the original string unchanged;
+the server does not trim or normalize it, or apply the current rules for remembering a new domain.
+This lets old marks on shared domains be cleaned up too.
+
+Only rows with the verified token owner's `user_id`, that exact `from_domain`, and a non-null
+`flagged_at` are updated to `flagged_at = null`. Another person's marks and other domains remain.
+No matching rows is an idempotent success. A database failure is `500 forget_failed`.
+
+## POST /api/mail/dismiss-intake
+
+Acknowledge the notice currently shown: request `{ "limited_at": "<original limited_at>" }`.
+Send the returned ISO timestamp string unchanged, including fractional seconds and timezone. The
+server validates it without converting it to a JavaScript date or rounding to milliseconds. There
+is no age cutoff. Missing, malformed, or timezone-less values are `400 invalid_input`.
+
+Only the verified token owner's notice with that exact `limited_at` is deleted. A stale
+acknowledgement leaves a newer rejection, including one only a microsecond later. No matching row
+is an idempotent success. A database failure is `500 dismiss_failed`.
+
+Both operations return exactly `200 { "ok": true }` on success. Failures use the common
+`{ "ok": false, "code": "<code>" }` shape. Both require a verified bearer session, accept only the
+documented body field, retain the existing 1024-character body limit, and return `Cache-Control:
+no-store` on every response. A supplied user identifier is an unknown field and is refused. Neither
+operation reads mail, calls Claude, nor needs reading permission or a fresh login.
+
+The storage-rejection words and confirmation/busy labels are defined in `src/lib/read-notices.ts`.
+The remembered-sender heading, remove/busy labels, and result words are defined in
+`src/lib/settings-mail-text.ts`. Web pages render these values; native parity tests compare the
+actual copied values with these sources.
 
 ## POST /api/mail/read-waiting
 

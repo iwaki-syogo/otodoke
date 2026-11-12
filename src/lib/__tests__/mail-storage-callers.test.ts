@@ -44,7 +44,8 @@ describe("storage limits keep caller success counts honest", () => {
     expect(result).toMatchObject({ ok: false, processed: 0, message: "mail storage limit: user_storage_limit" });
     expect(db.rows("emails")).toHaveLength(2);
     expect(db.rows("mail_intake_notices")).toMatchObject([{ user_id: USER, reason: "user_storage_limit" }]);
-    expect(READ_STORAGE_LIMIT_REASON).toContain("未読を読み取ったあと");
+    expect(READ_STORAGE_LIMIT_REASON).toContain("保管の枠を空けたあと");
+    expect(READ_STORAGE_LIMIT_REASON).toContain("元メールをもう一度送って");
 
     const old = waiting("waiting-1");
     await processInboundEmail(asConsentingAdmin(db), {

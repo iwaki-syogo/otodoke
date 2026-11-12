@@ -60,6 +60,17 @@ final class SettingsModel {
     /// no reason is stated (the Web's `reasons` null).
     private(set) var unreadReasons: LoadResult<UnreadReasons>?
     private(set) var dropped: LoadResult<[DroppedMailRow]>?
+    private var readIntakeNotice: LoadResult<String?>?
+    /// nil is loading; a failed read is never the absence of a notice or an empty sender list.
+    var intakeNotice: LoadResult<String?>? { isCurrentMailIdentity() ? readIntakeNotice : nil }
+    var rememberedSenders: LoadResult<[String]>? {
+        guard isCurrentMailIdentity() else { return nil }
+        switch dropped {
+        case let .loaded(rows)?: return .loaded(RememberedSenderRule.domains(rows.filter { $0.flaggedAt != nil }.map(\.fromDomain)))
+        case .failed?: return .failed
+        case nil: return nil
+        }
+    }
     private(set) var isSigningOut = false
 
     @ObservationIgnored private let inbox: InboxAddressService
@@ -67,6 +78,7 @@ final class SettingsModel {
     @ObservationIgnored private let inboundDomain: String
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let mark: ChangeMark
+    @ObservationIgnored private let isCurrentMailIdentity: @MainActor () -> Bool
     @ObservationIgnored private var fence = ReadFence()
     /// A read was started at least once (onAppear reads the first time only when none was).
     @ObservationIgnored private var hasRead = false
@@ -106,6 +118,12 @@ final class SettingsModel {
         self.inboundDomain = inboundDomain
         self.mark = ChangeMark(changes)
         self.now = now
+        let stamp = auth.session.stamp()
+        isCurrentMailIdentity = { [weak auth] in
+            guard let auth, let stamp else { return false }
+            return auth.session.isCurrent(stamp)
+                && auth.provider.auth.currentSession?.user.id.uuidString.lowercased() == stamp.userID
+        }
         readingConsent = consent ?? Self.liveReadingConsent(auth: auth)
         readingConsent.onAddressPermissionChange = { [weak self] allowed in self?.addressPermissionChanged(allowed) }
     }
@@ -210,6 +228,29 @@ final class SettingsModel {
         )
     }()
 
+    /// The person who created this settings model owns both the displayed data and these writes.
+    @ObservationIgnored lazy var mailRecovery: SettingsMailRecoveryModel = {
+        let provider = auth.provider
+        let stamp = auth.session.stamp()
+        return SettingsMailRecoveryModel(
+            api: SettingsMailActionsClient(session: provider.urlSession),
+            accessToken: { [weak self, weak auth] in
+                guard let self, let auth, let stamp, self.isCurrentMailIdentity(), auth.session.isCurrent(stamp),
+                      let session = try? await provider.auth.session,
+                      session.user.id.uuidString.lowercased() == stamp.userID,
+                      self.isCurrentMailIdentity(), auth.session.isCurrent(stamp) else { return nil }
+                return session.accessToken
+            },
+            isCurrent: { [weak self, weak auth] in
+                guard let self, let auth, let stamp else { return false }
+                return !self.retired && self.isCurrentMailIdentity() && auth.session.isCurrent(stamp)
+            },
+            reload: { [weak self] in await self?.load() },
+            beginWrite: { [weak self] in self?.fence.beginWrite() },
+            endWrite: { [weak self] in self?.fence.endWrite() }
+        )
+    }()
+
     @ObservationIgnored lazy var accountDeletion: AccountDeletionModel = {
         let provider = auth.provider
         let stamp = auth.session.stamp()
@@ -246,10 +287,12 @@ final class SettingsModel {
         loadsStarted += 1
         cutOff?.raise()
         keyPanel = nil; address = nil; confirmURL = nil; unread = nil; unreadReasons = nil; dropped = nil
+        readIntakeNotice = nil
         confirmationFailed = false; approvalWaiting = false; approvalBadgeFailed = false
         lastApprovalRead = nil
         passwordChange.clearPasswords()
         mailActions.retire()
+        mailRecovery.retire()
     }
 
     /// S3: on the card without a key row, why the key step after the sign-in did not make one, and whether
@@ -307,6 +350,7 @@ final class SettingsModel {
             keyPanel = .present(oldKeyCount: .loaded(0))
             unread = .loaded(debugConsentUnreadCount); dropped = .loaded([])
             unreadReasons = .loaded(debugConsentUnreadReasons)
+            readIntakeNotice = .loaded(nil)
             if mayShowReadingAddress {
                 address = .loaded("inbox@\(inboundDomain)")
                 confirmURL = URL(string: "https://mail-settings.google.com/mail/vf-preview")
@@ -326,10 +370,15 @@ final class SettingsModel {
         let signal = CutOffSignal()
         cutOff = signal
         let reader = self.reader
+        guard isCurrentMailIdentity() else {
+            readIntakeNotice = nil
+            return
+        }
+        readIntakeNotice = nil
         let at = now()
         let epoch = addressEpoch
 
-        let (panel, readAddress, readConfirmation, readLater, readWaiting, readDropped, readReasons) = await withTaskCancellationHandler {
+        let (panel, readAddress, readConfirmation, readLater, readWaiting, readDropped, readReasons, intake) = await withTaskCancellationHandler {
             await readAll(reader, at: at, epoch: epoch)
         } onCancel: {
             signal.raise()
@@ -337,6 +386,7 @@ final class SettingsModel {
 
         // [N-new2] A newer read began: it owns the state (this one being cut off changes nothing).
         guard !retired, fence.verdict(ticket) == .current else { return }
+        guard isCurrentMailIdentity() else { return }
         // [S1] Cut off (the .task cancelled when the tab is left): the answers are dropped, not shown
         // as failures, and the next appearance reads again.
         guard !Task.isCancelled else {
@@ -353,18 +403,20 @@ final class SettingsModel {
         unread = readWaiting
         unreadReasons = readReasons
         dropped = readDropped
+        readIntakeNotice = intake
         if mayShowReadingAddress { lastApprovalRead = at }
     }
 
     /// The reads of load(): each fails on its own.
     private func readAll(_ reader: SettingsReader, at: Date, epoch: Int) async -> (
         KeyPanel, LoadResult<String>?, LoadResult<[ForwardingConfirmationRow]>?, LoadResult<Int>?, LoadResult<Int>, LoadResult<[DroppedMailRow]>,
-        LoadResult<UnreadReasons>?
+        LoadResult<UnreadReasons>?, LoadResult<String?>
     ) {
         async let key = reader.currentKey()
         async let confirmation = readConfirmationIfAllowed(reader, epoch: epoch)
         async let waiting = reader.unreadCount(now: at)
         async let droppedRows = reader.dropped()
+        async let intake = reader.intakeNotice()
 
         // The old-key count and the address need the key row; the other reads run meanwhile.
         let panel: KeyPanel
@@ -389,7 +441,7 @@ final class SettingsModel {
         // The reasons are read only when a count was read and some mail waits (the Web's trouble page).
         var reasons: LoadResult<UnreadReasons>?
         if case let .loaded(n) = waitingResult, n > 0 { reasons = await reader.unreadReasons(now: at) }
-        return (panel, readAddress, confirmationRows, later, waitingResult, await droppedRows, reasons)
+        return (panel, readAddress, confirmationRows, later, waitingResult, await droppedRows, reasons, await intake)
     }
 
     /// signOut of AuthService (the key's four steps are task 16). The spinner shows while it runs.

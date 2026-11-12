@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LOAD_DEMO_LABEL } from "@/app/app/settings/demo-labels";
+import { READ_STORAGE_CONFIRM, READ_STORAGE_CONFIRMING } from "@/lib/read-notices";
+import { REMEMBERED_SENDER_TEXT } from "@/lib/settings-mail-text";
 import { fakeEvent } from "./element-tree";
 import { mount } from "./hook-harness";
 
@@ -34,6 +38,36 @@ const html = () => renderToStaticMarkup(createElement(PressButton, { label: "読
 const DISABLED = /\sdisabled(=|\s|>)/;
 /** `disabled={busy...}` in source, not `aria-disabled={busy...}`. */
 const DISABLED_WHILE_BUSY = /(?<![-\w])disabled=\{busy/;
+
+/** Resolve real PressButton props after shared words move out of the page's string literals. */
+function pressButtonWords(source: string): [string, string][] {
+  const file = ts.createSourceFile("settings.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const constants: Record<string, string> = { LOAD_DEMO_LABEL, READ_STORAGE_CONFIRM, READ_STORAGE_CONFIRMING };
+  const senderWords: Record<string, string> = REMEMBERED_SENDER_TEXT;
+  const value = (attribute: ts.JsxAttribute): string => {
+    const initial = attribute.initializer;
+    if (initial && ts.isStringLiteral(initial)) return initial.text;
+    if (initial && ts.isJsxExpression(initial) && initial.expression) {
+      const expression = initial.expression;
+      if (ts.isIdentifier(expression) && Object.hasOwn(constants, expression.text)) return constants[expression.text];
+      if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === "REMEMBERED_SENDER_TEXT" && Object.hasOwn(senderWords, expression.name.text)) return senderWords[expression.name.text];
+    }
+    throw new Error(`Unreadable PressButton ${attribute.name.getText(file)}`);
+  };
+  const pairs: [string, string][] = [];
+  const visit = (node: ts.Node) => {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(file) === "PressButton") {
+      const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
+      const label = attributes.find((attribute) => attribute.name.getText(file) === "label");
+      const busy = attributes.find((attribute) => attribute.name.getText(file) === "busyLabel");
+      if (!label || !busy) throw new Error("Every PressButton needs both label and busyLabel");
+      pairs.push([value(label), value(busy)]);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return pairs;
+}
 
 beforeEach(() => {
   status.pending = false;
@@ -108,17 +142,16 @@ describe("every slow button of 設定 shows its press", () => {
       }
     }
     // The ones named in the review, each with its busy words.
-    // The sample button reads its words from demo-labels.ts; put them back in place to compare.
-    const loadLabel = /LOAD_DEMO_LABEL = "([^"]+)"/.exec(settings("demo-labels.ts"))![1];
-    const all = settings("dropped/page.tsx") + settings("trouble/page.tsx") + settings("demo-loader.tsx").replace("{LOAD_DEMO_LABEL}", `"${loadLabel}"`);
+    const all = ["dropped/page.tsx", "trouble/page.tsx", "demo-loader.tsx"].flatMap((file) => pressButtonWords(settings(file)));
     for (const [label, busy] of [
       ["読み取る", "読み取っています…"],
       ["これは荷物", "記録しています…"],
       ["外す", "外しています…"],
+      ["確認しました", "確認しています…"],
       ["サンプルのメールを読み込む", "読み込んでいます…"],
       ["消す", "消しています…"],
     ]) {
-      expect(all).toContain(`label="${label}" busyLabel="${busy}"`);
+      expect(all).toContainEqual([label, busy]);
     }
   });
 
@@ -141,5 +174,10 @@ describe("every slow button of 設定 shows its press", () => {
     expect('<button disabled={busy} className={primary}>').toMatch(DISABLED_WHILE_BUSY);
     expect('<button disabled={busy || !old} className={primary}>').toMatch(DISABLED_WHILE_BUSY);
     expect("<button aria-disabled={busy || undefined}>").not.toMatch(DISABLED_WHILE_BUSY);
+    const dropped = settings("dropped/page.tsx");
+    expect(pressButtonWords(dropped)).toContainEqual(["外す", "外しています…"]);
+    const wrongBusy = dropped.replace("busyLabel={REMEMBERED_SENDER_TEXT.removing}", "busyLabel={REMEMBERED_SENDER_TEXT.removed}");
+    expect(pressButtonWords(wrongBusy)).not.toContainEqual(["外す", "外しています…"]);
+    expect(pressButtonWords('// <PressButton label="外す" busyLabel="外しています…" />')).toEqual([]);
   });
 });

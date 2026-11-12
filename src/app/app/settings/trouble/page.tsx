@@ -4,7 +4,7 @@ import { FORWARDING_PITFALLS, PITFALLS_HEADING, PITFALLS_LEAD } from "@/lib/forw
 import { createClient, getUser } from "@/lib/supabase/server";
 import { readAiReadingConsent } from "@/lib/ai-consent";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
-import { READ_FAILED_REASON, READ_OVER_LIMIT_REASON, READ_STOPPED_BUTTON, READ_STOPPED_REASON, READ_STORAGE_LIMIT_NOTICE, READ_STORAGE_LIMIT_REASON, READ_STORAGE_NOTICE_FAILED } from "@/lib/read-notices";
+import { READ_FAILED_REASON, READ_OVER_LIMIT_REASON, READ_STOPPED_BUTTON, READ_STOPPED_REASON, READ_STORAGE_LIMIT_NOTICE, READ_STORAGE_LIMIT_BODY, READ_STORAGE_LIMIT_REASON, READ_STORAGE_NOTICE_FAILED, READ_STORAGE_CONFIRM, READ_STORAGE_CONFIRMING } from "@/lib/read-notices";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import { dismissIntakeNotice, readWaitingMail } from "../actions";
 import { PressButton } from "../press";
@@ -36,11 +36,12 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
       {intake.failed ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{READ_STORAGE_NOTICE_FAILED}</p> : intake.at ? (
         <section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm">
           <p>{READ_STORAGE_LIMIT_NOTICE}</p>
+          <p className="mt-1">{READ_STORAGE_LIMIT_BODY}</p>
           <p className="mt-1">{READ_STORAGE_LIMIT_REASON}</p>
           <form action={dismissIntakeNotice} className="mt-3">
             <input type="hidden" name="expectedUserId" value={user?.id ?? ""} />
             <input type="hidden" name="limited_at" value={intake.at} />
-            <PressButton label="確認しました" busyLabel="確認しています…" className="rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium" />
+            <PressButton label={READ_STORAGE_CONFIRM} busyLabel={READ_STORAGE_CONFIRMING} className="rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium" />
           </form>
         </section>
       ) : null}

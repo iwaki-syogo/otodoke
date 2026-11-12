@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -14,6 +15,46 @@ const read = (p: string) => (existsSync(path.join(ROOT, p)) ? readFileSync(path.
 const readWebContract = (p: string) => readFileSync(path.join(WEB_ROOT, p), "utf8");
 const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"])\/\/.*$/gm, "$1");
 const stripTsx = (src: string) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+
+/** Follow the actual mark/read entry points and their local callees, including shared caller(). */
+function markAndReadCodes(source: string): string[] {
+  const file = ts.createSourceFile("handler.ts", source, ts.ScriptTarget.Latest, true);
+  const functions = new Map(file.statements.filter(ts.isFunctionDeclaration).filter((fn) => fn.name && fn.body).map((fn) => [fn.name!.text, fn]));
+  const visited = new Set<string>();
+  const codes = new Set<string>();
+  const visitFunction = (name: string) => {
+    if (visited.has(name)) return;
+    const fn = functions.get(name);
+    if (!fn?.body) throw new Error(`Missing mail API function: ${name}`);
+    visited.add(name);
+    visit(fn.body);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression)) {
+        const name = node.expression.text;
+        if (name === "failure") {
+          const code = node.arguments[0];
+          if (!code || !ts.isStringLiteral(code)) throw new Error("Reachable mail failure needs an explicit response code");
+          codes.add(code.text);
+        } else if (functions.has(name)) visitFunction(name);
+      } else if (ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Response" && node.expression.name.text === "json") {
+        const object = node.arguments[0];
+        if (object && ts.isObjectLiteralExpression(object)) {
+          for (const property of object.properties) {
+            if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === "code") {
+              if (!ts.isStringLiteral(property.initializer)) throw new Error("Reachable JSON failure needs an explicit response code");
+              codes.add(property.initializer.text);
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  for (const name of ["markParcelStep", "readWaitingStep"]) visitFunction(name);
+  return [...codes].sort();
+}
 
 const SETTINGS = "ios/Otodoke/Screens/Settings";
 const WORDS = `${SETTINGS}/SettingsMailText.swift`;
@@ -236,9 +277,13 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
   const handler = readWebContract("src/app/api/mail/handler.ts");
   const codes = (src: string) => [...src.matchAll(/case "(\w+)": throw \./g)].map((m) => m[1]).sort();
   const documentedCodes = (src: string) => [...new Set([...src.matchAll(/^\| \d{3} \| `(\w+)` \|/gm)].map((m) => m[1]))].sort();
-  const answeredCodes = (src: string) => {
+  const declaredCodes = (src: string) => {
     const union = src.match(/export type MailApiCode\s*=\s*([^;]+);/)?.[1] ?? "";
     return [...union.matchAll(/"(\w+)"/g)].map((m) => m[1]).sort();
+  };
+  const documentedMarkAndReadCodes = (src: string) => {
+    const reachable = new Set(markAndReadCodes(handler));
+    return documentedCodes(src).filter((code) => reachable.has(code));
   };
 
   it("the Web has both routes and the doc names both paths", () => {
@@ -250,7 +295,7 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
 
   it("keeps the six established mappings and only adds the consent refusal, safely rejected by an older iOS client", () => {
     // A code may be documented for more than one failure source (503 unavailable: auth or consent).
-    const web = [...new Set([...doc.matchAll(/^\| \d{3} \| `(\w+)` \|/gm)].map((m) => m[1]))].sort();
+    const web = documentedMarkAndReadCodes(doc);
     const established = ["invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"];
     expect(web).toEqual(["ai_consent_required", ...established]);
     const mapped = codes(client);
@@ -276,17 +321,35 @@ describe("the iOS client follows the Web's contract (docs/api/mail.md, src/app/a
 
   it("the codes iOS maps are exactly the codes the Web answers with", () => {
     // unavailable is documented for both auth and consent lookup failures; it is one response code.
-    const web = documentedCodes(doc);
+    const web = documentedMarkAndReadCodes(doc);
     expect(web).toEqual(["ai_consent_required", "invalid_input", "mark_failed", "not_found", "read_failed", "unauthorized", "unavailable"]);
-    expect(answeredCodes(handler)).toEqual(web);
+    expect(markAndReadCodes(handler)).toEqual(web);
     expect(codes(client)).toEqual(web);
+    // The whole handler and whole document still agree, including the separate settings API.
+    expect(declaredCodes(handler)).toEqual(documentedCodes(doc));
     for (const c of web) expect(handler, c).toContain(c);
     expect(handler).toMatch(/ai_consent_required:\s*403/);
     expect(doc).toMatch(/^\| 403 \| `ai_consent_required` \|/m);
     // No one source can silently omit the new contract while the others have it.
     expect(codes(client.replace('case "ai_consent_required": throw .aiConsentRequired', ""))).not.toEqual(web);
-    expect(documentedCodes(doc.replace(/^\| 403 \| `ai_consent_required`[^\n]*\n/gm, ""))).not.toEqual(web);
-    expect(answeredCodes(handler.replace(' | "ai_consent_required"', ""))).not.toEqual(web);
+    expect(documentedMarkAndReadCodes(doc.replace(/^\| 403 \| `ai_consent_required`[^\n]*\n/gm, ""))).not.toEqual(web);
+    expect(markAndReadCodes(handler.replace('return failure("ai_consent_required");', 'return failure("unavailable");'))).not.toEqual(web);
+    expect(declaredCodes(handler.replace(' | "ai_consent_required"', ""))).not.toEqual(documentedCodes(doc));
+  });
+
+  it("negative control: scope follows reachable responses rather than ignoring particular code names", () => {
+    const web = markAndReadCodes(handler);
+    expect(web).not.toContain("forget_failed");
+    expect(web).not.toContain("dismiss_failed");
+    // A settings code accidentally returned by an old endpoint must break the old client contract.
+    const start = "export async function markParcelStep(request: Request): Promise<Response> {";
+    expect(handler).toContain(start);
+    const mixed = handler.replace(start, `${start}\n  if (request.method === "PATCH") return failure("forget_failed");`);
+    expect(markAndReadCodes(mixed)).toContain("forget_failed");
+    expect(markAndReadCodes(mixed)).not.toEqual(web);
+    // Shared auth failures count; comments and an unrelated endpoint's declarations do not.
+    expect(markAndReadCodes(handler.replace('return failure("unauthorized");', 'return failure("invalid_input");'))).not.toEqual(web);
+    expect(markAndReadCodes(`${handler}\n// return failure("comment_only");`)).toEqual(web);
   });
 
   it("the outcomes iOS knows are the Web's four", () => {

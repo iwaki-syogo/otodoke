@@ -172,6 +172,24 @@ struct SettingsReader: Sendable {
         )
     }
 
+    /// A fixed-size notice read, independent of whether any stored unread mail remains.
+    func intakeNotice() async -> LoadResult<String?> {
+        guard let me = await provider.currentUserID() else { return .failed }
+        struct Notice: Decodable {
+            let limitedAt: String
+            enum CodingKeys: String, CodingKey { case limitedAt = "limited_at" }
+        }
+        let request = provider.database.from("mail_intake_notices").select("limited_at")
+            .eq("user_id", value: me)
+            .limit(2)
+        guard let rows: [Notice] = await Self.decoded(request), rows.count <= 1,
+              await provider.currentUserID() == me else { return .failed }
+        guard let row = rows.first else { return .loaded(nil) }
+        let stamp = row.limitedAt
+        guard Instant.micros(stamp) != nil else { return .failed }
+        return .loaded(stamp)
+    }
+
     /// The or() of the Web's NOT_SAMPLE_NOR_CONFIRMATION (settings-reads.ts): (not a sample) and (not a forwarding
     /// confirmation), written out as the four pairs. One literal on purpose: src/lib/__tests__/unread-reasons-table.test.ts
     /// reads this line and compares it with the Web's exported constant.
