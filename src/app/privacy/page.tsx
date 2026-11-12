@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { PublicPageLinks } from "@/components/public-page-links";
-import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
+import { CLEAR_ALL_RETAINED_NOTICE, CLEARED_MAIL_MARKS_IDENTIFIERS_NOTICE, CLEARED_MAIL_MARKS_NOTICE, PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
 import { CONTACT_EMAIL } from "./contact";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 
@@ -129,7 +129,11 @@ export default function PrivacyPage() {
           <Term name="暗号化しないもの">
             <Bullets>
               <li>荷物の情報と、根拠の行・読み取りメモ。一覧・カレンダー・支出を出すのと、読み取った値を確かめるのに使います。根拠の行は、元のメールの件名や本文の抜粋です。</li>
-              <li>差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク。ふるいと、同じメールを二度読まないためと、承認ページを出すために使います。</li>
+              <li>
+                差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク。ふるいと、同じメールを二度読まないためと、承認ページを出すために使います。
+                <p className="mt-2">{CLEARED_MAIL_MARKS_IDENTIFIERS_NOTICE}</p>
+                <p className="mt-2">期間と消し方は、<a href="#cleared-mail-marks" className="text-sky-700 underline underline-offset-4">「照合用の印」</a>をご確認ください。</p>
+              </li>
               <li>読み取る前のメール。{UNREAD_MAIL_STORAGE_NOTICE}</li>
               <li>受け取りを元に戻す記録。内容と保存期間は、<a href="#receipt-records" className="text-sky-700 underline underline-offset-4">「受け取りを元に戻す記録」</a>をご確認ください。</li>
             </Bullets>
@@ -156,8 +160,9 @@ export default function PrivacyPage() {
         <Bullets>
           <li>荷物と、暗号化して保存したメールは、あなたが消すまで残します。</li>
           <li>
-            設定の「サンプルで試す」にある「すべての荷物を消す」で、荷物と、Otodoke に保存したメール・読み取り結果を消せます。アカウント、転送先アドレス、メールの鍵と、読まなかったメール・Claude を使った回数の記録は残ります。
+            設定の「サンプルで試す」にある「すべての荷物を消す」で、荷物と、Otodoke に保存したメール・読み取り結果を消せます。{CLEAR_ALL_RETAINED_NOTICE}
           </li>
+          <li id="cleared-mail-marks">{CLEARED_MAIL_MARKS_NOTICE}</li>
           <li>
             設定の「アカウントを削除」で、アカウントと、結び付いたデータを削除します。送信やログインを試した記録は、期限後の掃除まで残ります。転送先アドレスも使えなくなります。同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します。1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します。
           </li>

@@ -15,6 +15,15 @@ export const NO_BODY_TEXT = "本文はありません。";
 /** Wording contract for an expired original mail; the native view must use the same notice. */
 export const CONSENT_WAIT_EXPIRED_NOTICE = "保管の期限を過ぎたため、元のメールは残っていません。";
 
+/** Policy notice for mail marks kept after clearing parcels. */
+export const CLEARED_MAIL_MARKS_NOTICE = "すべての荷物を消したときは、同じメールをまた取り込まないため、中身の分からない印を残し、35 日後の掃除か退会時に消します。";
+
+/** Policy list of records retained after clearing parcels. */
+export const CLEAR_ALL_RETAINED_NOTICE = "アカウント、転送先アドレス、メールの鍵、読まなかったメール・Claude を使った回数の記録と、照合用の印と時刻は残ります。";
+
+/** Policy detail on the identifiers used to make retained comparison marks. */
+export const CLEARED_MAIL_MARKS_IDENTIFIERS_NOTICE = "全部消した後も、配送の ID と Message-ID から SHA-256 で作った照合用の印と時刻は残ります。";
+
 /** Ordinary unread storage, shared by settings and privacy; consent waiting has its own deadline. */
 export const UNREAD_MAIL_STORAGE_NOTICE = "1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。";
 

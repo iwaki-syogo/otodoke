@@ -3,7 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
+import { CLEAR_ALL_RETAINED_NOTICE, CLEARED_MAIL_MARKS_IDENTIFIERS_NOTICE, CLEARED_MAIL_MARKS_NOTICE, PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
 import { appSourceFiles, read as readSource, withoutComments } from "./source-scan";
@@ -53,6 +53,12 @@ function section(root: HtmlNode, title: string): HtmlNode {
   const found = findAll(root, (n) => n.tag === "section" && findAll(n, (h) => h.tag === "h2" && textOf(h) === title).length > 0);
   expect(found, title).toHaveLength(1);
   return found[0];
+}
+
+async function clearedMarkText(): Promise<string> {
+  const items = findAll(section(await render(), "保存の期間と消し方"), (node) => node.tag === "li" && textOf(node) === CLEARED_MAIL_MARKS_NOTICE);
+  expect(items).toHaveLength(1);
+  return textOf(items[0]);
 }
 
 /** The text of each term (dt) in a section, with what it says (dd). */
@@ -239,13 +245,78 @@ describe("/privacy: what it says", () => {
     const text = textOf(section(await render(), "保存の期間と消し方"));
     expect(text).toContain("設定の「サンプルで試す」にある「すべての荷物を消す」で");
     // clearAllParcels (settings/actions.ts) removes parcels and mail; user_keys stays.
-    expect(text).toContain("アカウント、転送先アドレス、メールの鍵と、読まなかったメール・Claude を使った回数の記録は残ります");
+    expect(text).toContain(CLEAR_ALL_RETAINED_NOTICE);
     expect(text).toContain("設定の「アカウントを削除」で");
     expect(text).toContain("同じアドレスがほかの人に渡らないように、アドレスの文字と作った日時だけは残します");
     // Review R3-1: a deleted account's calls stay in the day's count, with no user (20261106190000).
     expect(text).toContain("1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します");
     expect(text).toContain("メールの自動転送の設定も外してください");
     expect(text).toContain("消したデータも、データベースのバックアップと接続の記録に、最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。");
+  });
+
+  it("the clear-all retained list includes comparison marks and timestamps beside the existing retained records", async () => {
+    const root = await render();
+    const items = findAll(section(root, "保存の期間と消し方"), (node) => node.tag === "li" && textOf(node).includes("「すべての荷物を消す」で"));
+    expect(items).toHaveLength(1);
+    const text = textOf(items[0]);
+    for (const retained of ["アカウント", "転送先アドレス", "メールの鍵", "読まなかったメール", "Claude を使った回数"]) expect(text).toContain(retained);
+    expect(text).toContain("照合用の印と時刻");
+    const notice = CLEAR_ALL_RETAINED_NOTICE;
+    expect(notice).toBeTypeOf("string");
+    expect(text).toContain(notice);
+  });
+
+  it("the identifiers item explains hashed retained marks once and links to the single retention notice", async () => {
+    const root = await render();
+    const items = findAll(section(root, "メールの扱い"), (node) => node.tag === "li" && textOf(node).includes("メールごとの識別子"));
+    expect(items).toHaveLength(1);
+    for (const fact of ["差出人のドメイン", "承認リンク", "ふるい", "同じメールを二度読まないため", "承認ページ"]) expect(textOf(items[0])).toContain(fact);
+    expect(findAll(items[0], (node) => node.tag === "p").length).toBeGreaterThan(0);
+    const notice = CLEARED_MAIL_MARKS_IDENTIFIERS_NOTICE;
+    expect(notice).toBeTypeOf("string");
+    const paragraphs = findAll(items[0], (node) => node.tag === "p" && textOf(node) === notice);
+    expect(paragraphs).toHaveLength(1);
+    for (const fact of ["配送の ID", "Message-ID", "SHA-256", "印と時刻"]) expect(textOf(paragraphs[0])).toContain(fact);
+    expect(textOf(root).split(notice)).toHaveLength(2);
+    const links = findAll(items[0], (node) => node.tag === "a" && node.attrs.href === "#cleared-mail-marks");
+    expect(links).toHaveLength(1);
+    expect(textOf(links[0])).toBe("「照合用の印」");
+    expect(textOf(items[0])).toContain("期間と消し方は、");
+    expect(findAll(items[0], (node) => node === paragraphs[0] || node === links[0])).toEqual([paragraphs[0], links[0]]);
+    const targets = findAll(root, (node) => node.attrs.id === "cleared-mail-marks");
+    expect(targets).toHaveLength(1);
+    expect(targets[0].tag).toBe("li");
+    expect(textOf(targets[0])).toBe(CLEARED_MAIL_MARKS_NOTICE);
+  });
+
+  it("shows the shared cleared-mail mark notice once, between clear-all and account deletion", async () => {
+    const root = await render();
+    const items = findAll(section(root, "保存の期間と消し方"), (node) => node.tag === "li");
+    const clear = items.findIndex((node) => textOf(node).trim().startsWith("設定の「サンプルで試す」にある「すべての荷物を消す」で"));
+    const account = items.findIndex((node) => textOf(node).includes("設定の「アカウントを削除」で"));
+    expect(clear).toBeGreaterThanOrEqual(0);
+    expect(account).toBe(clear + 2);
+    const notice = CLEARED_MAIL_MARKS_NOTICE;
+    expect(notice).toBeTypeOf("string");
+    expect(notice).not.toBe("");
+    expect(items[clear + 1].parent).toBe(items[clear].parent);
+    expect(items[clear + 1].parent).toBe(items[account].parent);
+    expect(textOf(items[clear + 1])).toBe(notice);
+    expect(findAll(root, (node) => node.tag === "li" && textOf(node) === notice)).toHaveLength(1);
+    expect(textOf(root).split(notice)).toHaveLength(2);
+  });
+
+  it("the displayed clear-all notice explains why an unreadable mail mark is retained", async () => {
+    const text = await clearedMarkText();
+    expect(text).toContain("すべての荷物を消したときは");
+    expect(text).toContain("同じメールをまた取り込まないため");
+    expect(text).toContain("中身の分からない印");
+  });
+
+  it("the displayed clear-all notice says marks are removed in cleanup after 35 days or on leaving", async () => {
+    const text = await clearedMarkText();
+    expect(text).toMatch(/35\s*日後の掃除/);
+    expect(text).toContain("掃除か退会時に消します");
   });
 
   it("uses the approved short arrival-based waiting deadline across policy, settings and README", async () => {
