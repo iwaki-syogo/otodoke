@@ -39,8 +39,8 @@ export function originalFunctions(source) {
   return functions.map((name) => {
     const found = source.match(new RegExp(`^create or replace function public\\.${name}\\([\\s\\S]+?end \\$\\$;`, "m"));
     assert.ok(found, `original ${name} must exist`);
-    assert.match(found[0], /for update;[\s\S]+set_config\('otodoke\.parcel_owner',v_mail\.user_id::text,true\)[\s\S]+pg_advisory_xact_lock\(62803,pg_catalog\.hashtext\(v_mail\.user_id::text\)\)/);
-    assert.doesNotMatch(found[0], /pg_advisory_xact_lock\(62803,\s*0\)/);
+    assert.match(found[0], /for update;[\s\S]+public\.lock_parcel_owner\(v_mail\.user_id\)/);
+    assert.doesNotMatch(found[0], /pg_advisory_xact_lock/);
     assert.doesNotMatch(found[0], /lock_sample_owner|assert_sample_generation/);
     return found[0];
   });
@@ -135,7 +135,7 @@ async function selfTest() {
   const source = await readFile(path.join(root, "supabase/migrations", legacy), "utf8");
   assert.equal(originalFunctions(source).length, 3);
   assert.throws(() => originalFunctions(source.replace("public.create_mail_parcel(", "public.missing_create(")));
-  assert.throws(() => originalFunctions(source.replaceAll("pg_catalog.hashtext(v_mail.user_id::text)", "0")), "an old global key is not the per-user lock-order negative control");
+  assert.throws(() => originalFunctions(source.replaceAll("public.lock_parcel_owner(v_mail.user_id)", "pg_catalog.pg_advisory_xact_lock(62803,0)")), "an old global key is not the shared-helper lock-order negative control");
   assert.match(workerQuery("ensure", { snapshot: [], version: "2026-11-12T00:00:00Z" }), /from \(select \* from public\.ensure_mail_parcel_items/);
   const dummy = (source, options = {}) => startChild(process.execPath, ["-e", source], options).complete;
   assert.equal(classify(await dummy("process.stdout.write('RESULT:{\"verdict\":\"ok\"}\\n')"), mail).kind, "ok");

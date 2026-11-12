@@ -20,10 +20,20 @@ begin
     where n.nspname='public' and p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence');
   if v_count not in (0,8) then raise exception 'sample rollback: partial core gateways; stop and inspect'; end if;
   v_installed := v_count=8;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')<>1
+    or not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+      and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+      and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+      and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+      and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+        from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) then
+    raise exception 'sample rollback: shared owner helper is missing or changed' using errcode='55000';
+  end if;
   if exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','set_ai_reading') and not (select count(*)=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete') then 1 else 2 end
+    where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','set_ai_reading') and not (select count(*)=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner') then 1 else 2 end
       and bool_and(a.grantor=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable
-        and (a.grantee=p.proowner or coalesce(a.grantee=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete') then null::oid
+        and (a.grantee=p.proowner or coalesce(a.grantee=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner') then null::oid
           when p.proname='set_ai_reading' then 'authenticated'::regrole::oid else 'service_role'::regrole::oid end,false)))
     from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) then
     raise exception 'sample rollback: nonstandard function ACL; review its rollback gate';
@@ -39,10 +49,10 @@ begin
   end if;
   for x in select * from (values
       ('store_mail_run','uuid,uuid,uuid,jsonb,timestamptz,jsonb','3ea94d29e7f03b05060d3cd428b6f645','9b376382ace9f7b90e85c6db747a790c',array['p_user_id','p_email_id','p_run_id','p_columns','p_expected_created_at','p_limits','verdict','email_id'],'TABLE(verdict text, email_id uuid)',0),
-      ('mail_run_write','uuid,uuid,text,text,jsonb,jsonb','3757d8a83849ed61c14ebfc75ae4685d','7de48eb9d022e5bb73e76c70cd76d7cb',array['p_email_id','p_run_id','p_table','p_operation','p_values','p_filters'],'jsonb',0),
-      ('create_mail_parcel','jsonb,jsonb,jsonb,uuid,uuid','ab89b9744cb0d227c817be76e6ea354d','70f30aad142f93aa95ce73a48bf8d9cb',array['p_snapshot','p_values','p_items','p_email_id','p_run_id','verdict','parcel_id'],'TABLE(verdict text, parcel_id uuid)',2),
-      ('update_mail_parcel','jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid','4c13f09288c69d8492563b176948efba','fe9df2cb9b9833c1a18fdbc1988114be',array['p_snapshot','p_parcel_id','p_expected_updated_at','p_values','p_category','p_items','p_email_id','p_run_id','verdict','parcel_id','parcel_row'],'TABLE(verdict text, parcel_id uuid, parcel_row jsonb)',2),
-      ('ensure_mail_parcel_items','uuid,timestamptz,jsonb,uuid,uuid','3257efac3e652297308d7e2d45ef481a','193a3dbf00b515c93ab412de7fc25eb6',array['p_parcel_id','p_expected_updated_at','p_items','p_email_id','p_run_id','verdict'],'TABLE(verdict text)',2),
+      ('mail_run_write','uuid,uuid,text,text,jsonb,jsonb','8c3c49b0542e2027014dbeb4b589ffb0','7de48eb9d022e5bb73e76c70cd76d7cb',array['p_email_id','p_run_id','p_table','p_operation','p_values','p_filters'],'jsonb',0),
+      ('create_mail_parcel','jsonb,jsonb,jsonb,uuid,uuid','227a0ca214d02c5c47116bc8d76a02d0','70f30aad142f93aa95ce73a48bf8d9cb',array['p_snapshot','p_values','p_items','p_email_id','p_run_id','verdict','parcel_id'],'TABLE(verdict text, parcel_id uuid)',2),
+      ('update_mail_parcel','jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid','9ea38a44cc600e7d3bedd29b24af290a','fe9df2cb9b9833c1a18fdbc1988114be',array['p_snapshot','p_parcel_id','p_expected_updated_at','p_values','p_category','p_items','p_email_id','p_run_id','verdict','parcel_id','parcel_row'],'TABLE(verdict text, parcel_id uuid, parcel_row jsonb)',2),
+      ('ensure_mail_parcel_items','uuid,timestamptz,jsonb,uuid,uuid','75b8ddcfc1799156284ae4c0f9933806','193a3dbf00b515c93ab412de7fc25eb6',array['p_parcel_id','p_expected_updated_at','p_items','p_email_id','p_run_id','verdict'],'TABLE(verdict text)',2),
       ('claim_ai_reading_backlog','uuid,timestamptz','6d302317a1265f556b7a7457c5975908','3bff58f66dec66c0f838e10571e2d3dd',array['p_user_id','p_decided_at'],'boolean',0),
       ('release_claude_call','bigint,uuid','c32011cb8f66c469cd947af2a2be4461','8ff987a5ce6a60eedf56d429f23cbb98',array['p_claim_id','p_user_id'],'integer',0),
       ('claim_claude_call_v2','uuid,integer,integer','9cac5bf34db2a84a7f9554569e3940ba','7a8227959c7525cf265a713ab844dfc1',array['p_user_id','p_user_limit','p_global_limit','verdict','claim_id'],'TABLE(verdict text, claim_id bigint)',0)
@@ -66,7 +76,7 @@ begin
     end if;
   end loop;
   if not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_candidates()')
-    and md5(p.prosrc)=case when v_installed then 'd795d34a9bc3d46417da188bc6374b94' else 'e9aef24709226d459d89eac8d85e2464' end
+    and md5(p.prosrc)=case when v_installed then 'c03cab65b31325b5af9de28b1b1402cf' else '56cd312a6a1246d0d3a3ecb7ea82a424' end
     and p.prosecdef and p.proconfig=array['search_path=""'] and pg_get_userbyid(p.proowner)=v_owner
     and has_function_privilege('service_role',p.oid,'EXECUTE') and not has_function_privilege('anon',p.oid,'EXECUTE')
     and not has_function_privilege('authenticated',p.oid,'EXECUTE')) then
@@ -145,7 +155,7 @@ begin
     end if;
     perform set_config('otodoke.parcel_owner',old.id::text,true);
     perform id from public.emails where user_id=old.id order by id for update;
-    perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(old.id::text));
+    perform public.lock_parcel_owner(old.id);
     return old;
   end if;
   if tg_level='ROW' then
@@ -174,7 +184,7 @@ begin
     raise exception 'parcel transaction owner cannot change' using errcode='42501';
   end if;
   perform set_config('otodoke.parcel_owner',v_owner::text,true);
-  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text));
+  perform public.lock_parcel_owner(v_owner);
   return null; -- statement trigger: no row is suppressed or replaced
 end $$;
 

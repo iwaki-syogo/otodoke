@@ -29,6 +29,16 @@ end $auth_lock_probe$;
 
 with checks as (
   select
+    (select count(*)=1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+      and exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+        and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+        and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+        and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+        and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+          from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as shared_owner_helper_ok,
+    not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+      and p.prosrc ~* 'pg_(try_)?advisory(_xact)?_lock(_shared)?[[:space:]]*\([[:space:]]*62803[[:space:]]*,[[:space:]]*0[[:space:]]*\)') as no_global_candidate_lock,
     (select count(*)=5 and bool_and(coalesce(has_schema_privilege(p.proowner,to_regnamespace('auth'),'USAGE')
       and has_column_privilege(p.proowner,to_regclass('auth.users'),'id','SELECT')
       and has_any_column_privilege(p.proowner,to_regclass('auth.users'),'UPDATE'),false))
@@ -46,25 +56,25 @@ with checks as (
       and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE'))
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
       and p.proname in ('begin_sample_load','clear_all_parcels','receive_sample_parcels','store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2')) as service_only_entrypoints,
-    (select count(*) = 14 and bool_and(not has_function_privilege('service_role',p.oid,'EXECUTE')
+    (select count(*) = 15 and bool_and(not has_function_privilege('service_role',p.oid,'EXECUTE')
       and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE'))
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname in (
         'store_mail_run_without_sample_fence','mail_run_write_without_sample_fence',
         'create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence',
-        'lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete')) as core_helpers_private,
+        'lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner')) as core_helpers_private,
     (select count(*) = 11 and bool_and(p.prosecdef and p.proconfig is not distinct from array['search_path=""']
       and pg_get_userbyid(p.proowner) = (select tableowner from pg_tables where schemaname = 'public' and tablename = 'emails')
       and pg_get_userbyid(p.proowner) = (select tableowner from pg_tables where schemaname = 'public' and tablename = 'sample_generations'))
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
       and p.proname in ('begin_sample_load','clear_all_parcels','receive_sample_parcels','store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2')) and not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','set_ai_reading') and not (select count(*)=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete') then 1 else 2 end
+    where n.nspname='public' and p.proname in ('store_mail_run','mail_run_write','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','claim_ai_reading_backlog','release_claude_call','claim_claude_call_v2','store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_parcel_candidates','mail_parcel_snapshot','claim_claude_call','set_ai_reading') and not (select count(*)=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner') then 1 else 2 end
       and bool_and(a.grantor=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable
-        and (a.grantee=p.proowner or coalesce(a.grantee=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete') then null::oid
+        and (a.grantee=p.proowner or coalesce(a.grantee=case when p.proname in ('store_mail_run_without_sample_fence','mail_run_write_without_sample_fence','create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog_without_sample_fence','release_claude_call_without_sample_fence','claim_claude_call_v2_without_sample_fence','lock_sample_owner','assert_sample_generation','fence_sample_write','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete','lock_parcel_owner') then null::oid
           when p.proname='set_ai_reading' then 'authenticated'::regrole::oid else 'service_role'::regrole::oid end,false)))
     from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as secure_gateways,
     (select count(*)=2 from pg_trigger where tgname='sample_generation_statement_fence' and not tgisinternal and tgenabled='O')
       and exists(select 1 from pg_proc where oid=to_regprocedure('public.lock_parcel_candidates()')
-        and prosrc like '%perform public.prelock_sample_request();%pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text))%')
+        and prosrc like '%perform public.prelock_sample_request();%perform public.lock_parcel_owner(v_owner);%')
       and (select count(*)=2 from pg_trigger where tgname in ('parcels_candidate_owner','parcel_items_candidate_owner')
         and tgtype=31 and tgfoid=to_regprocedure('public.lock_parcel_candidates()') and not tgisinternal and tgenabled='O'
         and tgrelid=case tgname when 'parcels_candidate_owner' then 'public.parcels'::regclass else 'public.parcel_items'::regclass end
@@ -73,5 +83,6 @@ with checks as (
         and tgtype=11 and tgfoid=to_regprocedure('public.prelock_sample_owner_delete()') and not tgisinternal and tgenabled='O' and tgqual is null and tgnargs=0) as statement_prelocks
 )
 select checks.*, case when four_write_fences and sample_metadata_backfilled and private_generation_state
-  and service_only_entrypoints and core_helpers_private and secure_gateways and statement_prelocks and runtime_auth_lock_owners_ok then 'OK' else 'FAILED' end as verdict
+  and service_only_entrypoints and core_helpers_private and secure_gateways and statement_prelocks and runtime_auth_lock_owners_ok
+  and shared_owner_helper_ok and no_global_candidate_lock then 'OK' else 'FAILED' end as verdict
 from checks;

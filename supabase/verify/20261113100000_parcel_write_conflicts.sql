@@ -15,7 +15,7 @@ begin
     -- Email -> this user's candidate key, just as the owning RPCs.
     perform 1 from public.emails e where e.id=v_mail for update;
     perform set_config('otodoke.parcel_owner',v_user::text,true);
-    perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_user::text));
+    perform public.lock_parcel_owner(v_user);
     v_snapshot:=public.mail_parcel_snapshot(v_user);
     select c.verdict,c.parcel_id into v_verdict,v_parcel from public.create_mail_parcel(v_snapshot,v_values,v_items,v_mail,v_run) c;
     if v_verdict is distinct from 'ok' or v_parcel is null then v_fail:=v_fail||' create'; end if;
@@ -62,6 +62,16 @@ begin
 end $$;
 with checks as (
   select
+    (select count(*)=1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+      and exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+        and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+        and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+        and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+        and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+          from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) as shared_owner_helper_ok,
+    not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+      and p.prosrc ~* 'pg_(try_)?advisory(_xact)?_lock(_shared)?[[:space:]]*\([[:space:]]*62803[[:space:]]*,[[:space:]]*0[[:space:]]*\)') as no_global_candidate_lock,
     (select count(*)=5 and bool_and(p.prosecdef and p.proconfig=array['search_path=""']
       and not has_function_privilege('anon',p.oid,'execute') and not has_function_privilege('authenticated',p.oid,'execute')
       and has_function_privilege('service_role',p.oid,'execute')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
@@ -79,4 +89,5 @@ with checks as (
       from pg_trigger t where t.tgrelid='auth.users'::regclass and t.tgname='parcel_candidate_owner_delete' and not t.tgisinternal) as auth_callback_ok,
     coalesce(current_setting('otodoke.verify_parcel_conflicts',true),'FAILED: behaviour did not run') as behaviour
 )
-select case when functions_ok and statement_locks_ok and row_owners_ok and auth_callback_ok and behaviour='OK' then 'OK' else 'FAILED' end as verdict,checks.* from checks;
+select case when functions_ok and statement_locks_ok and row_owners_ok and auth_callback_ok and shared_owner_helper_ok
+  and no_global_candidate_lock and behaviour='OK' then 'OK' else 'FAILED' end as verdict,checks.* from checks;

@@ -122,8 +122,20 @@ passed("migration applied twice")
 verify = (root / "supabase/verify/20261113110000_sample_generation.sql").read_text().rstrip().removesuffix(";")
 query_at=verify.index("with checks as (")
 verdicts = json.loads(run(verify[:query_at]+"select row_to_json(checked) from (" + verify[query_at:] + ") checked;"))
-assert verdicts.pop("verdict") == "OK" and len(verdicts) == 8 and all(value is True for value in verdicts.values()), verdicts
-passed("all eight post-application checks and the real-owner lock probe pass with final verdict OK")
+assert verdicts.pop("verdict") == "OK" and len(verdicts) == 10 and all(value is True for value in verdicts.values()), verdicts
+passed("all ten post-application checks and the real-owner lock probe pass with final verdict OK")
+for role in ["anon","authenticated","service_role"]:
+    helper_error=run("set role %s;select public.lock_parcel_owner('%s');" % (role,user),fail=True)
+    assert "42501" in helper_error and "permission denied for function lock_parcel_owner" in helper_error
+assert "22023" in run("select public.lock_parcel_owner(null);",fail=True)
+helper_error=run("begin;select public.lock_parcel_owner('%s');select public.lock_parcel_owner('%s');" % (user,other),fail=True)
+assert "42501" in helper_error and "parcel transaction owner cannot change" in helper_error
+assert run("""begin;select public.lock_parcel_owner('%s');select public.lock_parcel_owner('%s');
+select current_setting('otodoke.parcel_owner')='%s' and exists(select 1 from pg_locks where pid=pg_backend_pid()
+  and locktype='advisory' and classid=62803::oid and objid=((pg_catalog.hashtext('%s')::bigint & 4294967295)::oid) and objsubid=2 and granted);
+rollback;""" % (user,user,user,user))=="t"
+assert scalar("select coalesce(nullif(current_setting('otodoke.parcel_owner',true),''),'unset')") == "unset"
+passed("shared owner helper is private, rejects NULL and owner switching, reenters its real user key and releases transaction context")
 for role in ["anon", "authenticated"]:
     for function in ["begin_sample_load", "clear_all_parcels"]:
         assert "42501" in run("set role %s; select public.%s('%s');" % (role, function, user), fail=True)

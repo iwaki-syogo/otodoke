@@ -17,26 +17,33 @@ function body(sql: string, name: string): string {
 function candidateProblems(value: string): string[] {
   const problems: string[] = [];
   if (/pg_advisory_xact_lock\(62803,\s*0\)/.test(value)) problems.push("global key");
-  if (!value.includes("pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text))")) problems.push("owner key");
+  if (!value.includes("perform public.lock_parcel_owner(v_owner);")) problems.push("shared owner helper");
   if (!/current_setting\('role',true\)='authenticated'[\s\S]*?v_owner := auth\.uid\(\)/.test(value)) problems.push("authenticated owner");
   if (!value.includes("parcel header and transaction owner differ")) problems.push("header consistency");
   const row = value.match(/if tg_level='ROW' then([\s\S]*?)if tg_op='TRUNCATE'/)?.[1];
-  if (!row || /pg_advisory|lock_sample_owner|prelock_sample_request/.test(row)) problems.push("row relocking");
+  if (!row || /pg_advisory|lock_parcel_owner|lock_sample_owner|prelock_sample_request/.test(row)) problems.push("row relocking");
   if (!row?.includes("old.user_id::text is distinct from v_context") || !row.includes("new.user_id::text is distinct from v_context")) problems.push("row owner");
   if (!row?.includes("return old;") || !row.includes("return new;")) problems.push("row result");
   return problems;
 }
 
 describe("parcel candidate locks stay within one user", () => {
+  it("defines one private helper for the shared owner-key contract", () => {
+    const definition = body(parcel, "lock_parcel_owner");
+    expect(definition).toMatch(/if p_user is null[\s\S]*?errcode='22023'/);
+    expect(definition).toMatch(/parcel transaction owner cannot change[\s\S]*?errcode='42501'/);
+    expect(definition).toMatch(/set_config\('otodoke.parcel_owner',p_user::text,true\)[\s\S]*?pg_advisory_xact_lock\(62803,pg_catalog.hashtext\(p_user::text\)\)/);
+    expect(parcel).toMatch(/revoke all on function public\.lock_parcel_owner\(uuid\) from public,anon,authenticated,service_role/);
+  });
   it.each([parcel, sample])("keeps statement ownership and row validation in both migration stages", (sql) => {
     expect(candidateProblems(body(sql, "lock_parcel_candidates"))).toEqual([]);
   });
   it("negative control: a global candidate key is rejected", () => {
-    const changed = body(sample, "lock_parcel_candidates").replace("pg_catalog.hashtext(v_owner::text)", "0");
+    const changed = body(sample, "lock_parcel_candidates").replace("public.lock_parcel_owner(v_owner)", "pg_catalog.pg_advisory_xact_lock(62803,0)");
     expect(candidateProblems(changed)).toContain("global key");
   });
   it("negative control: moving the first lock to the row guard is rejected", () => {
-    const changed = body(sample, "lock_parcel_candidates").replace("if tg_level='ROW' then", "if tg_level='ROW' then perform pg_catalog.pg_advisory_xact_lock(62803,1);");
+    const changed = body(sample, "lock_parcel_candidates").replace("if tg_level='ROW' then", "if tg_level='ROW' then perform public.lock_parcel_owner(v_owner);");
     expect(candidateProblems(changed)).toContain("row relocking");
   });
   it("positive control: formatting preserves the guarded definition", () => {
@@ -44,11 +51,11 @@ describe("parcel candidate locks stay within one user", () => {
   });
   it.each(["mail_run_write", "create_mail_parcel", "update_mail_parcel", "ensure_mail_parcel_items"])("%s locks the checked email owner's key", (name) => {
     const definition = body(parcel, name);
-    expect(definition).toMatch(/for update;[\s\S]*?mail run no longer owns the lease[\s\S]*?set_config\('otodoke.parcel_owner',v_mail.user_id::text,true\)[\s\S]*?pg_advisory_xact_lock\(62803,pg_catalog.hashtext\(v_mail.user_id::text\)\)/);
+    expect(definition).toMatch(/for update;[\s\S]*?mail run no longer owns the lease[\s\S]*?perform public\.lock_parcel_owner\(v_mail.user_id\)/);
     expect(definition).not.toMatch(/pg_advisory_xact_lock\(62803,\s*0\)/);
   });
   it("stacked Auth deletion owns generation, emails and the user candidate key before cascades", () => {
-    expect(body(sample, "prelock_sample_owner_delete")).toMatch(/set_config\('otodoke.parcel_delete_owner',old.id::text,true\)[\s\S]*?sample_generations[\s\S]*?for update;[\s\S]*?public.emails[\s\S]*?order by id for update;[\s\S]*?pg_advisory_xact_lock\(62803,pg_catalog.hashtext\(old.id::text\)\)/);
+    expect(body(sample, "prelock_sample_owner_delete")).toMatch(/set_config\('otodoke.parcel_delete_owner',old.id::text,true\)[\s\S]*?sample_generations[\s\S]*?for update;[\s\S]*?public.emails[\s\S]*?order by id for update;[\s\S]*?perform public\.lock_parcel_owner\(old.id\)/);
   });
   it("rollback restores the exact standalone candidate function", () => {
     expect(body(down, "lock_parcel_candidates")).toBe(body(parcel, "lock_parcel_candidates"));

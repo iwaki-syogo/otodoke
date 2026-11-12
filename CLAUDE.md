@@ -166,3 +166,5 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 一つのtransactionでownerを切り替えない。退会のprivate callbackだけが削除対象UUIDのcontextを作り、cascadeの再入では削除済み親行を取り直さない。任意headerを削除contextの根拠にしない。
 - TRUNCATEは通常のtriggerで常に拒否する。writer停止/drainだけでは許可されない。複数利用者にまたがる保守は単一owner transactionへ分割するか、別途レビューした手順を用意する。
 - 100000/110000の本体・before・verify・downは同じ版で取り込む。Auth callbackは共通名のCREATE OR REPLACE TRIGGERで切り替える。100000を最終的に戻してtriggerを削除するにはAuth tableowner/memberが必要で、適用時のTRIGGER権限とは分けて確認する。利用者分離の実PG対照はtests/postgres/run-parcel-user-locks.mjs。
+- R2-2の共有入口はprivateな `public.lock_parcel_owner(p_user uuid) returns void`。U/G/Eは呼出し元で先取りし、helperは同ownerのTx設定と利用者別Lだけを確保する。NULLとowner切替は拒否、owner不明のstatementは従来どおり拒否。PUBLIC/anon/authenticated/service_roleへ直接EXECUTEを与えず、同ownerのDEFINER RPC/triggerから呼ぶ。
+- 後続migrationもinlineの62803取得や固定鍵を足さず、同helperへ統一する。メールのhelperは本人/run/lease検査後・snapshot/R前に置く。後続downの復元coreにも同じ呼出しを保ち、helperを作る100000より先に依存側を戻す。before/verify/downはhelperのABI/owner/ACLと、pg_procに固定62803,0が無いことも確認する。

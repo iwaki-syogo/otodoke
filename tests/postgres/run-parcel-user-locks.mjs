@@ -158,6 +158,41 @@ async function main(negative, baseOnly) {
     assert.deepEqual(result, { rejected: true, state });
     summary.expected_rejections.push({ name, ...result });
   };
+  const helperControls = async () => {
+    const definition = one(await sql(`select 'RESULT:' || jsonb_build_object(
+      'security_definer',p.prosecdef,'returns_void',p.prorettype='void'::regtype,'arguments',p.proargnames,
+      'config',p.proconfig,'same_owner',p.proowner=(select relowner from pg_class where oid='public.emails'::regclass),
+      'public_execute',exists(select 1 from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where a.grantee=0 and a.privilege_type='EXECUTE'),
+      'role_execute',jsonb_build_array(has_function_privilege('anon',p.oid,'EXECUTE'),has_function_privilege('authenticated',p.oid,'EXECUTE'),has_function_privilege('service_role',p.oid,'EXECUTE')))::text
+      from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)');`));
+    assert.deepEqual(definition, { security_definer: true, returns_void: true, arguments: ["p_user"], config: ['search_path=""'], same_owner: true, public_execute: false, role_execute: [false, false, false] });
+    const output = successful(await launch(`begin; select public.lock_parcel_owner('${userA}'); select public.lock_parcel_owner('${userA}');
+      select 'RESULT:' || jsonb_build_object('owner',current_setting('otodoke.parcel_owner',true),
+        'keys',(select jsonb_agg(objid::bigint) from pg_locks where pid=pg_backend_pid() and locktype='advisory' and classid=62803 and granted))::text;
+      commit;
+      select 'RESET:' || jsonb_build_object('context_cleared',nullif(current_setting('otodoke.parcel_owner',true),'') is null,
+        'locks_cleared',not exists(select 1 from pg_locks where pid=pg_backend_pid() and locktype='advisory' and classid=62803))::text;
+      begin; select public.lock_parcel_owner('${userB}');
+      select 'NEXT:' || jsonb_build_object('owner',current_setting('otodoke.parcel_owner',true),
+        'keys',(select jsonb_agg(objid::bigint) from pg_locks where pid=pg_backend_pid() and locktype='advisory' and classid=62803 and granted))::text;
+      rollback;
+      select 'ROLLBACK:' || jsonb_build_object('context_cleared',nullif(current_setting('otodoke.parcel_owner',true),'') is null,
+        'locks_cleared',not exists(select 1 from pg_locks where pid=pg_backend_pid() and locktype='advisory' and classid=62803))::text;`, { operation: true }).complete);
+    assert.deepEqual(one(output), { owner: userA, keys: [await key(userA)] });
+    const resetLines = output.split(/\r?\n/).filter((line) => line.startsWith("RESET:"));
+    assert.equal(resetLines.length, 1);
+    const reset = JSON.parse(resetLines[0].slice("RESET:".length));
+    assert.deepEqual(reset, { context_cleared: true, locks_cleared: true });
+    for (const [tag, expected] of [["NEXT:", { owner: userB, keys: [await key(userB)] }], ["ROLLBACK:", reset]]) {
+      const lines = output.split(/\r?\n/).filter((line) => line.startsWith(tag));
+      assert.equal(lines.length, 1);
+      assert.deepEqual(JSON.parse(lines[0].slice(tag.length)), expected);
+    }
+    summary.helper = { ...definition, same_owner_reentry: true, ...reset, next_transaction_owner: true, rollback_cleared: true };
+    await expectedRejection("helper-null-owner", "", "perform public.lock_parcel_owner(null)", "22023", "missing parcel owner");
+    await expectedRejection("helper-owner-switch", `select public.lock_parcel_owner('${userA}');`, `perform public.lock_parcel_owner('${userB}')`, "42501", "parcel transaction owner cannot change");
+    for (const role of ["anon", "authenticated", "service_role"]) await expectedRejection(`helper-private-${role}`, `set local role ${role};`, `perform public.lock_parcel_owner('${userA}')`, "42501", "permission denied for function lock_parcel_owner");
+  };
   try {
     assert.equal((await sql("show listen_addresses;", "postgres")).trim(), "127.0.0.1");
     assert.match(await sql("show server_version;", "postgres"), /^17\./);
@@ -187,6 +222,7 @@ async function main(negative, baseOnly) {
     summary.acl_after = await acl();
     assert.deepEqual(summary.acl_after, summary.acl_before, "P1 migrations must not tighten or widen the authenticated table grants");
     assert.deepEqual(summary.acl_after, { parcels: [true, true, true, true], parcel_items: [true, false, false, false], service_parcels: [true, true, true, false], rls: true });
+    if (!negative) await helperControls();
     await seedOwner(userA, uuid(11), uuid(21));
     await seedOwner(userB, uuid(12), uuid(22));
     assert.notEqual(await key(userA), await key(userB), "the ordinary different-user control must not be a hash collision");

@@ -14,16 +14,25 @@ begin
     raise exception 'parcel rollback requires the auth.users owner to remove its callback' using errcode='55000';
   end if;
   select count(*) into v_count from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
-    and p.proname in ('lock_parcel_candidates','mail_parcel_snapshot','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items');
-  if v_count not in (0,5) then raise exception 'parcel rollback: partial parcel gateways' using errcode='55000'; end if;
-  if v_count=5 then
+    and p.proname in ('lock_parcel_candidates','mail_parcel_snapshot','create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','lock_parcel_owner');
+  if v_count not in (0,6) then raise exception 'parcel rollback: partial parcel gateways' using errcode='55000'; end if;
+  if v_count=6 then
+    if not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+      and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+      and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+      and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+      and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+        from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a)) then
+      raise exception 'parcel rollback: shared owner helper is missing or changed' using errcode='55000';
+    end if;
     for x in select * from (values
-      ('lock_parcel_candidates()','e9aef24709226d459d89eac8d85e2464'),
+      ('lock_parcel_candidates()','56cd312a6a1246d0d3a3ecb7ea82a424'),
       ('mail_parcel_snapshot(uuid)','93b25c57e72edd8476fa87b9276daaca'),
-      ('create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)','ab89b9744cb0d227c817be76e6ea354d'),
-      ('update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)','4c13f09288c69d8492563b176948efba'),
-      ('ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)','3257efac3e652297308d7e2d45ef481a'),
-      ('mail_run_write(uuid,uuid,text,text,jsonb,jsonb)','3757d8a83849ed61c14ebfc75ae4685d')
+      ('create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)','227a0ca214d02c5c47116bc8d76a02d0'),
+      ('update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)','9ea38a44cc600e7d3bedd29b24af290a'),
+      ('ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)','75b8ddcfc1799156284ae4c0f9933806'),
+      ('mail_run_write(uuid,uuid,text,text,jsonb,jsonb)','8c3c49b0542e2027014dbeb4b589ffb0')
     ) m(signature,body_hash) loop
       if not exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.'||x.signature)
         and md5(p.prosrc)=x.body_hash and p.prosecdef and p.proconfig=array['search_path=""']
@@ -144,4 +153,5 @@ begin
   return v_rows;
 end $$;
 
+drop function if exists public.lock_parcel_owner(uuid);
 commit;

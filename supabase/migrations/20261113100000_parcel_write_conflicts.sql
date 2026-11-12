@@ -20,7 +20,33 @@ do $$ begin
     and (tgfoid is distinct from to_regprocedure('public.lock_parcel_candidates()') or tgtype<>11 or tgenabled<>'O' or tgqual is not null or tgnargs<>0)) then
     raise exception 'parcel conflicts: Auth callback changed; review before applying' using errcode='55000';
   end if;
+  if exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+    and not ((select count(*)=1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='lock_parcel_owner')
+      and exists(select 1 from pg_proc p where p.oid=to_regprocedure('public.lock_parcel_owner(uuid)')
+        and md5(p.prosrc)='cba30ab8864f4e637cdd74bb913e2f43' and p.proargnames=array['p_user'] and p.pronargdefaults=0 and not p.proisstrict
+        and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('service_role',p.oid,'EXECUTE')
+        and pg_get_function_result(p.oid)='void' and p.prosecdef and p.proconfig=array['search_path=""']
+        and p.proowner=(select relowner from pg_class where oid='public.emails'::regclass)
+        and (select count(*)=1 and bool_and(a.grantor=p.proowner and a.grantee=p.proowner and a.privilege_type='EXECUTE' and not a.is_grantable)
+          from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a))) then
+    raise exception 'parcel conflicts: shared owner helper changed; review before applying' using errcode='55000';
+  end if;
 end $$;
+
+-- Shared L boundary. Callers authenticate/lock U/G/E first; this helper never learns an
+-- owner from caller-controlled row data and never acquires Auth, generation or email rows.
+create or replace function public.lock_parcel_owner(p_user uuid) returns void
+language plpgsql security definer set search_path='' as $$
+begin
+  if p_user is null then raise exception 'missing parcel owner' using errcode='22023'; end if;
+  if nullif(current_setting('otodoke.parcel_owner',true),'') is not null
+    and current_setting('otodoke.parcel_owner',true) is distinct from p_user::text then
+    raise exception 'parcel transaction owner cannot change' using errcode='42501';
+  end if;
+  perform set_config('otodoke.parcel_owner',p_user::text,true);
+  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(p_user::text));
+end $$;
+revoke all on function public.lock_parcel_owner(uuid) from public,anon,authenticated,service_role;
 
 create or replace function public.lock_parcel_candidates() returns trigger
 language plpgsql security definer set search_path='' as $$
@@ -35,7 +61,7 @@ begin
     end if;
     perform set_config('otodoke.parcel_owner',old.id::text,true);
     perform id from public.emails where user_id=old.id order by id for update;
-    perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(old.id::text));
+    perform public.lock_parcel_owner(old.id);
     return old;
   end if;
   if tg_level='ROW' then
@@ -64,7 +90,7 @@ begin
     raise exception 'parcel transaction owner cannot change' using errcode='42501';
   end if;
   perform set_config('otodoke.parcel_owner',v_owner::text,true);
-  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_owner::text));
+  perform public.lock_parcel_owner(v_owner);
   return null; -- statement trigger: no row is suppressed or replaced
 end $$;
 drop trigger if exists parcels_candidate_write_lock on public.parcels;
@@ -112,8 +138,8 @@ begin
       or v_mail.processing_status <> 'pending' or v_mail.processing_lease_until is null or v_mail.processing_lease_until <= clock_timestamp() then
     raise exception 'mail run no longer owns the lease' using errcode = '42501';
   end if;
-  perform set_config('otodoke.parcel_owner',v_mail.user_id::text,true);
-  if p_table in ('parcels','parcel_items') then perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_mail.user_id::text)); end if;
+  if p_table in ('parcels','parcel_items') then perform public.lock_parcel_owner(v_mail.user_id);
+  else perform set_config('otodoke.parcel_owner',v_mail.user_id::text,true); end if;
   if p_operation = 'claim' then
     if p_table = 'claim_claude_call_v2' then
       select jsonb_agg(to_jsonb(c)) into v_rows from public.claim_claude_call_v2(v_mail.user_id,(p_values->>'p_user_limit')::integer,(p_values->>'p_global_limit')::integer) c;
@@ -193,8 +219,7 @@ begin
     or v_mail.processing_lease_until <= clock_timestamp() then
     raise exception 'mail run no longer owns the lease' using errcode='42501';
   end if;
-  perform set_config('otodoke.parcel_owner',v_mail.user_id::text,true);
-  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_mail.user_id::text));
+  perform public.lock_parcel_owner(v_mail.user_id);
   if p_snapshot is null or jsonb_typeof(p_snapshot)<>'array' or p_items is null or jsonb_typeof(p_items)<>'array' then
     raise exception 'parcel snapshot/items must be complete arrays' using errcode='22023';
   end if;
@@ -240,8 +265,7 @@ begin
     or v_mail.processing_lease_until <= clock_timestamp() then
     raise exception 'mail run no longer owns the lease' using errcode='42501';
   end if;
-  perform set_config('otodoke.parcel_owner',v_mail.user_id::text,true);
-  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_mail.user_id::text));
+  perform public.lock_parcel_owner(v_mail.user_id);
   if p_items is null or jsonb_typeof(p_items)<>'array' then raise exception 'parcel items must be an array' using errcode='22023'; end if;
   select * into v_parcel from public.parcels where id=p_parcel_id and user_id=v_mail.user_id for update;
   if not found or p_expected_updated_at is null or v_parcel.updated_at is distinct from p_expected_updated_at then
@@ -277,8 +301,7 @@ begin
     or v_mail.processing_lease_until <= clock_timestamp() then
     raise exception 'mail run no longer owns the lease' using errcode='42501';
   end if;
-  perform set_config('otodoke.parcel_owner',v_mail.user_id::text,true);
-  perform pg_catalog.pg_advisory_xact_lock(62803,pg_catalog.hashtext(v_mail.user_id::text));
+  perform public.lock_parcel_owner(v_mail.user_id);
   if p_snapshot is null or jsonb_typeof(p_snapshot)<>'array' or p_items is null or jsonb_typeof(p_items)<>'array' then
     raise exception 'parcel snapshot/items must be complete arrays' using errcode='22023';
   end if;

@@ -71,6 +71,10 @@ OTODOKE_SAMPLE_LOCK_ROUNDS=720 node tests/postgres/run-sample-lock-order.mjs --e
 
 ## 荷物保存の利用者別ロック
 
+候補鍵の取得は、非公開の共有 helper `public.lock_parcel_owner(p_user uuid) returns void` を通します。利用者分離 runner は100000単独・110000までの両段で、SECURITY DEFINER・空 search_path・標準owner・PUBLICのEXECUTEなしを照合し、anon/authenticated/service_role の直接呼出しが42501で拒否されることを実行で確認します。ownerによるNULL入力は22023、同じtransactionでのowner切替は42501です。同じownerの再入は許可し、transaction終了時にowner contextと62803鍵がともに解除されることも確認します。
+
+旧順序陰性の抽出元は、メールのleaseを確認した後に `lock_parcel_owner(v_mail.user_id)` を呼ぶ現在の100000本体です。共有helperを飛ばす直接advisory取得が混ざったらself-testを失敗させます。利用者分離の旧global陰性は引き続き基点c71fd4bを使い、共有helperの有無による新しい対照と区別します。これらのrunnerが適用する上限は110000で、後続の受け取りreceipt migrationは読み込みません。
+
 `run-parcel-user-locks.mjs` は、authenticated が自分の荷物に対して実行する0行 UPDATE と、service_role の実メール保存 RPC を別接続で競合させます。PostgREST 自体は起動せず、`SET LOCAL ROLE authenticated`・`request.jwt.claim.sub`・実 `auth.uid()`・RLS・statement trigger を使います。接続先は `127.0.0.1` に固定です。事前に用意した使い捨て PostgreSQL 17 cluster のポートを `OTODOKE_PARCEL_USER_PG_PORT` に指定してください。cluster の3ロールは準備済みである必要があります。新しい固有 DB だけを作り、既存 cluster を停止しません。
 
 ```sh

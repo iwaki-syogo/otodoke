@@ -222,6 +222,16 @@ assert row["required_store_mail_run_present"] is True and row["required_parcel_g
 missing_dependencies_unchanged("parcel gateway missing")
 run(prior_migrations[prior_names[3]])
 verify(prior_verifiers[prior_names[3]], "13100000 applied and verified")
+for variant,call in [("plain","pg_catalog.pg_advisory_xact_lock(62803,0)"),("whitespace","pg_catalog.pg_advisory_xact_lock \n ( 62803 ,\n 0 \n )")]:
+    global_db=database+"_global_"+variant
+    create_database(global_db,database)
+    run("create function public.synthetic_global_candidate() returns void language plpgsql as $$ begin perform "+call+"; end $$;",db=global_db)
+    global_catalog=schema_catalog(global_db)
+    row=verify(prior_verifiers[prior_names[3]],"negative: standalone global candidate "+variant,db=global_db,expected="FAILED")
+    assert row["no_global_candidate_lock"] is False and row["shared_owner_helper_ok"] is True
+    assert all(value is True for key,value in row.items() if isinstance(value,bool) and key!="no_global_candidate_lock")
+    assert schema_catalog(global_db)==global_catalog
+passed("standalone verifier scans real pg_proc and rejects global candidate calls with plain or multiline whitespace")
 row = verify(before, "all four prerequisites before")
 assert row["prerequisite_state"] == "present" and row["required_parcel_gateways_present"] is True and row["sample_absent"] is True
 passed("missing dependencies fail read-only before and forward without schema changes")
@@ -277,7 +287,7 @@ def gateway_catalog():
       'security_definer',prosecdef,'path',proconfig,'args',proargnames,'argtypes',proargtypes::text,'result',pg_get_function_result(oid),'acl',proacl::text))
       from pg_proc where oid in (to_regprocedure('public.store_mail_run(uuid,uuid,uuid,jsonb,timestamptz,jsonb)'),to_regprocedure('public.mail_run_write(uuid,uuid,text,text,jsonb,jsonb)'),
       to_regprocedure('public.create_mail_parcel(jsonb,jsonb,jsonb,uuid,uuid)'),to_regprocedure('public.update_mail_parcel(jsonb,uuid,timestamptz,jsonb,jsonb,jsonb,uuid,uuid)'),
-      to_regprocedure('public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)'),to_regprocedure('public.lock_parcel_candidates()'),to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)'),to_regprocedure('public.release_claude_call(bigint,uuid)'),to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)'));"""))
+      to_regprocedure('public.ensure_mail_parcel_items(uuid,timestamptz,jsonb,uuid,uuid)'),to_regprocedure('public.lock_parcel_candidates()'),to_regprocedure('public.lock_parcel_owner(uuid)'),to_regprocedure('public.claim_ai_reading_backlog(uuid,timestamptz)'),to_regprocedure('public.release_claude_call(bigint,uuid)'),to_regprocedure('public.claim_claude_call_v2(uuid,integer,integer)'));"""))
 
 
 def installed_catalog(db):
@@ -286,7 +296,7 @@ def installed_catalog(db):
         from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in (
           'store_mail_run','mail_run_write','begin_sample_load','clear_all_parcels','receive_sample_parcels','lock_sample_owner','assert_sample_generation','fence_sample_write',
           'store_mail_run_without_sample_fence','mail_run_write_without_sample_fence',
-          'create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','lock_parcel_candidates','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete',
+          'create_mail_parcel','update_mail_parcel','ensure_mail_parcel_items','lock_parcel_candidates','lock_parcel_owner','prelock_sample_request','prelock_sample_statement','prelock_sample_owner_delete',
           'create_mail_parcel_without_sample_fence','update_mail_parcel_without_sample_fence','ensure_mail_parcel_items_without_sample_fence','claim_ai_reading_backlog','claim_ai_reading_backlog_without_sample_fence','release_claude_call','release_claude_call_without_sample_fence','claim_claude_call_v2','claim_claude_call_v2_without_sample_fence')),
       'triggers',(select jsonb_agg(to_jsonb(t) order by t.oid) from pg_trigger t where tgname in ('sample_generation_fence','sample_generation_statement_fence','parcels_candidate_write_lock','parcel_items_candidate_write_lock','parcels_candidate_owner','parcel_items_candidate_owner','parcel_candidate_owner_delete')),
       'column',(select jsonb_agg(to_jsonb(a) order by a.attnum) from pg_attribute a where a.attrelid=to_regclass('public.emails') and a.attname='sample_generation' and not a.attisdropped),
@@ -297,6 +307,24 @@ def installed_catalog(db):
 
 saved = saved_data()
 catalog = gateway_catalog()
+
+for variant,mutation in [
+    ("body","create or replace function public.lock_parcel_owner(p_user uuid) returns void language plpgsql security definer set search_path='' as $$ begin return; end $$;"),
+    ("acl","grant execute on function public.lock_parcel_owner(uuid) to service_role;"),
+    ("strict","alter function public.lock_parcel_owner(uuid) strict;"),
+]:
+    helper_db=database+"_helper_"+variant
+    create_database(helper_db,database)
+    run(mutation,db=helper_db)
+    helper_catalog,helper_data=schema_catalog(helper_db),saved_data(helper_db)
+    assert result(parcel_before,db=helper_db)["shared_owner_helper_ok"] is False
+    assert "shared owner helper changed" in run(prior_migrations[prior_names[3]],db=helper_db,fail=True)
+    assert result(before,db=helper_db)["shared_owner_helper_ok"] is False
+    assert "requires the private shared owner helper" in run(forward,db=helper_db,fail=True)
+    assert "shared owner helper is missing or changed" in run(parcel_down,db=helper_db,fail=True)
+    assert "shared owner helper is missing or changed" in run(down,db=helper_db,fail=True)
+    assert schema_catalog(helper_db)==helper_catalog and saved_data(helper_db)==helper_data
+passed("unknown shared helper body, ACL or strict ABI fails both migration gates and rollbacks without changes")
 
 # A real function owner may have Auth read/trigger permission without permission to lock.
 # Keep auth.users under the administrator, and give this clone's application objects their
@@ -472,6 +500,16 @@ for label,grant in acl_probes:
 passed("nonstandard grant-option and custom-role ACLs fail before and forward without catalog/data changes")
 run(forward)
 verify(after, "sample applied")
+for variant,call in [("plain","pg_catalog.pg_advisory_xact_lock(62803,0)"),("whitespace","pg_catalog.pg_advisory_xact_lock \n ( 62803 ,\n 0 \n )")]:
+    global_db=database+"_sample_global_"+variant
+    create_database(global_db,database)
+    run("create function public.synthetic_global_candidate() returns void language plpgsql as $$ begin perform "+call+"; end $$;",db=global_db)
+    global_catalog,global_data=installed_catalog(global_db),saved_data(global_db)
+    row=verify(after,"negative: stacked global candidate "+variant,db=global_db,expected="FAILED")
+    assert row["no_global_candidate_lock"] is False
+    assert all(value is True for key,value in row.items() if isinstance(value,bool) and key!="no_global_candidate_lock")
+    assert installed_catalog(global_db)==global_catalog and saved_data(global_db)==global_data
+passed("stacked verifier scans real pg_proc and rejects global candidate calls with plain or multiline whitespace")
 for name, sql in prior_verifiers.items():
     verify(sql, "after first sample apply: " + name)
 assert verify(before, "negative: already installed is not a fresh before", expected="FAILED")["sample_absent"] is False
