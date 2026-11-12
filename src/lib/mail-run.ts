@@ -40,8 +40,10 @@ export async function runMarkWronglyDropped(db: AdminClient, userId: string, use
   const personal = personalMailReason(row, userEmail);
   if (personal) return { ok: true, outcome: personal };
   if (!isRememberableDomain(row.from_domain)) return { ok: true, outcome: "shared" };
-  const { error } = await db.from("screen_events").update({ flagged_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId);
+  const { data, error } = await db.from("screen_events").update({ flagged_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId).select("id");
   if (error) return { ok: false, code: "mark_failed", message: error.message };
+  if (data?.length === 0) return { ok: false, code: "not_found" };
+  if (!data || data.length !== 1 || typeof data[0]?.id !== "string" || data[0].id.toLowerCase() !== id.toLowerCase()) return { ok: false, code: "mark_failed", message: "mark was not confirmed" };
   return { ok: true, outcome: "remembered" };
 }
 
