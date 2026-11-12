@@ -431,6 +431,47 @@ export class FakeDb {
     return String(row.generation);
   }
 
+  /** Clear marks (supabase: kept for 35 days after a clear_all_parcels), as (user, kind, value) triples. */
+  private clearMarks: Array<{ userId: string; kind: "provider_email_id" | "message_id"; value: string; markedAt: number; expiresAt: number }> = [];
+
+  private markCleared(userId: string): void {
+    const now = Date.now();
+    for (const mail of this.rows("emails")) {
+      if (mail.user_id !== userId || String(mail.provider_email_id ?? "").startsWith("demo:")) continue;
+      for (const [kind, value] of [["provider_email_id", mail.provider_email_id], ["message_id", mail.message_id]] as const) {
+        if (value === null || value === undefined) continue;
+        const kept = this.clearMarks.find((m) => m.userId === userId && m.kind === kind && m.value === String(value));
+        if (kept) Object.assign(kept, { markedAt: now, expiresAt: now + 35 * 86_400_000 });
+        else this.clearMarks.push({ userId, kind, value: String(value), markedAt: now, expiresAt: now + 35 * 86_400_000 });
+      }
+    }
+  }
+
+  private liveMarks(userId: string) {
+    const now = Date.now();
+    return this.clearMarks.filter((m) => m.userId === userId && m.expiresAt > now);
+  }
+
+  /** The provider-ID mark check of store_mail_run, made whether or not a row exists: true when this delivery itself was cleared. */
+  private clearedProvider(a: StoreArgs): boolean {
+    const providerId = a.p_columns.provider_email_id;
+    if (typeof providerId !== "string" || providerId.startsWith("demo:")) return false;
+    return this.liveMarks(a.p_user_id).some((m) => m.kind === "provider_email_id" && m.value === providerId);
+  }
+
+  /** The Message-ID mark check of store_mail_run, for a request with no existing row only. */
+  private clearedMessage(a: StoreArgs, headers: Record<string, string>): boolean {
+    const providerId = a.p_columns.provider_email_id;
+    // Like the SQL: only a sample ID ('demo:' prefix) skips the check; a missing provider ID still gets the Message-ID check.
+    if (typeof providerId === "string" && providerId.startsWith("demo:")) return false;
+    const live = this.liveMarks(a.p_user_id);
+    const messageId = a.p_columns.message_id;
+    const header = headers["x-otodoke-delivery-created-at"];
+    const created = typeof header === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(header) ? Date.parse(header) : Number.NaN;
+    if (typeof messageId !== "string" || Number.isNaN(created)) return false;
+    return live.some((m) => m.kind === "message_id" && m.value === messageId && created < m.markedAt - 120_000);
+  }
+
   private sampleFence(userId: unknown, headers: Record<string, string>, required = false): Result | null {
     const generation = headers["x-otodoke-sample-generation"];
     const owner = headers["x-otodoke-sample-user"];
@@ -443,6 +484,7 @@ export class FakeDb {
 
   private executeRpc(name: string, args: unknown, headers: Record<string, string>): Promise<Result> {
     this.rpcCalls.push({ name, args });
+    if (name === "purge_old_screen_events") this.clearMarks = this.clearMarks.filter((m) => m.expiresAt > Date.now());
     if (name === "purge_old_screen_events") return Promise.resolve(this.purgeReceiptAndConsent());
     if (name === "mark_parcels_received") return this.markParcelsReceived((args as { p_ids: string[] }).p_ids);
     if (name === "restore_parcel_receipts") return this.restoreParcelReceipts((args as { p_receipts: Array<{id:string;receipt_id:string}> }).p_receipts);
@@ -468,9 +510,11 @@ export class FakeDb {
       this.sampleGeneration(userId);
       const generation = crypto.randomUUID();
       this.rows("sample_generations").find((r) => r.user_id === userId)!.generation = generation;
+      const marksBefore = structuredClone(this.clearMarks);
+      this.markCleared(userId);
       for (const table of ["parcels", "emails"]) {
         const result = this.execute(this.from(table).delete().eq("user_id", userId).query);
-        if (result.error) { this.tables = before; return Promise.resolve(result); }
+        if (result.error) { this.tables = before; this.clearMarks = marksBefore; return Promise.resolve(result); }
       }
       for (const table of ["extractions", "parcel_items", "parcel_receipt_undos"]) this.tables[table] = this.rows(table).filter((r) => r.user_id !== userId);
       return Promise.resolve({ data: generation, error: null });
@@ -521,6 +565,9 @@ export class FakeDb {
   private storeMailRun(a: StoreArgs, headers: Record<string, string> = {}): Result {
     const answer = (verdict: string): Result => ({ data: [{ verdict, email_id: a.p_email_id }], error: null });
     const old = this.rows("emails").find((r) => r.id === a.p_email_id && r.user_id === a.p_user_id);
+    // Like the SQL: the provider-ID mark is checked before any branch that changes a row, existing or not.
+    if (this.clearedProvider(a)) return answer("duplicate");
+    if (!old && this.clearedMessage(a, headers)) return answer("duplicate");
     if (old?.processing_status === "discarded" && old.error === "ai_consent_wait_expired") return answer("consent_wait_expired");
     if (old?.processing_status === "processed") return answer("duplicate");
     if (old?.processing_status === "pending" && Date.parse(String(old.processing_lease_until ?? new Date(Date.parse(String(old.created_at)) + 180_000).toISOString())) > Date.now()) return answer("busy");

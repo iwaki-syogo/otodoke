@@ -183,6 +183,7 @@ describe("what the webhook answers (kept as it was)", () => {
         sentAt: "2020-11-01T03:00:00.000Z",
         text: "注文番号 123",
         html: null,
+        deliveryCreatedAt: "2026-11-05T03:00:00.000Z",
       },
     ]);
   });

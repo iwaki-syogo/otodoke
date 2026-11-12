@@ -100,7 +100,7 @@ describe("logout recovery after the displayed account changed", () => {
     expect(fetch).not.toHaveBeenCalled();
 
     const explanation = explanationOf(html);
-    // Assert the next action rather than pinning the provisional full sentence.
+    // Assert the next action, not only the exact sentence.
     expect(explanation).toMatch(/ログアウト/);
     expect(explanation).toMatch(/ログイン/);
     expect(explanation).toMatch(/画面/);
@@ -238,7 +238,7 @@ describe("logout recovery after the displayed account changed", () => {
     expect(auth.signOut).not.toHaveBeenCalled();
   });
 
-  it("keeps the provisional notice nonempty and expresses the next logout step", () => {
+  it("keeps the notice nonempty and expresses the next logout step", () => {
     expect(ACCOUNT_CHANGED_LOGOUT_NOTICE.trim().length).toBeGreaterThan(0);
     for (const meaning of [/ログイン/, /画面/, /開き直/, /ログアウト/]) expect(ACCOUNT_CHANGED_LOGOUT_NOTICE).toMatch(meaning);
   });

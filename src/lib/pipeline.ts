@@ -48,6 +48,8 @@ export interface InboundEmail {
   sentAt: string | null;
   text: string | null;
   html: string | null;
+  /** ISO 8601 when the delivery was created at the provider; read by the database for clear marks only. */
+  deliveryCreatedAt?: string | null;
 }
 
 export type PipelineOutcome =
@@ -176,7 +178,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   };
   const runId = crypto.randomUUID();
   const limits = mailStorageLimits();
-  const { data: reservation, error: reservationError } = await db.rpc("store_mail_run", {
+  const reserveCall = db.rpc("store_mail_run", {
     p_user_id: mail.userId, p_email_id: emailId, p_run_id: runId,
     p_columns: columns as unknown as Json, p_expected_created_at: options.replacesCreatedAt ?? stored?.created_at ?? null,
     p_limits: {
@@ -184,6 +186,11 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
       user_bytes: limits.OTODOKE_UNREAD_USER_BYTE_LIMIT, global_bytes: limits.OTODOKE_UNREAD_GLOBAL_BYTE_LIMIT,
     },
   });
+  // Only this call carries the delivery time; an older database ignores the header.
+  const { data: reservation, error: reservationError } = await (mail.deliveryCreatedAt
+    ? reserveCall.setHeader("x-otodoke-delivery-created-at", mail.deliveryCreatedAt)
+    : reserveCall);
+
   if (reservationError) throw new Error(`mail reservation failed: ${reservationError.message}`);
   const reserved = Array.isArray(reservation) ? reservation[0] : null;
   if (!reserved) throw new Error("mail reservation returned no verdict");

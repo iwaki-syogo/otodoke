@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   if (event.type !== "email.received") {
     return NextResponse.json({ ignored: event.type });
   }
-  const data = event.data as { email_id?: string; received_for?: unknown; to?: unknown };
+  const data = event.data as { email_id?: string; received_for?: unknown; to?: unknown; created_at?: unknown };
   const emailId = data.email_id;
   if (!emailId) return NextResponse.json({ error: "missing email_id" }, { status: 400 });
 
@@ -111,6 +111,8 @@ export async function POST(request: Request) {
   const fromName = parseDisplayName(fromHeader);
   const sentAt = parseDate(mail.headers?.date ?? mail.headers?.Date) ?? mail.created_at ?? null;
 
+  const deliveryCreatedAt = deliveryTime(mail.created_at, data.created_at);
+
   try {
     const outcome = await processInboundEmail(processingDb, {
       userId,
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
       sentAt,
       text: mail.text?.slice(0, MAX_BODY_CHARS) ?? null,
       html: mail.html?.slice(0, MAX_BODY_CHARS) ?? null,
+      deliveryCreatedAt,
     });
     // Once per inbound request: the rest of this user's plaintext mail is sealed after the answer.
     scheduleSealRemaining(userId, processingDb);
@@ -188,6 +191,41 @@ function parseDisplayName(fromHeader: string | undefined): string | null {
   if (!fromHeader) return null;
   const m = fromHeader.match(/^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/);
   return m ? m[1].trim() : null;
+}
+
+/** An ISO 8601 date and time with seconds and a zone (`Z` or `±hh:mm`), as the database reads it. */
+const EXACT_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
+
+/**
+ * The instant of an exact date-time, else NaN. A date alone, a time with no zone and a day or
+ * time that does not exist (Date.parse would turn them into some other instant) are unreadable.
+ */
+function exactInstant(value: unknown): number {
+  const m = typeof value === "string" ? EXACT_INSTANT.exec(value) : null;
+  if (!m) return Number.NaN;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  const wall = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const real = wall.getUTCFullYear() === year && wall.getUTCMonth() === month - 1 && wall.getUTCDate() === day
+    && wall.getUTCHours() === hour && wall.getUTCMinutes() === minute && wall.getUTCSeconds() === second;
+  const zone = m[7] === undefined || (Number(m[7]) <= 23 && Number(m[8]) <= 59);
+  return real && zone ? Date.parse(value as string) : Number.NaN;
+}
+
+/**
+ * When the delivery was created: the API's value decides, the signed event's value only cross-checks it.
+ * Null when the API gives no exact instant (the database then skips the Message-ID mark; never a refusal).
+ */
+function deliveryTime(fromApi: unknown, fromEvent: unknown): string | null {
+  const api = exactInstant(fromApi);
+  const event = exactInstant(fromEvent);
+  if (!Number.isNaN(api) && !Number.isNaN(event) && api !== event) {
+    console.warn("inbound: delivery time differs between event and API");
+  }
+  if (Number.isNaN(api)) {
+    console.warn("inbound: delivery time unknown; message-id mark not applied");
+    return null;
+  }
+  return new Date(api).toISOString();
 }
 
 function parseDate(value: string | undefined): string | null {

@@ -6,7 +6,7 @@
 - `parcels` のauthenticated UPDATE権限はiOSの直接更新にも必要。変更せず、本人・lease・世代・候補集合・更新版の検証を保つ。Swiftの変更はiOS担当へ渡す。
 - DBの部分順序はU(Auth)→G(世代)→E(メール)→C(必要な許可行)→L(利用者の候補鍵/有料日の鍵)→R。不要な段は飛ばせるが逆順に初取得しない。受取mark/restoreは最新の共有契約どおりU/G/Eの後・Rの前でLを取る。
 - 候補鍵はprivateな `public.lock_parcel_owner(p_user uuid)` だけから取る。同ownerのTx-local設定と利用者別Lを確保し、NULL・owner切替・owner不明を拒否する。固定キーへのfallbackは作らない。メールcoreは本人/run/lease確認後・snapshot/R前で呼ぶ。
-- 130000のforward/downも同helperを使い、before/verify/downでABI・owner・ACLを確認する。戻し順は130000 → 121000 → 120000 → 110000 → 100000 → 090000 → 181000 → 180000（120000・121000のdownは130000が残っていれば、120000のdownは121000も残っていれば、55000で止まる）。所有者やgrantを自動で直して関門を通さない。
+- 130000のforward/downも同helperを使い、before/verify/downでABI・owner・ACLを確認する。戻し順は140000 → 130000 → 121000 → 120000 → 110000 → 100000 → 090000 → 181000 → 180000（120000・121000のdownは130000が残っていれば、120000のdownは121000も残っていれば、55000で止まる）。130000のdownは140000の有無を見ないので、130000を戻す前に `supabase/verify/20261113140000_cleared_mail_marks.rolled-back.sql` が OK であることを確かめる。所有者やgrantを自動で直して関門を通さない。
 - Web undoはDBの受取証跡と現在のreceived_at/updated_atを照合し、restored/changed/failedを区別する。1通信200件と論理全件を分け、501件以上も分割処理する。証跡期限の正本はDB関数。
 - verify出力は共有のファイル別形式で判定する。110000の判定は末尾。他列のOKで代用しない。SQLと形式・正常/異常自己試験を同じ変更にそろえ、自己試験と実Postgresを区別する。
 - 並行作業中の全件vitestは1プロセスだけ、負荷20未満で実行する。実Postgresは自分の専用clusterだけを使い、停止・listener0・専用データ削除まで確認する。

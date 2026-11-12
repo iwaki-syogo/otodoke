@@ -45,7 +45,7 @@ export function isBlankSubject(subject: string | null | undefined): boolean {
  */
 export const RESET_LOSES_MAIL = "パスワードを決め直すと、前に暗号化して保存したメールは開けなくなります。荷物は残ります。";
 
-/** Provisional reset-page guidance; replace here after the owner's morning review. */
+/** Reset-page guidance shown once with the form: finish the reset on this one screen. */
 export const RESET_SINGLE_SCREEN_NOTICE = "再設定は、この画面だけで済ませてください。";
 
 /**

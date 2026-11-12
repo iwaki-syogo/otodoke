@@ -146,6 +146,7 @@ describe("every row of a user's goes with the auth user", () => {
       "ai_reading_consents",
       "claude_call_claims",
       "claude_usage_daily",
+      "cleared_mail_marks",
       "emails",
       "extractions",
       "inbox_addresses",

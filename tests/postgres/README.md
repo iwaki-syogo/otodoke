@@ -194,3 +194,27 @@ node tests/postgres/run-consent-before-privileges.mjs --negative-control
 `--legacy-auth-check` は読み込んだbefore文字列のAuth部分だけを旧table検査へ戻し、正当な列権限の例で非0終了する対照です。`--negative-control` は同じ部分をtrueへ置換し、権限不足を通した時点で非0終了します。どちらもSQLファイルや付与権限を書き換えません。正常性の `verdict=OK` と、陰性対照で期待する `verdict=FAILED` を区別します。
 
 通常・エラー・中断とも、自分が作ったclusterを停止し、pg_ctlの非稼働・TCPのlistener 0を確認してから専用data/logを削除します。既に使われているポートのプロセスは停止しません。接続先URLを指定する引数はなく、既存環境のPG接続設定や認証ファイルは使いません。
+
+## 消した後の再配送を止める印（140000）
+
+```sh
+node tests/postgres/run-cleared-mail-marks.mjs --self-test
+node tests/postgres/run-cleared-mail-marks.mjs
+node tests/postgres/run-cleared-mail-marks.mjs --negative-control
+```
+
+通常・陰性対照は専用 `127.0.0.1:65447` にPostgres 17の使い捨てclusterを作ります（`OTODOKE_PG_BINDIR` で bin を指定）。外部へはつながりません。130000までの実migrationを版順に適用して履歴を記録し、before → 140000 → verify → 動作確認 → down → 130000のverify・120000のverify → 再適用 → verify の順に流します。最後の判定は終了コードではなく出力の最後の行 `verdict=OK` です。
+
+動作確認: 全消去の後に同じ provider ID（ヘッダーあり・なし）は `duplicate` で0行 / 同じ Message-ID は配送時刻が全消去の1時間前なら `duplicate`、60秒前（余裕120秒の内）・後・ヘッダー無し・壊れた文字列・存在しない日付・空は通す（例外にしない）/ 新しい ID・Message-ID null・別の利用者・サンプル（`demo:`）は通る / 期限切れの印は通し、日次 `purge_old_screen_events()` が期限切れの印だけを消して他の掃除の件数は変わらない / 2回目の全消去で marked_at・expires_at が延びる / 退会で印が消え、全消去と退会の同時実行で FK 違反・デッドロックにならない / 全消去と再配送の同時実行40回が常に `duplicate` / anon・authenticated は表も関数も触れず、service_role は `store_mail_run`・`clear_all_parcels` だけ。
+
+増えた確かめ（A27・A-42）: 2b 全消去の後に本人が転送し直したメールの読み取りが失敗して failed の行が残っても、消した provider ID の再送は `duplicate` でその行（provider・状態・版・run・本文）を変えず、その行自身の再送は通る / 8b 期限切れの印を本人の全消去が更新するのと日次の掃除を同時に40回流してデッドロック 0（印は乱れた物理順で作る。直す前の本体では 5 回出た）、他の Tx が持つ期限切れの印は待たずに飛ばし次の掃除で消える、1 回の掃除は 10000 件まで / 1d 当てる前に置換する関数の設定を変える・新しい名前の別引数の関数があると before が `FAILED`・本体が 55000 で何も変えない、当てた後に 7 関数を 1 本ずつ `RESET search_path`・grant option・後からの ALTER で verify が `FAILED`（戻しの関門も止まる）。
+
+verify のファイルは 6 本あり、台本は当てた直後・down の直後・当て直した直後の 3 時点で全部を流して判定を表にします（出力の `INFO: A27-3`）。`.before.sql`（当てる前）、`.sql`（当てた後）、`.prior.sql`（当てた後。130000・120000 の verify が見ていたことを、140000 が日次の掃除をもう 1 段包んだ形で同じだけ見る。140000 の後の旧 2 本は合成の列が FAILED になるため）、`.rolled-back.sql`（down の後・130000 の down の前。戻した 3 関数の本体・設定・所有者・ACL）、130000・120000 の verify（down の後に使う）。期待は、当てた直後と当て直した直後が before FAILED・140000 OK・prior OK・130000 FAILED・120000 FAILED・rolled-back FAILED、down の直後が before OK・140000 ERROR（表が無い）・prior FAILED・130000 OK・120000 OK・rolled-back OK です。
+
+down は 3 つの関数（`store_mail_run_without_sample_fence`・`clear_all_parcels`・`purge_old_screen_events`）を前の版の本体に戻し、台本が戻した後の全関数の本体 md5・ACL・設定・所有者と表の ACL・RLS・トリガーが 140000 を当てる前と完全に同じであることを確かめます。そのあと 130000 → 121000 → 120000 → 110000 の down を最終 DB の複製に続けて流し、指紋で止まらないことを確かめます。140000 が入ったまま 130000 の down を流すと、既存の 130000 の down は止まらずに走ります（出力の `INFO:` 行）。その後の 140000 の down は順序の関門で止まります。必ず 140000 を先に戻してください。
+
+`--supabase-default-privileges` を付けると、bootstrap の後・migration の前に、migration を当てる役（`current_user`）の default privileges（public の表・sequence に all、関数に execute、schema に usage を `anon`・`authenticated`・`service_role` へ）を設定し、本番の Supabase と同じ「作ると権限が付く」状態で全項目を流します。加えて、当てた後の ACL（`aclexplode(coalesce(acl, acldefault(..)))`）で anon・authenticated・PUBLIC が何も持たず service_role が前から持つ物だけであることを確かめ、使い捨て DB の複製に余分な grant をして verify が `FAILED` になるかを見ます（ならないものは `GAP:` の assert で台本が落ちます）。
+
+`--cli-push` を付けると、130000 までの全版を履歴に記録した状態で、本物の `supabase db push --db-url postgresql://postgres@127.0.0.1:65447/postgres?sslmode=disable --skip-vault`（標準入力なし・`--yes` なし）を dry-run → 本番 push → verify → down → `migration repair --status reverted` → もう一度、の順に流し、履歴の行の増減と先頭の関門が CLI の下で通ることを確かめます。複製 DB では陰性対照（履歴に手で行を入れると 140000 が並ばない / 履歴に行が無いのに表だけあると 55000 で止まり行が増えない）も流します。`--project-ref` は使いません。CLI は自分の版確認で外へ出る場合があります。2 つのフラグは一緒に付けられます。
+
+`--negative-control` は使い捨て DB の中だけで、(1) 120000 の本体（印の確かめ無し）に戻して 2 を、(2) provider ID の確かめを新しい行だけに戻した本体（A27-2 の直す前の形。2 は通ることも確かめる）で 2b を流し、それぞれの固有の assert（`NEGATIVE: DETECTED ...` の行）で落ちることを見ます。期待は `negative-control=ALL-DETECTED` の行と `verdict=FAILED`・終了コード 1 です。`negative-control=MISSED` なら、その確かめは検出力を失っています。作業ツリーのファイルは変えません。
