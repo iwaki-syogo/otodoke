@@ -17,5 +17,8 @@ export const READ_FAILED_NOTICE = "読み取れなかったメールがありま
 
 /** A storage rejection retains no body; the original mailbox is the recovery source. */
 export const READ_STORAGE_LIMIT_NOTICE = "受け取れなかったメールがあります。";
-export const READ_STORAGE_LIMIT_REASON = "未読を読み取ったあと、元メールをもう一度送ってください。";
+export const READ_STORAGE_LIMIT_BODY = "このメールの本文は保存していません。";
+export const READ_STORAGE_LIMIT_REASON = "保管の枠を空けたあと、元メールをもう一度送ってください。";
 export const READ_STORAGE_NOTICE_FAILED = "メールの受信状況を確認できませんでした。";
+export const READ_STORAGE_CONFIRM = "確認しました";
+export const READ_STORAGE_CONFIRMING = "確認しています…";

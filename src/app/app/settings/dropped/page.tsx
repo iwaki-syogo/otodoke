@@ -6,6 +6,7 @@ import { NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
 import { readAll } from "@/lib/supabase/read-all";
 import { settingsErrorMessage } from "@/lib/settings-errors";
 import type { Tables } from "@/lib/db/database.types";
+import { REMEMBERED_SENDER_TEXT } from "@/lib/settings-mail-text";
 import { forgetSender, markWronglyDropped } from "../actions";
 import { PressButton } from "../press";
 import { SubPage } from "../sub-page";
@@ -26,8 +27,8 @@ const SENDER_NOTES = {
     failed: { ok: false, register: false, text: "記録できませんでした。もう一度お試しください。" },
   },
   unflagged: {
-    done: { ok: true, register: false, text: "外しました。" },
-    failed: { ok: false, register: false, text: "外せませんでした。もう一度お試しください。" },
+    done: { ok: true, register: false, text: REMEMBERED_SENDER_TEXT.removed },
+    failed: { ok: false, register: false, text: REMEMBERED_SENDER_TEXT.failed },
   },
 } as const;
 
@@ -109,14 +110,14 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
         )}
         {remembered.length > 0 ? (
           <div className="mt-3">
-            <h3 className="text-sm font-bold">覚えた差出人</h3>
+            <h3 className="text-sm font-bold">{REMEMBERED_SENDER_TEXT.title}</h3>
             <ul className="mt-2 divide-y divide-neutral-100 rounded-2xl border border-neutral-200 bg-white">
               {remembered.map((domain) => (
                 <li key={domain} className="flex items-center gap-3 px-4 py-3">
                   <p className="min-w-0 flex-1 truncate text-sm">{domain}</p>
                   <form action={forgetSender} className="shrink-0">
                     <input type="hidden" name="domain" value={domain} />
-                    <PressButton label="外す" busyLabel="外しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
+                    <PressButton label={REMEMBERED_SENDER_TEXT.remove} busyLabel={REMEMBERED_SENDER_TEXT.removing} className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                   </form>
                 </li>
               ))}

@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { settingsErrorPath } from "@/lib/settings-errors";
 import { readAiReadingConsent } from "@/lib/ai-consent";
+import { isIntakeNoticeTimestamp, isRememberedSenderDomain, runDismissIntakeNotice, runForgetSender } from "@/lib/settings-mail-actions";
 
 /**
  * Feed the anonymized demo mails through the real pipeline for the signed-in user.
@@ -95,10 +96,14 @@ export async function forgetSender(formData: FormData): Promise<void> {
   if (!user) redirect("/login");
   const domain = String(formData.get("domain") ?? "");
   let ok = false;
-  if (domain && domain.length <= 255) {
-    const { error } = await createAdminClient().from("screen_events").update({ flagged_at: null }).eq("user_id", user.id).eq("from_domain", domain).not("flagged_at", "is", null);
-    if (error) console.error("forgetSender:", error.message);
-    else ok = true;
+  if (isRememberedSenderDomain(domain)) {
+    try {
+      const done = await runForgetSender(createAdminClient(), user.id, domain);
+      ok = done.ok;
+      if (!done.ok) console.error("forgetSender:", done.code);
+    } catch {
+      console.error("forgetSender: database unavailable");
+    }
   }
   revalidatePath("/app/settings");
   revalidatePath("/app/settings/dropped");
@@ -126,12 +131,16 @@ export async function dismissIntakeNotice(formData: FormData): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
   const at = String(formData.get("limited_at") ?? "");
-  if (!Number.isFinite(Date.parse(at))) redirect(settingsErrorPath("read_failed"));
-  const { error } = await createAdminClient().from("mail_intake_notices").delete().eq("user_id", user.id).eq("limited_at", at);
-  if (error) {
-    console.error("dismissIntakeNotice:", error.message);
-    redirect(settingsErrorPath("read_failed"));
+  if (!isIntakeNoticeTimestamp(at)) redirect(settingsErrorPath("read_failed"));
+  let ok = false;
+  try {
+    const done = await runDismissIntakeNotice(createAdminClient(), user.id, at);
+    ok = done.ok;
+    if (!done.ok) console.error("dismissIntakeNotice:", done.code);
+  } catch {
+    console.error("dismissIntakeNotice: database unavailable");
   }
+  if (!ok) redirect(settingsErrorPath("read_failed"));
   revalidatePath("/app", "layout");
   redirect("/app/settings/trouble");
 }
