@@ -37,6 +37,11 @@ export async function readWaitingMail(): Promise<void> {
   const user = await getUser();
   if (!user) redirect("/login");
 
+  // Check before taking over any stored mail: the permission screen also has a recovery exit
+  // when the choice cannot be read. The pipeline still checks again before each paid read.
+  const consent = await readAiReadingConsent(await createClient(), user.id);
+  if (consent !== "granted") redirect("/app/reading?after=settings");
+
   const done = await runReadWaitingMail(createAdminClient(), user.id);
   if (!done.ok && done.stage === "lookup") {
     console.error("readWaitingMail (lookup):", done.message);

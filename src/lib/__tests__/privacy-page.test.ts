@@ -4,8 +4,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
 import { appSourceFiles, read as readSource, withoutComments } from "./source-scan";
+import { consentWaitingRetentionMs } from "./fake-db";
 
 /**
  * [Review 2026-11-06 E-4] The privacy policy at /privacy, readable before signing in.
@@ -242,6 +244,27 @@ describe("/privacy: what it says", () => {
     expect(text).toContain("1 日の上限を守るために、Claude を使った回数も、誰のものか分からない形で日ごとに残します");
     expect(text).toContain("メールの自動転送の設定も外してください");
     expect(text).toContain("消したデータも、データベースのバックアップと接続の記録に、最大 7 日間残ります。Resend や Anthropic など各社に渡ったデータは、各社の期間が過ぎるまで残ります。");
+  });
+
+  it("gives consent-waiting mail an arrival-based deadline, including a decline, instead of promising indefinite storage", async () => {
+    const root = await render();
+    const waiting = Object.fromEntries(terms(section(root, "メールの扱い")))["許可待ちのメール"];
+    expect(waiting).toBe(AI_CONSENT_TEXT.waitingRetention);
+    const days = waiting?.match(/届いてから (\d+) 日で期限切れになります/);
+    expect(days).not.toBeNull();
+    expect(Number(days![1]) * 24 * 3600_000).toBe(consentWaitingRetentionMs());
+    expect(waiting).toContain("期限を過ぎた件名・差出人・本文は、毎日の掃除で消します");
+    expect(waiting).toContain("許可しない場合や読み取りをやめた場合も、その期限までは残ります");
+    expect(waiting).toContain("許可した後も、読み取るまでは同じ期限です");
+    const { MailHandling } = await import("@/app/app/settings/mail-handling");
+    const settings = parseHtml(renderToStaticMarkup(createElement(MailHandling)));
+    expect(findAll(settings, (n) => n.tag === "p" && textOf(n) === waiting)).toHaveLength(1);
+    const readmeWaiting = readFileSync(path.join(process.cwd(), "README.md"), "utf8").split("\n").find((line) => line.startsWith("- 許可を待つメールは、"));
+    expect(readmeWaiting?.slice(2).replace(/。$/, "")).toBe(waiting.replace(/。$/, ""));
+    const retention = textOf(section(root, "保存の期間と消し方"));
+    expect(retention).toContain("荷物と、読み取りを終えたメールは、あなたが消すまで保存します");
+    expect(retention).not.toContain("荷物と、Otodoke に保存したメールは、あなたが消すまで保存します");
+    expect(textOf(section(root, "メールの扱い"))).not.toContain("読み取るまで暗号化せずに置きます");
   });
 
   it("the longest a deleted account stays in the logs is the longest period 接続の記録 names (R3-20)", async () => {

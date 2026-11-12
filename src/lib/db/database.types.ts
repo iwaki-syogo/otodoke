@@ -122,6 +122,7 @@ export type Database = {
           body_envelope: Json | null
           body_state: string
           classification: string | null
+          consent_waiting_until: string | null
           created_at: string
           error: string | null
           forwarding_confirm_url: string | null
@@ -146,6 +147,7 @@ export type Database = {
           body_envelope?: Json | null
           body_state?: string
           classification?: string | null
+          consent_waiting_until?: string | null
           created_at?: string
           error?: string | null
           forwarding_confirm_url?: string | null
@@ -170,6 +172,7 @@ export type Database = {
           body_envelope?: Json | null
           body_state?: string
           classification?: string | null
+          consent_waiting_until?: string | null
           created_at?: string
           error?: string | null
           forwarding_confirm_url?: string | null

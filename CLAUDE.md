@@ -135,3 +135,10 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - sampleだけでなく実メールのcreate/update/ensure、本人の直接DML、全消去、退会cascadeも同じ順に参加する。退会は既存世代とメールをcascade前に取り、自動読取claim・費用claim v2/releaseもAuth親行を先取りする。DBロックは各短期RPCの中だけで保持し、外部API待ちへ持ち出さない。
 - private coreの `_without_sample_fence` はAPI roleから直接実行しない。新しいservice処理も公開RPCの入口を通す。header無しの任意複数表/複数利用者DMLやTRUNCATEは保守操作としてwriter停止・drainを要する。
 - 統合時は `tests/postgres/run-sample-lock-order.mjs` の自然競合と旧順序の陰性対照、`scripts/test-sample-generation.py`、`scripts/test-sample-generation-lifecycle.py` を使い捨てPGで確認する。前提・集計・後片付けは `tests/postgres/README.md`。検証終了は専用PGの停止・待ち受け0・専用データ削除まで。
+
+## 許可待ちメールの保管
+
+- `20261113120000_consent_waiting_storage` は110000までの変更と既存の毎日の掃除に依存する。許可待ちは既存の利用者別保管上限を使い、全体の未読保管枠から分ける。許可後の日次上限待ちも、元の待ちメールの期限と区分を保つ。
+- 期限の正本は `public.ai_consent_waiting_retention()` の1か所。`emails.received_at` から `consent_waiting_until` を付け、再読取や許可の変更で延ばさない。拒否・取消の直後には消さず、この期限まで残す。
+- 既存の `purge_old_screen_events()` の入口から期限切れを掃除する。結果なしはメール行を削除し、既に部分結果がある行は本文・件名・差出人を消して荷物と結果を残す。完了済みの読み取りは期限の対象外。既存行の再読取は、掃除で行がなくなった後に新着として保存し直さない。
+- Webの「読み取る」も、admin処理の前に許可を確かめる。未回答・拒否は許可画面、確認不能は既存の再読込へ案内する。pipeline内の各メールの確認も維持する。

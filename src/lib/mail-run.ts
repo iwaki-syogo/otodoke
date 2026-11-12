@@ -114,9 +114,9 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
             text: m.text_body,
             html: m.html_body,
           },
-          // Without a Message-ID the pipeline cannot find this row again, so it is named: the mail is
-          // read again in this row, in place (never removed and stored anew, so it cannot be lost).
-          m.message_id ? {} : { replacesEmailId: m.id },
+          // Always name the snapshot's row. If a sweep or clear removed it after the SELECT,
+          // the pipeline must not recreate this old plaintext as a new incoming delivery.
+          { replacesEmailId: m.id },
         );
       }
       if (outcome.kind === "over_limit") {

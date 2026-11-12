@@ -68,3 +68,24 @@ OTODOKE_SAMPLE_LOCK_ROUNDS=720 node tests/postgres/run-sample-lock-order.mjs --e
 `SUMMARY` の `target_sha256` は実際に DB へ適用した `110000` の内容、陰性対照の `negative_source_sha256` は差し戻した `100000` の内容を示します。試験後のファイルを読み直した hash ではありません。
 
 継承した `PG*` 環境変数は除外し、パスワード・service 設定は新しい scratch の存在しない専用ファイルに向けます。終了・割り込み時に閉じるのは自分の `psql` 接続だけです。外部テスト cluster は停止せず、専用 DB と `.vitest/pg/sample-lock-*/summary.json` を調査用に残します。cluster・データ・ログの最終削除は準備側が行ってください。既存の `run-parcel-conflicts.mjs` の単一列結果の `row_to_json` 修正は変更していません。
+
+## 許可待ちメールの個人枠と期限
+
+`run-consent-waiting-storage.mjs` は、新しい専用 PostgreSQL 17 cluster を `127.0.0.1:65442` に作る台本です。既存プロセスの停止や外部 DB への接続はしません。基点 `18031c4` の実 migration を `110000` まで順に読み、`120000` の before・二度適用・verify・挙動・rollback 二度・前の関数本体の完全一致・再適用を検査します。
+
+```sh
+node tests/postgres/run-consent-waiting-storage.mjs --self-test
+node tests/postgres/run-consent-waiting-storage.mjs --baseline
+node tests/postgres/run-consent-waiting-storage.mjs
+node tests/postgres/run-consent-waiting-storage.mjs --negative-control
+```
+
+`--baseline` は `120000` を入れず、`--negative-control` は `120000` を入れた後に保存した旧 storage core だけを専用 DB 内へ戻します。どちらも、全体の枠が 1 通のとき、同じ未回答者の 2 通目が受信できる試験で、終了コード 1・`verdict=FAILED` になるのが期待値です。同じ回帰試験を通常版では通します。ソースやほかの worktree は書き換えません。
+
+通常版は未回答・拒否の個人通数/UTF-8 容量上限、許可済みの全体上限、拒否通知の 1 人 1 行、到着時刻と期限の不変、取り消し時の既存メールへの期限付与、期限切れ takeover と古い snapshot、抽出結果がある行の本文だけの消去と再送防止、読み取り中の lease の保持、既存の screen_events 掃除の継続を確認します。掃除・全消去・新着受信・取り消しの同時操作も流し、SQL エラー・deadlock・タイムアウトを成功扱いしません。
+
+期限定数の正本は `public.ai_consent_waiting_retention()` だけです。既存の `emails.received_at` は最初の受信日時のままで、再読取で変わる `created_at` を保管期限に使いません。許可を変えても、読み取り前は最初の期限を保ちます。結果をすでに保存した行は、外部キーの参照を保つため `dropped`・`discarded` の本文を持たない行として残します。期限で物理削除された行に同じ provider 配信が来れば、新しい受信として扱う境界があります。古い再読取 snapshot は、アプリの再読取 fence と DB の expected-created-at の両方で止めます。
+
+Auth は `bootstrap.sql`、cron は既存の domain/purge 関数本体と小さなローカル schedule 表で近似します。schedule が既定の毎日であることは before/verify で検査しますが、pg_cron 自体・本物の Auth・PostgREST は実測しません。台本の終了・失敗・割り込み時は、専用サーバーの停止、待ち受け 0、専用データの削除までが後処理です。
+
+2026-11-12: この Codex 環境は、既存台本で mmap 設定を付けても `initdb` の `shmget` が sandbox に拒否されることが確認済みです。再試行や別経路での回避は行わず、今回は構文検査と `--self-test`、静的契約の RED/GREEN/陰性対照だけを実行しました。上の PostgreSQL 挙動・並列競合・migration/rollback・SQL 陰性対照は、実行できるローカル環境での確認が残っています。

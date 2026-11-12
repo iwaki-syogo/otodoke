@@ -121,6 +121,8 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // The row this mail already has, looked up before the screen: a mail that was read is never
   // screened, paid for or removed again when it is delivered a second time.
   const stored = await storedRow(db, mail, options.replacesEmailId ?? null);
+  // A backlog snapshot is a retry of its existing row, never a new delivery after a sweep/clear.
+  if (options.replacesEmailId && (!stored || stored.id !== options.replacesEmailId)) throw new MailBeingReadError("the stored mail is no longer available");
   if (stored?.processing_status === "processed") return { kind: "duplicate", emailId: stored.id };
   // Another delivery of this mail is being read right now. Taking its row over would break that
   // run and pay for a second read, so fail and let the webhook retry later.
@@ -184,6 +186,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   if (!reserved) throw new Error("mail reservation returned no verdict");
   if (reserved.verdict === "busy") throw new MailBeingReadError("this mail is still being read");
   if (reserved.verdict === "duplicate") return { kind: "duplicate", emailId: reserved.email_id };
+  if (reserved.verdict === "consent_wait_expired") return { kind: "discarded", reason: "ai_consent_wait_expired" };
   if (reserved.verdict === "user_storage_limit" || reserved.verdict === "global_storage_limit") return { kind: "storage_limit", limit: reserved.verdict };
   if (reserved.verdict !== "ok" || reserved.email_id !== emailId) throw new Error("mail reservation returned an unexpected verdict");
   const emailRow = { id: emailId };

@@ -19,6 +19,7 @@ import { SETTINGS_ERROR_PAGES, settingsErrorMessage, settingsErrorPath } from "@
  */
 
 const USER = "00000000-0000-4000-8000-00000000000a";
+const GRANT = { user_id: USER, decision: "granted", decided_at: "2026-11-12T00:00:00Z", text_version: "v1" };
 
 const mocks = vi.hoisted(() => ({ state: { db: null as unknown }, redirect: vi.fn(), read: vi.fn() }));
 
@@ -51,7 +52,7 @@ const FAILED = (n: number) => row(n, { processing_status: "failed", error: "Unex
 const TRANSIENT = (n: number) => row(n, { processing_status: "failed", error: "claude_error" });
 
 async function troubleText(emails: Row[], hook?: (db: FakeDb) => void): Promise<{ text: string; links: string[] }> {
-  const db = new FakeDb({ emails });
+  const db = new FakeDb({ emails, ai_reading_consents: [GRANT] });
   hook?.(db);
   mocks.state.db = db;
   const Page = (await import("@/app/app/settings/trouble/page")).default;
@@ -61,6 +62,7 @@ async function troubleText(emails: Row[], hook?: (db: FakeDb) => void): Promise<
 }
 
 beforeEach(() => {
+  mocks.state.db = new FakeDb({ ai_reading_consents: [GRANT] });
   mocks.redirect.mockReset();
   mocks.read.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
