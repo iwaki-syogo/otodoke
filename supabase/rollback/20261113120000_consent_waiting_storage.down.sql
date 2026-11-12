@@ -1,9 +1,21 @@
 -- Stop/drain mail/sample/parcel writers and the existing daily sweep first.
--- Roll this back BEFORE 110000; restores its exact core and the prior consent/purge bodies.
+-- Roll this back AFTER 130000 and 121000, BEFORE 110000; restores its exact core and the prior consent/purge bodies.
 -- It cannot recover mail contents already deleted by expiry. No choices/results/parcels removed.
 -- The active global pool once again includes every plain unread mail after rollback.
 begin;
 set local lock_timeout='5s';
+-- Gate: stop with nothing changed (55000) if 130000 or 121000 is still applied. Order: 130000 -> 121000 -> 120000.
+do $$ begin
+  if to_regclass('public.parcel_receipt_undos') is not null or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname in ('mark_parcels_received','restore_parcel_receipts','purge_expired_parcel_receipts',
+      'parcel_receipt_retention','purge_old_screen_events_before_receipt_retention')) then
+    raise exception '%', 'rollback order: 20261113130000 (received receipts) is still applied; roll it back first' using errcode='55000';
+  end if;
+  if exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in
+    ('assert_claude_claim_consent','claim_claude_call_before_consent_guard','claim_claude_call_v2_before_consent_guard')) then
+    raise exception '%', 'rollback order: 20261113121000 (Claude consent claims) is still applied; roll it back first' using errcode='55000';
+  end if;
+end $$;
 do $$ begin
   perform id from auth.users order by id for key share;
   perform user_id from public.sample_generations order by user_id for update;

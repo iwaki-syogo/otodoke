@@ -1,8 +1,16 @@
--- Stop/drain paid reads first. Roll this back BEFORE 120000 and all earlier migrations.
+-- Stop/drain paid reads first. Roll this back AFTER 130000 and BEFORE 120000 and all earlier migrations.
 -- Restores exact prior v1/v2 entry bodies; counters/ledger/choices/results are preserved.
 -- Pipeline's early permission guard remains, but per-claim cancellation protection is lost.
 begin;
 set local lock_timeout='5s';
+-- Gate: stop with nothing changed (55000) if 130000 is still applied. Order: 130000 -> 121000 -> 120000.
+do $$ begin
+  if to_regclass('public.parcel_receipt_undos') is not null or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname in ('mark_parcels_received','restore_parcel_receipts','purge_expired_parcel_receipts',
+      'parcel_receipt_retention','purge_old_screen_events_before_receipt_retention')) then
+    raise exception '%', 'rollback order: 20261113130000 (received receipts) is still applied; roll it back first' using errcode='55000';
+  end if;
+end $$;
 do $$
 declare v_count integer;
 begin
