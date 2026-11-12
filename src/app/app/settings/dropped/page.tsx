@@ -70,7 +70,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
   return (
     <SubPage title="読まなかったメール">
       <section>
-        <p className="text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名と差出人のドメインだけ 14 日間残します。</p>
+        <p className="text-sm leading-6 text-neutral-600">広告など、買い物に関係なさそうなメールです。本文は保存せず、件名と差出人のドメインを記録します。記録してから 14 日を過ぎた分は、毎日の掃除で消します。「これは荷物」と押したメールは、その差出人を覚えている間は残します。</p>
         {note ? (
           <div className={`mt-2 text-sm leading-6 ${note.ok ? "text-emerald-800" : "text-red-800"}`}>
             <p>{note.text}</p>

@@ -23,7 +23,7 @@ const { PasswordPanel } = await import("@/app/app/settings/password-panel");
 const { MailHandling } = await import("@/app/app/settings/mail-handling");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
-const NOTICE = "Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです";
+const NOTICE = "鍵がないまま残る分は、11 月 14 日に件名・差出人・本文を消す予定です。荷物と、お使いのメールの受信箱は、そのままです";
 
 const panel = (keyCreatedAt: string | null = null, hasPlain = true) =>
   parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt, oldKeyCount: 0, hasPlain } })));
@@ -33,7 +33,7 @@ describe("decision 7 is announced with its date", () => {
     const text = textOf(panel());
     expect(text).toContain(PLAINTEXT_DROP_NOTICE);
     expect(PLAINTEXT_DROP_NOTICE).toContain(NOTICE);
-    expect(PLAINTEXT_DROP_NOTICE.startsWith("パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。")).toBe(true);
+    expect(PLAINTEXT_DROP_NOTICE.startsWith("パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。")).toBe(true);
     expect(text).not.toContain("合言葉");
   });
 

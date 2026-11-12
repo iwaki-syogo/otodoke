@@ -112,7 +112,7 @@ export const PUBLIC_PAGE_TEXT = {
       },
       {
         title: "サンプルで試す",
-        paragraphs: ["実際のメールを使わずに試せます。設定の「サンプルで試す」から読み込めます。"],
+        paragraphs: ["あなたのメールを送らずに試せます。設定の「サンプルで試す」から読み込めます。"],
         links: [{ href: "/app/settings/demo", label: "ログインしてサンプルを試す" }],
       },
       {

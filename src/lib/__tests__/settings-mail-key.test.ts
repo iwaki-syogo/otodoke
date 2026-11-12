@@ -84,7 +84,7 @@ describe("/app/settings: the mail key first", () => {
     expect(findAll(keySection, (n) => n.tag === "input" && n.attrs.type === "password")).toHaveLength(1);
     expect(findAll(keySection, (n) => n.tag === "input" && n.attrs.type === "checkbox")).toHaveLength(0);
     expect(findAll(keySection, (n) => n.tag === "button" && textOf(n) === "鍵を作る")).toHaveLength(1);
-    expect(textOf(keySection)).toContain("暗号化を始める前のメールも自動で暗号化します");
+    expect(textOf(keySection)).toContain("暗号化前に読み取った実メールを順に暗号化します");
     // Those who never set a password (a session from the time of the mail's link) set it there.
     expect(findAll(keySection, (n) => n.tag === "a" && n.attrs.href === "/login/forgot" && textOf(n) === "パスワードを忘れた")).toHaveLength(1);
     const forwarding = await render("forwarding");
@@ -158,22 +158,20 @@ describe("/app/settings: the mail key first", () => {
 
 /** Said the same in 「あなたのメールの扱い」 and in README's section of that name. */
 const SAID_IN_BOTH = [
-  // Whether a mail keeps its subject, sender and body is decided when it is read (src/lib/mail-seal.ts
-  // closedBody), not when it arrives: the same sentence as /privacy.
-  "Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません",
+  // The policy is the one canonical explanation of key/no-key/sample storage.
+  "読み取り後の元メールの保存は、プライバシーポリシーの「保存と暗号化」をご確認ください",
   // Mail read before encryption began is sealed automatically; decision 7 in the words of
   // src/lib/mail-notices.ts. No final 「。」 (see below).
   PLAINTEXT_DROP_NOTICE.replace(/。$/, ""),
   // A reset loses the mail sealed before; a change keeps it (decision 3).
   `パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます`,
-  // Read and found unrelated to shopping: the mail is not kept (src/lib/pipeline.ts, step 3). No final 「。」.
-  "読み取って買い物に関係ないと分かったメールは、Otodoke に残しません",
+  // Describe the delete action without promising its success (pipeline step 3).
+  "買い物に関係ないと分かったメールは削除します",
   "Message-ID",
   "承認リンク",
-  "広告など読まなかったメールは、件名と差出人のドメインだけを 14 日間残します",
-  // A marked mail is kept while its sender is remembered, and goes 14 days after 「外す」, as /privacy
-  // says. No final 「。」: README's list items end without one.
-  "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、ほかと同じく 14 日で Otodoke から消えます",
+  "広告など読まなかったメールは、件名と差出人のドメインを記録します。記録してから 14 日を過ぎた分は、毎日の掃除で消します",
+  // A mark keeps the event; forgetting resumes pruning from the original record's time.
+  "「これは荷物」と押したメールは、その差出人を覚えている間は残します。「外す」で外すと、記録してから 14 日を過ぎた分を、毎日の掃除で消します",
   // The iOS app's keychain copy of the opened key. No final 「。」: README's list items end without one.
   "iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もしません。ログアウトすると消え、アプリの設定で切ることもできます",
 ];
@@ -185,8 +183,8 @@ describe("/app/settings: あなたのメールの扱い", () => {
       "サーバーと Claude API",
       "既定では学習に使いません",
       "件名・差出人・本文",
-      "あなたのパスワードでしか開けない形で保存します",
-      "パスワードそのものはサーバーに送らないので、運営者もデータベースからは読めません",
+      "読み取り後の元メールの保存は、プライバシーポリシーの「保存と暗号化」をご確認ください",
+      "パスワードそのものはサーバーに送りません",
       "差出人のドメインは暗号化しません",
       "Resend",
       "最大 7 日間",
@@ -206,7 +204,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
     const root = findAll(await render("mail-handling"), (n) => n.tag === "section")[0];
     const text = textOf(root);
     for (const sentence of [
-      "荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は本文の抜粋です。",
+      "荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は、元のメールの件名や本文の抜粋です。",
       UNREAD_MAIL_STORAGE_NOTICE,
       AI_CONSENT_TEXT.waitingRetention,
       "暗号化していない状態のメールは、データベースのバックアップにも最大 7 日間残ります。読み取る前のものと、暗号化する前のものです。",
@@ -304,7 +302,9 @@ describe("/app/settings: あなたのメールの扱い", () => {
   it("the list of screened mail says the sender's domain is kept with the subject", async () => {
     const section = findAll(await render("dropped"), (n) => n.tag === "section");
     expect(section).toHaveLength(1);
-    expect(textOf(section[0])).toContain("本文は保存せず、件名と差出人のドメインだけ 14 日間残します。");
+    expect(textOf(section[0])).toContain("本文は保存せず、件名と差出人のドメインを記録します。");
+    expect(textOf(section[0])).toContain("記録してから 14 日を過ぎた分は、毎日の掃除で消します。");
+    expect(textOf(section[0])).toContain("「これは荷物」と押したメールは、その差出人を覚えている間は残します。");
   });
 
   it("says nothing of pressing or of the operator reading mail until then, with or without a key", async () => {
@@ -321,7 +321,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
     mocks.state.db = db;
     plainRead(3);
     const noKey = textOf(sectionTitled(await render("password"), "メールの鍵を作る")[0]);
-    expect(noKey).toContain("暗号化を始める前のメールも自動で暗号化します");
+    expect(noKey).toContain("暗号化前に読み取った実メールを順に暗号化します");
     expect(noKey).not.toContain("運営者が読める形");
     expect(noKey).not.toContain("暗号化されていない保存済みのメール");
   });

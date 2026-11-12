@@ -123,6 +123,7 @@ describe("/privacy: what it says", () => {
       "転送されたメール",
       "読み取りの許可",
       "荷物の情報と根拠の行",
+      "受け取りを元に戻す記録",
       "読まなかったメールの件名と差出人のドメイン",
       "「これは荷物」で覚えた差出人",
       "メールの送信とログインを試した記録",
@@ -137,9 +138,9 @@ describe("/privacy: what it says", () => {
     // password-v1: the browser splits the password in two and sends only the login value.
     expect(said["パスワード"]).toContain("ブラウザで、ログイン用の値とメールの鍵を開く値の 2 つに分け、ログイン用の値だけをサーバーに送ります");
     expect(said["パスワード"]).toContain("ログイン用の値は、Supabase がハッシュ値に変えて保存します");
-    expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("14 日で Otodoke から消えます");
+    expect(said["読まなかったメールの件名と差出人のドメイン"]).toContain("記録してから 14 日を過ぎた分は、毎日の掃除で消します");
     // claude_call_claims (20261112020000): one row per call with its time, pruned after 2 days.
-    expect(said["Claude を使った回数"]).toContain("呼び出しごとの時刻も記録します。この時刻は、2 日を過ぎたものから、次に記録するときに消します。日ごとの回数は残ります。");
+    expect(said["Claude を使った回数"]).toContain("呼び出しごとの時刻も記録します。この時刻は、呼び出した日の 2 日後から、次に記録するときに順に消します。日ごとの回数は残ります。");
     // What login_mail_sends keeps (migration 20261106100000): hashes and the time, pruned after an hour,
     // for the mails and for the sign-ins alike (src/lib/login-mail-limit.ts).
     const record = said["メールの送信とログインを試した記録"];
@@ -148,7 +149,7 @@ describe("/privacy: what it says", () => {
     // The mail's links (/auth/confirm, claimLoginLink): the IP only, as a hash.
     expect(record).toContain("確認や再設定のリンクを使ったときも、混み合うのを防ぐため、接続元の IP アドレスのハッシュ値と日時を記録します。");
     expect(record).toContain("どちらのアドレスも、そのままでは記録しません");
-    expect(record).toContain("1 時間を過ぎた記録は、次に記録するときに消します。");
+    expect(record).toContain("1 時間を過ぎた記録は、次に記録するときから順に消します。");
     expect(record).not.toContain("次に送るとき");
     expect(said["接続の記録"]).toContain("障害や不正を調べるときに使うことがあります");
     // Review R3-20: the providers' logs keep the address used to log in, for as long as the plans say.
@@ -161,7 +162,7 @@ describe("/privacy: what it says", () => {
     expect(marked).toContain("押したメールの差出人のドメインを覚えます");
     expect(marked).toContain("ふるいで落ちても Claude Haiku で確かめます");
     expect(marked).toContain("覚えている間は、押したメールの件名と差出人のドメインを残します");
-    expect(marked).toContain("設定の「外す」で外すと、ほかと同じく 14 日で Otodoke から消えます");
+    expect(marked).toContain("設定の「外す」で外すと、記録してから 14 日を過ぎた分を、毎日の掃除で消します");
     expect(marked).toContain("Gmail など多くの人が使うドメインは覚えません");
     // Gone: a mark is no longer kept for every sender, nor read without the Haiku check.
     expect(said["読まなかったメールの件名と差出人のドメイン"]).not.toContain("これは荷物");
@@ -203,11 +204,12 @@ describe("/privacy: what it says", () => {
     expect(said["保存と暗号化"]).toContain("iOS アプリでは、パスワードで開いた鍵を、その端末のキーチェーンに Face ID 付きで保存できます。Touch ID の端末では Touch ID を使います。鍵は端末の外に出ず、iCloud などで同期もせず、運営者にも送りません。ログアウトしたときと、アプリの設定で切ったときに消えます。");
     expect(said["バックアップ"]).toContain("最大 7 日間");
     const unsealed = findAll(part, (n) => n.tag === "li").map((li) => textOf(li).split("。")[0]);
-    expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール"]);
-    // A mail read once sealing began while the user has no key, that is before their first password
-    // sign-in: not kept (src/lib/mail-seal.ts, "dropped").
+    expect(unsealed).toEqual(["荷物の情報と、根拠の行・読み取りメモ", "差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク", "読み取る前のメール", "受け取りを元に戻す記録"]);
+    // Key/no-key/sample storage has one canonical explanation; this paragraph points to it.
     const noKey = said["パスワードでログインする前と、忘れたとき"];
-    expect(noKey).toContain("Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません");
+    expect(noKey).toContain("読み取り後の保存は、「保存と暗号化」をご確認ください");
+    expect(said["保存と暗号化"]).toContain("鍵がない場合、あなたのメールの件名・差出人・本文は残しません");
+    expect(said["保存と暗号化"]).toContain("鍵がないサンプルは、暗号化せずに保存します");
     // A reset loses the mail sealed before; a change keeps it (decision 3).
     expect(noKey).toContain(`パスワードを忘れたときは、メールで再設定できます。${RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます。`);
     // Decision 7, told as the settings tell it, with the automatic sealing of the older mail.
@@ -248,7 +250,10 @@ describe("/privacy: what it says", () => {
 
   it("uses the approved short arrival-based waiting deadline across policy, settings and README", async () => {
     const root = await render();
-    const waiting = Object.fromEntries(terms(section(root, "メールの扱い")))["許可待ちのメール"];
+    const waitingTerm = findAll(root, (node) => node.tag === "dt" && textOf(node) === "許可待ちのメール")[0].parent!;
+    const waitingParagraphs = findAll(waitingTerm, (node) => node.tag === "p");
+    expect(waitingParagraphs.map(textOf)).toEqual([AI_CONSENT_TEXT.waitingRetention, "期限を過ぎたメールは、毎日の掃除で消します。"]);
+    const waiting = textOf(waitingParagraphs[0]);
     expect(waiting).toBe(AI_CONSENT_TEXT.waitingRetention);
     expect(waiting).toBe("許可を待つメールは、届いてから 14 日で消えます。");
     const days = waiting?.match(/届いてから (\d+) 日で消えます/);
@@ -260,7 +265,7 @@ describe("/privacy: what it says", () => {
     const readmeWaiting = readFileSync(path.join(process.cwd(), "README.md"), "utf8").split("\n").find((line) => line.startsWith("- 許可を待つメールは、"));
     expect(readmeWaiting?.slice(2).replace(/。$/, "")).toBe(waiting.replace(/。$/, ""));
     const retention = textOf(section(root, "保存の期間と消し方"));
-    expect(retention).toContain("荷物と、読み取りを終えたメールは、あなたが消すまで保存します");
+    expect(retention).toContain("荷物と、暗号化して保存したメールは、あなたが消すまで残します");
     expect(retention).not.toContain("荷物と、Otodoke に保存したメールは、あなたが消すまで保存します");
     expect(textOf(section(root, "メールの扱い"))).not.toContain("読み取るまで暗号化せずに置きます");
   });
@@ -305,9 +310,9 @@ describe("/privacy: what it says", () => {
     }
   });
 
-  it("decision 7 is the agreed sentence, ending in the notice the screens have said since that morning", () => {
-    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインすると、暗号化を始める前のメールも自動で暗号化します。パスワードでログインしていない場合、Otodoke に保存した件名・差出人・本文は、11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。");
-    expect(PLAINTEXT_DROP_NOTICE.endsWith("11 月 14 日に Otodoke から消えます。荷物と、お使いのメールの受信箱は、そのままです。")).toBe(true);
+  it("decision 7 limits the planned deletion to read personal mail without a key, keeping the own-inbox notice", () => {
+    expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残る分は、11 月 14 日に件名・差出人・本文を消す予定です。荷物と、お使いのメールの受信箱は、そのままです。");
+    expect(PLAINTEXT_DROP_NOTICE.endsWith("荷物と、お使いのメールの受信箱は、そのままです。")).toBe(true);
     // No brackets.
     expect(wordingProblems([PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL])).toEqual([]);
   });
