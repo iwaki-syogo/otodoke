@@ -133,6 +133,33 @@ passed("service role cannot invoke the private locking helper directly")
 generation = run(as_service("select public.begin_sample_load('%s');" % user))
 assert generation == run(as_service("select public.begin_sample_load('%s');" % user))
 passed("retry after client failure needs no lease recovery")
+
+# The generation header also fences real mail. A cached reread never allocates another row;
+# a request starting after clear can acquire the new generation and store a new arrival.
+real_user,real_email,real_lease=str(uuid.uuid4()),str(uuid.uuid4()),str(uuid.uuid4())
+run("insert into auth.users(id) values ('%s');" % real_user)
+real_generation=run(as_service("select public.begin_sample_load('%s');" % real_user))
+assert run(as_service(store(real_user,real_email,real_lease,"synthetic-real-generation"),real_user,real_generation))=="ok"
+listed_stamp=scalar("select created_at from public.emails where id='%s'" % real_email)
+run(as_service("select public.clear_all_parcels('%s');" % real_user))
+late=store(real_user,str(uuid.uuid4()),str(uuid.uuid4()),"synthetic-real-delayed")
+assert "55000" in run(as_service(late,real_user,real_generation),fail=True)
+owned_error=run(as_service(owned(real_email,real_lease,"parcels","insert",{"user_id":real_user,"shop":"Synthetic real stale"}),real_user,real_generation),fail=True)
+assert "55000" in owned_error and "sample generation or owner is missing" in owned_error
+assert scalar("select count(*) from public.emails where user_id='%s'" % real_user)=="0"
+assert scalar("select count(*) from public.parcels where user_id='%s'" % real_user)=="0"
+passed("real-mail captured generation rejects delayed reservation and owned writes after clear")
+reread=store(real_user,real_email,real_lease,"synthetic-real-generation").replace(",null,",",'%s'," % listed_stamp,1)
+assert run(as_service(reread))=="busy"
+assert scalar("select count(*) from public.emails where user_id='%s'" % real_user)=="0"
+passed("a pinned reread version returns busy after its row was cleared instead of inserting")
+real_next=run(as_service("select public.begin_sample_load('%s');" % real_user))
+assert real_next!=real_generation
+fresh_real,fresh_run=str(uuid.uuid4()),str(uuid.uuid4())
+assert run(as_service(store(real_user,fresh_real,fresh_run,"synthetic-real-new-arrival"),real_user,real_next))=="ok"
+assert len(json.loads(run(as_service(owned(fresh_real,fresh_run,"parcels","insert",{"user_id":real_user,"shop":"Synthetic real fresh"}),real_user,real_next))))==1
+passed("a new real arrival with the post-clear generation stores and files successfully")
+
 email, lease = str(uuid.uuid4()), str(uuid.uuid4())
 assert "55000" in run(as_service(store(user, email, lease, "demo:synthetic/one")), fail=True)
 passed("old headerless sample reservation rejected")

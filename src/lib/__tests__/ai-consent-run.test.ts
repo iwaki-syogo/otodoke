@@ -171,7 +171,7 @@ describe("automatic reading after the recorded permission", () => {
     expect(await runReadAfterConsent(asAdmin(db), USER, DECIDED)).toEqual({ ok: true, read: 25, overLimit: false, unavailable: false });
     expect(mocks.extract).toHaveBeenCalledTimes(25);
     expect(db.rows("emails")).toHaveLength(0);
-    const batches = db.callsOn("emails", "select").filter((q) => q.columns?.startsWith("id, provider_email_id"));
+    const batches = db.callsOn("emails", "select").filter((q) => q.columns?.startsWith("id, created_at, provider_email_id"));
     expect(batches).toHaveLength(3);
     expect(batches.every((q) => q.limit === 20)).toBe(true);
   });
@@ -188,7 +188,7 @@ describe("automatic reading after the recorded permission", () => {
     expect(await runReadAfterConsent(asAdmin(db), USER, DECIDED)).toMatchObject({ ok: true, read: 2 });
     expect(mocks.extract).toHaveBeenCalledTimes(2);
     expect(db.rows("emails").map((r) => r.id)).toEqual(keep.map((r) => r.id));
-    const query = db.callsOn("emails", "select").find((q) => q.columns?.startsWith("id, provider_email_id"))!;
+    const query = db.callsOn("emails", "select").find((q) => q.columns?.startsWith("id, created_at, provider_email_id"))!;
     expect(query.filters).toContainEqual({ method: "in", args: ["error", ["ai_consent_required", "ai_consent_unknown"]] });
     expect(query.filters).toContainEqual({ method: "lte", args: ["created_at", DECIDED] });
   });
@@ -230,7 +230,7 @@ describe("automatic reading after the recorded permission", () => {
     const db = seeded(21);
     let batches = 0;
     db.hooks.push((q) => {
-      if (q.table === "emails" && q.op === "select" && q.columns?.startsWith("id, provider_email_id")) {
+      if (q.table === "emails" && q.op === "select" && q.columns?.startsWith("id, created_at, provider_email_id")) {
         batches++;
         if (batches === 2) return { data: null, error: { message: "lookup failed" } };
       }
@@ -306,7 +306,7 @@ describe("automatic reading after the recorded permission", () => {
     mocks.extract.mockImplementation(async () => { vi.setSystemTime(Date.now() + 7_000); return notRelevant(); });
     let batches = 0;
     db.hooks.push((q) => {
-      if (q.table === "emails" && q.op === "select" && q.columns?.startsWith("id, provider_email_id")) {
+      if (q.table === "emails" && q.op === "select" && q.columns?.startsWith("id, created_at, provider_email_id")) {
         batches++;
         if (batches === 2) vi.setSystemTime(start + 150_001);
       }

@@ -135,3 +135,14 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - sampleだけでなく実メールのcreate/update/ensure、本人の直接DML、全消去、退会cascadeも同じ順に参加する。退会は既存世代とメールをcascade前に取り、自動読取claim・費用claim v2/releaseもAuth親行を先取りする。DBロックは各短期RPCの中だけで保持し、外部API待ちへ持ち出さない。
 - private coreの `_without_sample_fence` はAPI roleから直接実行しない。新しいservice処理も公開RPCの入口を通す。header無しの任意複数表/複数利用者DMLやTRUNCATEは保守操作としてwriter停止・drainを要する。
 - 統合時は `tests/postgres/run-sample-lock-order.mjs` の自然競合と旧順序の陰性対照、`scripts/test-sample-generation.py`、`scripts/test-sample-generation-lifecycle.py` を使い捨てPGで確認する。前提・集計・後片付けは `tests/postgres/README.md`。検証終了は専用PGの停止・待ち受け0・専用データ削除まで。
+
+## 全消去とメールの再読
+
+- 実メールも、所有者を特定した入口で全消去の世代を固定する。受信本文の取得待ちや未読一覧の取得より前に固定し、同じ要求の途中で新世代を採用し直さない。全消去後に始めた新着・再読は新世代を使う。
+- 再読はMessage-IDの有無によらず一覧の行idとcreated_atを渡す。指定行が消えていたら作り直さず、同じMessage-IDの別行にも乗り換えない。所有者・lease・保存版・世代のDB検査をすべて通す。
+- 全消去による受信中止と確認できた場合だけ、webhookは成功応答で再送を止める。未知のDB障害を中止や空一覧に読み替えない。メールの所有者が分かる前に世代を推測しない。
+
+## 引用を確認できない無関係判定
+
+- 原文で裏付けられない `unrelated` を注文へ書き換えない。`relevance_unverified` のfailed/未読メールとして本文を残し、荷物と抽出行を作らない。引用を確認できる無関係判定の破棄は維持し、未読から再試行できる。
+- 公開保存済み結果のoffline集計は `npx tsx scripts/check-public-demo-relevance.ts`。公開2集合と合成対照を分け、unrelatedの分母が0なら条件付き率は未測定として扱う。実メールや課金APIを使わない。

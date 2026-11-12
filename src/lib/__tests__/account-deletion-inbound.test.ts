@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fake-db";
+import type { AdminClient } from "@/lib/supabase/admin";
 
 /**
  * After an account is deleted its receiving address has no row (the cascade took it, and the
@@ -16,7 +17,7 @@ const LIVE_USER = "00000000-0000-4000-8000-00000000000b";
 const mocks = vi.hoisted(() => ({
   db: null as unknown,
   to: [] as string[],
-  processInboundEmail: vi.fn(async () => ({ kind: "processed" })),
+  processInboundEmail: vi.fn<(...args: unknown[]) => Promise<{ kind: string }>>(async () => ({ kind: "processed" })),
 }));
 
 vi.mock("resend", () => ({
@@ -85,7 +86,14 @@ describe("mail to the address of a deleted account", () => {
   it("positive control: mail to an address in use is processed for its owner", async () => {
     expect((await deliver(`${LIVE}@${DOMAIN}`)).status).toBe(200);
     expect(mocks.processInboundEmail).toHaveBeenCalledTimes(1);
-    expect(mocks.processInboundEmail.mock.calls[0]).toEqual([db, expect.objectContaining({ userId: LIVE_USER })]);
+    const scoped = mocks.processInboundEmail.mock.calls[0][0] as AdminClient;
+    expect(scoped).not.toBe(db);
+    expect(mocks.processInboundEmail.mock.calls[0]).toEqual([scoped, expect.objectContaining({ userId: LIVE_USER })]);
+    await scoped.from("emails").select("id");
+    expect(db.callsOn("emails", "select").at(-1)?.requestHeaders).toEqual({
+      "x-otodoke-sample-user": LIVE_USER,
+      "x-otodoke-sample-generation": db.rows("sample_generations").find((row) => row.user_id === LIVE_USER)!.generation,
+    });
   });
 
   it("only a failed lookup is a 5xx (kept for Resend to send again), never a missing row", async () => {

@@ -85,7 +85,7 @@ describe("bounded unread intake", () => {
     const calls = db.rpcCalls.length;
     expect((await processInboundEmail(asConsentingAdmin(db), mail(1))).kind).toBe("duplicate");
     expect(db.tables).toEqual(before);
-    expect(db.rpcCalls).toHaveLength(calls);
+    expect(db.rpcCalls.slice(calls)).toEqual([{ name: "begin_sample_load", args: { p_user_id: USER } }]);
   });
 
   it("deduplicates provider retries without Message-ID", async () => {

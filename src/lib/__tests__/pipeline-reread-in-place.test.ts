@@ -129,7 +129,7 @@ describe("a redelivered mail that was read", () => {
     expect(await processInboundEmail(asConsentingAdmin(db), mail)).toEqual({ kind: "duplicate", emailId: "e-read" });
     expect(db.rows("emails").map((e) => e.id)).toEqual(["e-read"]);
     expect(mocks.isPurchaseMail).not.toHaveBeenCalled();
-    expect(db.rpcCalls).toHaveLength(0);
+    expect(db.rpcCalls).toEqual([{ name: "begin_sample_load", args: { p_user_id: USER } }]);
     expect(db.rows("screen_events")).toHaveLength(1);
   });
 

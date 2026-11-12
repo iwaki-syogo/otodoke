@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fake-db";
+import type { AdminClient } from "@/lib/supabase/admin";
 import { AiReadingNotAllowedError } from "@/lib/ai-consent";
 
 /**
@@ -163,8 +164,15 @@ describe("what the webhook answers (kept as it was)", () => {
     mocks.fetched = mail({ to: [`${OTHER}@${DOMAIN}`], received_for: [`${KNOWN.toUpperCase()}+Amazon@${DOMAIN.toUpperCase()}`] });
     expect(await post()).toEqual({ status: 200, body: { ok: true, outcome: "processed" } });
     expect(mocks.processInboundEmail).toHaveBeenCalledTimes(1);
+    const processingClient = mocks.processInboundEmail.mock.calls[0][0] as AdminClient;
+    expect(processingClient).not.toBe(db);
+    await processingClient.from("emails").select("id");
+    expect(db.callsOn("emails", "select").at(-1)?.requestHeaders).toEqual({
+      "x-otodoke-sample-user": USER,
+      "x-otodoke-sample-generation": db.rows("sample_generations").find((row) => row.user_id === USER)!.generation,
+    });
     expect(mocks.processInboundEmail.mock.calls[0]).toEqual([
-      db,
+      processingClient,
       {
         userId: USER,
         providerEmailId: "re_test_1",
@@ -264,7 +272,7 @@ describe("sealing the user's older plaintext mail (automatic, once per request)"
   it("a processed mail schedules one bounded sealing for its owner, with the same client", async () => {
     expect((await post()).status).toBe(200);
     expect(mocks.scheduleSeal).toHaveBeenCalledTimes(1);
-    expect(mocks.scheduleSeal).toHaveBeenCalledWith(USER, db);
+    expect(mocks.scheduleSeal).toHaveBeenCalledWith(USER, mocks.processInboundEmail.mock.calls[0][0]);
   });
 
   it("negative controls: a mail that is not processed, or for nobody, schedules nothing", async () => {

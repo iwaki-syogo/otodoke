@@ -33,7 +33,8 @@ import { screenMail, type ScreenResult } from "@/lib/screen";
 import { isRememberableDomain } from "@/lib/screen-senders";
 import { emailBodyText } from "@/lib/text/html-to-text";
 import { withDefaults, type Extraction } from "@/lib/extract/schema";
-import { verifyEvidence } from "@/lib/extract/verify-evidence";
+import { hasUnverifiedUnrelatedVerdict, UNVERIFIED_UNRELATED_ERROR, verifyEvidence } from "@/lib/extract/verify-evidence";
+import { beginMailGeneration } from "@/lib/sample-generation-db";
 import type { Json } from "@/lib/db/database.types";
 
 export interface InboundEmail {
@@ -68,11 +69,12 @@ export interface PipelineOptions {
    */
   publicSample?: boolean;
   /**
-   * The stored row of this mail, when it has no Message-ID to be found again by (re-reading a
-   * stored mail from 設定). The mail is read again in that row, in place, like a row found by its
-   * Message-ID: the row is never removed and stored anew, so a failure never loses the only copy.
+   * An explicit re-read targets exactly this stored row, including mails with a Message-ID.
+   * A missing row was cleared; its cached body must never become a new incoming delivery.
    */
   replacesEmailId?: string;
+  /** The version captured by the unread list, never refreshed from a later lookup. */
+  replacesCreatedAt?: string;
 }
 
 /** The stored row of a mail, as far as deciding what to do with it goes. */
@@ -88,10 +90,8 @@ interface StoredRow {
 async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | null): Promise<StoredRow | null> {
   if (!mail.messageId && !rowId && !mail.providerEmailId) return null;
   const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until").eq("user_id", mail.userId);
-  const { data, error } = await (mail.messageId ? query.eq("message_id", mail.messageId) : rowId ? query.eq("id", rowId) : query.eq("provider_email_id", mail.providerEmailId!)).maybeSingle();
+  const { data, error } = await (rowId ? query.eq("id", rowId) : mail.messageId ? query.eq("message_id", mail.messageId) : query.eq("provider_email_id", mail.providerEmailId!)).maybeSingle();
   if (error) throw new Error(`emails lookup failed: ${error.message}`);
-  // A row found by its Message-ID wins; the row named for re-reading is the fallback.
-  if (!data && mail.messageId && rowId) return storedRow(db, { ...mail, messageId: null }, rowId);
   return data;
 }
 
@@ -116,11 +116,15 @@ export class MailBeingReadError extends Error {
  * webhook answers 500 and Resend retries; the failed row stays visible until then.
  */
 export async function processInboundEmail(db: AdminClient, mail: InboundEmail, options: PipelineOptions = {}): Promise<PipelineOutcome> {
+  // A batch already carries its original generation. Never refresh it per mail after a clear.
+  // Samples are explicitly scoped by their loader or by the stored sample row's generation.
+  if (!options.publicSample) db = await beginMailGeneration(db, mail.userId);
   const isForwardingConfirmation = isGmailConfirmation(mail.from);
 
   // The row this mail already has, looked up before the screen: a mail that was read is never
   // screened, paid for or removed again when it is delivered a second time.
   const stored = await storedRow(db, mail, options.replacesEmailId ?? null);
+  if (options.replacesEmailId && !stored) throw new MailBeingReadError("stored mail changed or was cleared");
   if (stored?.processing_status === "processed") return { kind: "duplicate", emailId: stored.id };
   // Another delivery of this mail is being read right now. Taking its row over would break that
   // run and pay for a second read, so fail and let the webhook retry later.
@@ -173,7 +177,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   const limits = mailStorageLimits();
   const { data: reservation, error: reservationError } = await db.rpc("store_mail_run", {
     p_user_id: mail.userId, p_email_id: emailId, p_run_id: runId,
-    p_columns: columns as unknown as Json, p_expected_created_at: stored?.created_at ?? null,
+    p_columns: columns as unknown as Json, p_expected_created_at: options.replacesCreatedAt ?? stored?.created_at ?? null,
     p_limits: {
       user_count: limits.OTODOKE_UNREAD_USER_MAIL_LIMIT, global_count: limits.OTODOKE_UNREAD_GLOBAL_MAIL_LIMIT,
       user_bytes: limits.OTODOKE_UNREAD_USER_BYTE_LIMIT, global_bytes: limits.OTODOKE_UNREAD_GLOBAL_BYTE_LIMIT,
@@ -366,6 +370,13 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
     const { error } = await db.from("emails").update({ processing_status: "failed", error: "model refused" }).eq("id", emailId);
     if (error) throw new Error(`emails update failed: ${error.message}`);
     return { kind: "discarded", reason: "model refused" };
+  }
+
+  // An ungrounded unrelated verdict is retryable mail, not evidence for an empty parcel.
+  if (hasUnverifiedUnrelatedVerdict(x)) {
+    const { error } = await db.from("emails").update({ processing_status: "failed", error: UNVERIFIED_UNRELATED_ERROR }).eq("id", emailId);
+    if (error) throw new Error(`emails update failed: ${error.message}`);
+    return { kind: "noted", emailId };
   }
 
   // 3. Unrelated mail is not kept at all.

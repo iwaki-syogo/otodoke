@@ -18,7 +18,15 @@ vi.mock("@/lib/supabase/admin", () => {
   const chain: Record<string, unknown> = {};
   for (const m of ["from", "select", "eq", "or", "order"]) chain[m] = () => chain;
   chain.maybeSingle = () => mocks.consent();
-  chain.limit = () => Promise.resolve({ data: mocks.rows.current, error: null });
+  const answer = (data: unknown) => {
+    const result = Object.assign(Promise.resolve({ data, error: null }), { setHeader: () => result });
+    return result;
+  };
+  chain.limit = () => answer(mocks.rows.current);
+  chain.rpc = (name: string) => {
+    if (name !== "begin_sample_load") throw new Error(`unexpected test RPC ${name}`);
+    return answer("00000000-0000-4000-8000-000000000001");
+  };
   return { createAdminClient: () => chain };
 });
 vi.mock("@/lib/ai-consent-run", () => ({ runReadAfterConsent: mocks.readAfter }));
