@@ -18,7 +18,7 @@ export default async function NewParcelPage() {
         ‹ 荷物
       </Link>
       <h1 className="text-xl font-bold">荷物を登録</h1>
-      <ManualForm parcel={null} today={todayJst()} userId={user.id} />
+      <ManualForm key={user.id} parcel={null} today={todayJst()} userId={user.id} intentId={crypto.randomUUID()} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId } from "react";
+import { useActionState, useId, useState } from "react";
 import { SubmitButton } from "@/components/pending-button";
 import { CARRIERS } from "@/lib/carriers";
 import { CATEGORIES, categoryLabel, isCategory } from "@/lib/category";
@@ -63,7 +63,10 @@ const field = "mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py
 const dateField = `${field} block min-w-0 max-w-full appearance-none min-h-[2.875rem]`;
 
 /** Register (parcel = null) or edit a parcel typed in by hand. */
-export function ManualForm({ parcel, today, userId }: { parcel: ParcelRow | null; today: string; userId?: string }) {
+export function ManualForm({ parcel, today, userId, intentId }: { parcel: ParcelRow | null; today: string; userId?: string; intentId?: string }) {
+  // An action can stream fresh page props. This mounted form keeps its original intent,
+  // independently of the field subtree that React resets after an action.
+  const [creationIntent] = useState(() => intentId ?? "");
   const defaults = manualFormDefaults(parcel, today);
   const [state, action] = useActionState<ManualFormState, FormData>(parcel ? updateManualParcel : createManualParcel, { error: null, values: defaults });
   const values = { ...defaults, ...state.values };
@@ -76,6 +79,7 @@ export function ManualForm({ parcel, today, userId }: { parcel: ParcelRow | null
     <div className="flex flex-col gap-6">
       <form action={action} className="flex flex-col gap-4">
         {!parcel ? <input type="hidden" name="expectedUserId" value={userId ?? ""} /> : null}
+        {!parcel ? <input type="hidden" name="intentId" value={creationIntent} /> : null}
         {parcel ? <input type="hidden" name="id" value={parcel.id} /> : null}
         {/* The version the fields were filled from; the save is refused if the parcel changed since. */}
         {parcel ? <input type="hidden" name="updated_at" value={parcel.updated_at} /> : null}

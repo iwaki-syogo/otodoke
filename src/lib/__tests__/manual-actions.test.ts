@@ -55,6 +55,7 @@ function formData(values: Record<string, string>): FormData {
 }
 
 const fields = (over: Record<string, string> = {}): Record<string, string> => ({
+  intentId: "44444444-4444-4444-8444-444444444444",
   title: "テスト用の品名",
   shop: "テスト雑貨店",
   ordered_at: "2026-11-01",

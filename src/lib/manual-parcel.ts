@@ -229,6 +229,31 @@ export function manualParcelRow(v: ManualParcelInput, now: Date): ManualParcelCo
   return { ...manualParcelFields(v, now), source: "manual", last_email_at: now.toISOString() };
 }
 
+/** Whether an untouched creation still holds this form's values, without rewriting its times. */
+export function manualCreationMatches(v: ManualParcelInput, saved: Database["public"]["Tables"]["parcels"]["Row"]): boolean {
+  if (typeof saved.created_at !== "string" || !Number.isFinite(Date.parse(saved.created_at)) || saved.created_at !== saved.updated_at
+    || typeof saved.last_email_at !== "string" || !Number.isFinite(Date.parse(saved.last_email_at))) return false;
+
+  // last_email_at was written from the same clock as received_at and an empty order date.
+  // A retry tomorrow must compare with that original write, rather than tomorrow's defaults.
+  const expected = {
+    received_at: null,
+    order_number: null,
+    needs_review: false,
+    check_dismissed_at: null,
+    ...manualParcelRow(v, new Date(saved.last_email_at)),
+  };
+  const stored: Record<string, unknown> = saved;
+  return Object.entries(expected).every(([key, value]) => {
+    // The received trigger turns the explicit "not received" sentinel into SQL NULL.
+    if (key === "received_at" && value === RECEIVED_AT_NONE) return stored[key] === null;
+    if ((key === "received_at" || key === "last_email_at") && typeof value === "string") {
+      return typeof stored[key] === "string" && Date.parse(stored[key]) === Date.parse(value);
+    }
+    return stored[key] === value;
+  });
+}
+
 /** What is stored, as far as "does this save change anything" needs it. */
 export type ManualStoredForCompare = {
   title: string | null;

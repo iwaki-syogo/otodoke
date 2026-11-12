@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   MANUAL_DELETE_UNCHECKED,
   ManualParcelSchema,
+  manualCreationMatches,
   manualParcelFields,
   manualParcelRow,
   manualParcelSchemaFor,
@@ -52,20 +53,37 @@ export async function createManualParcel(_prev: ManualFormState, formData: FormD
   const session = await signedIn();
   if (!session) return { error: NOT_SIGNED_IN, values };
   requireDisplayedUser({ id: session.userId }, formData.get("expectedUserId"), "/app/parcels/new");
+  const intent = Id.safeParse(values.intentId);
+  if (!intent.success) return { error: FAILED, values };
+  const intentId = intent.data.toLowerCase();
   const parsed = ManualParcelSchema.safeParse(values);
   if (!parsed.success) return { error: invalid(parsed.error), values };
 
   const { data, error } = await session.supabase
     .from("parcels")
-    .insert({ ...manualParcelRow(parsed.data, new Date()), user_id: session.userId })
+    .insert({ ...manualParcelRow(parsed.data, new Date()), id: intentId, user_id: session.userId })
     .select("id")
     .single();
-  if (error || !data) {
+  if (error?.code === "23505") {
+    // Only this form's primary key can settle a lost reply. Never deduplicate by values or
+    // overwrite a parcel that another press, an edit, or a mail has changed since its creation.
+    const { data: saved, error: readError } = await session.supabase.from("parcels").select("*")
+      .eq("id", intentId).eq("user_id", session.userId).eq("source", "manual").maybeSingle();
+    if (readError || !saved) return { error: FAILED, values };
+    if (saved.id !== intentId || saved.user_id !== session.userId || saved.source !== "manual"
+      || !manualCreationMatches(parsed.data, saved)) return { error: CHANGED, values };
+    // A mail can join without changing any form value; its extraction still makes this no
+    // longer an untouched creation. An unreadable count must not be taken as zero.
+    const { count, error: linksError } = await session.supabase.from("extractions")
+      .select("id", { count: "exact", head: true }).eq("user_id", session.userId).eq("parcel_id", intentId);
+    if (linksError || typeof count !== "number") return { error: FAILED, values };
+    if (count !== 0) return { error: CHANGED, values };
+  } else if (error || !data || data.id !== intentId) {
     console.error("createManualParcel:", error?.message);
     return { error: FAILED, values };
   }
   revalidatePath("/app", "layout");
-  redirect(`/app/parcels/${data.id}`);
+  redirect(`/app/parcels/${intentId}`);
 }
 
 export async function updateManualParcel(_prev: ManualFormState, formData: FormData): Promise<ManualFormState> {
