@@ -222,7 +222,7 @@ struct PasswordLoginModelTests {
 
         await model.submit()
 
-        #expect(model.errorMessage == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
+        #expect(model.errorMessage == LoginText.mailBusy)
         #expect(model.notice == nil && model.shownNotice == nil && model.toast == nil)
         #expect(!model.isWaitingForConfirmation && model.confirmationAddress == nil)
         #expect(!model.isHoldingPassword && !model.canCheckConfirmation && !model.canResendConfirmation)
@@ -270,7 +270,7 @@ struct PasswordLoginModelTests {
 
         await model.resendConfirmation()
 
-        #expect(model.errorMessage == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
+        #expect(model.errorMessage == LoginText.mailBusy)
         #expect(model.notice == nil && model.toast == nil)
         #expect(!model.isWorking && model.canResendConfirmation)
         #expect(model.isWaitingForConfirmation == (screen == "waiting"))

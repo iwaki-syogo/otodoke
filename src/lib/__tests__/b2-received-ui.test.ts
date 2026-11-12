@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { PARTLY_RESTORED_NOTICE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE } from "@/lib/format";
+import { PARTLY_RESTORED_NOTICE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE, UNDO_UNCONFIRMED_NOTICE } from "@/lib/format";
 import type { ReceivedReceipt } from "@/lib/receipt";
 import { fakeEvent, hostText, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -87,6 +87,25 @@ describe("B-2 received UI uses server receipts and truthful undo outcomes", () =
       expect(view.text()).not.toContain("受け取り済みのまま");
       expect(view.hosts((node) => node.type === "button")).toHaveLength(0);
     }
+    expect(ctl.restore).toHaveBeenCalledWith(receipts.map(key));
+    view.unmount();
+  });
+
+  it.each(["unconfirmed", "mixed", "throw"] as const)("an %s result takes the neutral notice before known refusals and retains a changed note", async (kind) => {
+    const receipts = ["one", "two", "three", "four"].map(received);
+    if (kind === "throw") ctl.restore.mockRejectedValue(new Error("synthetic lost action answer"));
+    else ctl.restore.mockResolvedValue(kind === "mixed"
+      ? { restored: ["one"], changed: ["two"], failed: ["three"], unconfirmed: ["four"] }
+      : { restored: [], changed: [], failed: [], unconfirmed: receipts.map((item) => item.id) });
+    const view = mount(() => DeliveredToastProvider({ children: null }));
+    ctl.publish({ text: "受け取り済みにしました", undo: receipts });
+    await vi.waitFor(() => expect(view.text()).toContain("元に戻す"));
+    press(button(view, "元に戻す"));
+    await vi.waitFor(() => expect(view.hosts((node) => node.type === "button")).toHaveLength(0));
+    expect(view.text()).not.toContain(UNDO_FAILED_NOTICE);
+    expect(view.text()).toContain(UNDO_UNCONFIRMED_NOTICE);
+    if (kind === "mixed") expect(view.text()).toContain(UNDO_CHANGED_NOTICE);
+    expect(view.text()).not.toContain(PARTLY_RESTORED_NOTICE);
     expect(ctl.restore).toHaveBeenCalledWith(receipts.map(key));
     view.unmount();
   });

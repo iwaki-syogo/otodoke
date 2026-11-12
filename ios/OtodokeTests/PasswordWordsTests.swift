@@ -26,7 +26,7 @@ struct PasswordWordsTests {
         #expect(LoginText.emailNotAscii == "半角の英数字と記号だけのメールアドレスをお使いください。")
         #expect(LoginText.signupExistsOrSent == "確認のメールを送りました。メールのリンクを開いてから、ログインしてください。")
         #expect(LoginText.confirmationSent == "確認のメールを送りました。")
-        #expect(LoginText.mailBusy == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
+        // mailBusy is compared word for word with the live Web source by ios-password-login.test.ts.
         #expect(LoginText.signedOut == "ログインし直してください。")
         #expect(LoginText.staleSession == "続けるには、もう一度ログインしてください。")
     }

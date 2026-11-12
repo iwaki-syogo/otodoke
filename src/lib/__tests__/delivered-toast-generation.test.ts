@@ -1,6 +1,6 @@
 import { createElement, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE } from "@/lib/format";
+import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE, UNDO_UNCONFIRMED_NOTICE } from "@/lib/format";
 import type { MarkReceivedResult, ReceivedReceipt, RestoreResult } from "@/lib/receipt";
 import { fakeEvent, hostText, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
@@ -190,7 +190,10 @@ describe("receipt toast generations under controlled reply order", () => {
     await shown(() => !toast.text().includes("戻しています…"), "A's own result");
     if (outcome === "restored") expect(notices(toast)).toHaveLength(0);
     else {
-      expect(toast.text()).toContain(outcome === "changed" ? UNDO_CHANGED_NOTICE : UNDO_FAILED_NOTICE);
+      if (outcome === "throw") {
+        expect(toast.text()).not.toContain(UNDO_FAILED_NOTICE);
+        expect(toast.text()).toContain(UNDO_UNCONFIRMED_NOTICE);
+      } else expect(toast.text()).toContain(outcome === "changed" ? UNDO_CHANGED_NOTICE : UNDO_FAILED_NOTICE);
       if (outcome === "mixed") expect(toast.text()).toContain(UNDO_CHANGED_NOTICE);
       expect(toast.hosts((host) => host.type === "button")).toHaveLength(0);
     }

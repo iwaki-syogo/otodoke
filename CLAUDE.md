@@ -151,8 +151,10 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 ## iOSの画面と共有文言
 
 - WebとiOSの配達状態名は「配達済み」。本人の受取は有限のreceived_atで区別する。削除・パスワードAPIの契約はdocs/api/account.mdに合わせる。
+- 削除・パスワード変更APIをWeb本番へ反映してから、それらを呼び出すiOS版を配布する。
 - 読み取り許可は未回答者の通常画面より前面の小窓で求める。背景操作・VoiceOverで背面へ移れず、保存成功後に閉じる。手入力とサンプルは拒否後の通常画面から使え、設定で撤回・再許可できる。
 - 許可はai_reading_consentsの本人行を読み、set_ai_reading(p_decision,p_text_version)で保存する。0行と取得失敗を区別し、文の版が変わっただけでは聞き直さない。
+- iOSでも、読み取り許可が拒否・未確認の間は転送先アドレスを表示しない。
 - 本文2文と期限の正本はsrc/lib/ai-consent-text.ts。iOSの独立定数と実際のTextを、Webの実段落と値・表示順・回数で照合する。コメントや文字列中のTextを表示と数えない。
 - MailHandlingText.itemsの14項目はWebのliと全文・表示順を合わせる。SettingsWebTextのplainDropNoticeとdroppedLeadも実Webと照合し、文の変更で空振りする陰性対照を残さない。
 - mail_busyをSHOWN_KEYSへ含め、実際のLoginTextとLOGIN_MESSAGESを照合する。未登録定数・対応するNative定数のない共有キー追加・一覧からの欠落・一字違いを同じcheckerで検出する。固定Web入力はGit blobと照合し、出典名だけを一致の証拠にしない。

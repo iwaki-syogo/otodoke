@@ -2,7 +2,7 @@ import { RECEIPT_CHUNK_SIZE, type ReceivedReceipt, type RestoreResult } from "@/
 
 type ReceiptKey = Pick<ReceivedReceipt, "id" | "receipt_id">;
 
-/** Keep all three facts: a changed parcel is never described as still received, and a failed request is not a conflict. */
+/** Keep known refusals separate from unanswered requests, without guessing a parcel's current state. */
 export async function runUndo(restore: (items: ReceiptKey[]) => Promise<RestoreResult>, items: ReceiptKey[]): Promise<RestoreResult> {
   const receipts = [...new Map(items.map((item) => [item.id, { id: item.id, receipt_id: item.receipt_id }])).values()];
   const result: RestoreResult = { restored: [], changed: [], failed: [] };
@@ -11,14 +11,17 @@ export async function runUndo(restore: (items: ReceiptKey[]) => Promise<RestoreR
     try {
       const answer = await restore(chunk);
       const groups = { restored: new Set(Array.isArray(answer?.restored) ? answer.restored : []),
-        changed: new Set(Array.isArray(answer?.changed) ? answer.changed : []), failed: new Set(Array.isArray(answer?.failed) ? answer.failed : []) };
+        changed: new Set(Array.isArray(answer?.changed) ? answer.changed : []), failed: new Set(Array.isArray(answer?.failed) ? answer.failed : []),
+        unconfirmed: new Set(Array.isArray(answer?.unconfirmed) ? answer.unconfirmed : []) };
       for (const { id } of chunk) {
-        const kinds = (["restored", "changed", "failed"] as const).filter((kind) => groups[kind].has(id));
+        const kinds = (["restored", "changed", "failed", "unconfirmed"] as const).filter((kind) => groups[kind].has(id));
         // A missing or contradictory answer is unconfirmed for this row, without discarding other rows.
-        result[kinds.length === 1 ? kinds[0] : "failed"].push(id);
+        const kind = kinds.length === 1 ? kinds[0] : "unconfirmed";
+        if (kind === "unconfirmed") (result.unconfirmed ??= []).push(id);
+        else result[kind].push(id);
       }
     } catch {
-      result.failed.push(...chunk.map((item) => item.id));
+      (result.unconfirmed ??= []).push(...chunk.map((item) => item.id));
     }
   }
   return result;

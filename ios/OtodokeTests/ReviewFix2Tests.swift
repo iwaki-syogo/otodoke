@@ -62,7 +62,7 @@ struct ReviewFix2Tests {
         #expect(model.rows.filter(ParcelRules.isReceived).count == lostAnswers)
         #expect(await fake.count("PATCH", "parcels") == 3 + (3 - lostAnswers))
         // The warning stays after the sendable receipts are put back; no unknown write is retried.
-        #expect(model.toast == ListToast(text: "受け取り済みのままの荷物があります", canUndo: false))
+        #expect(model.toast == ListToast(text: "元に戻せない荷物があります", canUndo: false))
         #expect(model.toastNote == nil)
     }
 

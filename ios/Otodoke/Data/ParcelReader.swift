@@ -17,7 +17,7 @@ struct ParcelReader: Sendable {
     /// The extraction columns and the embedded mail, as the Web's detail page selects them. body_envelope
     /// (a sealed mail's text) is not read here: only when a mail is opened.
     static let extractionColumns =
-        "id, confidence, result, created_at, emails(id, subject, from_address, from_name, from_domain, sent_at, classification, body_state, text_body, html_body)"
+        "id, confidence, result, created_at, emails(id, subject, from_address, from_name, from_domain, sent_at, classification, body_state, error, text_body, html_body)"
 
     let provider: SupabaseProvider
 
@@ -82,7 +82,7 @@ struct ParcelReader: Sendable {
     }
 
     /// extractions of the parcel with `emails(id, subject, from_address, from_name, from_domain, sent_at,
-    /// classification, body_state, text_body, html_body)` embedded, as the Web's detail page selects.
+    /// classification, body_state, error, text_body, html_body)` embedded, as the Web's detail page selects.
     func extractions(parcelID: String) async -> LoadResult<[ExtractionWithEmail]> {
         guard UUID(uuidString: parcelID) != nil else { return .loaded([]) }
         guard let me = await provider.currentUserID() else { return .failed }

@@ -92,15 +92,15 @@ export async function restoreStatuses(items: ReceiptKey[]): Promise<RestoreResul
     }
     for (const id of clean.keys()) {
       const matches = rows.get(id);
-      if (matches?.length === 1 && ["restored", "changed"].includes(matches[0].outcome)) {
-        result[matches[0].outcome as "restored" | "changed"].push(id);
-      } else result.failed.push(id);
+      if (matches?.length === 1 && ["restored", "changed", "failed"].includes(matches[0].outcome)) {
+        result[matches[0].outcome as "restored" | "changed" | "failed"].push(id);
+      } else (result.unconfirmed ??= []).push(id);
     }
     return result;
   } catch (error) {
     console.error("restoreStatuses:", error instanceof Error ? error.message : String(error));
-    // Do not label an unknown/failed transaction as another writer's change.
-    return { restored: [], changed: [], failed: [...new Set([...result.failed,...clean.keys()])] };
+    // A lost answer may follow a committed undo; retain local refusals without inferring an RPC refusal.
+    return { ...result, unconfirmed: [...clean.keys()] };
   } finally {
     revalidatePath("/app", "layout");
   }

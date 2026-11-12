@@ -136,7 +136,7 @@ struct ParcelWriterTests {
         // Two rows answering to one id: never in the real table, but "exactly one row" must be checked.
         await fake.insert("parcels", [Rows.parcel(1), Rows.parcel(1)])
         let writer = try await writer(fake)
-        #expect(await writer.markDelivered(shown(1)) == .notUpdated(.failed))
+        #expect(await writer.markDelivered(shown(1)) == .unknown)
     }
 
     @Test func aServerErrorIsNotUpdated() async throws {

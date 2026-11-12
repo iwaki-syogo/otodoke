@@ -160,6 +160,67 @@ struct ReceiptUndoOwnershipTests {
                         "expected_date": "2026-10-01", "last_email_at": "2026-10-01T00:00:00Z"])
     }
 
+    @Test(arguments: ["duplicate", "wrong-id"])
+    func anUnconfirmedUndoResponseIsUnknownRatherThanAnExplicitRefusal(_ shape: String) async throws {
+        let (fake, writer, _) = try await setup([Rows.parcel(1)])
+        guard case let .success(token) = await writer.markDelivered(try await current(fake, 1), now: Self.now) else {
+            Issue.record("the receipt was not saved")
+            return
+        }
+        StubURLProtocol.register(host: fake.host) { request in
+            let reply = await fake.handle(request)
+            guard request.method == "PATCH", request.path == "/rest/v1/parcels",
+                  request.jsonDictionary?["received_at"] is NSNull,
+                  case let .http(status, headers, data) = reply, (200..<300).contains(status),
+                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  var row = rows.first else { return reply }
+            if shape == "duplicate" { return .json(status, [row, row], headers: headers) }
+            row["id"] = Rows.id(99)
+            return .json(status, [row], headers: headers)
+        }
+
+        #expect(await writer.undoDelivered(token) == .unknown)
+
+        #expect(try await current(fake, 1).receivedAt == nil)
+        #expect(await fake.count("PATCH", "parcels") == 2)
+    }
+
+    @Test(arguments: ["user_id", "status", "received_at", "updated_at"])
+    func undoStillRequiresItsOwnerStatusReceiptAndVersion(_ mismatch: String) async throws {
+        let (fake, writer, _) = try await setup([Rows.parcel(1)])
+        guard case let .success(token) = await writer.markDelivered(try await current(fake, 1), now: Self.now) else {
+            Issue.record("the receipt was not saved")
+            return
+        }
+        let receipt = try #require(token.deliveredReceivedAt)
+        // Change only one field to isolate each condition; ordinary concurrent writers also advance the version.
+        let replacement: JSONValue
+        switch mismatch {
+        case "user_id": replacement = .string(FakeSupabase.other)
+        case "status": replacement = "cancelled"
+        case "received_at": replacement = "2026-11-04T03:00:02Z"
+        default: replacement = "2026-11-04T05:00:00.900000+00:00"
+        }
+        await fake.mutate { tables in
+            guard let i = tables["parcels"]?.firstIndex(where: { $0["id"] == .string(Rows.id(1)) }) else { return }
+            tables["parcels"]?[i][mismatch] = replacement
+        }
+        let before = await fake.row("parcels", id: Rows.id(1))
+
+        #expect(await writer.undoDelivered(token) == .notUpdated(.conflict))
+
+        #expect(await fake.row("parcels", id: Rows.id(1)) == before)
+        let requests = await fake.requests("PATCH", "parcels")
+        #expect(requests.count == 2)
+        let patch = try #require(requests.last)
+        #expect(patch.query("id") == ["eq.\(Rows.id(1))"])
+        #expect(patch.query("user_id") == ["eq.\(FakeSupabase.me)"])
+        #expect(patch.query("status") == ["eq.delivered"])
+        #expect(patch.query("received_at").contains("not.is.null"))
+        #expect(patch.query("received_at").contains("eq.\(receipt)"))
+        #expect(patch.query("updated_at") == ["eq.\(token.deliveredUpdatedAt)"])
+    }
+
     @Test func anOldUndoCannotEraseAnotherDevicesUnreceiveAndReceive() async throws {
         let (fake, writer, _) = try await setup([Rows.parcel(1)])
         guard case let .success(oldToken) = await writer.markDelivered(try await current(fake, 1), now: Self.now) else {
@@ -214,7 +275,7 @@ struct ReceiptUndoOwnershipTests {
         #expect(try await current(fake, 2).receivedAt == "2026-11-04T03:00:01Z")
         #expect(try await current(fake, 3).receivedAt == newToken.deliveredReceivedAt)
         #expect(try await current(fake, 3).updatedAt == newToken.deliveredUpdatedAt)
-        #expect(model.toast == ListToast(text: "受け取り済みのままの荷物があります", canUndo: false))
+        #expect(model.toast == ListToast(text: "ほかで変更された荷物があります", canUndo: false))
     }
 
     @Test func zeroWrittenRowsNeverOfferOrSendAnUndo() async throws {

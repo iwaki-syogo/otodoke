@@ -1,8 +1,15 @@
-// The parcel page (src/app/app/parcels/[id]/page.tsx): the header with the badges and 「届いていない」,
+// The parcel page (src/app/app/parcels/[id]/page.tsx): the header with badges and delivery actions,
 // the fields, 内容 and メールの履歴. The three reads fail on their own with 「読み込めませんでした」.
 // A parcel typed in by hand is edited (and deleted) in the app: 編集 opens the form as a sheet.
 
 import SwiftUI
+
+/// Shared detail-action copy from src/lib/parcel-action-text.ts.
+enum ParcelActionText {
+    static let removeReceivedLabel = "受け取り済みを取り消す"
+    static let removeReceivedNote = "配達済みのままです。"
+    static let removeDeliveredLabel = "配達の記録を取り消す"
+}
 
 struct ParcelDetailView: View {
     @State private var model: ParcelDetailModel
@@ -109,7 +116,13 @@ struct ParcelDetailView: View {
                     receiptButton("受け取った", action: { await model.markReceived() })
                 }
                 if model.showsNotReceived {
-                    receiptButton("受け取っていない", action: { await model.markNotReceived() })
+                    VStack(alignment: .leading, spacing: 8) {
+                        receiptButton(ParcelActionText.removeReceivedLabel, action: { await model.markNotReceived() })
+                            .accessibilityIdentifier("detail.removeReceived")
+                        Text(ParcelActionText.removeReceivedNote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if model.showsNotDelivered { notDeliveredButton }
             }
@@ -149,7 +162,7 @@ struct ParcelDetailView: View {
                     if model.isMarkingNotDelivered {
                         ProgressView().controlSize(.mini)
                     }
-                    Text("届いていない")
+                    Text(ParcelActionText.removeDeliveredLabel)
                 }
                 .font(.subheadline)
                 .foregroundStyle(.primary)
@@ -160,6 +173,7 @@ struct ParcelDetailView: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("detail.removeDelivered")
             .disabled(model.isMarkingNotDelivered || model.isChangingReceipt)
             .opacity(model.isMarkingNotDelivered ? 0.6 : 1)
             if let error = model.notDeliveredError {

@@ -215,7 +215,7 @@ struct ParcelReaderTests {
         #expect(get.query("parcel_id") == ["eq.\(Rows.id(1))"])
         let select = get.query("select").first?.replacingOccurrences(of: " ", with: "") ?? ""
         #expect(select.contains("emails("))
-        for column in ["id", "subject", "from_address", "from_name", "sent_at", "classification", "text_body", "html_body"] {
+        for column in ["id", "subject", "from_address", "from_name", "sent_at", "classification", "error", "text_body", "html_body"] {
             #expect(select.contains(column), "\(column)")
         }
         for column in ["confidence", "result", "created_at"] { #expect(select.contains(column), "\(column)") }

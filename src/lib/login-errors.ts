@@ -18,7 +18,7 @@ export const LOGIN_MESSAGES = {
   network: "つながりませんでした。少し時間をおいて、もう一度お試しください。",
   other: "うまくいきませんでした。もう一度お試しください。",
 
-  // Web mail requests only; the owner supplied this wording pending the final choice.
+  // Mail requests.
   mail_busy: "いま混み合っています。少し時間をおいて、もう一度お試しください。",
 
   // The address.

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { PendingButton, usePendingAction } from "@/components/pending-button";
 import { Spinner } from "@/components/spinner";
-import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE } from "@/lib/format";
+import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE, UNDO_UNCONFIRMED_NOTICE } from "@/lib/format";
 import { runUndo } from "@/lib/undo-outcome";
 import { markReceivedInChunks } from "@/lib/receipt-client";
 import type { ReceivedReceipt } from "@/lib/receipt";
@@ -50,6 +50,7 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
       // A slower undo belongs only to the notice from which it started.
       setToast((current) => {
         if (current?.id !== toastId) return current;
+        if (outcome.unconfirmed?.length) return { id: toastId, text: UNDO_UNCONFIRMED_NOTICE, undo: null, note: outcome.changed.length > 0 ? UNDO_CHANGED_NOTICE : null };
         if (outcome.failed.length > 0) return { id: toastId, text: UNDO_FAILED_NOTICE, undo: null, note: outcome.changed.length > 0 ? UNDO_CHANGED_NOTICE : null };
         if (outcome.changed.length > 0) return { id: toastId, text: UNDO_CHANGED_NOTICE, undo: null };
         return null;

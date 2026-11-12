@@ -6,13 +6,13 @@ import { FakeDb, type Result } from "./fake-db";
 
 const USER="00000000-0000-4000-8000-000000000001";
 const ID="00000000-0000-4000-8000-000000000010";
-const state=vi.hoisted(()=>({db:null as unknown,userId:"00000000-0000-4000-8000-000000000001" as string|null}));
+const state=vi.hoisted(()=>({db:null as unknown,userId:"00000000-0000-4000-8000-000000000001" as string|null,authReadThrows:false}));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
-vi.mock("@/lib/supabase/server",()=>({createClient:async()=>Object.assign(state.db as FakeDb,{auth:{getUser:async()=>({data:{user:state.userId?{id:state.userId}:null},error:null})}})}));
+vi.mock("@/lib/supabase/server",()=>({createClient:async()=>Object.assign(state.db as FakeDb,{auth:{getUser:async()=>{if(state.authReadThrows)throw new Error("synthetic auth read failure");return {data:{user:state.userId?{id:state.userId}:null},error:null};}}})}));
 const {markDeliveredForUndo,restoreStatuses,markNotReceived}=await import("@/app/app/parcel-actions");
 const row=(status="shipped")=>({id:ID,user_id:USER,shop:"Synthetic shop",status,received_at:null,updated_at:"2026-11-01T00:00:00Z",created_at:"2026-11-01T00:00:00Z"});
 
-beforeEach(()=>{state.userId=USER;state.db=new FakeDb();vi.stubGlobal("fetch",()=>{throw new Error("external fetch is forbidden in receipt tests");});});
+beforeEach(()=>{state.userId=USER;state.authReadThrows=false;state.db=new FakeDb();vi.stubGlobal("fetch",()=>{throw new Error("external fetch is forbidden in receipt tests");});});
 afterEach(()=>{vi.unstubAllGlobals();});
 
 describe("server-owned receipt undo",()=>{
@@ -45,6 +45,16 @@ describe("server-owned receipt undo",()=>{
     const receipt=marked.written[0];state.userId=null;
     const undo={...receipt,status:"shipped",received_at:null,written_at:receipt.received_at};
     expect(await restoreStatuses([undo])).toEqual({restored:[],changed:[],failed:[ID]});
+    expect(db.rpcCalls.filter((call)=>call.name==="restore_parcel_receipts")).toEqual([]);
+  });
+
+  it("an auth read throw before the restore RPC is a known refusal and leaves the row unchanged",async()=>{
+    const db=new FakeDb({parcels:[row()]});state.db=db;const marked=await markDeliveredForUndo([ID]);
+    const before=structuredClone(db.find("parcels",ID));state.authReadThrows=true;
+    const answer=await restoreStatuses(marked.written);
+    expect(db.rpcCalls.filter((call)=>call.name==="restore_parcel_receipts")).toEqual([]);
+    expect(db.find("parcels",ID)).toEqual(before);
+    expect(answer).toEqual({restored:[],changed:[],failed:[ID]});
   });
   it("B1: a no-op delivery mail invalidates undo before its extraction is saved", async()=>{
     const order="RECEIPT-ORDER-123";
@@ -141,19 +151,61 @@ describe("server-owned receipt undo",()=>{
     expect(db.find("parcels",ID)!.received_at).not.toBeNull();
   });
 
-  it("B2: RPC failures are failed and unconfirmed saves are not reported restored",async()=>{
+  it("B2: an RPC error is unconfirmed and is not reported restored",async()=>{
     const db=new FakeDb({parcels:[row()]});state.db=db;const marked=await markDeliveredForUndo([ID]);
     const error=vi.spyOn(console,"error").mockImplementation(()=>{});
     db.hooks.push((q)=>q.table==="parcels"&&q.op==="update"?{data:null,error:{message:"synthetic db unavailable"}}:undefined);
-    expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[ID]});
+    expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[],unconfirmed:[ID]});
     expect(db.find("parcels",ID)!.received_at).not.toBeNull();error.mockRestore();
   });
 
-  it("B2: malformed, duplicated and missing response rows fail only their own ids",async()=>{
-    const ids=[ID,"00000000-0000-4000-8000-000000000011","00000000-0000-4000-8000-000000000012","00000000-0000-4000-8000-000000000013"];
+  it("B2: duplicated, unknown and missing response rows are unconfirmed without losing valid rows",async()=>{
+    const ids=[ID,"00000000-0000-4000-8000-000000000011","00000000-0000-4000-8000-000000000012","00000000-0000-4000-8000-000000000013","00000000-0000-4000-8000-000000000014","00000000-0000-4000-8000-000000000015"];
     const db=new FakeDb({parcels:ids.map((id)=>({...row(),id}))});state.db=db;const marked=await markDeliveredForUndo(ids);
-    db.rpc=async()=>({data:[{id:ids[0],outcome:"restored"},{id:ids[1],outcome:"changed"},{id:ids[2],outcome:"restored"},{id:ids[2],outcome:"changed"},{id:crypto.randomUUID(),outcome:"restored"}],error:null});
-    expect(await restoreStatuses(marked.written)).toEqual({restored:[ids[0]],changed:[ids[1]],failed:[ids[2],ids[3]]});
+    db.rpc=async()=>({data:[{id:ids[0],outcome:"restored"},{id:ids[1],outcome:"changed"},{id:ids[2],outcome:"restored"},{id:ids[2],outcome:"changed"},{id:ids[3],outcome:"failed"},{id:ids[4],outcome:"unexpected"},{id:crypto.randomUUID(),outcome:"restored"}],error:null});
+    expect(await restoreStatuses(marked.written)).toEqual({restored:[ids[0]],changed:[ids[1]],failed:[ids[3]],unconfirmed:[ids[2],ids[4],ids[5]]});
+  });
+
+  it("a single explicit failed row remains a known refusal with the legacy three-array shape",async()=>{
+    const db=new FakeDb({parcels:[row()]});state.db=db;const marked=await markDeliveredForUndo([ID]);
+    const before=structuredClone(db.find("parcels",ID));
+    db.rpc=async()=>({data:[{id:ID,outcome:"failed"}],error:null});
+    expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[ID]});
+    expect(db.find("parcels",ID)).toEqual(before);
+  });
+
+  it.each([null,{}])("a non-array RPC reply %j is unconfirmed",async(data)=>{
+    const db=new FakeDb({parcels:[row()]});state.db=db;const marked=await markDeliveredForUndo([ID]);
+    db.rpc=async()=>({data,error:null});
+    const log=vi.spyOn(console,"error").mockImplementation(()=>{});
+    try {expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[],unconfirmed:[ID]});}
+    finally {log.mockRestore();}
+  });
+
+  it.each(["error","throw"] as const)("an undo committed before its reply was lost (%s) is unconfirmed, never a known refusal",async(failure)=>{
+    const db=new FakeDb({parcels:[row()]});state.db=db;const marked=await markDeliveredForUndo([ID]);
+    const rpc=db.rpc.bind(db);
+    db.rpc=async(name,args)=>{
+      const answer=await rpc(name,args);
+      if(name!=="restore_parcel_receipts")return answer;
+      if(failure==="throw")throw new Error("synthetic lost reply");
+      return {data:null,error:{message:"synthetic lost reply"}};
+    };
+    const log=vi.spyOn(console,"error").mockImplementation(()=>{});
+    try {
+      expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[],unconfirmed:[ID]});
+      expect(db.find("parcels",ID)).toMatchObject({status:"shipped",received_at:null});
+    } finally {log.mockRestore();}
+  });
+
+  it("a pre-RPC refusal stays failed when another requested receipt has an RPC error",async()=>{
+    const id2="00000000-0000-4000-8000-000000000011";
+    const db=new FakeDb({parcels:[row(),{...row(),id:id2}]});state.db=db;const marked=await markDeliveredForUndo([ID,id2]);
+    const items=marked.written.map((item)=>item.id===ID?{...item,receipt_id:"invalid"}:item);
+    db.rpc=async()=>({data:null,error:{message:"synthetic RPC error"}});
+    const log=vi.spyOn(console,"error").mockImplementation(()=>{});
+    try {expect(await restoreStatuses(items)).toEqual({restored:[],changed:[],failed:[ID],unconfirmed:[id2]});}
+    finally {log.mockRestore();}
   });
 
   it("a malformed mark receipt preserves another confirmed save without inventing undo",async()=>{
@@ -177,12 +229,12 @@ describe("server-owned receipt undo",()=>{
     expect(db.rows("parcel_receipt_undos")).toEqual([]);expect(db.find("parcels",ID)!.status).toBe("shipped");
   });
 
-  it("a discarded undo write is failed and preserves the received row",async()=>{
+  it("a discarded undo write raises an unconfirmed RPC error and preserves the received row",async()=>{
     const db=new FakeDb({parcels:[row()]});state.db=db;const marked=await markDeliveredForUndo([ID]);
     const before=structuredClone(db.find("parcels",ID));
     const log=vi.spyOn(console,"error").mockImplementation(()=>{});
     db.hooks.push((q)=>q.op==="update"?{data:[structuredClone(db.find("parcels",ID))],error:null}:undefined);
-    expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[ID]});
+    expect(await restoreStatuses(marked.written)).toEqual({restored:[],changed:[],failed:[],unconfirmed:[ID]});
     expect(db.find("parcels",ID)).toEqual(before);log.mockRestore();
   });
 

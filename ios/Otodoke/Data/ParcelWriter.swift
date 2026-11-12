@@ -68,7 +68,7 @@ enum NotUpdatedReason: Equatable, Sendable {
     case invalidInput
     /// Sent, and 0 rows matched: someone else changed the row (or it is not ours).
     case conflict
-    /// The server answered with an error, the device was offline, or not exactly one row came back.
+    /// A known refusal or a failure before a write could be sent.
     case failed
 }
 
@@ -651,7 +651,7 @@ struct ParcelWriter: Sendable {
             return .unknown
         }
         guard !rows.isEmpty else { return .notUpdated(.conflict) }
-        guard rows.count == 1, let row = rows.first else { return .notUpdated(.failed) }
+        guard rows.count == 1, let row = rows.first else { return .unknown }
         guard row.id.lowercased() == id.lowercased() else { return .unknown }
         return .success(ParcelVersion(id: row.id, status: row.status, updatedAt: row.updatedAt, receivedAt: row.receivedAt, checkDismissedAt: row.checkDismissedAt))
     }

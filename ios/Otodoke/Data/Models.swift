@@ -116,6 +116,8 @@ struct EmailSummary: Decodable, Equatable, Sendable {
     /// and emails.from_domain. A sealed or dropped mail has subject, from_*, text_body and html_body null.
     var bodyState: String? = nil
     var fromDomain: String? = nil
+    /// The persisted removal reason; missing, null and unknown reasons do not imply a past login.
+    var error: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -125,6 +127,7 @@ struct EmailSummary: Decodable, Equatable, Sendable {
         case fromDomain = "from_domain"
         case sentAt = "sent_at"
         case classification
+        case error
         case bodyState = "body_state"
         case textBody = "text_body"
         case htmlBody = "html_body"

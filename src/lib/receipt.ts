@@ -13,4 +13,4 @@ export interface ReceivedReceipt {
 
 export type ReceiptKey = Pick<ReceivedReceipt, "id" | "receipt_id">;
 export type MarkReceivedResult = { saved: number; written: ReceivedReceipt[] };
-export type RestoreResult = { restored: string[]; changed: string[]; failed: string[] };
+export type RestoreResult = { restored: string[]; changed: string[]; failed: string[]; unconfirmed?: string[] };

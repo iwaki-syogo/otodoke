@@ -165,7 +165,7 @@ describe("B7: full-list operations through bounded real actions", () => {
     expect(control.db.callsOn("parcels", "update")).toHaveLength(0);
   });
 
-  it("a middle undo chunk failure preserves restored rows and identifies only failed receipts", async () => {
+  it("a middle undo chunk failure preserves restored rows and identifies only unconfirmed receipts", async () => {
     const original = parcels(501);
     const db = control.db = new FakeDb({ parcels: original });
     const done = await mark(ids(original));
@@ -176,7 +176,7 @@ describe("B7: full-list operations through bounded real actions", () => {
     }, done.written);
     expect(calls).toBe(3);
     expect(back.restored).toHaveLength(301);
-    expect(back.failed).toHaveLength(200);
+    expect(back).toMatchObject({ failed: [], unconfirmed: done.written.slice(200, 400).map((item) => item.id) });
     expect(back.changed).toEqual([]);
     expect(db.rows("parcels").filter((row) => row.received_at !== null)).toHaveLength(200);
     expect(control.revalidate).toHaveBeenCalledWith("/app", "layout");

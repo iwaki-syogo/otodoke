@@ -40,8 +40,8 @@ final class ReceivedUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 10))
         card.tap()
         XCTAssertTrue(app.buttons["受け取った"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["届いていない"].exists)
-        XCTAssertFalse(app.buttons["受け取っていない"].exists)
+        XCTAssertTrue(app.buttons["detail.removeDelivered"].exists)
+        XCTAssertFalse(app.buttons["detail.removeReceived"].exists)
         let evidence = app.staticTexts["「玄関前へのお届けが完了しました。」"]
         for _ in 0..<4 where !evidence.isHittable { app.swipeUp() }
         XCTAssertTrue(evidence.waitForExistence(timeout: 5))

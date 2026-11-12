@@ -113,10 +113,12 @@ export const DELIVERED_LABEL = "配達済み";
 export const RECEIVED_LABEL = "受け取り済み";
 /** Shown when 元に戻す put back only some of the parcels. No count: the person looks at the list. */
 export const PARTLY_RESTORED_NOTICE = "受け取り済みのままの荷物があります";
-/** Provisional Web copy awaiting the owner's approval; native outcome alignment is a separate task. */
+/** A changed parcel notice does not assert whether the parcel is still received. */
 export const UNDO_CHANGED_NOTICE = "ほかで変更された荷物があります";
-/** A request failure says nothing about a parcel's current state. */
+/** A known refusal says nothing about a parcel's current received state. */
 export const UNDO_FAILED_NOTICE = "元に戻せませんでした";
+/** Shown when an undo's result could not be confirmed. */
+export const UNDO_UNCONFIRMED_NOTICE = "確かめられませんでした";
 /** A second line of the received toast when some of the parcels pressed are not covered by 元に戻す (the iOS app has the same words). No count. */
 export const CANNOT_UNDO_NOTE = "元に戻せない荷物があります";
 

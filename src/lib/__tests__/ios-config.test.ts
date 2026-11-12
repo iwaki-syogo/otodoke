@@ -148,6 +148,59 @@ function parsePlist(xml: string): PlistValue {
   return root;
 }
 
+/** Independent declaration contract; never derive the expected set or order from the manifest. */
+const COLLECTED_DATA_TYPES = [
+  "NSPrivacyCollectedDataTypeEmailAddress",
+  "NSPrivacyCollectedDataTypeUserID",
+  "NSPrivacyCollectedDataTypePurchaseHistory",
+  "NSPrivacyCollectedDataTypeEmailsOrTextMessages",
+  "NSPrivacyCollectedDataTypeOtherUserContent",
+  "NSPrivacyCollectedDataTypeProductInteraction",
+  "NSPrivacyCollectedDataTypeOtherUsageData",
+  "NSPrivacyCollectedDataTypeOtherDiagnosticData",
+] as const;
+const APP_FUNCTIONALITY = "NSPrivacyCollectedDataTypePurposeAppFunctionality";
+type PlistDictionary = { [key: string]: PlistValue };
+
+function readPrivacyManifest(): PlistValue {
+  return parsePlist(readFileSync(path.join(ROOT, "ios/Otodoke/Support/PrivacyInfo.xcprivacy"), "utf8"));
+}
+
+/** Shared by the real-source positive and every negative control, including strict Boolean values. */
+function assertPrivacyManifest(value: PlistValue): void {
+  expect(value).toBeTypeOf("object");
+  expect(Array.isArray(value)).toBe(false);
+  const manifest = value as PlistDictionary;
+  expect(Object.keys(manifest).sort()).toEqual([
+    "NSPrivacyAccessedAPITypes", "NSPrivacyCollectedDataTypes", "NSPrivacyTracking", "NSPrivacyTrackingDomains",
+  ]);
+  expect(manifest.NSPrivacyTracking).toBe(false);
+  expect(manifest.NSPrivacyTrackingDomains).toEqual([]);
+  expect(manifest.NSPrivacyAccessedAPITypes).toEqual([]);
+  expect(Array.isArray(manifest.NSPrivacyCollectedDataTypes)).toBe(true);
+  const types = manifest.NSPrivacyCollectedDataTypes as PlistDictionary[];
+  const names = types.map((entry) => entry.NSPrivacyCollectedDataType);
+  expect(new Set(names).size, "no duplicate data-type dictionaries").toBe(types.length);
+  expect(names, "the exact reviewed set in its declared order").toEqual([...COLLECTED_DATA_TYPES]);
+  for (const [index, entry] of types.entries()) {
+    const name = COLLECTED_DATA_TYPES[index];
+    expect(entry.NSPrivacyCollectedDataTypeLinked, name).toBe(true);
+    expect(entry.NSPrivacyCollectedDataTypeTracking, name).toBe(false);
+    expect(entry.NSPrivacyCollectedDataTypePurposes, name).toEqual([APP_FUNCTIONALITY]);
+    expect(entry, name).toEqual({
+      NSPrivacyCollectedDataType: name,
+      NSPrivacyCollectedDataTypeLinked: true,
+      NSPrivacyCollectedDataTypeTracking: false,
+      NSPrivacyCollectedDataTypePurposes: [APP_FUNCTIONALITY],
+    });
+  }
+}
+
+const ADDED_TYPE_MUTATIONS = [
+  "missing-type", "linked-false", "linked-string", "tracking-true", "tracking-string",
+  "purpose-missing", "purpose-other", "purpose-extra", "purpose-duplicate", "duplicate-type", "unknown-type",
+] as const;
+
 describe("privacy manifest: the data the app handles", () => {
   it("reads an XML property list", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -189,22 +242,50 @@ describe("privacy manifest: the data the app handles", () => {
   });
 
   it("declares each type linked, for app functionality, with no tracking", () => {
-    const file = path.join(ROOT, "ios/Otodoke/Support/PrivacyInfo.xcprivacy");
-    const json = parsePlist(readFileSync(file, "utf8")) as Record<string, unknown>;
-    const types = (json.NSPrivacyCollectedDataTypes ?? []) as Array<Record<string, unknown>>;
-    for (const name of [
-      "NSPrivacyCollectedDataTypeEmailAddress",
-      "NSPrivacyCollectedDataTypeUserID",
-      "NSPrivacyCollectedDataTypePurchaseHistory",
-      "NSPrivacyCollectedDataTypeEmailsOrTextMessages",
-      "NSPrivacyCollectedDataTypeOtherUserContent",
-    ]) {
-      const entry = types.find((d) => d.NSPrivacyCollectedDataType === name);
-      expect(entry, name).toBeDefined();
-      expect(entry!.NSPrivacyCollectedDataTypeLinked, name).toBe(true);
-      expect(entry!.NSPrivacyCollectedDataTypeTracking, name).toBe(false);
-      expect(entry!.NSPrivacyCollectedDataTypePurposes, name).toEqual(["NSPrivacyCollectedDataTypePurposeAppFunctionality"]);
-    }
-    expect(json.NSPrivacyTracking).toBe(false);
+    assertPrivacyManifest(readPrivacyManifest());
   });
+
+  it.each(COLLECTED_DATA_TYPES.slice(5).flatMap((name) => ADDED_TYPE_MUTATIONS.map((mutation) => ({ name, mutation }))))(
+    "negative control: rejects $mutation for $name", ({ name, mutation }) => {
+      const original = readPrivacyManifest();
+      assertPrivacyManifest(original);
+      const mutated = structuredClone(original) as PlistDictionary;
+      const types = mutated.NSPrivacyCollectedDataTypes as PlistDictionary[];
+      const index = types.findIndex((entry) => entry.NSPrivacyCollectedDataType === name);
+      expect(index).toBeGreaterThanOrEqual(0);
+      const entry = types[index];
+      switch (mutation) {
+        case "missing-type": types.splice(index, 1); break;
+        case "linked-false": entry.NSPrivacyCollectedDataTypeLinked = false; break;
+        case "linked-string": entry.NSPrivacyCollectedDataTypeLinked = "true"; break;
+        case "tracking-true": entry.NSPrivacyCollectedDataTypeTracking = true; break;
+        case "tracking-string": entry.NSPrivacyCollectedDataTypeTracking = "false"; break;
+        case "purpose-missing": delete entry.NSPrivacyCollectedDataTypePurposes; break;
+        case "purpose-other": entry.NSPrivacyCollectedDataTypePurposes = ["NSPrivacyCollectedDataTypePurposeAnalytics"]; break;
+        case "purpose-extra": entry.NSPrivacyCollectedDataTypePurposes = [APP_FUNCTIONALITY, "NSPrivacyCollectedDataTypePurposeAnalytics"]; break;
+        case "purpose-duplicate": entry.NSPrivacyCollectedDataTypePurposes = [APP_FUNCTIONALITY, APP_FUNCTIONALITY]; break;
+        case "duplicate-type": types.push(structuredClone(entry)); break;
+        case "unknown-type": types.push({ ...entry, NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeFutureUnknown" }); break;
+      }
+      expect(mutated, "the mutation must change the actual parsed manifest").not.toEqual(original);
+      expect(() => assertPrivacyManifest(mutated)).toThrow();
+    },
+  );
+
+  it.each(["swapped-order", "top-level-tracking", "tracking-domain", "accessed-api"] as const)(
+    "negative control: rejects %s outside the per-type values", (mutation) => {
+      const original = readPrivacyManifest();
+      assertPrivacyManifest(original);
+      const mutated = structuredClone(original) as PlistDictionary;
+      const types = mutated.NSPrivacyCollectedDataTypes as PlistDictionary[];
+      switch (mutation) {
+        case "swapped-order": [types[5], types[6]] = [types[6], types[5]]; break;
+        case "top-level-tracking": mutated.NSPrivacyTracking = true; break;
+        case "tracking-domain": mutated.NSPrivacyTrackingDomains = ["tracker.example.test"]; break;
+        case "accessed-api": mutated.NSPrivacyAccessedAPITypes = [{ NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults", NSPrivacyAccessedAPITypeReasons: ["CA92.1"] }]; break;
+      }
+      expect(mutated, "the mutation must change the actual parsed manifest").not.toEqual(original);
+      expect(() => assertPrivacyManifest(mutated)).toThrow();
+    },
+  );
 });

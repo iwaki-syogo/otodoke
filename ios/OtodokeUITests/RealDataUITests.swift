@@ -342,7 +342,7 @@ final class RealDataUITests: XCTestCase {
     }
 
     private func detailWrites(_ app: XCUIApplication) throws {
-        // 「届いていない」: the row becomes delivered by another writer while the page is open.
+        // Delivery removal: another writer marks the parcel delivered while the page is open.
         let back = "【試験】詳細で戻す荷物"
         XCTAssertTrue(scrollTo(app, app.staticTexts[back]))
         app.staticTexts[back].tap()
@@ -350,12 +350,12 @@ final class RealDataUITests: XCTestCase {
         shoot("detail-open")
         let before = try rows(label: "notdelivered-before")
         _ = try helper(["op": "set", "title": back, "status": "delivered"])
-        let notDelivered = app.buttons["届いていない"]
+        let notDelivered = app.buttons["detail.removeDelivered"]
         for _ in 0..<3 where !notDelivered.exists {
             pullToRefresh(app)
             _ = notDelivered.waitForExistence(timeout: 8)
         }
-        XCTAssertTrue(notDelivered.exists, "届いていない after reading again")
+        XCTAssertTrue(notDelivered.exists, "remove delivery after reading again")
         shoot("detail-delivered")
         let mid = try rows(label: "notdelivered-mid")
         notDelivered.tap()

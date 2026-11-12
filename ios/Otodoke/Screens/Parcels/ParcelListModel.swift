@@ -34,14 +34,11 @@ final class ParcelListModel {
     static let deliverAllFailedText = "保存できませんでした。もう一度押してください。"
     static let undoFailedText = "元に戻せませんでした"
     static let unconfirmedText = "確かめられませんでした"
+    static let undoChangedText = "ほかで変更された荷物があります"
 
     /// Under 「受け取り済みにしました」 when some of them were saved with an unknown answer (Codex-P3):
     /// 「元に戻す」 cannot put those back.
     static func cannotUndoNote(_ n: Int) -> String { "元に戻せない荷物があります" }
-    /// After 「元に戻す」 on such a toast: some receipts remain, without putting counts in the notice.
-    static func undoneButKeptText(restored: Int, kept: Int) -> String {
-        "受け取り済みのままの荷物があります"
-    }
 
     enum LoadState: Equatable, Sendable {
         case idle
@@ -525,24 +522,22 @@ final class ParcelListModel {
         endWrite()
         guard !retired else { return }
 
-        var restored = 0
         var notBack: [String] = []
         var unsure: [String] = []
         var conflicted = false
-        var knownRemaining = false
+        var refused = false
         for result in results {
             switch result.outcome {
             case let .success(version):
                 apply(version)
-                restored += 1
             case .notUpdated(.conflict):
                 conflicted = true
-                knownRemaining = true
                 notBack.append(result.id)
             case .notUpdated(.invalidInput):
-                knownRemaining = true
+                refused = true
                 notBack.append(result.id)
             case .notUpdated:
+                refused = true
                 notBack.append(result.id)
             case .unknown:
                 unsure.append(result.id)
@@ -551,23 +546,19 @@ final class ParcelListModel {
         unconfirmed.formUnion(unsure)
 
         enum Outcome { case done, partly, failed, unconfirmed }
-        let outcome: Outcome
-        if notBack.isEmpty && unsure.isEmpty && blocked.isEmpty {
-            outcome = .done
-        } else if conflicted || !unsure.isEmpty || !blocked.isEmpty {
+        let unknownIDs = Set(unsure + blocked)
+        var unresolved = !unknownIDs.isEmpty
+        if conflicted || unresolved {
             if await reread() == .applied {
-                // An unknown result the read shows as put back is a success.
-                let allBack = tokens.allSatisfy { token in
-                    guard let row = rows.first(where: { $0.id == token.id }) else { return false }
-                    return row.status == token.restoreTo && row.receivedAt == token.previousReceivedAt
+                // Resolve each unknown from both restored values, independently of known refusals or conflicts.
+                unresolved = unknownIDs.contains { id in
+                    guard let token = tokens.first(where: { $0.id == id }),
+                          let row = rows.first(where: { $0.id == id }) else { return true }
+                    return row.status != token.restoreTo || row.receivedAt != token.previousReceivedAt
                 }
-                outcome = notBack.isEmpty && allBack ? .done : .partly
-            } else {
-                outcome = unsure.isEmpty && blocked.isEmpty ? .partly : .unconfirmed
             }
-        } else {
-            outcome = knownRemaining || restored > 0 ? .partly : .failed
         }
+        let outcome: Outcome = unresolved ? .unconfirmed : refused ? .failed : conflicted ? .partly : .done
 
         guard !retired else { return }
         guard toastGeneration == generation else {
@@ -579,15 +570,15 @@ final class ParcelListModel {
         switch outcome {
         case .done:
             if keeps > 0 {
-                // R1: say that some stay delivered, rather than hide the toast as if all went back.
-                showToast(ListToast(text: Self.undoneButKeptText(restored: tokens.count, kept: keeps), canUndo: false), undo: [])
+                // The old excluded count does not establish the parcels' current receipt state.
+                showToast(ListToast(text: Self.cannotUndoNote(keeps), canUndo: false), undo: [])
             } else {
                 hideToast()
             }
         case .partly:
-            showToast(ListToast(text: Self.undoneButKeptText(restored: restored, kept: keeps), canUndo: false), undo: [])
-        case .failed: showToast(ListToast(text: Self.undoFailedText, canUndo: false), undo: [])
-        case .unconfirmed: showToast(ListToast(text: Self.unconfirmedText, canUndo: false), undo: [])
+            showToast(ListToast(text: conflicted ? Self.undoChangedText : Self.cannotUndoNote(keeps), canUndo: false), undo: [])
+        case .failed: showToast(ListToast(text: Self.undoFailedText, canUndo: false), undo: [], note: conflicted ? Self.undoChangedText : nil)
+        case .unconfirmed: showToast(ListToast(text: Self.unconfirmedText, canUndo: false), undo: [], note: conflicted ? Self.undoChangedText : nil)
         }
     }
 

@@ -61,8 +61,10 @@ struct MailDisplay: Equatable, Sendable {
 enum MailBody {
     static let sealedHeadline = "🔒 暗号化されたメール"
     static let droppedHeadline = "本文は保存していません"
-    /// page.tsx, word for word.
-    static let droppedDetail = "パスワードでログインする前に届いたメールです。件名・差出人・本文は保存していません。"
+    /// The Web's neutral dropped-mail detail, also used when no display detail is available.
+    static let droppedDetail = "本文は保存していません"
+    /// CONSENT_WAIT_EXPIRED_NOTICE of src/lib/mail-notices.ts, word for word.
+    static let consentWaitExpiredNotice = "保管の期限を過ぎたため、元のメールは残っていません。"
     static let unopenable = "開けませんでした"
     static let noBody = "本文はありません。"
 
@@ -78,7 +80,7 @@ enum MailBody {
         case .sealed:
             return MailDisplay(kind: .sealed, subject: nil, fromText: nil, fromDomain: truthy(email.fromDomain), headline: sealedHeadline, detail: nil)
         case .dropped:
-            return MailDisplay(kind: .dropped, subject: nil, fromText: nil, fromDomain: truthy(email.fromDomain), headline: droppedHeadline, detail: droppedDetail)
+            return MailDisplay(kind: .dropped, subject: nil, fromText: nil, fromDomain: truthy(email.fromDomain), headline: droppedHeadline, detail: JSText.equal(email.error ?? "", "ai_consent_wait_expired") ? consentWaitExpiredNotice : droppedDetail)
         case .unknown:
             return MailDisplay(kind: .unopenable, subject: nil, fromText: nil, fromDomain: nil, headline: unopenable, detail: nil)
         }

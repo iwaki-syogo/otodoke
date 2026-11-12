@@ -106,6 +106,17 @@ struct ModelsTests {
         #expect(x.email?.id == Rows.id(30_002))
     }
 
+    @Test(arguments: [nil, "", "ai_consent_wait_expired", "future_drop_reason"] as [String?])
+    func anEmailKeepsItsOptionalPersistedError(error: String?) throws {
+        let email = try JSONCoding.decode(EmailSummary.self, Rows.email(1, ["error": error.map(JSONValue.string) ?? .null]))
+        #expect(email.error == error)
+    }
+
+    @Test func anEmailWithoutAnErrorColumnStillDecodes() throws {
+        let email = try JSONCoding.decode(EmailSummary.self, Rows.email(1))
+        #expect(email.error == nil)
+    }
+
     @Test func anExtractionWithoutMailOrNotes() throws {
         let x = try JSONCoding.decode(ExtractionWithEmail.self, .object(Rows.extraction(3, parcel: 3, email: nil, ["confidence": nil, "result": nil])))
         #expect(x.email == nil)

@@ -57,25 +57,138 @@ function exportedText(source: string, name: string): string {
   throw new Error(`actual Web text is missing: ${name}`);
 }
 
-// The native legacy contract stays distinct from the new Web result presentation.
+type SwiftBlock = { start: number; open: number; end: number };
+type UndoBranch = "done" | "partly" | "failed" | "unconfirmed";
+type PhantomKind = "line comment" | "block comment" | "raw string" | "multiline string";
+
+/** Both views have identical offsets: declarations retain literals, executable code blanks them. */
+function swiftCode(source: string, keepStrings = true): string {
+  let code = "", at = 0, blockDepth = 0;
+  let stringEnd: string | null = null, stringEscape = "";
+  const literal = (value: string) => keepStrings ? value : value.replace(/[^\r\n]/g, " ");
+  while (at < source.length) {
+    if (stringEnd !== null) {
+      if (source.startsWith(stringEnd, at)) {
+        code += literal(stringEnd); at += stringEnd.length; stringEnd = null;
+      } else if (source.startsWith(stringEscape, at)) {
+        const end = Math.min(source.length, at + stringEscape.length + 1);
+        code += literal(source.slice(at, end)); at = end;
+      } else code += literal(source[at++]);
+    } else if (blockDepth > 0) {
+      if (source.startsWith("/*", at)) { blockDepth++; at += 2; }
+      else if (source.startsWith("*/", at)) { blockDepth--; at += 2; }
+      else { if (source[at] === "\n") code += "\n"; at++; }
+    } else if (source.startsWith("//", at)) {
+      code += " ";
+      while (at < source.length && source[at] !== "\n") at++;
+    } else if (source.startsWith("/*", at)) {
+      code += " "; blockDepth = 1; at += 2;
+    } else {
+      const opening = source[at] === '"' || source[at] === "#" ? source.slice(at).match(/^(#+)?("""|")/) : null;
+      if (opening) {
+        const hashes = opening[1] ?? "";
+        stringEnd = opening[2] + hashes; stringEscape = "\\" + hashes;
+        code += literal(opening[0]); at += opening[0].length;
+      } else code += source[at++];
+    }
+  }
+  if (blockDepth > 0 || stringEnd !== null) throw new Error("unterminated Swift source");
+  return code;
+}
+
+function singleBlock(code: string, pattern: RegExp, from = 0, to = code.length): SwiftBlock {
+  const matches = [...code.slice(from, to).matchAll(pattern)];
+  expect(matches, "one executable Swift block must own the binding").toHaveLength(1);
+  const match = matches[0], start = from + match.index!;
+  const open = code.indexOf("{", start);
+  expect(open).toBeLessThan(to);
+  let depth = 0;
+  for (let at = open; at < to; at++) {
+    if (code[at] === "{") depth++;
+    if (code[at] === "}" && --depth === 0) return { start, open, end: at + 1 };
+  }
+  throw new Error("missing closing Swift brace");
+}
+
+function realLiteral(text: string, calls: string, owner: SwiftBlock, pattern: RegExp): string {
+  const candidates = [...text.slice(owner.open + 1, owner.end - 1).matchAll(pattern)].filter((match) => {
+    const at = owner.open + 1 + match.index!;
+    return calls.slice(at, at + match[0].length) === swiftCode(match[0], false);
+  });
+  expect(candidates, "one real declaration, not a declaration inside a string").toHaveLength(1);
+  return JSON.parse(candidates[0][1]) as string;
+}
+
+function nativeUndo(model: string) {
+  const text = swiftCode(model), calls = swiftCode(model, false);
+  expect(calls.length).toBe(text.length);
+  const owner = singleBlock(calls, /\bfinal\s+class\s+ParcelListModel\b[^{]*\{/g);
+  const changed = realLiteral(text, calls, owner, /\bstatic let undoChangedText\s*=\s*("(?:[^"\\]|\\.)*")/g);
+  const cannot = realLiteral(text, calls, owner, /\bstatic func cannotUndoNote\([^)]*\)\s*->\s*String\s*\{\s*("(?:[^"\\]|\\.)*")\s*\}/g);
+  const failed = realLiteral(text, calls, owner, /\bstatic let undoFailedText\s*=\s*("(?:[^"\\]|\\.)*")/g);
+  const unconfirmed = realLiteral(text, calls, owner, /\bstatic let unconfirmedText\s*=\s*("(?:[^"\\]|\\.)*")/g);
+  const undo = singleBlock(calls, /\bfunc\s+undo\(\)\s+async\s*\{/g, owner.open + 1, owner.end - 1);
+  const flow = calls;
+  const presentation = singleBlock(flow, /\bswitch\s+outcome\s*\{/g, undo.open + 1, undo.end - 1);
+  const labels: { name: string; start: number; body: number }[] = [];
+  let depth = 0;
+  for (let at = presentation.open + 1; at < presentation.end - 1; at++) {
+    const label = depth === 0 ? flow.slice(at).match(/^case\s+\.(\w+)\s*:/) : null;
+    if (label) {
+      labels.push({ name: label[1], start: at, body: at + label[0].length });
+      at += label[0].length - 1;
+    } else if (flow[at] === "{") depth++;
+    else if (flow[at] === "}") depth--;
+  }
+  expect(labels.map((label) => label.name)).toEqual(["done", "partly", "failed", "unconfirmed"]);
+  const branches = Object.fromEntries(labels.map((label, index) => [
+    label.name, flow.slice(label.body, labels[index + 1]?.start ?? presentation.end - 1),
+  ])) as Record<UndoBranch, string>;
+  expect(text.slice(owner.open, owner.end)).not.toContain("受け取り済みのまま");
+  const deliver = singleBlock(calls, /\bfunc\s+deliverAll\(\)\s+async\s*\{/g, owner.open + 1, owner.end - 1);
+  return { text, calls, changed, cannot, failed, unconfirmed, presentation, branches, deliver: calls.slice(deliver.open + 1, deliver.end - 1) };
+}
+
+function assertUndoPresentation(actual: ReturnType<typeof nativeUndo>) {
+  expect(actual.branches.partly.trim()).toMatch(/^showToast\(ListToast\(text:\s*conflicted\s*\?\s*Self\.undoChangedText\s*:\s*Self\.cannotUndoNote\(keeps\),\s*canUndo:\s*false\),\s*undo:\s*\[\]\)$/);
+  expect(actual.branches.done.trim()).toMatch(/^if keeps > 0\s*\{\s*showToast\(ListToast\(text:\s*Self\.cannotUndoNote\(keeps\),\s*canUndo:\s*false\),\s*undo:\s*\[\]\)\s*\}\s*else\s*\{\s*hideToast\(\)\s*\}$/);
+  expect(actual.branches.failed.trim()).toMatch(/^showToast\(ListToast\(text:\s*Self\.undoFailedText,\s*canUndo:\s*false\),\s*undo:\s*\[\],\s*note:\s*conflicted\s*\?\s*Self\.undoChangedText\s*:\s*nil\)$/);
+  expect(actual.branches.unconfirmed.trim()).toMatch(/^showToast\(ListToast\(text:\s*Self\.unconfirmedText,\s*canUndo:\s*false\),\s*undo:\s*\[\],\s*note:\s*conflicted\s*\?\s*Self\.undoChangedText\s*:\s*nil\)$/);
+}
+
+/** Break a real branch, then leave a complete good switch only in non-executable source. */
+function phantomUndo(model: string, target: UndoBranch, kind: PhantomKind): string {
+  const original = nativeUndo(model), branch = original.branches[target];
+  const broken = target === "partly" ? branch.replace("conflicted ? Self.undoChangedText : Self.cannotUndoNote(keeps)", "Self.undoChangedText")
+    : branch.replace(target === "done" ? "Self.cannotUndoNote(keeps)" : target === "failed" ? "Self.undoFailedText" : "Self.unconfirmedText", "Self.undoChangedText");
+  expect(broken).not.toBe(branch);
+  const changed = original.text.replace(branch, broken);
+  expect(changed).not.toBe(original.text);
+  const location = nativeUndo(changed).presentation.end;
+  const good = original.calls.slice(original.presentation.start, original.presentation.end);
+  const phantom = kind === "line comment" ? good.split("\n").map((line) => "// " + line).join("\n")
+    : kind === "block comment" ? "/*\n" + good + "\n*/"
+      : kind === "raw string" ? 'let phantom = #"' + good.replace(/\s+/g, " ") + '"#'
+        : 'let phantom = """\n' + good + '\n"""';
+  return changed.slice(0, location) + "\n" + phantom + "\n" + changed.slice(location);
+}
+
+const phantomCases = (["partly", "done", "failed", "unconfirmed"] as const).flatMap((branch) =>
+  (["line comment", "block comment", "raw string", "multiline string"] as const).map((kind) => [kind, branch] as const));
+
+
+// Check the active native display paths, not an unused legacy sentence left in Swift.
 function assertNativeMessage(model: string, format: string, controls: string) {
+  const actual = nativeUndo(model);
   const note = exportedText(format, "CANNOT_UNDO_NOTE");
-  const nativeNote = model.match(/static func cannotUndoNote\([^)]*\)\s*->\s*String\s*\{\s*("(?:[^"\\]|\\.)*")\s*\}/);
-  expect(nativeNote, "read the native note actually used by deliverAll").toBeTruthy();
-  expect(JSON.parse(nativeNote![1])).toBe(note);
-  const deliverAll = model.slice(model.indexOf("func deliverAll() async {"), model.indexOf("func dismissCheck("));
-  expect(deliverAll).toMatch(/note:\s*canUndo && confirmed > 0 \? Self\.cannotUndoNote\(confirmed\) : nil/);
+  expect(actual.cannot).toBe(note);
+  expect(actual.deliver).toMatch(/note:\s*canUndo && confirmed > 0 \? Self\.cannotUndoNote\(confirmed\) : nil/);
   expect(controls).toMatch(/note:\s*undo\.length > 0 && undo\.length < done\.saved \? CANNOT_UNDO_NOTE : null/);
-  const notice = exportedText(format, "PARTLY_RESTORED_NOTICE");
-  const nativeNotice = model.match(/static func undoneButKeptText\([^)]*\)\s*->\s*String\s*\{\s*("(?:[^"\\]|\\.)*")\s*\}/);
-  expect(nativeNotice, "read the native notice actually used by undo").toBeTruthy();
-  expect(JSON.parse(nativeNotice![1])).toBe(notice);
-  const undo = model.slice(model.indexOf("func undo() async {"), model.indexOf("func clearForSignOut()"));
-  const presentation = undo.slice(undo.lastIndexOf("switch outcome {"));
-  const partly = presentation.match(/case \.partly:\s*([\s\S]*?)(?=\n        case |\n        \})/);
-  expect(partly, "known remaining receipts have their own result branch").toBeTruthy();
-  expect(partly![1]).toContain("Self.undoneButKeptText(");
-  expect(partly![1]).toContain("canUndo: false");
+  expect(actual.changed).toBe(exportedText(format, "UNDO_CHANGED_NOTICE"));
+  expect(actual.failed).toBe(exportedText(format, "UNDO_FAILED_NOTICE"));
+  // This is deliberately read in a test: an old Web tree reports its missing 97be contract, not an import/type failure.
+  expect(actual.unconfirmed).toBe(exportedText(format, "UNDO_UNCONFIRMED_NOTICE"));
+  assertUndoPresentation(actual);
 }
 
 async function world(size = 2) {
@@ -96,8 +209,8 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-describe("native legacy copy and the actual Web receipt boundary", () => {
-  it("actual actions and helper use opaque RPC keys and preserve restored, changed and failed facts", async () => {
+describe("native neutral undo copy and the actual Web receipt boundary", () => {
+  it("actual actions and helper use opaque RPC keys and distinguish refusal from unconfirmed replies", async () => {
     const valid = await world();
     expect(await runUndo(restoreStatuses, valid.receipts)).toEqual({ restored: [id(1), id(2)], changed: [], failed: [] });
     expect(undoCalls(valid.db).map((call) => call.args)).toEqual([{ p_receipts: keys(valid.receipts) }]);
@@ -108,14 +221,14 @@ describe("native legacy copy and the actual Web receipt boundary", () => {
     expect(await runUndo(restoreStatuses, changed.receipts)).toEqual({ restored: [id(1)], changed: [id(2)], failed: [] });
     expect(changed.db.find("parcels", id(2))!.received_at).not.toBeNull();
 
-    const failed = await world();
-    failed.db.rpc = async () => ({ data: null, error: { message: "local RPC refusal" } });
-    expect(await runUndo(restoreStatuses, failed.receipts)).toEqual({ restored: [], changed: [], failed: [id(1), id(2)] });
+    const unconfirmed = await world();
+    unconfirmed.db.rpc = async () => ({ data: null, error: { message: "local RPC error" } });
+    expect(await runUndo(restoreStatuses, unconfirmed.receipts)).toEqual({ restored: [], changed: [], failed: [], unconfirmed: [id(1), id(2)] });
   });
 
-  it("keeps the native partial branch, shared copy and cannot-undo action contract", () => {
+  it("binds both active native notices to the actual Web constants and preserves uncertain outcomes", () => {
     assertNativeMessage(model, format, controls);
-    expect(PARTLY_RESTORED_NOTICE).not.toBe(UNDO_CHANGED_NOTICE);
+    expect(UNDO_CHANGED_NOTICE).toBe("ほかで変更された荷物があります");
     expect(CANNOT_UNDO_NOTE).toBe("元に戻せない荷物があります");
   });
 
@@ -137,50 +250,108 @@ describe("native legacy copy and the actual Web receipt boundary", () => {
     expect(forged.receipt_id).not.toBe(receipts[0].receipt_id);
   });
 
-  it.each(["changed", "failed", "mixed", "restored"] as const)("the actual Web toast presents %s after the real action and helper finish", async (kind) => {
+  it.each(["changed", "failed", "mixed", "restored", "unconfirmed", "mixed-refusal"] as const)("the actual Web toast presents %s after the real action and helper finish", async (kind) => {
     const { db, receipts } = await world(3);
     if (kind === "changed") await db.from("parcels").update({ category: "hobby" }).eq("id", id(2));
     if (kind === "failed") state.userId = null;
     if (kind === "mixed") db.rpc = async () => ({ data: [{ id: id(1), outcome: "restored" }, { id: id(2), outcome: "changed" }], error: null });
+    if (kind === "unconfirmed") db.rpc = async () => ({ data: null, error: { message: "synthetic missing reply" } });
+    if (kind === "mixed-refusal") db.rpc = async () => ({ data: [{ id: id(1), outcome: "restored" }, { id: id(2), outcome: "changed" }, { id: id(3), outcome: "failed" }], error: null });
     const view = mount(() => DeliveredToastProvider({ children: null }));
     state.publish({ text: "受け取り済みにしました", undo: receipts });
     await vi.waitFor(() => expect(view.text()).toContain("元に戻す"));
     press(button(view, "元に戻す"));
     if (kind === "restored") await vi.waitFor(() => expect(view.hosts((node) => node.props.role === "status")).toHaveLength(0));
     else {
-      await vi.waitFor(() => expect(view.text()).toContain(kind === "changed" ? UNDO_CHANGED_NOTICE : UNDO_FAILED_NOTICE));
-      if (kind === "mixed") expect(view.text()).toContain(UNDO_CHANGED_NOTICE);
+      await vi.waitFor(() => expect(view.hosts((node) => node.type === "button")).toHaveLength(0));
+      const unknown = kind === "mixed" || kind === "unconfirmed";
+      expect(view.text()).toContain(unknown ? exportedText(format, "UNDO_UNCONFIRMED_NOTICE") : kind === "changed" ? UNDO_CHANGED_NOTICE : UNDO_FAILED_NOTICE);
+      if (unknown) expect(view.text()).not.toContain(UNDO_FAILED_NOTICE);
+      if (kind === "mixed" || kind === "mixed-refusal") expect(view.text()).toContain(UNDO_CHANGED_NOTICE);
       expect(view.text()).not.toContain(PARTLY_RESTORED_NOTICE);
       expect(view.hosts((node) => node.type === "button")).toHaveLength(0);
     }
-    if (kind !== "failed" && kind !== "mixed") expect(undoCalls(db)[0].args).toEqual({ p_receipts: keys(receipts) });
+    if (kind === "changed" || kind === "restored") expect(undoCalls(db)[0].args).toEqual({ p_receipts: keys(receipts) });
     view.unmount();
   });
 
-  it("negative control: changing the Web's legacy partial notice breaks the native comparison", () => {
-    const notice = exportedText(format, "PARTLY_RESTORED_NOTICE");
-    const changed = format.replace(JSON.stringify(notice), '"changed remaining notice"');
+  it.each(["error", "throw"] as const)("a committed undo with a lost RPC reply (%s) leaves the real Web toast unconfirmed", async (failure) => {
+    const { db, receipts } = await world(1);
+    const rpc = db.rpc.bind(db);
+    db.rpc = async (name, args) => {
+      const reply = await rpc(name, args);
+      if (name !== "restore_parcel_receipts") return reply;
+      if (failure === "throw") throw new Error("synthetic lost reply");
+      return { data: null, error: { message: "synthetic lost reply" } };
+    };
+    const view = mount(() => DeliveredToastProvider({ children: null }));
+    state.publish({ text: "受け取り済みにしました", undo: receipts });
+    await vi.waitFor(() => expect(view.text()).toContain("元に戻す"));
+    press(button(view, "元に戻す"));
+    await vi.waitFor(() => expect(view.hosts((node) => node.type === "button")).toHaveLength(0));
+    expect(db.find("parcels", id(1))).toMatchObject({ status: "shipped", received_at: null });
+    expect(view.text()).not.toContain(UNDO_FAILED_NOTICE);
+    expect(view.text()).toContain(exportedText(format, "UNDO_UNCONFIRMED_NOTICE"));
+    expect(undoCalls(db)).toHaveLength(1);
+    view.unmount();
+  });
+
+  it.each(["UNDO_CHANGED_NOTICE", "CANNOT_UNDO_NOTE", "UNDO_FAILED_NOTICE", "UNDO_UNCONFIRMED_NOTICE"])("negative control: changing the active Web %s breaks the native comparison", (name) => {
+    assertNativeMessage(model, format, controls);
+    const notice = exportedText(format, name);
+    const changed = format.replace("export const " + name + " = " + JSON.stringify(notice) + ";", "export const " + name + ' = "changed Web notice";');
     expect(changed).not.toBe(format);
     expect(() => assertNativeMessage(model, changed, controls)).toThrow();
   });
 
-  it("negative control: changing the shared cannot-undo note breaks the native comparison", () => {
-    const note = exportedText(format, "CANNOT_UNDO_NOTE");
-    const changed = format.replace(JSON.stringify(note), '"changed cannot-undo note"');
+  it("positive control: the unused Web legacy sentence is no longer the native copy contract", () => {
+    assertNativeMessage(model, format, controls);
+    const legacy = exportedText(format, "PARTLY_RESTORED_NOTICE");
+    const changed = format.replace(JSON.stringify(legacy), '"changed unused legacy notice"');
     expect(changed).not.toBe(format);
-    expect(() => assertNativeMessage(model, changed, controls)).toThrow();
+    assertNativeMessage(model, changed, controls);
   });
 
-  it("negative control: changing the native actual notice is detected without editing Swift", () => {
-    const notice = exportedText(format, "PARTLY_RESTORED_NOTICE");
+  it.each(["UNDO_CHANGED_NOTICE", "CANNOT_UNDO_NOTE", "UNDO_FAILED_NOTICE", "UNDO_UNCONFIRMED_NOTICE"])("negative control: changing the active native %s is detected without editing Swift", (name) => {
+    assertNativeMessage(model, format, controls);
+    const notice = exportedText(format, name);
     const changed = model.replace(JSON.stringify(notice), '"changed native notice"');
     expect(changed).not.toBe(model);
     expect(() => assertNativeMessage(changed, format, controls)).toThrow();
   });
 
   it("negative control: routing the native partial branch to another result is detected", () => {
+    assertNativeMessage(model, format, controls);
     const changed = model.replace("case .partly:", "case .failed:");
     expect(changed).not.toBe(model);
     expect(() => assertNativeMessage(changed, format, controls)).toThrow();
+  });
+
+  it("negative control: correct constants cannot hide an unconditional changed notice", () => {
+    assertNativeMessage(model, format, controls);
+    const changed = model.replace("conflicted ? Self.undoChangedText : Self.cannotUndoNote(keeps)", "Self.undoChangedText");
+    expect(changed).not.toBe(model);
+    expect(() => assertNativeMessage(changed, format, controls)).toThrow();
+  });
+
+  it("negative control: old keeps cannot be routed to a changed or received-state assertion", () => {
+    assertNativeMessage(model, format, controls);
+    const changed = model.replace("text: Self.cannotUndoNote(keeps)", "text: Self.undoChangedText");
+    expect(changed).not.toBe(model);
+    expect(() => assertNativeMessage(changed, format, controls)).toThrow();
+  });
+
+  it("negative control: an unknown result whose read failed cannot become a changed notice", () => {
+    assertNativeMessage(model, format, controls);
+    const changed = model.replace("case .unconfirmed: showToast(ListToast(text: Self.unconfirmedText,", "case .unconfirmed: showToast(ListToast(text: Self.undoChangedText,");
+    expect(changed).not.toBe(model);
+    expect(() => assertNativeMessage(changed, format, controls)).toThrow();
+  });
+
+  it.each(phantomCases)("rejects a %s phantom after breaking the actual %s branch", (kind, branch) => {
+    assertNativeMessage(model, format, controls);
+    const mutated = phantomUndo(model, branch, kind);
+    expect(mutated).not.toBe(model);
+    expect(() => assertNativeMessage(mutated, format, controls)).toThrow();
   });
 });

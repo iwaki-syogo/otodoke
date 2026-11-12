@@ -3,6 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { REMOVE_DELIVERED_LABEL, REMOVE_RECEIVED_LABEL, REMOVE_RECEIVED_NOTE } from "@/lib/parcel-action-text";
 import { FakeDb, describeQuery, scopedToUser, type Query } from "./fake-db";
 import { findAll, hasClasses, parseHtml, textOf } from "./html-tree";
 
@@ -17,7 +18,7 @@ import { findAll, hasClasses, parseHtml, textOf } from "./html-tree";
  * nothing is retried. Every failure answers 「更新できませんでした。開き直してください」.
  *
  * NotDeliveredButton({ id }), a client component in src/app/app/parcels/[id]/not-delivered-button.tsx:
- * the 「届いていない」 button. The parcel page shows it for a delivered parcel only.
+ * The parcel page offers delivery removal only for a delivered parcel without a receipt.
  */
 
 const USER = { id: "00000000-0000-4000-8000-00000000000a" };
@@ -249,12 +250,12 @@ describe("NotDeliveredButton", () => {
   const load = async () => (await import("@/app/app/parcels/[id]/not-delivered-button")).NotDeliveredButton;
   const sourcePath = path.resolve(__dirname, "../../app/app/parcels/[id]/not-delivered-button.tsx");
 
-  it("draws one 「届いていない」 button, styled like 編集", async () => {
+  it("draws one remove-delivered button with the shared label, styled like 編集", async () => {
     const NotDeliveredButton = await load();
     const root = parseHtml(renderToStaticMarkup(createElement(NotDeliveredButton, { id: TRACKED })));
     const buttons = findAll(root, (n) => n.tag === "button");
     expect(buttons).toHaveLength(1);
-    expect(textOf(buttons[0]).trim()).toBe("届いていない");
+    expect(textOf(buttons[0]).trim()).toBe(REMOVE_DELIVERED_LABEL);
     expect(hasClasses(buttons[0], "rounded-full", "border", "text-sm"), buttons[0].attrs.class).toBe(true);
     expect(buttons[0].attrs.disabled).toBeUndefined();
     expect(textOf(root)).not.toContain(FAILED);
@@ -279,9 +280,9 @@ describe("parcel page", () => {
     const Page = (await import("@/app/app/parcels/[id]/page")).default;
     return parseHtml(renderToStaticMarkup(await Page({ params: Promise.resolve({ id }) })));
   };
-  const notDeliveredButtons = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "button" && textOf(n).includes("届いていない"));
+  const notDeliveredButtons = (root: ReturnType<typeof parseHtml>) => findAll(root, (n) => n.tag === "button" && textOf(n).trim() === REMOVE_DELIVERED_LABEL);
 
-  it("offers 「届いていない」 on a delivered parcel", async () => {
+  it("offers delivery removal on a delivered parcel", async () => {
     expect(notDeliveredButtons(await render(TRACKED))).toHaveLength(1);
   });
 
@@ -306,17 +307,36 @@ describe("parcel page", () => {
     expect(deliveredButtons(await render(TRACKED))).toHaveLength(0);
   });
 
-  it("offers both 「受け取った」 and 「届いていない」 on a delivered parcel not yet received", async () => {
+  it("offers both receipt marking and delivery removal on a delivered parcel not yet received", async () => {
     const root = await render(TRACKED);
     expect(deliveredButtons(root)).toHaveLength(1);
     expect(notDeliveredButtons(root)).toHaveLength(1);
   });
 
-  it("offers only 「受け取っていない」 on a received parcel", async () => {
+  it("offers only the shared remove-received label on a received parcel", async () => {
     db.find("parcels", TRACKED)!.received_at = "2026-11-02T00:00:00Z";
     const root = await render(TRACKED);
-    expect(findAll(root, (n) => n.tag === "button" && textOf(n).trim() === "受け取っていない")).toHaveLength(1);
+    const [header] = findAll(root, (n) => n.tag === "header");
+    expect(findAll(header, (n) => n.tag === "button").map((n) => textOf(n).trim())).toEqual([REMOVE_RECEIVED_LABEL]);
     expect(deliveredButtons(root)).toHaveLength(0);
     expect(notDeliveredButtons(root)).toHaveLength(0);
+  });
+
+  it("explains the unchanged delivery state once, directly below the remove-received button", async () => {
+    db.find("parcels", TRACKED)!.received_at = "2026-11-02T00:00:00Z";
+    const root = await render(TRACKED);
+    const notes = findAll(root, (n) => n.tag === "p" && textOf(n) === REMOVE_RECEIVED_NOTE);
+    expect(notes).toHaveLength(1);
+    const [header] = findAll(root, (n) => n.tag === "header");
+    const [button] = findAll(header, (n) => n.tag === "button");
+    expect(notes[0].parent).toBe(button.parent);
+    const siblings = button.parent!.children.filter((child) => typeof child !== "string");
+    expect(siblings.indexOf(notes[0])).toBe(siblings.indexOf(button) + 1);
+  });
+
+  it.each(["delivered", "ordered", "shipped", "out_for_delivery", "attempted", "cancelled", "unknown"])("no receipt on a %s parcel: no remove-received note", async (status) => {
+    Object.assign(db.find("parcels", TRACKED)!, { status, received_at: null });
+    const root = await render(TRACKED);
+    expect(findAll(root, (n) => n.tag === "p" && textOf(n) === REMOVE_RECEIVED_NOTE)).toHaveLength(0);
   });
 });

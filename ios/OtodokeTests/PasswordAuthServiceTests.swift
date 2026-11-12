@@ -398,7 +398,7 @@ struct PasswordAuthServiceTests {
         } catch { observed = error }
 
         #expect(observed?.rawValue == "mail_busy")
-        #expect(observed?.message == "いま混み合っています。少し時間をおいて、もう一度お試しください。")
+        #expect(observed?.message == LoginText.mailBusy)
         #expect(await fake.count("POST", endpoint) == 1)
         #expect(auth.provider.auth.currentSession == nil)
     }

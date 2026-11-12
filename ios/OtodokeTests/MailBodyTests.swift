@@ -9,7 +9,7 @@ import Testing
 struct MailBodyTests {
     static let sealedHeadline = "🔒 暗号化されたメール"
     static let droppedHeadline = "本文は保存していません"
-    static let droppedDetail = "パスワードでログインする前に届いたメールです。件名・差出人・本文は保存していません。"
+    static let droppedDetail = "本文は保存していません"
     static let unopenable = "開けませんでした"
     static let noBody = "本文はありません。"
 
@@ -65,6 +65,7 @@ struct MailBodyTests {
         let mail = columns[open.upperBound..<close].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         #expect(mail.contains("body_state"))
         #expect(mail.contains("from_domain"))
+        #expect(mail.contains("error"))
         #expect(!columns.contains("body_envelope"))
         // The batch-1 columns stay.
         for c in ["id", "subject", "from_address", "from_name", "sent_at", "classification", "text_body", "html_body"] {

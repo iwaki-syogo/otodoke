@@ -12,7 +12,6 @@ enum LoginText {
     static let credentials = "メールアドレスかパスワードが違います。"
     static let notConfirmed = "メールアドレスの確認がまだです。届いたメールのリンクを開いてください。"
     static let rate = "回数が多いため、しばらく時間をおいてから、もう一度お試しください。"
-    // Provisional wording shared with LOGIN_MESSAGES.mail_busy at 58f6831.
     static let mailBusy = "いま混み合っています。少し時間をおいて、もう一度お試しください。"
     static let captcha = "確認が切れました。もう一度お試しください。"
     static let network = "つながりませんでした。少し時間をおいて、もう一度お試しください。"
