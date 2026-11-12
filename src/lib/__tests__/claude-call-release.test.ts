@@ -84,6 +84,7 @@ describe("claimClaudeCall", () => {
 
   it("two releases of one claim at once give back one call (the database's rule)", async () => {
     const db = new FakeDb();
+    asConsentingAdmin(db);
     const first = await db.rpc("claim_claude_call_v2", { p_user_id: USER, p_user_limit: 30, p_global_limit: 300 });
     const second = await db.rpc("claim_claude_call_v2", { p_user_id: USER, p_user_limit: 30, p_global_limit: 300 });
     const id = (first.data as Array<{ claim_id: number }>)[0].claim_id;
@@ -96,6 +97,7 @@ describe("claimClaudeCall", () => {
   describe("a release that is legitimate but has nothing to give back answers 0 and changes nothing", () => {
     it("someone else's id, an unknown id", async () => {
       const db = new FakeDb();
+      asConsentingAdmin(db);
       const claim = await db.rpc("claim_claude_call_v2", { p_user_id: USER, p_user_limit: 30, p_global_limit: 300 });
       const id = (claim.data as Array<{ claim_id: number }>)[0].claim_id;
       expect((await db.rpc("release_claude_call", { p_claim_id: id, p_user_id: OTHER })).data).toBe(0);
@@ -105,6 +107,7 @@ describe("claimClaudeCall", () => {
 
     it("a claim row that was pruned", async () => {
       const db = new FakeDb();
+      asConsentingAdmin(db);
       const claim = await db.rpc("claim_claude_call_v2", { p_user_id: USER, p_user_limit: 30, p_global_limit: 300 });
       const id = (claim.data as Array<{ claim_id: number }>)[0].claim_id;
       db.tables.claude_call_claims = [];
@@ -114,6 +117,7 @@ describe("claimClaudeCall", () => {
 
     it("a day's count set to 0 by hand: never negative", async () => {
       const db = new FakeDb();
+      asConsentingAdmin(db);
       const claim = await db.rpc("claim_claude_call_v2", { p_user_id: USER, p_user_limit: 30, p_global_limit: 300 });
       const id = (claim.data as Array<{ claim_id: number }>)[0].claim_id;
       db.rows("claude_usage_daily")[0].calls = 0;
@@ -149,6 +153,7 @@ describe("seams between the code and the database", () => {
 
   it("2. the first batch's code (the old claim) on an applied database: counts, writes no claim row", async () => {
     const db = new FakeDb();
+    asConsentingAdmin(db);
     const args = { p_user_id: USER, p_user_limit: 30, p_global_limit: 300 };
     expect((await db.rpc("claim_claude_call", args)).data).toBe("ok");
     expect((await db.rpc("claim_claude_call", args)).data).toBe("ok");
@@ -178,6 +183,7 @@ describe("seams between the code and the database", () => {
 
   it("5. v2 and the old claim count the same row by the same rule (Preview and production on one database)", async () => {
     const db = new FakeDb();
+    asConsentingAdmin(db);
     const args = { p_user_id: USER, p_user_limit: 3, p_global_limit: 300 };
     expect((await db.rpc("claim_claude_call", args)).data).toBe("ok");
     expect(((await db.rpc("claim_claude_call_v2", args)).data as Array<{ verdict: string }>)[0].verdict).toBe("ok");

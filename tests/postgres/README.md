@@ -89,3 +89,23 @@ node tests/postgres/run-consent-waiting-storage.mjs --negative-control
 Auth は `bootstrap.sql`、cron は既存の domain/purge 関数本体と小さなローカル schedule 表で近似します。schedule が既定の毎日であることは before/verify で検査しますが、pg_cron 自体・本物の Auth・PostgREST は実測しません。台本の終了・失敗・割り込み時は、専用サーバーの停止、待ち受け 0、専用データの削除までが後処理です。
 
 2026-11-12: この Codex 環境は、既存台本で mmap 設定を付けても `initdb` の `shmget` が sandbox に拒否されることが確認済みです。再試行や別経路での回避は行わず、今回は構文検査と `--self-test`、静的契約の RED/GREEN/陰性対照だけを実行しました。上の PostgreSQL 挙動・並列競合・migration/rollback・SQL 陰性対照は、実行できるローカル環境での確認が残っています。
+
+## 有料呼び出しごとの許可確認
+
+`run-claude-claim-consent.mjs` は `127.0.0.1:65443` の新しい専用 cluster に、本物の migration を `120000` まで適用してから、`121000` の before・二度適用・verify・挙動・rollback 二度・前の関数本体の完全一致・再適用を検査します。Auth と cron の近似、継承した接続設定の除去は上の許可待ち台本と同じです。
+
+```sh
+node tests/postgres/run-claude-claim-consent.mjs --self-test
+node tests/postgres/run-claude-claim-consent.mjs --baseline
+node tests/postgres/run-claude-claim-consent.mjs
+node tests/postgres/run-claude-claim-consent.mjs --negative-control
+node tests/postgres/run-claude-claim-consent.mjs --negative-lock
+```
+
+`--baseline` は `121000` を入れず、`--negative-control` は専用 DB の許可検査 helper だけを空にします。どちらも未回答者の最初の claim を拒否する同じ試験で終了コード 1・`verdict=FAILED` が期待値です。`--negative-lock` は判定を保ったまま `FOR SHARE` だけを外します。通常の取り消しとの競合だけでは、先に取る世代 G が直列化し、C のロックが無くても通り得ます。そのため、台本には C だけを `FOR UPDATE` で保持し、その後 U/G を取らない観測用接続を別に置き、claim が実際の consent 行で待つことを `pg_blocking_pids` で確かめる試験があります。ロックを外した版は、この観測試験で終了コード 1・`verdict=FAILED` になります。
+
+通常版は、未回答・拒否の standalone v1/v2 と owned v1/v2 の全入口で counter/ledger が増えないこと、既存の個人/全体の上限、取り消した後の一度だけの release、helper/private core の実行権限、null 引数・権限障害・本物の SQL 障害を専用の許可拒否と区別することを確認します。SQL の確認不能を未回答扱いにはしません。取り消しと claim、全消去・backlog と owned claim、退会と standalone/owned claim の並列操作も流し、成功した claim の数と課金回数が一致すること、退会しても全体の使用量が失われないことを検査します。
+
+ロックは standalone U→G→C→有料日の advisory、owned U→G→E→C→有料日の advisory です。v2 の保存済み core が public v1 を呼ぶときは U/G/C の再入です。release は従来の U→有料日の advisory のまま、許可を要求しません。取り消しと claim の順を同じ短い DB transaction で決め、成功した claim の commit 後に始まる外部 HTTP の間までロックを持ち出しません。
+
+台本は終了・失敗・割り込み時に専用 PG を止め、待ち受け 0 を確かめて専用データを削除します。2026-11-12 の Codex 環境では、既知の `shmget` 拒否を再試行・回避せず、構文検査・`--self-test` とソース契約試験だけを実行しました。実 SQL・並列操作・rollback と SQL 陰性対照は未実行です。

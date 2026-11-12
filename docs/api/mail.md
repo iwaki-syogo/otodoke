@@ -147,3 +147,22 @@ The existing daily cleanup removes expired waiting mail. Taking over an expired 
 before Claude is called and uses the existing discarded outcome. If a partial reading has already
 been saved, cleanup clears the mail content while keeping its saved results and parcel. Completed
 readings remain until the user deletes them. No new cron or client-scheduled cleanup is required.
+
+## Permission at each paid claim
+
+Migration `20261113121000_claude_claim_consent.sql` also checks the current consent inside both
+paid-claim RPCs. It locks the user's consent row `FOR SHARE` before taking any daily allowance.
+A withdrawal serialized before the claim prevents that claim and keeps the mail waiting, including
+when withdrawal occurs after the pipeline's first check or between triage and extraction.
+The existing permission choice and previously saved results stay intact. A legitimate release of
+an earlier claim remains possible after withdrawal.
+
+Only SQLSTATE `42501` with the exact message `ai_consent_required` is treated as the fixed permission
+denial. Lease failures, database errors and failure to retain the waiting state remain failures.
+The initial API guard and its existing response contract are unchanged; a running batch stopped by
+a later withdrawal can still report `read_failed` as described above.
+
+The transaction serializes claim authorization with withdrawal. Its locks are released when the
+claim commits, before the external HTTP request; they are not held across Claude's response. An
+already authorized call cannot be recalled by a later withdrawal. Clients must not replay such a
+call automatically or reset the saved permission when reporting the stopped batch.

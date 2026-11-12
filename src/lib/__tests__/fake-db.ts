@@ -609,6 +609,9 @@ export class FakeDb {
    * are exercised on Postgres; this mirrors their rules.
    */
   private claimClaudeCall(a: ClaimArgs, v2: boolean): Result {
+    if (!this.rows("ai_reading_consents").some((row) => row.user_id === a.p_user_id && row.decision === "granted")) {
+      return { data: null, error: { code: "42501", message: "ai_consent_required" } };
+    }
     const day = this.jstDay();
     const usage = this.rows("claude_usage_daily");
     const answer = (verdict: string, claimId: number | null): Result => ({ data: v2 ? [{ verdict, claim_id: claimId }] : verdict, error: null });
