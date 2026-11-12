@@ -54,6 +54,8 @@ export type ReadWaitingResult =
 export interface ReadWaitingOptions {
   /** Automatic reading: only mail held for consent that had arrived by this server choice. */
   consentDecidedAt?: string;
+  /** One automatic invocation shares this across batches; a new explicit request can retry. */
+  attemptedEmailIds?: Set<string>;
   /** Automatic requests stop between mails before their request budget is exhausted. */
   deadlineAt?: number;
   /** The shared whole-mail allowance includes both bounded Claude calls and its DB work. */
@@ -69,22 +71,44 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
   } catch (error) {
     return { ok: false, stage: "lookup", message: error instanceof Error ? error.message : String(error), read: 0, overLimit: false, unavailable: false, onlyBusy: false };
   }
-  let query = db
-    .from("emails")
-    .select("id, created_at, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body, sample_generation")
-    .eq("user_id", userId)
-    .eq("body_state", "plain");
-  if (options.consentDecidedAt !== undefined) {
-    // 120000 marks legacy failures without replacing their displayed error. Arrival and the
-    // first waiting deadline are immutable; a retry's created_at is not the arrival clock.
-    // Each batch excludes mail expired at the grant or now, before limit(20). The owned store
-    // checks expiry again if it crosses the deadline after this SELECT and before takeover.
-    query = query.lte("received_at", options.consentDecidedAt)
-      .gt("consent_waiting_until", new Date(started).toISOString())
-      .or(`and(or(${unread}),consent_waiting_until.gt.${options.consentDecidedAt},or(provider_email_id.is.null,provider_email_id.not.like.${SAMPLE_PROVIDER_ID}),or(classification.is.null,classification.neq.forwarding_confirmation))`);
-  } else query = query.or(unread);
-  const { data, error } = await query.order("sent_at", { ascending: true }).limit(20);
+  const attemptedEmailIds = options.attemptedEmailIds;
+  const query = (cursor?: { sentAt: string | null; id: string }) => {
+    let waiting = db
+      .from("emails")
+      .select("id, created_at, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body, sample_generation")
+      .eq("user_id", userId)
+      .eq("body_state", "plain");
+    const afterCursor = cursor && (cursor.sentAt === null
+      ? `and(sent_at.is.null,id.gt.${cursor.id})`
+      : `or(sent_at.gt.${cursor.sentAt},and(sent_at.eq.${cursor.sentAt},id.gt.${cursor.id}),sent_at.is.null)`);
+    if (options.consentDecidedAt !== undefined) {
+      // Arrival and the first waiting deadline are immutable; a retry's created_at is not arrival.
+      // The owned store checks expiry again if it crosses the deadline after this SELECT.
+      const conditions = [`or(${unread})`, `consent_waiting_until.gt.${options.consentDecidedAt}`,
+        `or(provider_email_id.is.null,provider_email_id.not.like.${SAMPLE_PROVIDER_ID})`,
+        "or(classification.is.null,classification.neq.forwarding_confirmation)"];
+      if (afterCursor) conditions.push(afterCursor);
+      waiting = waiting.lte("received_at", options.consentDecidedAt)
+        .gt("consent_waiting_until", new Date(started).toISOString())
+        .or(`and(${conditions.join(",")})`);
+    } else waiting = waiting.or(afterCursor ? `and(or(${unread}),${afterCursor})` : unread);
+    const ordered = waiting.order("sent_at", attemptedEmailIds ? { ascending: true, nullsFirst: false } : { ascending: true });
+    return attemptedEmailIds ? ordered.order("id", { ascending: true }) : ordered;
+  };
+  const noMailBudget = () => options.deadlineAt !== undefined && Date.now() + (options.minimumMailBudgetMs ?? 0) > options.deadlineAt;
+  const timedOut = (): ReadWaitingResult => ({ ok: false, stage: "read", message: "ai_consent_backlog_time_limit", read: 0, overLimit: false, unavailable: false, onlyBusy: false });
+  if (attemptedEmailIds && noMailBudget()) return timedOut();
+  let page = await (attemptedEmailIds ? query().range(0, 19) : query().limit(20));
+  // A deleted visited row must not shift an unread row behind an offset. Keep the last raw DB
+  // timestamp/id instead, including timestamp microseconds, and treat only zero rows as EOF.
+  while (attemptedEmailIds && !page.error && page.data?.length && page.data.every((mail) => attemptedEmailIds.has(mail.id))) {
+    const last = page.data[page.data.length - 1];
+    if (noMailBudget()) return timedOut();
+    page = await query({ sentAt: last.sent_at, id: last.id }).range(0, 19);
+  }
+  const { data, error } = page;
   if (error || data === null) return { ok: false, stage: "lookup", message: error?.message ?? "waiting_mail_lookup_failed", read: 0, overLimit: false, unavailable: false, onlyBusy: false };
+  const unattempted = attemptedEmailIds ? data.filter((mail) => !attemptedEmailIds.has(mail.id)) : data;
 
   let failure: string | null = null;
   let realFailure = false;
@@ -94,7 +118,8 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
   // A sample mail left pending by an interrupted loadDemo is read the way loadDemo reads it
   // (precomputed, never Claude); the entries are loaded once, only if one is waiting.
   let samples: Map<string, DemoEntry> | null = null;
-  for (const m of data) {
+  for (const m of unattempted) {
+    if (attemptedEmailIds?.has(m.id)) continue;
     if (Date.now() - started > MAIL_REQUEST_BUDGET_MS - MAIL_READ_BUDGET_MS) break;
     if (options.deadlineAt !== undefined && Date.now() + (options.minimumMailBudgetMs ?? 0) > options.deadlineAt) {
       return { ok: false, stage: "read", message: "ai_consent_backlog_time_limit", read, overLimit, unavailable, onlyBusy: false };
@@ -108,8 +133,11 @@ export async function runReadWaitingMail(db: AdminClient, userId: string, option
         // No sample of that name any more: unreadable, and never a reason to call Claude.
         if (!entry) throw new Error(`sample mail ${file} not found`);
         const input = demoInput(entry, userId);
-        outcome = await processInboundEmail(withSampleGeneration(db, userId, m.sample_generation), input.mail, { ...input.options, replacesEmailId: m.id, replacesCreatedAt: m.created_at });
+        const sampleDb = withSampleGeneration(db, userId, m.sample_generation);
+        attemptedEmailIds?.add(m.id);
+        outcome = await processInboundEmail(sampleDb, input.mail, { ...input.options, replacesEmailId: m.id, replacesCreatedAt: m.created_at });
       } else {
+        attemptedEmailIds?.add(m.id);
         outcome = await processInboundEmail(
           db,
           {

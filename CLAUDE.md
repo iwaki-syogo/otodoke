@@ -256,3 +256,10 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 新Webの仮文は `UNDO_CHANGED_NOTICE` の「ほかで変更された荷物があります」。本人の決定までは仮置き。旧 `PARTLY_RESTORED_NOTICE` と `CANNOT_UNDO_NOTE` はiOSで使う値を維持する。Webの実装とTS parityの期待を同じ変更に含め、Swift/ios配下はiOS担当の版を保つ。iOSの三区分・新しい文・混在表示・Swift試験更新は別担当へ報告する。
 - STATUS_LABEL.deliveredはビルド14で「配達済み」へ更新済み。上の受取節にある「届いた」の保持説明は旧契約で、新しいWeb差分から戻さない。試験台本は `tests/postgres/run-received-receipts.mjs` と、受取/undoを追加した `run-sample-lock-order.mjs` の `--with-receipts`。専用Postgresでowner分離・固定キーの陰性・自然競合・戻し/再適用を測り、停止と削除まで確認する。
 - DB試験台本のverify出力は、共有の `tests/postgres/run-cost-guards.mjs` のファイル別形式で判定する。110000 afterは末尾の判定列を読む。任意の列にあるOKでは代用せず、列数・必須真偽値・件数・動作試験結果も照合する。verifyのSELECTを変えたら共有形式と正常/異常の自己試験も同じ変更で合わせ、実Postgresの測定とは区別する。
+
+## 自動読み取り内の再試行（R4-2）
+
+- 許可直後の自動読取は、同じ要求の中で一度試したメールIDをbatch間で共有し、同じIDを再び有料処理へ送らない。failedを恒久的に対象外にはしない。本文を残すmodel refused / relevance_unverifiedも、その要求では1回だけ数え、後続の別メールへ進む。
+- 対象のpageはsent_at昇順NULLS LAST/id昇順で取り、既試行だけのpageは末尾の生の時刻/idを境界として続きを探す。時刻の小数を丸めず、同時刻とNULLの境界もidで進む。短いpageを完了と仮定せず、空page・期限・上限・失敗を別々に扱う。未試行を処理した後のbatchは境界無しから探し、別要求の部分削除で後続を飛ばさない。
+- 記録は要求内だけのもので、明示の手動読取や別の許可要求へ持ち越さない。許可のreceiptの一度だけのclaim、到着/保管期限のN2条件、要求開始時の世代、行id/created_atの照合、課金前の現在の許可検査を維持する。
+- WebとiOSの許可後処理は共通runReadAfterConsentを使う。両方の手動入口は共通runReadWaitingMailの単発snapshotで、クライアント側に自動再POSTを足さない。DBに再試行状態やmigrationを追加しない。

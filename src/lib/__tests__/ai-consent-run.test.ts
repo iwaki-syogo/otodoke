@@ -177,7 +177,7 @@ describe("automatic reading after the recorded permission", () => {
     expect(db.rows("emails")).toHaveLength(0);
     const batches = db.callsOn("emails", "select").filter((q) => q.columns?.startsWith("id, created_at, provider_email_id"));
     expect(batches).toHaveLength(3);
-    expect(batches.every((q) => q.limit === 20)).toBe(true);
+    expect(batches.map((q) => q.range)).toEqual([[0, 19], [0, 19], [0, 19]]);
   });
 
   it("the snapshot excludes new mail, another user, samples and non-consent failures", async () => {

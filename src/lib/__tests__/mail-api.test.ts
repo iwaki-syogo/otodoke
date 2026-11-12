@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeDb, consentWaitingRetentionMs } from "./fake-db";
 
 /**
  * The iOS app's mail endpoints (src/app/api/mail/**): a Bearer token checked by Supabase Auth
@@ -9,7 +10,7 @@ const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const jwt = (sub = "user-1") => `${b64url({ alg: "ES256" })}.${b64url({ sub, amr: [{ method: "otp", timestamp: 1 }] })}.c2ln`;
 const ID = "123e4567-e89b-12d3-a456-426614174000";
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), readAfter: vi.fn(), process: vi.fn(), consent: vi.fn(), rows: { current: [] as unknown[] } }));
+const mocks = vi.hoisted(() => ({ db: null as unknown, getUser: vi.fn(), mark: vi.fn(), read: vi.fn(), readAfter: vi.fn(), process: vi.fn(), consent: vi.fn(), rows: { current: [] as unknown[] } }));
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock("@/lib/pipeline", () => ({ processInboundEmail: mocks.process, MailBeingReadError: class MailBeingReadError extends Error {} }));
@@ -27,7 +28,7 @@ vi.mock("@/lib/supabase/admin", () => {
     if (name !== "begin_sample_load") throw new Error(`unexpected test RPC ${name}`);
     return answer("00000000-0000-4000-8000-000000000001");
   };
-  return { createAdminClient: () => chain };
+  return { createAdminClient: () => mocks.db ?? chain };
 });
 vi.mock("@/lib/ai-consent-run", () => ({ runReadAfterConsent: mocks.readAfter }));
 vi.mock("@/lib/mail-run", async (importActual) => {
@@ -52,6 +53,8 @@ async function call(step: Step, { token, body = GOOD[step], raw }: { token?: str
 }
 
 beforeEach(() => {
+  mocks.db = null;
+  mocks.rows.current = [];
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
   for (const fn of [mocks.getUser, mocks.mark, mocks.read, mocks.readAfter, mocks.process]) fn.mockReset();
@@ -61,11 +64,13 @@ beforeEach(() => {
   mocks.read.mockResolvedValue({ ok: true, read: 3, overLimit: false, unavailable: false });
   mocks.readAfter.mockResolvedValue({ ok: true, read: 0, overLimit: false, unavailable: false });
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("unexpected external request"); }));
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("who may call", () => {
@@ -250,6 +255,69 @@ describe("read-waiting", () => {
     expect(await call("read-waiting")).toEqual({ status: 200, json: { ok: true, read: 1, over_limit: true, busy: false, stopped: false }, cache: "no-store" });
     expect(mocks.process).toHaveBeenCalledTimes(2);
     expect(mocks.process.mock.calls[0][1]).toMatchObject({ userId: "user-1" });
+  });
+});
+
+describe("the iOS API reaches the real automatic and manual readers", () => {
+  // Only the pipeline outcome is synthetic. These tests cover Bearer routing, the real
+  // request-local reader loop and its response count, not paid-call accounting or native UI.
+  it.each(["noted", "discarded"] as const)("counts each retained %s mail once, then permits explicit manual retry", async (kind) => {
+    const stamp = "2026-11-12T00:00:00.123456Z";
+    const arrived = "2026-11-01T00:00:00Z";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse(stamp) + 1000);
+    const ids = Array.from({ length: 21 }, (_, index) => `api-waiting-${index + 1}`);
+    const waiting = ids.map((id, index) => ({
+      id, user_id: "user-1", processing_status: "failed", error: kind === "noted" ? "relevance_unverified" : "model_refused", body_state: "plain",
+      provider_email_id: `provider-${id}`, message_id: `<${id}@example.test>`, from_address: "shop@example.test",
+      from_name: null, subject: "Synthetic waiting mail", text_body: "Synthetic retained body", html_body: null,
+      sent_at: new Date(Date.parse(arrived) + index * 1000).toISOString(), created_at: arrived, received_at: arrived,
+      consent_waiting_until: new Date(Date.parse(arrived) + consentWaitingRetentionMs()).toISOString(),
+    }));
+    const other = { ...waiting[0], id: "other-user-mail", user_id: "user-2" };
+    const db = new FakeDb({
+      ai_reading_consents: [{ user_id: "user-1", decision: "granted", decided_at: stamp, text_version: "v1" }],
+      emails: [...waiting, other],
+    });
+    const stored = structuredClone(db.rows("emails"));
+    mocks.db = db;
+    const { runReadWaitingMail } = await vi.importActual<typeof import("@/lib/mail-run")>("@/lib/mail-run");
+    const { runReadAfterConsent } = await vi.importActual<typeof import("@/lib/ai-consent-run")>("@/lib/ai-consent-run");
+    mocks.read.mockImplementation(runReadWaitingMail);
+    mocks.readAfter.mockImplementation(runReadAfterConsent);
+    const retained = async (_admin: unknown, _mail: unknown, options: { replacesEmailId: string }) => ({ kind, emailId: options.replacesEmailId });
+    mocks.process.mockImplementation(async (...args: Parameters<typeof retained>) =>
+      // Bound the old repeating loop without accepting a timeout as regression evidence.
+      mocks.process.mock.calls.length > ids.length
+        ? { kind: "over_limit", emailId: args[2].replacesEmailId, limit: "user" }
+        : retained(...args));
+    const calledIds = () => mocks.process.mock.calls.map((args) => (args[2] as { replacesEmailId: string }).replacesEmailId);
+
+    expect(await call("read-waiting", { body: { after_consent: stamp } })).toEqual({
+      status: 200, json: { ok: true, read: ids.length, over_limit: false, busy: false, stopped: false }, cache: "no-store",
+    });
+    expect(calledIds()).toEqual(ids);
+    expect(new Set(calledIds()).size).toBe(ids.length);
+    expect(mocks.process.mock.calls.every((args) => (args[1] as { userId: string }).userId === "user-1")).toBe(true);
+    expect(db.rows("ai_consent_read_runs")).toEqual([{ user_id: "user-1", consent_decided_at: stamp }]);
+    expect(db.rows("emails")).toEqual(stored);
+
+    // Replaying the automatic receipt does not reopen its one-shot claim.
+    expect(await call("read-waiting", { body: { after_consent: stamp } })).toMatchObject({ status: 200, json: { ok: true, read: 0 } });
+    expect(calledIds()).toEqual(ids);
+
+    mocks.process.mockImplementation(retained);
+    for (let request = 0; request < 2; request++) {
+      mocks.process.mockClear();
+      expect(await call("read-waiting", { body: {} })).toEqual({
+        status: 200, json: { ok: true, read: 20, over_limit: false, busy: false, stopped: false }, cache: "no-store",
+      });
+      expect(calledIds()).toEqual(ids.slice(0, 20));
+    }
+    expect(db.rpcCalls.filter((rpc) => rpc.name === "claim_ai_reading_backlog")).toHaveLength(2);
+    expect(db.rows("ai_reading_consents")).toEqual([{ user_id: "user-1", decision: "granted", decided_at: stamp, text_version: "v1" }]);
+    expect(db.rows("emails")).toEqual(stored);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 
