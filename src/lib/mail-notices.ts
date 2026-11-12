@@ -12,6 +12,9 @@ import { stripInvisible } from "@/lib/text/html-to-text";
 /** What a mail with no body says, in the sealed mail and in the plain one. */
 export const NO_BODY_TEXT = "本文はありません。";
 
+/** Ordinary unread storage, shared by settings and privacy; consent waiting has its own deadline. */
+export const UNREAD_MAIL_STORAGE_NOTICE = "1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。";
+
 /**
  * What a mail with no subject says: in the list of mail not read (設定), in the plain mail of a
  * parcel's history and in the sealed mail once it is opened. Never for a sealed mail that is not

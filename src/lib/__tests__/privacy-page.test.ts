@@ -3,7 +3,7 @@ import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { findAll, parseHtml, textOf, type HtmlNode } from "./html-tree";
 import { appSourceFiles, read as readSource, withoutComments } from "./source-scan";
@@ -263,6 +263,18 @@ describe("/privacy: what it says", () => {
     expect(retention).toContain("荷物と、読み取りを終えたメールは、あなたが消すまで保存します");
     expect(retention).not.toContain("荷物と、Otodoke に保存したメールは、あなたが消すまで保存します");
     expect(textOf(section(root, "メールの扱い"))).not.toContain("読み取るまで暗号化せずに置きます");
+  });
+
+  it.each(["settings", "policy"] as const)("%s separates ordinary unread storage without a deadline from the consent-waiting deadline", async (surface) => {
+    const { MailHandling } = await import("@/app/app/settings/mail-handling");
+    const root = surface === "settings" ? parseHtml(renderToStaticMarkup(createElement(MailHandling))) : await render();
+    const ordinary = findAll(root, (n) => n.tag === "li" && textOf(n).includes("1 日の上限を超えた分など"));
+    expect(ordinary).toHaveLength(1);
+    expect(UNREAD_MAIL_STORAGE_NOTICE).toBe("1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。");
+    expect(textOf(ordinary[0])).toContain(UNREAD_MAIL_STORAGE_NOTICE);
+    expect(textOf(ordinary[0])).not.toMatch(/14\s*日|消えます/);
+    expect(findAll(root, (n) => (n.tag === "p" || n.tag === "dd") && textOf(n) === AI_CONSENT_TEXT.waitingRetention)).toHaveLength(1);
+    expect(AI_CONSENT_TEXT.waitingRetention).toBe("許可を待つメールは、届いてから 14 日で消えます。");
   });
 
   it("the longest a deleted account stays in the logs is the longest period 接続の記録 names (R3-20)", async () => {

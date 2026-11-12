@@ -166,3 +166,12 @@ The transaction serializes claim authorization with withdrawal. Its locks are re
 claim commits, before the external HTTP request; they are not held across Claude's response. An
 already authorized call cannot be recalled by a later withdrawal. Clients must not replay such a
 call automatically or reset the saved permission when reporting the stopped batch.
+
+## Scope of the waiting-mail deadline
+
+The 14-day deadline applies to unread mail marked by a consent-waiting history. Mail arriving
+while permission is granted and waiting only because of an allowance or a reading failure does
+not acquire that deadline unless it later enters consent waiting, including on withdrawal.
+The settings and privacy text share `UNREAD_MAIL_STORAGE_NOTICE` for ordinary unread storage
+without promising a deadline. `AI_CONSENT_TEXT.waitingRetention` describes consent waiting
+separately. This wording does not extend the SQL cleanup scope.
