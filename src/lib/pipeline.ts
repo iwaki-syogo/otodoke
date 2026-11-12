@@ -86,12 +86,13 @@ interface StoredRow {
   created_at: string;
   processing_run_id: string | null;
   processing_lease_until: string | null;
+  provider_email_id: string | null;
 }
 
 /** The row this mail already has: by its Message-ID, or the row being read again. Throws when it cannot tell. */
 async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | null): Promise<StoredRow | null> {
   if (!mail.messageId && !rowId && !mail.providerEmailId) return null;
-  const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until").eq("user_id", mail.userId);
+  const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until, provider_email_id").eq("user_id", mail.userId);
   const { data, error } = await (rowId ? query.eq("id", rowId) : mail.messageId ? query.eq("message_id", mail.messageId) : query.eq("provider_email_id", mail.providerEmailId!)).maybeSingle();
   if (error) throw new Error(`emails lookup failed: ${error.message}`);
   return data;
@@ -135,9 +136,13 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     throw new MailBeingReadError("this mail is still being read");
   }
 
-  // A clearly unrelated new mail needs neither storage nor a key. Borderline
-  // and remembered senders still acquire the owned lease before paid triage.
-  if (!stored && !isForwardingConfirmation && !options.precomputed) {
+  // A clearly unrelated mail needs neither storage nor a key. Borderline and remembered senders
+  // still acquire the owned lease before paid triage. A different delivery of a stored mail (not an
+  // explicit re-read, not the same delivery again) is screened the same way before anything is
+  // reserved, or taking the row over would overwrite its original and delete its readings before
+  // the later screen removes the row.
+  const otherDelivery = !!stored && !options.replacesEmailId && (stored.provider_email_id ?? null) !== (mail.providerEmailId ?? null);
+  if ((!stored || otherDelivery) && !isForwardingConfirmation && !options.precomputed) {
     const screen = screenMail(mail);
     if (!screen.pass && !screen.borderline && !(await senderMarked(db, mail))) {
       await logScreenEvent(db, mail, "dropped", screen.reason);
