@@ -5,7 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanEnvironment } from "./run-parcel-conflicts.mjs";
-import { requireVerdict, taggedResults } from "./run-cost-guards.mjs";
+import { selfTestVerifyFiles, taggedResults, verifyFile } from "./run-cost-guards.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const stem = "20261113130000_received_receipts";
@@ -104,10 +104,10 @@ async function selfTest() {
   assert.equal(environment.PGPASSFILE, path.join("synthetic-scratch", "no-password-file"));
   assert.deepEqual(one('RESULT:[{"id":"synthetic","outcome":"restored"}]\n'), [{ id: "synthetic", outcome: "restored" }]);
   for (const value of ["", "RESULT:{}\nRESULT:{}\n", "RESULT:broken\n"]) assert.throws(() => one(value));
-  for (const output of ["", "FAILED|f\n", "OK|t\nERROR: broken\n"]) assert.throws(() => requireVerdict(output, "bad verdict"));
-  requireVerdict("OK|t|passed\n", "good verdict");
+  await selfTestVerifyFiles([...plan.filter(([kind]) => kind === "verify").map(([, name]) => name), "supabase/verify/20261113110000_sample_generation.sql"]);
   const result = (changes) => ({ code: 0, signal: null, timedOut: false, stderr: "", stdout: "OK", ...changes });
-  for (const changes of [{ code: 1 }, { timedOut: true }, { signal: "SIGTERM" }, { stderr: "ERROR: SQL failed", code: 0 }]) assert.throws(() => healthy(result(changes)));
+  for (const changes of [{ code: 1 }, { timedOut: true }, { signal: "SIGTERM" }, { stderr: "ERROR: SQL failed", code: 0 },
+    { stderr: "FATAL: SQL failed", code: 0 }, { stderr: "PANIC: SQL failed", code: 0 }]) assert.throws(() => healthy(result(changes)));
   expectedError('RESULT:{"state":"22023","message":"receipt request"}', "22023", /receipt/);
   for (const state of ["00000", "42601", "55P03", "40P01"]) assert.throws(() => expectedError(`RESULT:{"state":"${state}"}`, "22023"));
   assert.match(markQuery(), /from \(select \* from public\.mark_parcels_received/);
@@ -118,6 +118,7 @@ async function selfTest() {
   const dummy = async (code, options) => healthy(await start(process.execPath, ["-e", code], options).complete);
   await dummy("process.stdout.write('OK')");
   await assert.rejects(dummy("process.stderr.write('ERROR: synthetic SQL error');process.exit(0)"), /SQL error/);
+  await assert.rejects(dummy("process.stderr.write('PANIC: synthetic SQL error');process.exit(0)"), /SQL error/);
   await assert.rejects(dummy("process.exit(1)"));
   await assert.rejects(dummy("setTimeout(()=>{},10000)", { timeout: 20 }), /timed out/);
   console.log("OK: self-test (dependency boundary, apply-before-history and failed-DDL-no-record orchestration, 1-column JSON shape, final verdict, expected SQLSTATE, PG isolation, child failure/exit-zero SQL error/timeout)");
@@ -144,7 +145,7 @@ async function main(negative) {
   const sql = (input) => command("psql", args, { input: preamble + input });
   const scalar = async (input) => (await sql(input)).trim();
   const file = (name) => command("psql", [...args, "-f", path.join(root, name)], { timeout: 30_000 });
-  const verify = async (name) => { const output = await file(name); requireVerdict(output, name); console.log(`OK: ${name}: ${output.trim().split(/\r?\n/).at(-1)}`); };
+  const verify = async (name) => { const output = await verifyFile(name, file); console.log(`OK: ${name}: ${output.trim().split(/\r?\n/).at(-1)}`); };
   const footprint = async () => one(await sql(`select 'RESULT:'||jsonb_build_object(
     'functions',(select jsonb_agg(jsonb_build_object('oid',p.oid,'definition',pg_get_functiondef(p.oid),'acl',p.proacl) order by p.oid)
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f'),

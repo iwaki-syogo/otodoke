@@ -32,7 +32,7 @@ DB の準備では `bootstrap.sql` が Supabase の `auth.users`・`auth.uid()`�
 
 `--negative-control` は一時 DB にだけ既存 migration から旧 v1・v2・release 関数を戻して、同じ試験を実行します。最初の競合試験が失敗し、終了コード 1 と `verdict=FAILED` を出すのが期待値です。作業ツリーのソースは変えません。
 
-通常試験の成功条件は最後の `verdict=OK` と終了コード 0 の両方です。verify ファイルは最終行の第 1 列が `OK` であることまで確認します。SQL エラーや出力の欠落は成功扱いしません。
+通常試験の成功条件は最後の `verdict=OK` と終了コード 0 の両方です。verify の出力は、共有の `run-cost-guards.mjs` に定義したファイル別の形式で確認します。110000 の after verify は第 8 列、それ以外は各ファイルの指定した判定列を読みます。列数、必須の真偽値、件数、動作試験の結果も照合し、別の列にある `OK` では代用しません。SQL エラーや出力の欠落は成功扱いしません。
 
 2026-11-12: この台本を作った環境では、指定された mmap 設定でも initdb の `shmget` が sandbox に拒否されました。実 PostgreSQL での SQL・並列挙動・rollback・停止処理と陰性対照は未実測です。構文検査と `--self-test` だけを実行済みです。実測は Claude 側で流します。
 

@@ -197,3 +197,4 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 手動受取は課金しないのでCを使わず、U → G → E → L → R → journalの順。`P1_OWNER_LOCK_SEAM` の3箇所はP-1担当の利用者別helperとの接続待ちで、接続前を公開可能とは扱わない。authenticatedの既存 `parcels UPDATE` grantは変更しない。B-4の通信予算と、DBの利用者別ロックP-1は別の守り。
 - 新Webの仮文は `UNDO_CHANGED_NOTICE` の「ほかで変更された荷物があります」。本人の決定までは仮置き。旧 `PARTLY_RESTORED_NOTICE` と `CANNOT_UNDO_NOTE` はiOSで使う値を維持する。Webの実装とTS parityの期待を同じ変更に含め、Swift/ios配下はiOS担当の版を保つ。iOSの三区分・新しい文・混在表示・Swift試験更新は別担当へ報告する。
 - STATUS_LABEL.deliveredはビルド14で「配達済み」へ更新済み。上の受取節にある「届いた」の保持説明は旧契約で、新しいWeb差分から戻さない。試験台本は `tests/postgres/run-received-receipts.mjs`、実Postgresの測定はまとめ役へ引き渡す。
+- DB試験台本のverify出力は、共有の `tests/postgres/run-cost-guards.mjs` のファイル別形式で判定する。110000 afterは末尾の判定列を読む。任意の列にあるOKでは代用せず、列数・必須真偽値・件数・動作試験結果も照合する。verifyのSELECTを変えたら共有形式と正常/異常の自己試験も同じ変更で合わせ、実Postgresの測定とは区別する。
