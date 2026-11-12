@@ -29,29 +29,36 @@ const UNDOING = "戻しています…";
  * parcel moves to another page, and the card that was swiped is gone by then.
  */
 export function DeliveredToastProvider({ children }: { children: ReactNode }) {
-  const [toast, setToast] = useState<Toast | null>(null);
+  const [toast, setToast] = useState<(Toast & { id: number }) | null>(null);
+  const nextToastId = useRef(0);
+  const showToast = useCallback((next: Toast) => setToast({ ...next, id: ++nextToastId.current }), []);
   const { pending, run } = usePendingAction();
 
   // Closes after a while, but never while 元に戻す is on the way: its answer must be seen.
   useEffect(() => {
     if (!toast || pending) return;
-    const timer = setTimeout(() => setToast(null), 6000);
+    const timer = setTimeout(() => setToast((current) => current?.id === toast.id ? null : current), 6000);
     return () => clearTimeout(timer);
   }, [toast, pending]);
 
   const undo = () => {
     const items = toast?.undo;
     if (!items) return;
+    const toastId = toast.id;
     run(async () => {
       const outcome = await runUndo(restoreStatuses, items);
-      if (outcome.failed.length > 0) setToast({ text: UNDO_FAILED_NOTICE, undo: null, note: outcome.changed.length > 0 ? UNDO_CHANGED_NOTICE : null });
-      else if (outcome.changed.length > 0) setToast({ text: UNDO_CHANGED_NOTICE, undo: null });
-      else setToast(null);
+      // A slower undo belongs only to the notice from which it started.
+      setToast((current) => {
+        if (current?.id !== toastId) return current;
+        if (outcome.failed.length > 0) return { id: toastId, text: UNDO_FAILED_NOTICE, undo: null, note: outcome.changed.length > 0 ? UNDO_CHANGED_NOTICE : null };
+        if (outcome.changed.length > 0) return { id: toastId, text: UNDO_CHANGED_NOTICE, undo: null };
+        return null;
+      });
     });
   };
 
   return (
-    <ToastContext.Provider value={setToast}>
+    <ToastContext.Provider value={showToast}>
       {children}
       {toast ? (
         <div role="status" className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-md items-center justify-between gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
