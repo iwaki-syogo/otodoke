@@ -261,8 +261,8 @@ function assertSharedCopy(web: string[], native: string[]) {
 }
 
 describe("AI reading consent copy is shared with the actual Web values", () => {
-  // TODO: restore to `it` once the iOS side (Ron) has the same detail sentence (AI_CONSENT_TEXT.detail).
-  // iOS の側が同じ detail の文を入れて直ったら it に戻す。
+  // TODO (integration owner/coordinator): integrate the iOS popup SHA and verify
+  // AI_CONSENT_TEXT.detail at that exact SHA, then restore this case to `it` before publication.
   it.skip("compares exported Web copy with native strings, including every approved sentence", () => {
     expect(existsSync(WEB_TEXT_PATH), "integrate the Web-owned src/lib/ai-consent-text.ts before declaring parity complete").toBe(true);
     const web = exportedStrings(readFileSync(WEB_TEXT_PATH, "utf8"));

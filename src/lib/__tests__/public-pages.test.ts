@@ -61,13 +61,25 @@ describe("public terms and support", () => {
     expect(findAll(root, (n) => n.tag === "a" && textOf(n) === probe.contact)[0].attrs.class).toContain("break-all");
   });
 
-  it("keeps the operational terms and leaves legal decisions out of the public copy", async () => {
+  it("keeps operational and confirmed terms while leaving unconfirmed legal decisions out of the public copy", async () => {
     const { root } = await render("terms");
     const text = textOf(root);
     for (const requirement of ["Otodoke 運営", "無料で利用できます", "禁止事項", "Anthropic", "読み取り待ちのメール", "目安", "外部サービス", "アカウントの削除", "パスワードを忘れて再設定"]) expect(text).toContain(requirement);
     expect(text).not.toContain("準拠法");
     expect(text).not.toContain("規約の変更");
     expect(text).not.toContain("サービスの変更・中断・終了");
+    expect(text.replace("未成年の方は、保護者の同意を得て利用してください。", "")).not.toContain("未成年");
+  });
+
+  it.each([
+    { topic: "guardian guidance", heading: "2. アカウント", sentence: "未成年の方は、保護者の同意を得て利用してください。" },
+    { topic: "completed real mail without a key", heading: "5. メールと個人情報の扱い", sentence: "メールの鍵がない状態で読み取りを終えたあなたのメールは、荷物の情報を残し、件名・差出人・本文は残しません。" },
+  ])("renders the approved $topic once in its relevant terms section", async ({ heading, sentence }) => {
+    const { root } = await render("terms");
+    const section = findAll(root, (n) => n.tag === "section" && findAll(n, (entry) => entry.tag === "h2" && textOf(entry) === heading).length === 1)[0];
+    expect(section).toBeDefined();
+    expect(findAll(section, (n) => n.tag === "p" && textOf(n) === sentence)).toHaveLength(1);
+    expect(textOf(root).split(sentence)).toHaveLength(2);
   });
 
   it("A5: terms condition Claude submission on permission and explain withdrawal without removing existing results", async () => {
