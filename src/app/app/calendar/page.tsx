@@ -12,7 +12,7 @@ import { FilterArea, FilterLink, FilterScope, FilterSpinner } from "../spend/fil
 
 export const metadata = { title: "カレンダー" };
 
-type SearchParams = Promise<{ m?: string }>;
+type SearchParams = Promise<{ m?: string | string[] }>;
 
 export default async function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
   const { m } = await searchParams;

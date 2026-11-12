@@ -4,7 +4,7 @@ import { LOGIN_MESSAGES, loginErrorMessage } from "@/lib/login-errors";
 import { safeNextPath } from "@/lib/safe-next";
 import { LoginForm } from "./login-form";
 
-type SearchParams = Promise<{ error?: string; next?: string; confirmed?: string }>;
+type SearchParams = Promise<{ error?: string; next?: string | string[]; confirmed?: string }>;
 
 export const metadata = { title: "ログイン" };
 

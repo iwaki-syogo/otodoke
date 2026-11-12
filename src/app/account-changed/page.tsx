@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 export const metadata = { title: "ログイン中のアカウントを確認" };
 
 /** GET only: show the current verified identity, then start again from a freshly rendered page. */
-export default async function AccountChangedPage({ searchParams }: { searchParams?: Promise<{ next?: string }> } = {}) {
+export default async function AccountChangedPage({ searchParams }: { searchParams?: Promise<{ next?: string | string[] }> } = {}) {
   const current = await readCookieSession(await createClient());
-  const returnTo = actionReturnPath((await searchParams)?.next ?? null);
+  const next = (await searchParams)?.next;
+  const returnTo = actionReturnPath(typeof next === "string" ? next : null);
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-4 py-12">
       <h1 className="text-xl font-bold">ログイン中のアカウントを確認してください</h1>
