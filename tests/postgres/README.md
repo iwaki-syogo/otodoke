@@ -35,3 +35,36 @@ DB の準備では `bootstrap.sql` が Supabase の `auth.users`・`auth.uid()`�
 通常試験の成功条件は最後の `verdict=OK` と終了コード 0 の両方です。verify ファイルは最終行の第 1 列が `OK` であることまで確認します。SQL エラーや出力の欠落は成功扱いしません。
 
 2026-11-12: この台本を作った環境では、指定された mmap 設定でも initdb の `shmget` が sandbox に拒否されました。実 PostgreSQL での SQL・並列挙動・rollback・停止処理と陰性対照は未実測です。構文検査と `--self-test` だけを実行済みです。実測は Claude 側で流します。
+
+## サンプル全消去と荷物 RPC のロック順
+
+`run-sample-lock-order.mjs` は、別途用意した PostgreSQL 17 の使い捨てテスト cluster に、自分専用の新しい DB を作ります。接続先は `127.0.0.1` に固定し、`listen_addresses` も `127.0.0.1` であることを確認します。URL・host・既存 DB 名を渡す入口はありません。テスト専用ポートを `OTODOKE_SAMPLE_PG_PORT`、必要なら PostgreSQL の実行ファイルのディレクトリを `OTODOKE_PG_BINDIR` に設定して実行してください。cluster の `anon`・`authenticated`・`service_role` は準備側で作っておきます。この runner は cluster 全体のロールを変更しません。
+
+```sh
+node tests/postgres/run-sample-lock-order.mjs --self-test
+node tests/postgres/run-sample-lock-order.mjs --external-test-server --controls-only
+node tests/postgres/run-sample-lock-order.mjs --external-test-server
+node tests/postgres/run-sample-lock-order.mjs --external-test-server --negative-control
+```
+
+`--self-test` は DB に接続せず、集計・SQLSTATE の分類・旧 RPC の取り出しを検査します。実際の子プロセスでも、終了コード 0 の SQL エラー・異常終了・タイムアウトが成功にならないことを確かめます。`--controls-only` は単独の実 query と消去後の挙動だけを試す smoke で、自然競合は未実行と明示します。
+
+各実行の新 DB には `bootstrap.sql` の Auth substrate と、`20261113110000_sample_generation.sql` までの本物の migration を順番に適用します。cluster 共通ロールの作成と pg_cron 専用 migration だけを除外します。外部の Auth・PostgREST・cron・TypeScript pipeline を実行する試験ではありません。
+
+通常実行は **360試行・1,440操作**です。各試行で、同一利用者の「全消去・発送の新規作成・発送への更新・配達完了への更新」を4つの独立した接続で同時に動かします。実メール扱いと sample generation header 付きの合成メールを交互に使うので、それぞれ180試行です。各種類360試行に増やす場合は次のように実行できます。
+
+```sh
+OTODOKE_SAMPLE_LOCK_ROUNDS=720 node tests/postgres/run-sample-lock-order.mjs --external-test-server
+```
+
+4 worker 全員が開始用の共有 gate で待っていることを `pg_stat_activity` で確認してから解放します。実 RPC が取ったロックの保持期間を観測するため、RPC 後の commit だけを30ms遅らせます。本番ロックを別の順序で先取する処理は、通常試験にはありません。開始 gate とは別に、worker 同士が実際の production lock で待つ状態も観測します。同じ cluster の別 DB で動く runner の activity は集計に含めません。
+
+各試行は4つすべての応答を回収し、全消去の完了、対象利用者の荷物・メールの復活0、別利用者の荷物・世代の不変を確認して初めて完了数に加えます。先に実 RPC の単独 control を5件実行し、さらに全消去後の旧 lease 拒否6件と、実 `store_mail_run` による新着受信2件・新しい荷物の作成2件を確認します。これらの control は自然競合の1,440操作とは別集計です。
+
+`SUMMARY` は `ok`・候補の `retry`・消去済み lease/generation の限定的な拒否・`40P01`・他 SQL エラー・タイムアウト・結果欠落を区別します。`42501` は lease 所有権喪失の文、`55000` は sample の世代喪失の文を持つ場合だけ、メール側の既知の拒否と認めます。権限不足や syntax error を同じ拒否として扱いません。タイムアウトや結果未着は成功試行数に加えず、未完了数と失敗種別を残して失敗します。通常試験は指定試行数・4倍の終端応答・実ロックの競合観測がそろい、`40P01` と他の異常が0で、最後に `verdict=OK` と終了コード0が出ることが成功条件です。
+
+`--negative-control` はソースを書き換えず、専用 DB にだけ元の `100000` の create/update/ensure 本体を戻します。全消去側は実 `lock_sample_owner` で owner/auth 行→generation の前段を取り、旧 writer が実 `62803` を保持したままその generation 行を待つことを `pg_locks`・`pg_blocking_pids` で確認してから、実 `clear_all_parcels` を進めます。cascade 対策の前段を飛ばしたり、無関係なロックで別の deadlock を作ったりしません。3経路それぞれで SQLSTATE `40P01` が1件、残る1接続が正常完了し、他の異常が0であることを確認します。この mode の終了コード0／`verdict=OK` は、旧順序の異常を検出できたという意味です。修正版の正常性を示す自然競合試験とは分けて報告します。
+
+`SUMMARY` の `target_sha256` は実際に DB へ適用した `110000` の内容、陰性対照の `negative_source_sha256` は差し戻した `100000` の内容を示します。試験後のファイルを読み直した hash ではありません。
+
+継承した `PG*` 環境変数は除外し、パスワード・service 設定は新しい scratch の存在しない専用ファイルに向けます。終了・割り込み時に閉じるのは自分の `psql` 接続だけです。外部テスト cluster は停止せず、専用 DB と `.vitest/pg/sample-lock-*/summary.json` を調査用に残します。cluster・データ・ログの最終削除は準備側が行ってください。既存の `run-parcel-conflicts.mjs` の単一列結果の `row_to_json` 修正は変更していません。

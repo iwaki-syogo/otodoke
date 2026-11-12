@@ -128,3 +128,10 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 同じ選択・文の版の再送では `decided_at` を保つ。自動読取は service role 専用の `claim_ai_reading_backlog` で同じ許可日時につき一度だけ開始し、失敗後も起動記録を戻さない。明示的な手動再試行はこの起動記録に制限されない。iOS は RPC が返した日時文字列を丸めず `after_consent` に渡す。
 - 自動読取は費用の守りの `unread.ts` の timeout・1 通全体・request 全体の予算を使い、次の 1 通を終える余裕がある場合だけ開始する。この契約がない旧 SDK 構成では起動しない。費用の守りの SDK timeout / retry・owned lease・容量制限と合わせて統合する。
 - iOS の同意と未読再開 API の契約は `docs/api/mail.md`。DB だけを当てても旧 Web の呼出は止まらないため、新しいガード版 Web と DB を続けて反映する。本番反映と DB 適用は別途承認の対象。
+
+## DB 書込みのロック順
+
+- `20261113110000_sample_generation` は費用ガードの090000と荷物保存時検査の100000に依存する。荷物経路は所有者のAuth行を先に確保し、世代行 → メール行 → advisory 62803 → 荷物/明細行の部分順序を守る。新しいRPCやtriggerでこの順を逆転させない。本人・lease・OCC・候補集合・保存結果の検査は維持する。
+- sampleだけでなく実メールのcreate/update/ensure、本人の直接DML、全消去、退会cascadeも同じ順に参加する。退会は既存世代とメールをcascade前に取り、自動読取claim・費用claim v2/releaseもAuth親行を先取りする。DBロックは各短期RPCの中だけで保持し、外部API待ちへ持ち出さない。
+- private coreの `_without_sample_fence` はAPI roleから直接実行しない。新しいservice処理も公開RPCの入口を通す。header無しの任意複数表/複数利用者DMLやTRUNCATEは保守操作としてwriter停止・drainを要する。
+- 統合時は `tests/postgres/run-sample-lock-order.mjs` の自然競合と旧順序の陰性対照、`scripts/test-sample-generation.py`、`scripts/test-sample-generation-lifecycle.py` を使い捨てPGで確認する。前提・集計・後片付けは `tests/postgres/README.md`。検証終了は専用PGの停止・待ち受け0・専用データ削除まで。
