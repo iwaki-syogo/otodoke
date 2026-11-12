@@ -3,15 +3,16 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-type Policy = { kind: "guard" | "rows" | "public" | "identity-read"; reason: string };
+type Policy = { kind: "guard" | "rows" | "owner-rpc" | "public" | "identity-read"; reason: string };
 const guard: Policy = { kind: "guard", reason: "The displayed identity must match the verified current user before acting." };
 const rows: Policy = { kind: "rows", reason: "An immutable row id and the current owner condition cannot retarget an A row to a B row." };
+const ownerRpc: Policy = { kind: "owner-rpc", reason: "A SECURITY DEFINER RPC takes the owner from auth.uid() and filters every parcel and journal row by it; the action only forwards immutable ids through the signed-in client." };
 const publicAuth: Policy = { kind: "public", reason: "An explicit public authentication request names its own input address, not the cookie owner." };
 const policies: Record<string, Policy> = {
   "app/category-actions.ts#setCategory": rows,
-  "app/parcel-actions.ts#markDelivered": rows,
-  "app/parcel-actions.ts#markDeliveredForUndo": rows,
-  "app/parcel-actions.ts#restoreStatuses": rows,
+  "app/parcel-actions.ts#markDelivered": ownerRpc,
+  "app/parcel-actions.ts#markDeliveredForUndo": ownerRpc,
+  "app/parcel-actions.ts#restoreStatuses": ownerRpc,
   "app/parcel-actions.ts#markNotDelivered": rows,
   "app/parcel-actions.ts#markNotReceived": rows,
   "app/parcel-actions.ts#dismissCheck": rows,
@@ -180,15 +181,37 @@ function audit(sources: Map<string, string>, decisions = policies): string[] {
       if (key !== "login/session-actions.ts#readSignedInAddress" || nodes(fn, ts.isCallExpression).some((call) => callName(call) !== "getUser")) errors.push(`${key}: read exception was forged`);
     } else if (policy.kind === "rows") {
       const permitted = new Set([
-        "app/category-actions.ts#setCategory", "app/parcel-actions.ts#markDelivered", "app/parcel-actions.ts#markDeliveredForUndo", "app/parcel-actions.ts#restoreStatuses", "app/parcel-actions.ts#markNotDelivered", "app/parcel-actions.ts#markNotReceived", "app/parcel-actions.ts#dismissCheck", "app/parcels/manual-actions.ts#updateManualParcel", "app/parcels/manual-actions.ts#deleteManualParcel",
+        "app/category-actions.ts#setCategory", "app/parcel-actions.ts#markNotDelivered", "app/parcel-actions.ts#markNotReceived", "app/parcel-actions.ts#dismissCheck", "app/parcels/manual-actions.ts#updateManualParcel", "app/parcels/manual-actions.ts#deleteManualParcel",
       ]);
       if (!permitted.has(key)) { errors.push(`${key}: row exception was forged`); continue; }
       if (usesAdminData(file, fn)) errors.push(`${key}: admin-backed action cannot use the row exemption`);
-      if (key.endsWith("#markDelivered") || key.endsWith("#markDeliveredForUndo")) {
+      errors.push(...rowScopeErrors(fn).map((e) => `${key}: ${e}`));
+    } else if (policy.kind === "owner-rpc") {
+      const rpcs: Record<string, string> = {
+        "app/parcel-actions.ts#markDelivered": "mark_parcels_received",
+        "app/parcel-actions.ts#markDeliveredForUndo": "mark_parcels_received",
+        "app/parcel-actions.ts#restoreStatuses": "restore_parcel_receipts",
+      };
+      const rpc = rpcs[key];
+      if (!rpc) { errors.push(`${key}: owner-rpc exception was forged`); continue; }
+      let target = fn;
+      if (!key.endsWith("#restoreStatuses")) {
         const body = compact(fn.body!);
-        if (body !== "{return(awaitdeliver(ids)).saved;}" && body !== "{returnawaitdeliver(ids);}") errors.push(`${key}: row wrapper changed`);
-        errors.push(...rowScopeErrors(namedFunction(file, "deliver")!).map((e) => `${key}: ${e}`));
-      } else errors.push(...rowScopeErrors(fn).map((e) => `${key}: ${e}`));
+        if (body !== "{return(awaitdeliver(ids)).saved;}" && body !== "{returnawaitdeliver(ids);}") errors.push(`${key}: rpc wrapper changed`);
+        target = namedFunction(file, "deliver")!;
+      }
+      if (usesAdminData(file, fn) || usesAdminData(file, target)) errors.push(`${key}: admin-backed action cannot use the owner-rpc exemption`);
+      const calls = nodes(target, ts.isCallExpression);
+      const rpcCalls = calls.filter((call) => callName(call) === "rpc");
+      if (rpcCalls.length !== 1 || compact(rpcCalls[0].expression) !== "session.supabase.rpc" || !ts.isStringLiteral(rpcCalls[0].arguments[0]) || rpcCalls[0].arguments[0].text !== rpc) errors.push(`${key}: must call only ${rpc} through the signed-in client`);
+      if (!calls.some((call) => callName(call) === "signedIn")) errors.push(`${key}: signed-in session is not required`);
+      if (calls.some((call) => ["from", "update", "insert", "upsert", "fetch", "signOut", "deleteUser"].includes(callName(call)))) errors.push(`${key}: direct table or account effect cannot use the owner-rpc exemption`);
+      // The ownership argument lives in SQL: the function must derive the owner from the session.
+      const sql = readFileSync(path.resolve(app, "../../supabase/migrations/20261113130000_received_receipts.sql"), "utf8");
+      const start = sql.indexOf(`function public.${rpc}(`);
+      const end = sql.indexOf("create or replace function", start + 1);
+      const definition = start < 0 ? "" : sql.slice(start, end < 0 ? undefined : end);
+      if (!/security definer set search_path=''/.test(definition) || !definition.includes("v_user := auth.uid();") || !definition.includes("p.user_id=v_user")) errors.push(`${key}: ${rpc} does not take the owner from auth.uid()`);
     } else errors.push(`${key}: unsupported policy`);
   }
   return errors;
@@ -221,7 +244,7 @@ describe("every Web Server Action has an executable identity policy", () => {
   });
 
   it("cannot relabel an account effect as public, read-only or row-scoped", () => {
-    for (const kind of ["public", "identity-read", "rows"] as const) {
+    for (const kind of ["public", "identity-read", "rows", "owner-rpc"] as const) {
       expect(audit(realSources(), { ...policies, "app/settings/account-actions.ts#deleteAccount": { kind, reason: "pretending this is an exception" } }).some((error) => error.includes("forged"))).toBe(true);
     }
   });
@@ -260,5 +283,23 @@ describe("every Web Server Action has an executable identity policy", () => {
     const sources = realSources();
     sources.set("app/category-actions.ts", sources.get("app/category-actions.ts")!.replace('.eq("user_id", user.id)', ""));
     expect(audit(sources)).toContain("app/category-actions.ts#setCategory: mutation lost immutable id/current owner filters");
+  });
+
+  it("holds the owner-scoped RPC actions to the signed-in client, the named RPC and no direct table access", () => {
+    const name = "app/parcel-actions.ts";
+    const original = realSources().get(name)!;
+    const mutations: Array<[string, string, string]> = [
+      ['rpc("mark_parcels_received"', 'rpc("mark_parcels_received_x"', "app/parcel-actions.ts#markDeliveredForUndo"],
+      ['rpc("restore_parcel_receipts"', 'rpc("mark_parcels_received"', "app/parcel-actions.ts#restoreStatuses"],
+      ["session.supabase.rpc(\"mark_parcels_received\"", "(await createClient()).rpc(\"mark_parcels_received\"", "app/parcel-actions.ts#markDelivered"],
+      ["const session = await signedIn();\n  if (!session) return { saved: 0, written: [] };", "const session = { supabase: await createClient(), userId: \"x\" };", "app/parcel-actions.ts#markDelivered"],
+      ["  try {\n    const { data, error } = await session.supabase.rpc(\"mark_parcels_received\"", "  await session.supabase.from(\"parcels\").update({ received_at: null }).eq(\"id\", clean[0]);\n  try {\n    const { data, error } = await session.supabase.rpc(\"mark_parcels_received\"", "app/parcel-actions.ts#markDelivered"],
+    ];
+    for (const [from, to, key] of mutations) {
+      expect(original).toContain(from);
+      const sources = realSources();
+      sources.set(name, original.replace(from, to));
+      expect(audit(sources).some((error) => error.startsWith(`${key}:`))).toBe(true);
+    }
   });
 });
