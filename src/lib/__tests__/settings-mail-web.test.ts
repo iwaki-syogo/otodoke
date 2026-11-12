@@ -75,7 +75,7 @@ describe("Web actions retain authentication and use the shared owner-scoped writ
 
   it("invalid inputs retain the fixed failure destinations without creating a client", async () => {
     await redirects(forgetSender(form({ domain: "" })), "/app/settings/dropped?unflagged=failed");
-    await redirects(dismissIntakeNotice(form({ limited_at: "" })), "/app/settings/trouble?error=read_failed");
+    await redirects(dismissIntakeNotice(form({ limited_at: "" })), "/app/settings/trouble?error=notice_confirm_failed");
     expect(mocks.admin).not.toHaveBeenCalled();
   });
 
@@ -83,7 +83,7 @@ describe("Web actions retain authentication and use the shared owner-scoped writ
     const db = mocks.db as FakeDb;
     const before = structuredClone(db.rows(kind === "forget" ? "screen_events" : "mail_intake_notices"));
     db.hooks.push(() => ({ data: null, error: { message: "private database detail" } }));
-    await redirects(action(kind), kind === "forget" ? "/app/settings/dropped?unflagged=failed" : "/app/settings/trouble?error=read_failed");
+    await redirects(action(kind), kind === "forget" ? "/app/settings/dropped?unflagged=failed" : "/app/settings/trouble?error=notice_confirm_failed");
     expect(db.rows(kind === "forget" ? "screen_events" : "mail_intake_notices")).toEqual(before);
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("private database detail");
   });

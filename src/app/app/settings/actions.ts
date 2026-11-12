@@ -132,7 +132,7 @@ export async function dismissIntakeNotice(formData: FormData): Promise<void> {
   const user = await getUser();
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/trouble");
   const at = String(formData.get("limited_at") ?? "");
-  if (!isIntakeNoticeTimestamp(at)) redirect(settingsErrorPath("read_failed"));
+  if (!isIntakeNoticeTimestamp(at)) redirect(settingsErrorPath("notice_confirm_failed"));
   let ok = false;
   try {
     const done = await runDismissIntakeNotice(createAdminClient(), user.id, at);
@@ -141,7 +141,7 @@ export async function dismissIntakeNotice(formData: FormData): Promise<void> {
   } catch {
     console.error("dismissIntakeNotice: database unavailable");
   }
-  if (!ok) redirect(settingsErrorPath("read_failed"));
+  if (!ok) redirect(settingsErrorPath("notice_confirm_failed"));
   revalidatePath("/app", "layout");
   redirect("/app/settings/trouble");
 }

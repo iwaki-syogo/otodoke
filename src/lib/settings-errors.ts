@@ -11,6 +11,8 @@ export const SETTINGS_ERROR_MESSAGES = {
   read_failed: READ_FAILED_NOTICE,
   read_unavailable: READ_UNAVAILABLE_NOTICE,
   read_over_limit: READ_OVER_LIMIT_NOTICE,
+  // Provisional Web wording: acknowledging a notice does not attempt to read any mail.
+  notice_confirm_failed: "通知を閉じられませんでした。もう一度お試しください。",
   flag_failed: "記録できませんでした。もう一度お試しください。",
   clear_confirm: "「本当に消す」にチェックを入れてください",
   clear_failed: "消せませんでした。もう一度お試しください。",
@@ -29,6 +31,7 @@ export const SETTINGS_ERROR_PAGES: Record<SettingsErrorCode, string> = {
   read_failed: "/app/settings/trouble",
   read_unavailable: "/app/settings/trouble",
   read_over_limit: "/app/settings/trouble",
+  notice_confirm_failed: "/app/settings/trouble",
   flag_failed: "/app/settings/dropped",
 };
 
