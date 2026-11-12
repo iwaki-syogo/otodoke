@@ -4,6 +4,7 @@ export const AI_CONSENT_TEXT_VERSION = "v1";
 export const AI_CONSENT_TEXT = {
   title: "メールの読み取り",
   body: "届いたメールは、Anthropic の Claude で読み取ります。",
+  detail: "メールの本文を送り、荷物の情報だけを取り出します。",
   privacy: "プライバシーポリシー",
   allow: "許可する",
   decline: "許可しない",

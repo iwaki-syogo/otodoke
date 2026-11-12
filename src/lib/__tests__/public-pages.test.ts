@@ -27,6 +27,16 @@ function missingRoutes(root: HtmlNode, exists = existsSync): string[] {
     .filter((route) => !exists(path.join(appDir, route === "/" ? "page.tsx" : `${route.slice(1)}/page.tsx`)));
 }
 
+/** Requirements are independent of the copy module, so changing both the page and copy cannot hide A5. */
+function permissionCopyProblems(text: string): string[] {
+  const problems: string[] = [];
+  for (const required of ["読み取りを許可しているときだけ", "設定の「あなたのメールの扱い」で「読み取りをやめる」", "その後の読み取りを止められます", "すでに読み取った荷物と結果は残ります"]) {
+    if (!text.includes(required)) problems.push(required);
+  }
+  if (text.includes("メールの判定と読み取りでは、メールの内容をAnthropicのClaude APIへ送信します。")) problems.push("unconditional Claude submission");
+  return problems;
+}
+
 async function render(which: "terms" | "support") {
   const page = which === "terms" ? await import("@/app/terms/page") : await import("@/app/support/page");
   return { root: parseHtml(renderToStaticMarkup(createElement(page.default))), page };
@@ -58,6 +68,25 @@ describe("public terms and support", () => {
     expect(text).not.toContain("準拠法");
     expect(text).not.toContain("規約の変更");
     expect(text).not.toContain("サービスの変更・中断・終了");
+  });
+
+  it("A5: terms condition Claude submission on permission and explain withdrawal without removing existing results", async () => {
+    const { root } = await render("terms");
+    const section = findAll(root, (n) => n.tag === "section" && findAll(n, (heading) => heading.tag === "h2" && textOf(heading) === "5. メールと個人情報の扱い").length === 1)[0];
+    expect(section).toBeDefined();
+    const text = textOf(section);
+    expect(permissionCopyProblems(text)).toEqual([]);
+    expect(text).toContain("メールの内容を Anthropic の Claude API へ送信します。");
+    expect(text).toContain("荷物の情報・根拠の抜粋・読み取り待ちのメールなど、暗号化しない情報もあります。");
+  });
+
+  it("the A5 check rejects unconditional submission and omitted withdrawal or retention", () => {
+    const complete = "読み取りを許可しているときだけ、メールの内容を送ります。設定の「あなたのメールの扱い」で「読み取りをやめる」を押すと、その後の読み取りを止められます。すでに読み取った荷物と結果は残ります。";
+    expect(permissionCopyProblems(complete)).toEqual([]);
+    expect(permissionCopyProblems("メールの判定と読み取りでは、メールの内容をAnthropicのClaude APIへ送信します。")).toContain("unconditional Claude submission");
+    for (const required of ["読み取りを許可しているときだけ", "設定の「あなたのメールの扱い」で「読み取りをやめる」", "その後の読み取りを止められます", "すでに読み取った荷物と結果は残ります"]) {
+      expect(permissionCopyProblems(complete.replace(required, ""))).toContain(required);
+    }
   });
 
   it("support offers public help and clearly labels the settings that require login", async () => {
