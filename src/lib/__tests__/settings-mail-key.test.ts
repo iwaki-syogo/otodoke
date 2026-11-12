@@ -329,7 +329,7 @@ describe("/app/settings: あなたのメールの扱い", () => {
   it("DemoLoader says the parcels and stored mail were cleared only when cleared is set", async () => {
     const { createElement } = await import("react");
     const { DemoLoader } = await import("@/app/app/settings/demo-loader");
-    const render = (cleared: boolean) => textOf(parseHtml(renderToStaticMarkup(createElement(DemoLoader, { loaded: null, error: null, cleared }))));
+    const render = (cleared: boolean) => textOf(parseHtml(renderToStaticMarkup(createElement(DemoLoader, { userId: USER, loaded: null, error: null, cleared }))));
     expect(render(true)).toContain("Otodoke の荷物と、Otodoke に保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
     expect(render(false)).not.toContain("Otodoke の荷物と、Otodoke に保存したメールを消しました。お使いのメールの受信箱は、そのままです。");
   });

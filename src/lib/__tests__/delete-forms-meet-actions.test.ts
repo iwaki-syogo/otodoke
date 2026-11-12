@@ -95,7 +95,7 @@ describe("the delete form of a typed-in parcel, as the browser sends it", () => 
 });
 
 describe("the clear-all form, as the browser sends it", () => {
-  const demoLoader = () => parseHtml(renderToStaticMarkup(createElement(DemoLoader, { loaded: null, error: null, cleared: false })));
+  const demoLoader = () => parseHtml(renderToStaticMarkup(createElement(DemoLoader, { userId: USER.id, loaded: null, error: null, cleared: false })));
 
   it("ticked: clears and goes back with cleared=1", async () => {
     const fd = browserFormData(formWithConfirm(demoLoader()), true);

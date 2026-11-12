@@ -10,9 +10,10 @@ import { ICONS, ROW_CLASS, RowIcon } from "./settings-row";
  * Nothing stops the POST (no preventDefault, no fetch): tab-key-memory.test.ts.
  * Drawn as a row of the account card.
  */
-export function LogoutForm() {
+export function LogoutForm({ userId }: { userId: string }) {
   return (
     <form action="/auth/signout" method="post" onSubmit={() => forgetTabKey()}>
+      <input type="hidden" name="expectedUserId" value={userId} />
       <button type="submit" className={`${ROW_CLASS} active:bg-neutral-50`}>
         <RowIcon path={ICONS.logout} />
         <span className="min-w-0 flex-1">ログアウト</span>

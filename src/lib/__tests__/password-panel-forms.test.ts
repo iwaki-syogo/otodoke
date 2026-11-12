@@ -31,7 +31,7 @@ vi.mock("next/link", async () => {
   const Link = ({ href, children, prefetch, ...rest }: Record<string, unknown>) => h("a", { href: String(href), ...rest }, children as never);
   return { default: Link };
 });
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: router.refresh, push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: router.refresh, push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
 vi.mock("@/app/login/turnstile-widget", () => ({
   TurnstileWidget: (props: { tokenRef: { current: TokenField } }) => {
     props.tokenRef.current.value = "0.token";
@@ -51,7 +51,7 @@ vi.mock("@/lib/crypto/password-flows", async (importOriginal) => ({ ...(await im
 vi.mock("@/app/login/actions", () => ({ signInWithAuthSecret: vi.fn() }));
 vi.mock("@/app/login/session-actions", () => ({ readSignedInAddress: vi.fn() }));
 vi.mock("@/app/app/settings/key-actions", () => ({ readMailKey: vi.fn(), registerMailKey: vi.fn(), activateMailKey: vi.fn(), rewrapMailKey: vi.fn(), sealStoredMail: vi.fn(), readSealedMail: vi.fn() }));
-vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn(), signInForKey: vi.fn() }));
 
 const { MakeKeyForm, ChangeForm, ChangeDetails, useDetailsOpen } = await import("@/app/app/settings/password-panel");
 
@@ -79,7 +79,7 @@ beforeEach(() => {
 
 describe("設定: 鍵を作る", () => {
   async function typed() {
-    const view = mount(() => MakeKeyForm({ email: EMAIL }));
+    const view = mount(() => MakeKeyForm({ email: EMAIL, userId: USER }));
     type(view, "パスワード", PASSWORD);
     await drawn();
     return view;

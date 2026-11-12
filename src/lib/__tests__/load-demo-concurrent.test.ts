@@ -14,6 +14,7 @@ import { FakeDb, type Query, type Row } from "./fake-db";
 
 const fixed = vi.hoisted(() => ({ entries: [] as import("@/lib/demo").DemoEntry[] }));
 const USER = "00000000-0000-4000-8000-00000000000a";
+const displayedForm = () => { const data = new FormData(); data.set("expectedUserId", USER); return data; };
 const mocks = vi.hoisted(() => ({ db: null as unknown, redirect: vi.fn(), revalidatePath: vi.fn() }));
 
 // The iOS endpoint asks Supabase Auth about the Bearer token; here the token is always user USER.
@@ -43,7 +44,7 @@ fixed.entries = await realDemo.loadDemoEntries();
 
 const run = async () => {
   mocks.redirect.mockClear();
-  await expect(loadDemo()).rejects.toThrow("NEXT_REDIRECT");
+  await expect(loadDemo(displayedForm())).rejects.toThrow("NEXT_REDIRECT");
   return mocks.redirect.mock.calls.map((c) => c[0] as string);
 };
 
@@ -182,9 +183,9 @@ describe("loadDemo pressed twice", () => {
       // The first load must still be running when this one starts; if fixtures shrink and it has
       // already finished, fail here with that cause instead of at the busy assertion below.
       expect(mocks.redirect).not.toHaveBeenCalled();
-      return loadDemo();
+      return loadDemo(displayedForm());
     };
-    const results = await Promise.allSettled([loadDemo(), laterLoad()]);
+    const results = await Promise.allSettled([loadDemo(displayedForm()), laterLoad()]);
     expect(results.every((r) => r.status === "rejected" && String((r.reason as Error).message).startsWith("NEXT_REDIRECT"))).toBe(true);
     const to = mocks.redirect.mock.calls.map((c) => c[0] as string);
     expect(to).toHaveLength(2);
@@ -289,7 +290,7 @@ describe("the iOS endpoint POST /api/demo/load shares the guard", () => {
       expect(mocks.redirect).not.toHaveBeenCalled();
       return callApi();
     };
-    const [web, api] = await Promise.allSettled([loadDemo(), laterApi()]);
+    const [web, api] = await Promise.allSettled([loadDemo(displayedForm()), laterApi()]);
     expect(web.status).toBe("rejected");
     expect(api.status).toBe("fulfilled");
     const answer = (api as PromiseFulfilledResult<Awaited<ReturnType<typeof callApi>>>).value;

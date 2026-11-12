@@ -56,7 +56,7 @@ vi.mock("next/link", async () => {
   const Link = ({ href, children, prefetch, ...rest }: Record<string, unknown>) => h("a", { href: String(href), ...rest }, children as never);
   return { default: Link };
 });
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
+vi.mock("next/navigation", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/navigation")>()), useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
 vi.mock("@/components/leave-for", () => ({
   LeaveFor: ({ href }: { href: string }) => {
     nav.to.push(href);
@@ -84,7 +84,7 @@ vi.mock("@/app/app/settings/key-actions", () => ({
   sealStoredMail: vi.fn(),
   readSealedMail: vi.fn(),
 }));
-vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: actions.change }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: actions.change, signInForKey: actions.signIn }));
 vi.mock("@/app/reset-password/actions", () => ({ finishReset: actions.finishReset }));
 // The steps are password-flows.test.ts's. Here master and its login secret are made once, before
 // any press: made in a press, they would wait on WebCrypto, which the fake clock does not move, and
@@ -202,7 +202,7 @@ const PRESSES: Press[] = [
     action: actions.signIn,
     pending: "作っています…",
     open: async () => {
-      const view = mount(() => MakeKeyForm({ email: EMAIL }));
+      const view = mount(() => MakeKeyForm({ email: EMAIL, userId: USER }));
       type(view, byLabel("パスワード"), PASSWORD);
       return view;
     },
@@ -381,7 +381,7 @@ describe("presses Supabase Auth checks no token for: they go at once, with no bo
     await drawn();
     submit(view);
     await vi.waitFor(() => expect(view.text()).toContain(LOGIN_MESSAGES.no_key), AT_ONCE);
-    expect(actions.readMailKey).toHaveBeenCalledWith({ keyId: null });
+    expect(actions.readMailKey).toHaveBeenCalledWith({ keyId: null }, USER);
     expect(widget.token).toBeNull();
   });
 

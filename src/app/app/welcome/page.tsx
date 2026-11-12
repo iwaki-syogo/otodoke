@@ -37,7 +37,7 @@ export default async function WelcomePage() {
   const consent = await readAiReadingConsent(supabase, user.id);
   if (consent === "undecided") redirect("/app/reading?after=welcome");
   if (consent === "declined") redirect("/app");
-  if (consent === "unknown") return <ReadingConsent unknown after="welcome" />;
+  if (consent === "unknown") return <ReadingConsent userId={user.id} unknown after="welcome" />;
   const localPart = await ensureInboxAddress(supabase, user.id);
   const address = inboxEmail(localPart);
   // The key in use. Not knowing must not look like "no key": the address stays hidden then too.

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeDb } from "./fake-db";
 
 const USER = "00000000-0000-4000-8000-00000000000a";
+const displayedForm = () => { const data = new FormData(); data.set("expectedUserId", USER); return data; };
 const mocks = vi.hoisted(() => ({ db: null as unknown, load: vi.fn(), revalidate: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`REDIRECT:${to}`); } }));
@@ -22,7 +23,7 @@ describe("trying the existing precomputed sample before deciding", () => {
     if (state === "granted" || state === "declined") db.rows("ai_reading_consents").push({ user_id: USER, decision: state, text_version: "v1", decided_at: "2026-11-12T00:00:00Z" });
     if (state === "unknown") db.hooks.push((q) => q.table === "ai_reading_consents" ? { data: null, error: { message: "unavailable" } } : undefined);
     const { loadDemo } = await import("@/app/app/settings/actions");
-    await expect(loadDemo()).rejects.toThrow(state === "granted" ? "REDIRECT:/app" : "REDIRECT:/app?sample=1");
+    await expect(loadDemo(displayedForm())).rejects.toThrow(state === "granted" ? "REDIRECT:/app" : "REDIRECT:/app?sample=1");
     expect(mocks.load).toHaveBeenCalledWith(expect.any(Function), USER);
     expect(db.callsOn("ai_reading_consents", "insert")).toHaveLength(0);
     expect(db.callsOn("ai_reading_consents", "update")).toHaveLength(0);
@@ -31,6 +32,6 @@ describe("trying the existing precomputed sample before deciding", () => {
   it("keeps the other loader's busy notice in the explicit sample view", async () => {
     mocks.load.mockResolvedValue({ ok: true, processed: 0, busy: true });
     const { loadDemo } = await import("@/app/app/settings/actions");
-    await expect(loadDemo()).rejects.toThrow("REDIRECT:/app?sample=1&demo=busy");
+    await expect(loadDemo(displayedForm())).rejects.toThrow("REDIRECT:/app?sample=1&demo=busy");
   });
 });

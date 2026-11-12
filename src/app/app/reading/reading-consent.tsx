@@ -3,7 +3,7 @@ import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 import { setAiReadingDecision } from "./actions";
 
 /** Used before the first choice and when the person asks to allow reading again. */
-export function ReadingConsent({ unknown = false, error, after = "list" }: { unknown?: boolean; error?: "save"; after?: "list" | "welcome" | "settings" }) {
+export function ReadingConsent({ userId, unknown = false, error, after = "list" }: { userId: string; unknown?: boolean; error?: "save"; after?: "list" | "welcome" | "settings" }) {
   const retryHref = after === "list" ? "/app/reading" : `/app/reading?after=${after}`;
   return (
     <section className="flex flex-col gap-6">
@@ -20,6 +20,7 @@ export function ReadingConsent({ unknown = false, error, after = "list" }: { unk
         </div>
       ) : (
         <form action={setAiReadingDecision} className="flex flex-col gap-3">
+          <input type="hidden" name="expectedUserId" value={userId} />
           <input type="hidden" name="after" value={after} />
           {error ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{AI_CONSENT_TEXT.saveFailed}</p> : null}
           <button name="decision" value="granted" type="submit" className="min-h-12 w-full rounded-xl bg-neutral-900 px-5 py-3 text-base font-medium text-white active:opacity-80">{AI_CONSENT_TEXT.allow}</button>

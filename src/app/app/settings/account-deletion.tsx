@@ -15,7 +15,7 @@ import { deleteAccount } from "./account-actions";
  * opens, or the words of a failure appear. It is never `disabled` (a pressed button should look
  * pressed); a second press meanwhile is cancelled instead. 「やめる」 does nothing while deleting.
  */
-export function AccountDeletion() {
+export function AccountDeletion({ userId }: { userId: string }) {
   const [confirming, setConfirming] = useState(false);
   const [state, formAction, pending] = useActionState<DeleteAccountState, FormData>(deleteAccount, null);
   // A failure already shown when the step was closed: opening it again starts without it.
@@ -72,6 +72,7 @@ export function AccountDeletion() {
       <p className="mt-1 text-sm leading-6">Otodoke の荷物、Otodoke に保存したメール、転送先アドレスを、アカウントごと消します。お使いのメールの受信箱は、そのままです。元に戻せません。</p>
       <p className="mt-1 text-sm leading-6">Gmail などで設定した自動転送も外してください。</p>
       <form action={formAction} className="mt-3 flex flex-wrap items-center gap-2">
+        <input type="hidden" name="expectedUserId" value={userId} />
         <input type="hidden" name={ACCOUNT_DELETE_CONFIRM.name} value={ACCOUNT_DELETE_CONFIRM.value} />
         <button
           type="submit"

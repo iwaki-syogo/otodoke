@@ -16,13 +16,14 @@ import {
   type SealedMailRead,
   type StoredKeyColumns,
 } from "@/lib/mail-keys";
-import { freshCookieSession, type FreshCheck } from "@/lib/auth-session";
+import { checkFresh, readCookieSession, type FreshCheck } from "@/lib/auth-session";
 import type { EnvelopeV1 } from "@/lib/crypto/envelope";
 import type { Json } from "@/lib/db/database.types";
 import { KEY_SESSION_STALE } from "@/lib/login-errors";
 import { scheduleSealRemaining } from "@/lib/seal-later";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
+import { KEY_SETTINGS_PATH, requireDisplayedUser } from "@/lib/action-identity";
 
 /*
  * The key steps of 設定, and the reads the browser needs to open its mail. Each takes only wrapped
@@ -50,14 +51,18 @@ function refusal(check: Extract<FreshCheck, { ok: false }>): { ok: false; error:
 }
 
 /** A new key, waiting: it seals nothing until it is put in use (activateMailKey, or finishReset). */
-export async function registerMailKey(input: KeyRegistration): Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>> {
-  const check = await freshCookieSession("login_or_reset");
+export async function registerMailKey(input: KeyRegistration, expectedUserId?: string): Promise<KeyResult<{ keyId: string; challenge: EnvelopeV1 }>> {
+  const current = await readCookieSession(await createClient());
+  if (current.state === "signed_in") requireDisplayedUser({ id: current.session.userId }, expectedUserId, KEY_SETTINGS_PATH);
+  const check = checkFresh(current, "login_or_reset");
   if (!check.ok) return refusal(check);
   return registerKey(createAdminClient(), check.session.userId, input);
 }
 
-export async function activateMailKey(input: KeyActivation): Promise<KeyResult<{ keyId: string }>> {
-  const check = await freshCookieSession("login");
+export async function activateMailKey(input: KeyActivation, expectedUserId?: string): Promise<KeyResult<{ keyId: string }>> {
+  const current = await readCookieSession(await createClient());
+  if (current.state === "signed_in") requireDisplayedUser({ id: current.session.userId }, expectedUserId, KEY_SETTINGS_PATH);
+  const check = checkFresh(current, "login");
   if (!check.ok) return refusal(check);
   const result = await activateKey(createAdminClient(), check.session.userId, input);
   // The mail stored before the key is sealed in the background, with no step for the user.
@@ -66,29 +71,34 @@ export async function activateMailKey(input: KeyActivation): Promise<KeyResult<{
   return result;
 }
 
-export async function rewrapMailKey(input: KeyRewrap): Promise<KeyResult<{ keyId: string }>> {
-  const check = await freshCookieSession("login");
+export async function rewrapMailKey(input: KeyRewrap, expectedUserId?: string): Promise<KeyResult<{ keyId: string }>> {
+  const current = await readCookieSession(await createClient());
+  if (current.state === "signed_in") requireDisplayedUser({ id: current.session.userId }, expectedUserId, KEY_SETTINGS_PATH);
+  const check = checkFresh(current, "login");
   if (!check.ok) return refusal(check);
   return rewrapKey(createAdminClient(), check.session.userId, input);
 }
 
 /** One of the user's wrapped keys: the one in use (keyId null) or one by id. */
-export async function readMailKey(input: KeyRead): Promise<KeyResult<{ key: StoredKeyColumns | null }>> {
+export async function readMailKey(input: KeyRead, expectedUserId?: string): Promise<KeyResult<{ key: StoredKeyColumns | null }>> {
   const user = await getUser();
   if (!user) return signedOut;
+  requireDisplayedUser(user, expectedUserId, KEY_SETTINGS_PATH);
   return readStoredKey(await createClient(), user.id, input);
 }
 
 /** The user's retired wrapped keys, newest first (a few). */
-export async function readRetiredMailKeys(): Promise<KeyResult<{ keys: StoredKeyColumns[] }>> {
+export async function readRetiredMailKeys(expectedUserId?: string): Promise<KeyResult<{ keys: StoredKeyColumns[] }>> {
   const user = await getUser();
   if (!user) return signedOut;
+  requireDisplayedUser(user, expectedUserId, KEY_SETTINGS_PATH);
   return readRetiredKeys(await createClient(), user.id);
 }
 
 /** The envelope of one of the user's sealed mails (the browser opens it). */
-export async function readSealedMail(input: SealedMailRead): Promise<KeyResult<{ envelope: Json | null }>> {
+export async function readSealedMail(input: SealedMailRead, expectedUserId?: string): Promise<KeyResult<{ envelope: Json | null }>> {
   const user = await getUser();
   if (!user) return signedOut;
+  requireDisplayedUser(user, expectedUserId, "/app");
   return readSealedEnvelope(await createClient(), user.id, input);
 }

@@ -6,6 +6,7 @@ import { FakeDb, type Row } from "./fake-db";
 import { findAll, parseHtml, textOf } from "./html-tree";
 
 const USER = "00000000-0000-4000-8000-00000000000a";
+const displayedForm = () => { const data = new FormData(); data.set("expectedUserId", USER); return data; };
 const AT = "2026-11-12T00:00:00Z";
 const mocks = vi.hoisted(() => ({ db: null as unknown, user: null as { id: string } | null, admin: vi.fn(), read: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -39,7 +40,7 @@ describe("A3: the Web retry enters the reading permission screen before mail wri
     const db = new FakeDb({ emails: [mail("waiting", "ai_consent_required")], ai_reading_consents: decision === "declined" ? [consent(decision)] : [] });
     mocks.db = db;
     const before = structuredClone(db.rows("emails"));
-    await expect(readWaitingMail()).rejects.toThrow("NEXT_REDIRECT /app/reading?after=settings");
+    await expect(readWaitingMail(displayedForm())).rejects.toThrow("NEXT_REDIRECT /app/reading?after=settings");
     expect(mocks.admin).not.toHaveBeenCalled();
     expect(mocks.read).not.toHaveBeenCalled();
     expect(db.rows("emails")).toEqual(before);
@@ -54,7 +55,7 @@ describe("A3: the Web retry enters the reading permission screen before mail wri
       return { data: null, error: { message: "offline" } };
     });
     mocks.db = db;
-    await expect(readWaitingMail()).rejects.toThrow("NEXT_REDIRECT /app/reading?after=settings");
+    await expect(readWaitingMail(displayedForm())).rejects.toThrow("NEXT_REDIRECT /app/reading?after=settings");
     expect(mocks.admin).not.toHaveBeenCalled();
     expect(mocks.read).not.toHaveBeenCalled();
     const ReadingPage = (await import("@/app/app/reading/page")).default;
@@ -65,14 +66,14 @@ describe("A3: the Web retry enters the reading permission screen before mail wri
 
   it("granted: keeps the existing read and its success destination", async () => {
     mocks.db = new FakeDb({ ai_reading_consents: [consent("granted")] });
-    await expect(readWaitingMail()).rejects.toThrow("NEXT_REDIRECT /app/settings/trouble");
+    await expect(readWaitingMail(displayedForm())).rejects.toThrow("NEXT_REDIRECT /app/settings/trouble");
     expect(mocks.admin).toHaveBeenCalledTimes(1);
     expect(mocks.read).toHaveBeenCalledWith({}, USER);
   });
 
   it("a signed-out direct action stays on the login path", async () => {
     mocks.user = null;
-    await expect(readWaitingMail()).rejects.toThrow("NEXT_REDIRECT /login");
+    await expect(readWaitingMail(displayedForm())).rejects.toThrow("NEXT_REDIRECT /login");
     expect(mocks.admin).not.toHaveBeenCalled();
     expect(mocks.read).not.toHaveBeenCalled();
   });

@@ -8,14 +8,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { settingsErrorPath } from "@/lib/settings-errors";
 import { readAiReadingConsent } from "@/lib/ai-consent";
+import { requireDisplayedUser } from "@/lib/action-identity";
 
 /**
  * Feed the anonymized demo mails through the real pipeline for the signed-in user.
  * Uses precomputed Claude results, so this never calls the API.
  */
-export async function loadDemo(): Promise<void> {
+export async function loadDemo(formData: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/demo");
 
   const loaded = await runLoadDemo(createAdminClient, user.id);
 
@@ -33,9 +34,9 @@ export async function loadDemo(): Promise<void> {
 }
 
 /** Read mail that arrived after the daily limit. Stops when today's allowance runs out again. */
-export async function readWaitingMail(): Promise<void> {
+export async function readWaitingMail(formData: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/trouble");
 
   // Check before taking over any stored mail: the permission screen also has a recovery exit
   // when the choice cannot be read. The pipeline still checks again before each paid read.
@@ -92,7 +93,7 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
  */
 export async function forgetSender(formData: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/dropped");
   const domain = String(formData.get("domain") ?? "");
   let ok = false;
   if (domain && domain.length <= 255) {
@@ -108,7 +109,7 @@ export async function forgetSender(formData: FormData): Promise<void> {
 /** Remove everything this user has (used to reset a demo account). */
 export async function clearAllParcels(formData: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/demo");
   if (formData.get("confirm") !== "yes") redirect(settingsErrorPath("clear_confirm"));
 
   const failure = await runClearAllParcels(createAdminClient(), user.id);
@@ -124,7 +125,7 @@ export async function clearAllParcels(formData: FormData): Promise<void> {
 /** Dismiss only the notice the person saw; a newer rejection stays visible. */
 export async function dismissIntakeNotice(formData: FormData): Promise<void> {
   const user = await getUser();
-  if (!user) redirect("/login");
+  requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/trouble");
   const at = String(formData.get("limited_at") ?? "");
   if (!Number.isFinite(Date.parse(at))) redirect(settingsErrorPath("read_failed"));
   const { error } = await createAdminClient().from("mail_intake_notices").delete().eq("user_id", user.id).eq("limited_at", at);

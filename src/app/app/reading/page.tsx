@@ -16,5 +16,5 @@ export default async function ReadingPage({ searchParams }: { searchParams?: Pro
   const consent = await readAiReadingConsent(await createClient(), user.id);
   const error = params?.error === "save" ? params.error : undefined;
   if (consent === "granted" && !error) redirect(after === "welcome" ? "/app/welcome" : "/app/settings/mail-handling");
-  return <ReadingConsent unknown={consent === "unknown"} error={error} after={after} />;
+  return <ReadingConsent userId={user.id} unknown={consent === "unknown"} error={error} after={after} />;
 }

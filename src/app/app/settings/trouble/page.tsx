@@ -28,7 +28,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
   // The reasons are told only from counts that were read; when they were not, no reason is stated.
   const intake = await readIntakeNotice(supabase, "settings trouble");
   const reasons = waiting !== null && waiting > 0 ? await readUnreadReasons(supabase, "settings trouble") : null;
-  const user = waiting !== null && waiting > 0 ? await getUser() : null;
+  const user = await getUser();
   const consent = user ? await readAiReadingConsent(supabase, user.id) : "unknown";
 
   return (
@@ -38,6 +38,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
           <p>{READ_STORAGE_LIMIT_NOTICE}</p>
           <p className="mt-1">{READ_STORAGE_LIMIT_REASON}</p>
           <form action={dismissIntakeNotice} className="mt-3">
+            <input type="hidden" name="expectedUserId" value={user?.id ?? ""} />
             <input type="hidden" name="limited_at" value={intake.at} />
             <PressButton label="確認しました" busyLabel="確認しています…" className="rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium" />
           </form>
@@ -60,6 +61,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
           {reasons && reasons.failed > 0 ? <p className="mt-1 text-sm leading-6">{READ_FAILED_REASON}</p> : null}
           {consent === "granted" ? (
             <form action={readWaitingMail} className="mt-3">
+              <input type="hidden" name="expectedUserId" value={user?.id ?? ""} />
               <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
             </form>
           ) : consent === "unknown" ? (

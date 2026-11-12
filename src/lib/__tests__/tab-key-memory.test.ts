@@ -19,6 +19,7 @@ const signedOut = vi.hoisted(() => ({ calls: 0, options: [] as unknown[] }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
+      getUser: async () => ({ data: { user: { id: A } }, error: null }),
       signOut: async (options?: unknown) => {
         signedOut.calls++;
         signedOut.options.push(options);
@@ -78,14 +79,16 @@ describe("the logout leaves the page", () => {
   it("設定's logout is a native POST to /auth/signout (LogoutForm, on a page drawn by the server)", () => {
     const page = source("app/app/settings/(list)/page.tsx");
     expect(/^\s*["']use client["']/.test(withoutComments(page))).toBe(false);
-    expect(withoutComments(page)).toContain("<LogoutForm />");
+    expect(withoutComments(page)).toContain("<LogoutForm userId={user.id} />");
     expect(withoutComments(page)).not.toContain("/auth/signout");
     expect(logoutFormProblems(source("app/app/settings/logout-form.tsx"))).toEqual([]);
   });
 
   it("/auth/signout signs out and answers with a redirect to the top page (a new document)", async () => {
     const { POST } = await import("@/app/auth/signout/route");
-    const res = await POST(new Request("https://otodoke.app/auth/signout", { method: "POST" }) as never);
+    const data = new FormData();
+    data.set("expectedUserId", A);
+    const res = await POST(new Request("https://otodoke.app/auth/signout", { method: "POST", body: data }) as never);
     expect(signedOut.calls).toBe(1);
     // This device only: the default (global) scope would sign out every device of a shared account.
     expect(signedOut.options).toEqual([{ scope: "local" }]);

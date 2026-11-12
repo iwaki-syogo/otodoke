@@ -63,6 +63,7 @@ beforeEach(() => {
 
 const form = (fields: Record<string, string>) => {
   const fd = new FormData();
+  fd.set("expectedUserId", USER);
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
   return fd;
 };

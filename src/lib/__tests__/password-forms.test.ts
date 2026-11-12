@@ -35,7 +35,7 @@ vi.mock("@/app/app/settings/key-actions", () => ({
   readRetiredMailKeys: vi.fn(),
   readSealedMail: vi.fn(),
 }));
-vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn() }));
+vi.mock("@/app/app/settings/password-actions", () => ({ changeLoginSecret: vi.fn(), signInForKey: vi.fn() }));
 
 const USER = "00000000-0000-4000-8000-00000000000a";
 

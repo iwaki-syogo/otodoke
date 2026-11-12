@@ -52,6 +52,7 @@ afterEach(() => {
 
 const form = (decision: string, after = "list") => {
   const data = new FormData();
+  data.set("expectedUserId", USER);
   data.set("decision", decision);
   data.set("after", after);
   return data;
