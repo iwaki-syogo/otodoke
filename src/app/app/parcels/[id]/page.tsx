@@ -7,7 +7,7 @@ import { RELEVANCE_LABEL, formatDateJa, formatDateTimeJa, formatWindow, yen } fr
 import { DELIVERY_EVIDENCE_LABEL, deliveryEvidence } from "@/lib/delivery-evidence";
 import { faceToFace, faceToFaceAssumed, isReceived } from "@/lib/match";
 import { isHttpsUrl } from "@/lib/safe-url";
-import { NO_BODY_TEXT, NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
+import { CONSENT_WAIT_EXPIRED_NOTICE, NO_BODY_TEXT, NO_SUBJECT_TEXT, isBlankSubject } from "@/lib/mail-notices";
 import { htmlToText } from "@/lib/text/html-to-text";
 import { CategorySheet } from "../../category-sheet";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge, showsPresence } from "../../parcel-card";
@@ -38,7 +38,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
     supabase.from("parcel_items").select("*").eq("parcel_id", id).order("created_at"),
     supabase
       .from("extractions")
-      .select("id, confidence, result, created_at, emails(id, subject, from_address, from_name, from_domain, sent_at, classification, body_state, text_body, html_body)")
+      .select("id, confidence, result, created_at, emails(id, subject, from_address, from_name, from_domain, sent_at, classification, body_state, error, text_body, html_body)")
       .eq("parcel_id", id),
   ]);
   // A failed read is told apart from a parcel, an item list or a mail history that is not there.
@@ -230,7 +230,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
-                        <p className="mt-2 text-xs leading-5 text-neutral-600">メールの鍵ができる前に読み取ったメールです。件名・差出人・本文は残していません。</p>
+                        <p className="mt-2 text-xs leading-5 text-neutral-600">{email.error === "ai_consent_wait_expired" ? CONSENT_WAIT_EXPIRED_NOTICE : "本文は保存していません"}</p>
                       </details>
                     </>
                   ) : (

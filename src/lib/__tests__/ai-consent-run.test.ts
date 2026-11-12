@@ -1,6 +1,6 @@
 import { APIError } from "@anthropic-ai/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeDb, type Row } from "./fake-db";
+import { FakeDb, consentWaitingRetentionMs, type Row } from "./fake-db";
 import { env } from "@/lib/env";
 import { OTHER, USER, asAdmin, precomputed, reading } from "./pipeline-fixtures";
 
@@ -26,19 +26,23 @@ const { runReadAfterConsent } = await import("@/lib/ai-consent-run");
 const { runReadWaitingMail } = await import("@/lib/mail-run");
 
 const DECIDED = "2026-11-12T00:00:00.123456Z";
+const RECEIVED = "2026-11-01T00:00:00.000000Z";
 const choice = (decision = "granted", decidedAt = DECIDED, userId = USER) => ({ user_id: userId, decision, decided_at: decidedAt, text_version: "v1" });
 const waiting = (n: number, over: Partial<Row> = {}): Row => ({
   id: `waiting-${n}`, user_id: USER, processing_status: "failed", error: "ai_consent_required", body_state: "plain",
   provider_email_id: `provider-${n}`, message_id: `<waiting-${n}@example.test>`,
   from_address: "shop@example.test", from_name: null, subject: "ご注文ありがとうございます",
   sent_at: new Date(Date.parse("2026-11-01T00:00:00Z") + n * 1000).toISOString(),
-  text_body: `ご注文番号 TEST-${n} を承りました`, html_body: null, created_at: "2026-11-01T00:00:00.000000Z", ...over,
+  text_body: `ご注文番号 TEST-${n} を承りました`, html_body: null, created_at: RECEIVED, received_at: RECEIVED,
+  consent_waiting_until: new Date(Date.parse(RECEIVED) + consentWaitingRetentionMs()).toISOString(), ...over,
 });
 const seeded = (n = 1) => new FakeDb({ ai_reading_consents: [choice()], emails: Array.from({ length: n }, (_, i) => waiting(i + 1)) });
 // The unrelated verdict must quote the mail itself (the evidence check keeps a mail whose quote is not in it).
 const notRelevant = () => precomputed(reading({ relevance: "unrelated", relevance_evidence: "ご注文番号" }));
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.parse("2026-11-12T00:00:01Z"));
   Object.assign(timing, { TRIAGE_TIMEOUT_MS: 15_000, EXTRACT_TIMEOUT_MS: 90_000, MAIL_READ_BUDGET_MS: 120_000, MAIL_REQUEST_BUDGET_MS: 270_000 });
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
@@ -178,10 +182,10 @@ describe("automatic reading after the recorded permission", () => {
 
   it("the snapshot excludes new mail, another user, samples and non-consent failures", async () => {
     const keep = [
-      waiting(3, { created_at: "2026-11-12T00:00:00.123457Z" }),
+      waiting(3, { received_at: "2026-11-12T00:00:00.123457Z", created_at: "2026-11-12T00:00:00.123457Z" }),
       waiting(4, { user_id: OTHER }),
       waiting(5, { provider_email_id: "demo:sample", error: null }),
-      waiting(6, { error: "claude_error" }),
+      waiting(6, { error: "claude_error", consent_waiting_until: null }),
       waiting(7, { processing_status: "processed" }),
     ];
     const db = new FakeDb({ ai_reading_consents: [choice()], emails: [waiting(1), waiting(2, { error: "ai_consent_unknown", created_at: DECIDED }), ...keep] });
@@ -189,8 +193,9 @@ describe("automatic reading after the recorded permission", () => {
     expect(mocks.extract).toHaveBeenCalledTimes(2);
     expect(db.rows("emails").map((r) => r.id)).toEqual(keep.map((r) => r.id));
     const query = db.callsOn("emails", "select").find((q) => q.columns?.startsWith("id, provider_email_id"))!;
-    expect(query.filters).toContainEqual({ method: "in", args: ["error", ["ai_consent_required", "ai_consent_unknown"]] });
-    expect(query.filters).toContainEqual({ method: "lte", args: ["created_at", DECIDED] });
+    expect(query.filters).toContainEqual({ method: "lte", args: ["received_at", DECIDED] });
+    expect(query.filters).toContainEqual({ method: "gt", args: ["consent_waiting_until", new Date().toISOString()] });
+    expect(query.filters.filter((filter) => filter.method === "or")).toHaveLength(1);
   });
 
   it.each(["missing", "declined", "old_timestamp"])("%s cannot claim or spend, and does not change the current choice", async (state) => {

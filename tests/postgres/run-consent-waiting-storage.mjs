@@ -20,6 +20,31 @@ export function priorMigrations(names) {
   return names.filter((name) => /^\d{14}_.+\.sql$/.test(name) && name < `${target}.sql`).sort();
 }
 
+// psql uses -A -t: exactly one unheaded pipe-delimited row. Each file owns its
+// layout; accepting OK in either end would hide a failed or truncated verdict.
+const verifyLayouts = new Map([
+  ["supabase/verify/20261113110000_sample_generation.sql", { columns: 8, verdict: 7, booleans: [0, 1, 2, 3, 4, 5, 6], counts: [] }],
+  [`supabase/verify/${target}.before.sql`, { columns: 11, verdict: 0, booleans: [1, 2, 3, 4, 5, 6, 7], counts: [8, 9, 10] }],
+  [`supabase/verify/${target}.sql`, { columns: 11, verdict: 0, booleans: [1, 2, 3, 4, 5, 6, 7, 8], counts: [9, 10] }],
+]);
+
+export function requireStorageVerifyVerdict(output, name) {
+  const layout = verifyLayouts.get(name);
+  assert.ok(layout, `${name}: unknown verify layout`);
+  const rows = output.trim().split(/\r?\n/);
+  assert.equal(rows.length, 1, `${name}: expected exactly one result row`);
+  const cells = rows[0].split("|");
+  assert.equal(cells.length, layout.columns, `${name}: expected ${layout.columns} columns`);
+  assert.equal(cells[layout.verdict], "OK", `${name}: verdict column ${layout.verdict + 1} must be OK`);
+  for (const index of layout.booleans) assert.equal(cells[index], "t", `${name}: check column ${index + 1} must be true`);
+  for (const index of layout.counts) assert.match(cells[index], /^\d+$/, `${name}: count column ${index + 1} must be a nonnegative integer`);
+}
+
+/** The real file path and the child-process self-test share this execution boundary. */
+export async function verifyFile(name, execute) {
+  requireStorageVerifyVerdict(await execute(name), name);
+}
+
 async function listening() {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
@@ -40,12 +65,34 @@ async function selfTest() {
   requireVerdict("OK|t\n", "self-test");
   assert.throws(() => requireVerdict("FAILED|t\n", "self-test"));
   assert.throws(() => requireVerdict("", "self-test"));
+  const legacy = "supabase/verify/20261113110000_sample_generation.sql";
+  const before = `supabase/verify/${target}.before.sql`;
+  const after = `supabase/verify/${target}.sql`;
+  const outputFromChild = (output, stderr = "") => () => runCommand(process.execPath, ["-e", `process.stdout.write(${JSON.stringify(output)});process.stderr.write(${JSON.stringify(stderr)});`]);
+  // This is the actual eight-column 110000 result shape observed in the review.
+  await verifyFile(legacy, outputFromChild("t|t|t|t|t|t|t|OK\n"));
+  await verifyFile(before, outputFromChild("OK|t|t|t|t|t|t|t|3|2|1\n"));
+  await verifyFile(after, outputFromChild("OK|t|t|t|t|t|t|t|t|3|1\n"));
+  for (const output of ["", "t|t|t|t|t|t|t|FAILED\n", "t|t|t|t|t|t|OK\n", "OK|t|t|t|t|t|t|FAILED\n",
+    "t|t|t|t|t|t|f|OK\n", "t|t|t|t|t|t|t|OK\nERROR: broken SQL\n"]) {
+    await assert.rejects(verifyFile(legacy, outputFromChild(output)));
+  }
+  for (const [name, good] of [[before, "OK|t|t|t|t|t|t|t|3|2|1\n"], [after, "OK|t|t|t|t|t|t|t|t|3|1\n"]]) {
+    await assert.rejects(verifyFile(name, outputFromChild(good.replace("OK", "FAILED"))));
+    await assert.rejects(verifyFile(name, outputFromChild(good.replace("OK|", ""))));
+    await assert.rejects(verifyFile(name, outputFromChild(good.replace("|t|", "|f|"))));
+    await assert.rejects(verifyFile(name, outputFromChild(good.replace(/^OK\|/, "FAILED|").replace(/\|\d+\n$/, "|OK\n"))));
+    await assert.rejects(verifyFile(name, outputFromChild(good.replace(/\|\d+\n$/, "|unknown\n"))));
+    await assert.rejects(verifyFile(name, outputFromChild(`${good}ERROR: broken SQL\n`)));
+    await assert.rejects(verifyFile(name, outputFromChild(good, "ERROR: SQL failed despite exit zero\n")));
+  }
+  await assert.rejects(verifyFile("supabase/verify/unknown.sql", outputFromChild("OK|t\n")));
   await assert.rejects(runCommand(process.execPath, ["-e", "process.stderr.write('ERROR: broken SQL');process.exit(0)"]), /broken SQL/);
   await assert.rejects(runCommand(process.execPath, ["-e", "setTimeout(()=>{},10000)"], { timeout: 10 }), /SIGTERM/);
   const sql = await readFile(path.join(root, `supabase/migrations/${target}.sql`), "utf8");
   assert.equal((sql.match(/interval '14 days'/g) ?? []).length, 1);
   assert.ok(store(users[0], uuid(1001)).includes("public.store_mail_run("));
-  console.log("OK: self-test (verdict, dependency boundary, SQL error with exit zero, timeout, one retention constant)");
+  console.log("OK: self-test (per-file verdict columns through child stdout and the real verifyFile path, malformed/FAILED/error rejection, dependency boundary, timeout, one retention constant)");
   console.log("NOT RUN: PostgreSQL startup, SQL behavior, migration/rollback, concurrency and SQL negative control");
 }
 
@@ -66,7 +113,7 @@ async function main(mode) {
   const args = ["-X", "-w", "-q", "-A", "-t", "-h", "127.0.0.1", "-p", String(port), "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"];
   const sql = (input) => command("psql", args, { input });
   const file = (name) => command("psql", [...args, "-f", path.join(root, name)]);
-  const verify = async (name) => { requireVerdict(await file(name), name); console.log(`OK: ${name}`); };
+  const verify = async (name) => { await verifyFile(name, file); console.log(`OK: ${name}`); };
   const scalar = async (input) => (await sql(input)).trim();
   const grant = (user, decision = "granted") => sql(`begin; set local request.jwt.claim.sub=${quote(user)}; set local role authenticated; select * from public.set_ai_reading(${quote(decision)},'v1'); commit;`);
   const endLease = (id) => sql(`update public.emails set processing_status='failed',error='ai_consent_required',processing_lease_until=null where id=${quote(id)};`);

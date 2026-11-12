@@ -108,11 +108,18 @@ reading once. Repeating the same decision and text version keeps `decided_at` un
 button presses do not start a second reading. A stale timestamp, a withdrawn grant, or an already
 claimed grant cannot start another run. A withdrawal followed by a new grant has a new server timestamp.
 
-The automatic run takes only mail held for `ai_consent_required` or `ai_consent_unknown` which arrived
-by the grant time. It reads successive batches until no eligible mail remains, a daily cap is reached,
-reading stops, or a failure ends the run. It uses the existing per-user and global Claude claims for
-every paid call. New arrivals continue through the normal pipeline. Samples are not consent-waiting
-mail and keep their separate precomputed path.
+The automatic run takes the user's plain unread mail marked by a non-null `consent_waiting_until`,
+with immutable `received_at` at or before the returned grant timestamp. Its deadline must be later
+than both the grant and the current batch's start time. All conditions apply before the batch limit.
+This includes legacy allowance or Claude-stop failures marked by migration 120000 without replacing
+their stored `error` for selection. A retry's `created_at` is not the arrival time. Samples and
+forwarding confirmations are excluded even if a stale row has a marker. New arrivals continue
+through the normal pipeline; the manual reader keeps its wider unread set.
+
+The run reads successive batches until no eligible mail remains, a daily cap is reached, reading
+stops, or a failure ends the run. It uses the existing per-user and global Claude claims for every
+paid call. The owned store checks expiry again before takeover, so content that expires after the
+query is not sent to Claude. Samples keep their separate precomputed path.
 
 The response keeps the existing `read`, `over_limit`, `busy`, and `stopped` fields. An already claimed
 or stale grant can successfully report no new reading; it does not consume another allowance.
@@ -166,3 +173,20 @@ The transaction serializes claim authorization with withdrawal. Its locks are re
 claim commits, before the external HTTP request; they are not held across Claude's response. An
 already authorized call cannot be recalled by a later withdrawal. Clients must not replay such a
 call automatically or reset the saved permission when reporting the stopped batch.
+
+## Scope of the waiting-mail deadline
+
+The 14-day deadline applies to unread mail marked by a consent-waiting history. Mail arriving
+while permission is granted and waiting only because of an allowance or a reading failure does
+not acquire that deadline unless it later enters consent waiting, including on withdrawal.
+The settings and privacy text share `UNREAD_MAIL_STORAGE_NOTICE` for ordinary unread storage
+without promising a deadline. `AI_CONSENT_TEXT.waitingRetention` describes consent waiting
+separately. This wording does not extend the SQL cleanup scope.
+
+## A retained reading whose original content is unavailable
+
+The embedded `emails` read includes `error` as well as `body_state`. For a dropped body, the exact
+reason `ai_consent_wait_expired` identifies the consent-waiting deadline; the Web uses
+`CONSENT_WAIT_EXPIRED_NOTICE` for this case. A null, missing or unknown reason does not establish a
+past key or login state: it receives the existing neutral content-not-kept explanation. Raw reasons
+are not displayed. This changes neither the saved parcel and reading nor plain and sealed content.

@@ -1,5 +1,5 @@
 import { demoInput, loadDemoEntries, type DemoEntry } from "@/lib/demo";
-import { sampleFileOf } from "@/lib/mail-keys";
+import { SAMPLE_PROVIDER_ID, sampleFileOf } from "@/lib/mail-keys";
 import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import { MailBeingReadError, processInboundEmail } from "@/lib/pipeline";
 import { isRememberableDomain, personalMailReason } from "@/lib/screen-senders";
@@ -63,17 +63,21 @@ export interface ReadWaitingOptions {
 /** Read up to 20 waiting mails; stops when today's allowance runs out. `read` counts the mails processed (every outcome but over_limit). */
 export async function runReadWaitingMail(db: AdminClient, userId: string, options: ReadWaitingOptions = {}): Promise<ReadWaitingResult> {
   const started = Date.now();
+  const unread = UNREAD_FILTER(new Date(started));
   let query = db
     .from("emails")
     .select("id, provider_email_id, message_id, from_address, from_name, subject, sent_at, text_body, html_body, sample_generation")
     .eq("user_id", userId)
-    .eq("body_state", "plain")
-    .or(UNREAD_FILTER());
+    .eq("body_state", "plain");
   if (options.consentDecidedAt !== undefined) {
-    // A grant starts the mail which waited for it, not unrelated failures, samples, or later mail.
-    // The ordinary manual path keeps its existing unread set and may retry all of those failures.
-    query = query.in("error", ["ai_consent_required", "ai_consent_unknown"]).lte("created_at", options.consentDecidedAt);
-  }
+    // 120000 marks legacy failures without replacing their displayed error. Arrival and the
+    // first waiting deadline are immutable; a retry's created_at is not the arrival clock.
+    // Each batch excludes mail expired at the grant or now, before limit(20). The owned store
+    // checks expiry again if it crosses the deadline after this SELECT and before takeover.
+    query = query.lte("received_at", options.consentDecidedAt)
+      .gt("consent_waiting_until", new Date(started).toISOString())
+      .or(`and(or(${unread}),consent_waiting_until.gt.${options.consentDecidedAt},or(provider_email_id.is.null,provider_email_id.not.like.${SAMPLE_PROVIDER_ID}),or(classification.is.null,classification.neq.forwarding_confirmation))`);
+  } else query = query.or(unread);
   const { data, error } = await query.order("sent_at", { ascending: true }).limit(20);
   if (error || data === null) return { ok: false, stage: "lookup", message: error?.message ?? "waiting_mail_lookup_failed", read: 0, overLimit: false, unavailable: false, onlyBusy: false };
 

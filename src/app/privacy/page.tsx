@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { PublicPageLinks } from "@/components/public-page-links";
-import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
 import { CONTACT_EMAIL } from "./contact";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
             <Bullets>
               <li>荷物の情報と、根拠の行・読み取りメモ。一覧・カレンダー・支出を出すのと、読み取った値を確かめるのに使います。根拠の行は本文の抜粋です。</li>
               <li>差出人のドメイン、メールごとの識別子、Gmail の転送の確認メールにある承認リンク。ふるいと、同じメールを二度読まないためと、承認ページを出すために使います。</li>
-              <li>読み取る前のメール。読み取りの許可を待つものや、1 日の上限を超えた分などは、暗号化せずに置きます。</li>
+              <li>読み取る前のメール。{UNREAD_MAIL_STORAGE_NOTICE}</li>
             </Bullets>
           </Term>
           <Term name="バックアップ">データベースのバックアップは、最大 7 日間残ります。暗号化していないメールも、その間はバックアップに残ります。</Term>

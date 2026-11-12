@@ -1,4 +1,4 @@
-import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL } from "@/lib/mail-notices";
+import { PLAINTEXT_DROP_NOTICE, RESET_LOSES_MAIL, UNREAD_MAIL_STORAGE_NOTICE } from "@/lib/mail-notices";
 import { AI_CONSENT_TEXT } from "@/lib/ai-consent-text";
 
 /** 「あなたのメールの扱い」: what happens to a forwarded mail, without promising more than the code does. Same facts as README. */
@@ -16,7 +16,7 @@ export function MailHandling({ hideHeading = false }: { hideHeading?: boolean } 
         <li>{PLAINTEXT_DROP_NOTICE}</li>
         <li>荷物の情報と読み取り結果、差出人のドメインは暗号化しません。荷物の情報は店・品名・金額・日付・注文番号・伝票番号、読み取り結果は根拠の行と読み取りメモです。根拠の行は本文の抜粋です。一覧・カレンダー・支出を出すのと、読み取った値を元の文で確かめるのと、同じメールを見分けるのに使うためです。</li>
         <li>メールごとの識別子の Message-ID と、Gmail の転送の確認メールにある承認リンクも暗号化しません。同じメールを二度読まないためと、承認ページを出すためです。</li>
-        <li>1 日の上限を超えた分など、読み取る前のメールは、読み取るまで暗号化せずに置いておきます。</li>
+        <li>{UNREAD_MAIL_STORAGE_NOTICE}</li>
         <li>Otodoke が暗号化を始めた後、パスワードでログインする前に読み取ったメールは、件名・差出人・本文を残しません。荷物の情報は残ります。</li>
         <li>パスワードを忘れたときは、メールで再設定できます。{RESET_LOSES_MAIL}パスワードを変えるだけなら、前のメールもそのまま開けます。</li>
         <li>受信を受け持つ Resend にも、メールの写しが一定期間残ります。</li>
