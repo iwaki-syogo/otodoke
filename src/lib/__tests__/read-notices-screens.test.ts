@@ -41,6 +41,14 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => mocks.state.db,
   getUser: async () => ({ id: USER, email: "qa@example.com" }),
 }));
+vi.mock("@/lib/auth-session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth-session")>()),
+  // The user this file's mocked getUser gives, read as a verified cookie session.
+  readCookieSession: async () => {
+    const user = await (await import("@/lib/supabase/server")).getUser();
+    return user ? { state: "signed_in", session: { userId: user.id, email: (user as { email?: string }).email ?? null, amr: [] } } : { state: "signed_out" };
+  },
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/mail-run", async (importActual) => ({ ...(await importActual<typeof import("@/lib/mail-run")>()), runReadWaitingMail: mocks.read }));
 

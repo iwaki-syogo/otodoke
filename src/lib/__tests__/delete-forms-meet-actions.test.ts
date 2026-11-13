@@ -28,7 +28,7 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => Object.assign(mocks.state.db as FakeDb, { auth: { getUser: async () => ({ data: { user: USER }, error: null }) } }),
+  createClient: async () => Object.assign(mocks.state.db as FakeDb, { auth: { getUser: async () => ({ data: { user: USER }, error: null }), getSession: async () => ({ data: { session: { access_token: `header.${Buffer.from(JSON.stringify({ sub: USER.id })).toString("base64url")}.sig` } }, error: null }) } }),
   getUser: async () => USER,
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.state.db }));

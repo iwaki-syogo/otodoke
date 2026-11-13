@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { runClearAllParcels, runLoadDemo } from "@/lib/demo-run";
 import { isScreenEventId, runMarkWronglyDropped, runReadWaitingMail } from "@/lib/mail-run";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient, getUser } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { readCookieSession } from "@/lib/auth-session";
 import { settingsErrorPath } from "@/lib/settings-errors";
 import { readAiReadingConsent } from "@/lib/ai-consent";
-import { requireDisplayedUser } from "@/lib/action-identity";
+import { requireDisplayedUser, sessionUserOrStop } from "@/lib/action-identity";
 import { isIntakeNoticeTimestamp, isRememberedSenderDomain, runDismissIntakeNotice, runForgetSender } from "@/lib/settings-mail-actions";
 
 /**
@@ -16,7 +17,7 @@ import { isIntakeNoticeTimestamp, isRememberedSenderDomain, runDismissIntakeNoti
  * Uses precomputed Claude results, so this never calls the API.
  */
 export async function loadDemo(formData: FormData): Promise<void> {
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/settings/demo");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/demo");
 
   const loaded = await runLoadDemo(createAdminClient, user.id);
@@ -36,7 +37,7 @@ export async function loadDemo(formData: FormData): Promise<void> {
 
 /** Read mail that arrived after the daily limit. Stops when today's allowance runs out again. */
 export async function readWaitingMail(formData: FormData): Promise<void> {
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/settings/trouble");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/trouble");
 
   // Check before taking over any stored mail: the permission screen also has a recovery exit
@@ -73,7 +74,7 @@ export async function readWaitingMail(formData: FormData): Promise<void> {
  * page offers to register the parcel by hand.
  */
 export async function markWronglyDropped(formData: FormData): Promise<void> {
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/settings/dropped");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/dropped");
   const id = String(formData.get("id") ?? "");
   let outcome: "remembered" | "shared" | "forwarded" | "own" | "failed" = "failed";
@@ -93,7 +94,7 @@ export async function markWronglyDropped(formData: FormData): Promise<void> {
  * fall back to the 14-day rule like any dropped mail (they are removed once that old).
  */
 export async function forgetSender(formData: FormData): Promise<void> {
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/settings/dropped");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/dropped");
   const domain = String(formData.get("domain") ?? "");
   let ok = false;
@@ -113,7 +114,7 @@ export async function forgetSender(formData: FormData): Promise<void> {
 
 /** Remove everything this user has (used to reset a demo account). */
 export async function clearAllParcels(formData: FormData): Promise<void> {
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/settings/demo");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/demo");
   if (formData.get("confirm") !== "yes") redirect(settingsErrorPath("clear_confirm"));
 
@@ -129,7 +130,7 @@ export async function clearAllParcels(formData: FormData): Promise<void> {
 
 /** Dismiss only the notice the person saw; a newer rejection stays visible. */
 export async function dismissIntakeNotice(formData: FormData): Promise<void> {
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/settings/trouble");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/trouble");
   const at = String(formData.get("limited_at") ?? "");
   if (!isIntakeNoticeTimestamp(at)) redirect(settingsErrorPath("notice_confirm_failed"));

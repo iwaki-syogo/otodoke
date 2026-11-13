@@ -105,7 +105,7 @@ describe("/privacy: the page", () => {
     expect(textOf(root)).toContain("制定日: 2026 年 11 月");
     // The page promises the day of a change (ポリシーを変えるとき): the password sign-in changed it.
     expect(textOf(section(root, "ポリシーを変えるとき"))).toContain("変えた日を書きます");
-    expect(textOf(root)).toContain("改定日: 2026 年 11 月 12 日");
+    expect(textOf(root)).toContain("改定日: 2026 年 11 月 14 日");
   });
 
   it("is named for the tab too", async () => {

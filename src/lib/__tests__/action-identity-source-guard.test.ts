@@ -167,7 +167,7 @@ function audit(sources: Map<string, string>, decisions = policies): string[] {
         parent = parent.parent;
       }
       const before = nodes(fn.body!, ts.isCallExpression).filter((c) => c.pos < call.pos);
-      const allowed = new Set(["now", "createClient", "getUser", "signedIn", "valuesOf", "freshCookieSession", "refusal", "readCookieSession"]);
+      const allowed = new Set(["now", "createClient", "getUser", "signedIn", "valuesOf", "freshCookieSession", "refusal", "readCookieSession", "sessionUserOrStop"]);
       if (before.some((c) => !allowed.has(callName(c)))) errors.push(`${key}: effect before identity precondition`);
     } else if (policy.kind === "public") {
       const delegates: Record<string, string> = {

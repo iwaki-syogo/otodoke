@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { ACCOUNT_DELETE_CONFIRM, ACCOUNT_DELETE_FAILED, ACCOUNT_DELETED_PATH, deleteAuthUser, type DeleteAccountState } from "@/lib/account-deletion";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { requireDisplayedUser } from "@/lib/action-identity";
+import { readCookieSession } from "@/lib/auth-session";
+import { requireDisplayedUser, sessionUserOrStop } from "@/lib/action-identity";
 
 /**
  * 「削除する」 in the confirmation step of 設定「アカウントを削除」: deletes the signed-in user's
@@ -23,9 +24,7 @@ import { requireDisplayedUser } from "@/lib/action-identity";
  */
 export async function deleteAccount(_previous: DeleteAccountState, formData: FormData): Promise<DeleteAccountState> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = sessionUserOrStop(await readCookieSession(supabase), "/app/settings/delete");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/settings/delete");
   if (formData.get(ACCOUNT_DELETE_CONFIRM.name) !== ACCOUNT_DELETE_CONFIRM.value) return { error: ACCOUNT_DELETE_FAILED };
 

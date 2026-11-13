@@ -5,14 +5,15 @@ import { redirect } from "next/navigation";
 import { AI_CONSENT_TEXT_VERSION } from "@/lib/ai-consent-text";
 import { runReadAfterConsent } from "@/lib/ai-consent-run";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient, getUser } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { readCookieSession } from "@/lib/auth-session";
 import { settingsErrorPath, type SettingsErrorCode } from "@/lib/settings-errors";
-import { requireDisplayedUser } from "@/lib/action-identity";
+import { requireDisplayedUser, sessionUserOrStop } from "@/lib/action-identity";
 
 /** Store only the signed-in person's choice through the database's checked, server-timed RPC. */
 export async function setAiReadingDecision(formData: FormData): Promise<void> {
   const requestStartedAt = Date.now();
-  const user = await getUser();
+  const user = sessionUserOrStop(await readCookieSession(await createClient()), "/app/reading");
   requireDisplayedUser(user, formData.get("expectedUserId"), "/app/reading");
   const decision = formData.get("decision");
   const after = formData.get("after");

@@ -28,6 +28,11 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mocks.db, getUser: async () => ({ id: USER, email: "qa@example.com" }) }));
+vi.mock("@/lib/auth-session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth-session")>()),
+  // The same user as the mocked getUser above, read as a verified cookie session.
+  readCookieSession: async () => ({ state: "signed_in", session: { userId: USER, email: "qa@example.com", amr: [] } }),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 // loadDemoEntries reads fixture files, which finish in an order and at a time set by the machine's
 // load. Both loads must reach their first query on the same turn, so the entries are read once

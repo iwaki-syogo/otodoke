@@ -13,6 +13,14 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/app/settings/trouble", useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => mocks.db, getUser: async () => ({ id: USER }) }));
+vi.mock("@/lib/auth-session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth-session")>()),
+  // The user this file's mocked getUser gives, read as a verified cookie session.
+  readCookieSession: async () => {
+    const user = await (await import("@/lib/supabase/server")).getUser();
+    return user ? { state: "signed_in", session: { userId: user.id, email: (user as { email?: string }).email ?? null, amr: [] } } : { state: "signed_out" };
+  },
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => mocks.db }));
 vi.mock("@/lib/seal-later", () => ({ scheduleSealRemaining: vi.fn() }));
 

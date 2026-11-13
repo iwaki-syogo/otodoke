@@ -11,6 +11,12 @@ const A = { id: "00000000-0000-4000-8000-00000000000a", email: "a@example.test" 
 const B = { id: "00000000-0000-4000-8000-00000000000b", email: "b@example.test" };
 const AT = "2026-11-12T01:00:00.123456Z";
 
+/** The cookie session of the mocked user: an unsigned token whose `sub` is that user's id. */
+const sessionOf = (user: { id: string } | null) => ({
+  data: { session: user ? { access_token: `header.${Buffer.from(JSON.stringify({ sub: user.id })).toString("base64url")}.sig` } : null },
+  error: null,
+});
+
 const mocks = vi.hoisted(() => ({
   db: null as unknown,
   user: null as { id: string; email: string } | null,
@@ -29,7 +35,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => Object.assign(mocks.db as FakeDb, {
-    auth: { getUser: mocks.getUser, signOut: mocks.signOut },
+    auth: { getUser: mocks.getUser, signOut: mocks.signOut, getSession: async () => sessionOf(mocks.user) },
   }),
   getUser: async () => (await mocks.getUser()).data.user,
 }));

@@ -203,7 +203,7 @@ export default function PrivacyPage() {
 
       <p className="mt-10 text-xs text-neutral-500">制定日: 2026 年 11 月</p>
       {/* The reading-permission policy's release date. Change it if the release moves. */}
-      <p className="mt-1 text-xs text-neutral-500">改定日: 2026 年 11 月 12 日</p>
+      <p className="mt-1 text-xs text-neutral-500">改定日: 2026 年 11 月 14 日</p>
       <PublicPageLinks includePrivacy={false} />
     </main>
   );

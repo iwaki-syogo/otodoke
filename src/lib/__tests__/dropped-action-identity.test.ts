@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({ user: null as { id: string; email: string } | 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
 vi.mock("@/lib/supabase/server", () => ({
   getUser: async () => mocks.user,
-  createClient: async () => Object.assign(mocks.db as FakeDb, { auth: { getUser: async () => ({ data: { user: mocks.user }, error: null }) } }),
+  createClient: async () => Object.assign(mocks.db as FakeDb, { auth: { getUser: async () => ({ data: { user: mocks.user }, error: null }), getSession: async () => ({ data: { session: mocks.user ? { access_token: `header.${Buffer.from(JSON.stringify({ sub: mocks.user.id })).toString("base64url")}.sig` } : null }, error: null }) } }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.admin }));
 

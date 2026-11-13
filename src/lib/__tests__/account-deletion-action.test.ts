@@ -45,9 +45,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
+      // The cookie's token; Supabase Auth (getUser below) is what decides who it belongs to.
+      getSession: async () => ({ data: { session: { access_token: `header.${Buffer.from(JSON.stringify({ sub: mocks.user?.id ?? USER })).toString("base64url")}.sig` } }, error: null }),
       getUser: async () => {
         mocks.calls.push("getUser");
-        return { data: { user: mocks.user }, error: mocks.user ? null : { message: "Auth session missing!" } };
+        return { data: { user: mocks.user }, error: mocks.user ? null : { status: 400, message: "Auth session missing!" } };
       },
       signOut: async (options?: { scope?: string }) => {
         mocks.calls.push(`signOut ${options?.scope ?? "global"}`);
@@ -153,7 +155,8 @@ describe("deleteAccount: only the signed-in user's account", () => {
 
   it("asks Supabase Auth for the user (getUser checks the token), not the cookie alone", () => {
     const source = withoutComments(readFileSync(path.resolve(__dirname, "../../app/app/settings/account-actions.ts"), "utf8"));
-    expect(source).toContain("supabase.auth.getUser()");
+    // readCookieSession hands the cookie's token to Supabase Auth (getUser(token)); the action never trusts the cookie alone.
+    expect(source).toContain("readCookieSession(supabase)");
     expect(source).not.toMatch(/getSession\(/);
     expect([...source.matchAll(/formData\.get\(([^)]+)\)/g)].map((match) => match[1]).sort()).toEqual(['"expectedUserId"', "ACCOUNT_DELETE_CONFIRM.name"]);
     expect(source).toContain("deleteAuthUser(createAdminClient(), user.id)");

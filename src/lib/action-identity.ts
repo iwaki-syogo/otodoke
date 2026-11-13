@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { SessionRead } from "@/lib/auth-session";
 import { safeNextPath } from "@/lib/safe-next";
 
 export const KEY_SETTINGS_PATH = "/app/settings/password";
@@ -29,4 +30,11 @@ export function requireDisplayedUser<T extends { id: string }>(user: T | null, e
   if (!displayedUserMatches(user, expectedUserId)) {
     redirect(accountChangedPath(returnTo));
   }
+}
+
+/** The verified user of a SessionRead, or null when signed out. Stops at the account-check page when Auth could not be asked. */
+export function sessionUserOrStop(read: SessionRead, returnTo: string): { id: string; email: string | null } | null {
+  if (read.state === "unknown") redirect(accountChangedPath(returnTo));
+  if (read.state === "signed_out") return null;
+  return { id: read.session.userId, email: read.session.email };
 }
