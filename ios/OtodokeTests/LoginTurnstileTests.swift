@@ -16,7 +16,7 @@ struct LoginTurnstileTests {
     private let start = Date(timeIntervalSince1970: 1_793_000_000)
 
     private func make(_ fake: FakeSupabase, wait: Duration = .milliseconds(300), clock: TestClock? = nil) -> (LoginModel, TurnstileToken) {
-        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
+        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh())
         let token = TurnstileToken()
         let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: ["Otodoke"]), now: (clock ?? TestClock(start)).function, turnstile: token, tokenWait: wait)
         model.email = FakeSupabase.email

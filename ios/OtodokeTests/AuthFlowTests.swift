@@ -9,7 +9,7 @@ import Testing
 @MainActor
 struct AuthFlowTests {
     private func make(_ fake: FakeSupabase) -> AuthService {
-        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
+        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh())
     }
 
     @Test func signUpAndResendUseTheImplicitFlow() async throws {

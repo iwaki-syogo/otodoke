@@ -858,7 +858,7 @@ final class InMemorySessionStorage: SessionStorage, @unchecked Sendable {
 enum TestSession {
     private nonisolated(unsafe) static let keptFakeKey = UnsafeRawPointer(UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1))
 
-    static func signedIn(_ fake: FakeSupabase, storage: InMemorySessionStorage = InMemorySessionStorage()) async throws -> (provider: SupabaseProvider, auth: AuthService) {
+    static func signedIn(_ fake: FakeSupabase, storage: InMemorySessionStorage = InMemorySessionStorage(), userDefaults: UserDefaults = TestDefaults.fresh()) async throws -> (provider: SupabaseProvider, auth: AuthService) {
         let provider = SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage)
         // The provider keeps its fake alive: a test that lets go of the fake but keeps a writer or a
         // model made from this provider still reaches it (the fake's deinit unregisters its host).
@@ -866,7 +866,7 @@ enum TestSession {
         // Signed in through supabase-swift itself (the fake's code endpoint; the app has no code login any more),
         // then the app's AuthService reads the session.
         _ = try await provider.auth.verifyOTP(email: FakeSupabase.email, token: FakeSupabase.goodCode, type: .email)
-        let auth = AuthService(provider: provider)
+        let auth = AuthService(provider: provider, userDefaults: userDefaults)
         await auth.checkSession()
         return (provider, auth)
     }

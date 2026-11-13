@@ -271,7 +271,9 @@ struct KeyOwnerAndOrderTests {
         #expect(await waitFor(.seconds(3)) { await w.server.count("register") == 1 })
         // Signed out and in again meanwhile (the same user, a new session generation).
         await w.auth.signOut()
-        _ = try await w.auth.provider.auth.signIn(email: FakeSupabase.email, password: "s")
+        // Re-sign in through AuthService, as the app does.
+        await w.fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
+        try await w.auth.signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
         let auth = w.auth
         #expect(await waitFor(.seconds(3)) { await MainActor.run { auth.session.stamp() != nil } })
         let new = Task { await w.setup.run(w.signIn) }

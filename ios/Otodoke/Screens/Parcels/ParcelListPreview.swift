@@ -10,6 +10,13 @@ import Observation
 import SwiftUI
 import UIKit
 
+/// A preview's own UserDefaults, new on every launch, so previews never share the app's signed-out mark.
+enum PreviewDefaults {
+    static func fresh() -> UserDefaults {
+        UserDefaults(suiteName: "otodoke.preview.\(UUID().uuidString)")!
+    }
+}
+
 struct ListPreview {
     enum Scenario: String, Sendable {
         case list, empty, failed, toast, saving, many, bottom
@@ -119,7 +126,7 @@ struct ListPreview {
         let saveFailure: ConsentPreviewStore.SaveFailure = scenario == .consentSaveError ? .refused : scenario == .consentSaveOffline ? .offline : .none
         let consent = Self.makeReadingConsent(decision: decision, fails: scenario == .consentError, counter: counter, gate: gate,
                                                saveFailure: saveFailure, fixtureID: consentFixtureID, holdInitialLoad: scenario == .consentLoading)
-        let settings = SettingsModel.live(auth: AuthService(provider: provider), changes: changes, consent: consent)
+        let settings = SettingsModel.live(auth: AuthService(provider: provider, userDefaults: PreviewDefaults.fresh()), changes: changes, consent: consent)
         counter.onRecheck = { [weak settings] in settings?.requestReadingConsent() }
         if scenario == .consentSheetRequest { counter.requestAfterNextForeground() }
         settings.debugConsentFixture = true
@@ -164,7 +171,7 @@ struct ListPreview {
     @MainActor
     private func settingsSignedInScreens() -> MainScreens {
         let provider = SignedInPreviewSupport.makeProvider(), changes = DataChanges()
-        let auth = AuthService(provider: provider)
+        let auth = AuthService(provider: provider, userDefaults: PreviewDefaults.fresh())
         auth.session.follow(userID: SignedInPreviewSupport.userID)
         let reader = ParcelReader(provider: provider), writer = ParcelWriter(provider: provider, changes: changes)
         let today = Format.todayJst(now: Date())
@@ -177,7 +184,7 @@ struct ListPreview {
 
     /// An auth service that reaches nothing (the first-screen scenario's buttons open LoginView).
     @MainActor
-    func previewAuth() -> AuthService { AuthService(provider: Self.provider()) }
+    func previewAuth() -> AuthService { AuthService(provider: Self.provider(), userDefaults: PreviewDefaults.fresh()) }
 
     private static func provider() -> SupabaseProvider {
         let config = AppConfig(supabaseURL: URL(string: "https://preview.invalid")!, anonKey: "preview", inboundDomain: "preview.invalid")
@@ -215,7 +222,7 @@ struct ListPreview {
     /// The login screen's model for the login scenarios, nil for the others.
     @MainActor
     func makeLoginModel() -> LoginModel? {
-        let model = LoginModel(auth: AuthService(provider: Self.provider()), launch: LaunchOptions(arguments: []))
+        let model = LoginModel(auth: AuthService(provider: Self.provider(), userDefaults: PreviewDefaults.fresh()), launch: LaunchOptions(arguments: []))
         switch scenario {
         case .login:
             model.debugShow(mode: .signIn, email: "qa@example.com", password: "kumo-no-ue-2026")

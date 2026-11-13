@@ -27,7 +27,7 @@ enum PW {
 
     @MainActor
     static func auth(_ fake: FakeSupabase, deriver: PasswordV1Deriver = PW.fastDeriver(), storage: InMemorySessionStorage = InMemorySessionStorage()) -> AuthService {
-        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage), deriver: deriver)
+        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage), deriver: deriver, userDefaults: TestDefaults.fresh())
     }
 
     /// Everything a request carried (URL, headers, body) as text, for "the password is nowhere" checks.

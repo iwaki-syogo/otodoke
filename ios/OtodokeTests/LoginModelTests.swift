@@ -10,7 +10,7 @@ struct LoginModelTests {
     private let start = Date(timeIntervalSince1970: 1_793_000_000)
 
     private func make(_ fake: FakeSupabase, launch: LaunchOptions = LaunchOptions(arguments: ["Otodoke"]), clock: TestClock? = nil) -> LoginModel {
-        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
+        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh())
         let clock = clock ?? TestClock(start)
         return LoginModel(auth: auth, launch: launch, now: clock.function)
     }

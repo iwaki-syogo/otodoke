@@ -93,6 +93,8 @@ final class SettingsModel {
     @ObservationIgnored private var retired = false
     @ObservationIgnored private var addressEpoch = 0
     #if DEBUG
+    /// Read-only view of how many full reads have begun.
+    var debugLoadsStarted: Int { loadsStarted }
     @ObservationIgnored var debugConsentFixture = false
     @ObservationIgnored var debugConsentSaveCount: (@MainActor () -> Int)?
     @ObservationIgnored var debugFirstKeyCreated = false
@@ -389,6 +391,12 @@ final class SettingsModel {
         let reader = self.reader
         guard isCurrentMailIdentity() else {
             readIntakeNotice = nil
+            // Same generation but the signed-in person cannot be confirmed (stored session unreadable):
+            // show a failure and let the next appearance or pull read again. A moved generation shows nothing.
+            if let stamp = generation, auth.session.isCurrent(stamp) {
+                keyPanel = .failed
+                hasRead = false
+            }
             return
         }
         readIntakeNotice = nil

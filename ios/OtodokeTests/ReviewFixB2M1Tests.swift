@@ -337,7 +337,7 @@ struct ReviewFix1LoginWidgetTests {
     private let start = Date(timeIntervalSince1970: 1_793_000_000)
 
     private func make(_ fake: FakeSupabase, clock: TestClock) -> (LoginModel, TurnstileToken) {
-        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver())
+        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: InMemorySessionStorage()), deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh())
         let token = TurnstileToken()
         let model = LoginModel(auth: auth, launch: LaunchOptions(arguments: ["Otodoke"]), now: clock.function, turnstile: token, tokenWait: .milliseconds(100))
         model.email = FakeSupabase.email

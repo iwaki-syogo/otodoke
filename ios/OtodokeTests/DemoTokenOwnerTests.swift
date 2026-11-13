@@ -82,7 +82,7 @@ private struct DemoOwnerWorld {
         configuration.protocolClasses = [DemoOwnerURLProtocol.self, StubURLProtocol.self]
         configuration.httpAdditionalHeaders = ["X-Test-Route": route]
         let session = URLSession(configuration: configuration)
-        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: session, storage: storage), deriver: PW.fastDeriver())
+        let auth = AuthService(provider: SupabaseProvider(config: fake.config, urlSession: session, storage: storage), deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh())
         await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
         await fake.addPasswordAccount(email: Self.otherEmail, secret: PW.secret(email: Self.otherEmail, password: PW.good), userID: FakeSupabase.other)
         if let refreshGate {

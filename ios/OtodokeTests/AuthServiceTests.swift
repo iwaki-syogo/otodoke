@@ -79,7 +79,7 @@ struct SupabaseProviderTests {
 @MainActor
 struct AuthServiceTests {
     private func make(_ fake: FakeSupabase, storage: InMemorySessionStorage = InMemorySessionStorage()) -> AuthService {
-        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage), deriver: PW.fastDeriver())
+        AuthService(provider: SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: storage), deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh())
     }
 
     private func account(_ fake: FakeSupabase) async {

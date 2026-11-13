@@ -193,6 +193,7 @@ struct MainTabView: View {
         self.init(screens: .of(auth))
     }
 
+    #if DEBUG
     /// With models made elsewhere (the DEBUG screen check): the other tabs read through the list's
     /// reader and writer.
     init(listModel: ParcelListModel, detailModel: ((String) -> ParcelDetailModel)? = nil) {
@@ -200,20 +201,17 @@ struct MainTabView: View {
         let writer = listModel.writer
         let changes = writer.changes ?? DataChanges()
         let today: @Sendable () -> String = { Format.todayJst(now: Date()) }
-        #if DEBUG
         let previewConsent: AIReadingConsentModel? = ListPreview.allowedReadingConsent()
-        #else
-        let previewConsent: AIReadingConsentModel? = nil
-        #endif
         self.init(screens: MainScreens(
             changes: changes,
             list: listModel,
             calendar: CalendarModel(reader: reader, changes: changes, today: today),
             spend: SpendModel(reader: reader, writer: writer, changes: changes, today: today),
-            settings: .live(auth: AuthService(provider: reader.provider), changes: changes, consent: previewConsent),
+            settings: .live(auth: AuthService(provider: reader.provider, userDefaults: PreviewDefaults.fresh()), changes: changes, consent: previewConsent),
             detail: detailModel ?? { id in ParcelDetailModel(id: id, reader: reader, writer: writer, today: today) }
         ))
     }
+    #endif
 
     init(screens: MainScreens, selection: MainTab = .parcels) {
         _screens = State(initialValue: screens)

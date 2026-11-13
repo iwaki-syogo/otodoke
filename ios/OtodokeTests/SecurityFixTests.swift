@@ -60,7 +60,7 @@ struct SecurityFixTests {
         let first = SupabaseProvider(config: fake.config, urlSession: fake.urlSession, storage: keychain)
         // password-v1: signed in with the password (the code login is gone).
         await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
-        try await AuthService(provider: first, deriver: PW.fastDeriver()).signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        try await AuthService(provider: first, deriver: PW.fastDeriver(), userDefaults: TestDefaults.fresh()).signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
         #expect(try keychain.retrieve(key: SupabaseProvider.storageKey(for: fake.config)) != nil)
 
         // Without the clearing, a new client would open signed in (the control).

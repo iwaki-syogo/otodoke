@@ -71,13 +71,28 @@ final class AuthService {
     @ObservationIgnored var afterSignInAnswer: (@MainActor () async -> Void)?
     #endif
 
-    init(provider: SupabaseProvider, deriver: PasswordV1Deriver = PasswordV1Deriver()) {
+    /// Set when a sign-out begins and cleared only by a successful password sign-in. While it is set, a stored or
+    /// emitted session is never taken as a login: a sign-out whose removal of the stored session failed (the Keychain
+    /// error can hit reads and removals alike) would otherwise bring the old session back once reads work again.
+    /// Holds no user id or address.
+    @ObservationIgnored private let userDefaults: UserDefaults
+    private static let signedOutPendingKey = "otodoke.auth.signedOutPending"
+
+    private var signedOutPending: Bool {
+        get { userDefaults.bool(forKey: Self.signedOutPendingKey) }
+        set { userDefaults.set(newValue, forKey: Self.signedOutPendingKey) }
+    }
+
+    init(provider: SupabaseProvider, deriver: PasswordV1Deriver = PasswordV1Deriver(), userDefaults: UserDefaults) {
         self.provider = provider
         self.deriver = deriver
+        self.userDefaults = userDefaults
     }
 
     /// Reads the stored session (and follows the client's auth events from then on).
     func start() async {
+        // Not during a sign-in: the client may already have stored the new person's session.
+        if signedOutPending && signingIn == 0 { provider.clearStoredSession() }
         receive(provider.auth.currentSession)
         if events == nil {
             let changes = provider.auth.authStateChanges
@@ -96,6 +111,8 @@ final class AuthService {
     /// Called at launch and when the app comes back: refreshes an expired session; a refresh the
     /// server refuses ends in .signedOut (the login screen).
     func checkSession() async {
+        // Not during a sign-in: the client may already have stored the new person's session.
+        if signedOutPending && signingIn == 0 { provider.clearStoredSession() }
         guard provider.auth.currentSession != nil else {
             receive(nil)
             return
@@ -137,8 +154,11 @@ final class AuthService {
             let answer = try await provider.auth.signUp(email: address, password: secret, redirectTo: AppConfig.authRedirect, captchaToken: Self.token(captchaToken))
             if answer.session != nil {
                 // Confirmations turned off would sign this device in here; the app signs in with the password
-                // afterwards, as the Web does, so this session is not kept.
+                // afterwards, as the Web does, so this session is not kept. The mark goes up first, so a removal that
+                // fails below cannot let this session in later.
+                signedOutPending = true
                 try? await provider.auth.signOut(scope: .local)
+                provider.clearStoredSession()
             }
             // identities: [] is the fake user Supabase answers for an address that already has an account; nil (the
             // field missing) and one or more identities are a new account waiting for its mail.
@@ -183,6 +203,8 @@ final class AuthService {
             releaseEvents(publishHeld: true)
             throw .other
         }
+        // Only this success lowers the mark; no await lies between here and the publish below.
+        signedOutPending = false
         releaseEvents(publishHeld: false)
         clearPendingSignIn()
         pendingMismatch = nil
@@ -292,6 +314,8 @@ final class AuthService {
     /// Signs out the current generation on this device (scope: .local). First, on this device: ① the generation
     /// moves on ② work in flight is cancelled ③ the key and the plaintext in memory go ④ the Keychain item goes.
     func signOut() async {
+        // Before anything that can fail, so a failed removal below still leaves the person signed out.
+        signedOutPending = true
         session.advance()
         session.follow(userID: nil)
         let signedOutGeneration = session.value
@@ -312,9 +336,8 @@ final class AuthService {
         }
         // The SDK emits signedOut before waiting for logout; a replacement login may already own storage.
         guard session.value == signedOutGeneration, signingIn == 0 else { return }
-        if provider.auth.currentSession != nil {
-            provider.clearStoredSession()
-        }
+        // Clear unconditionally: currentSession is nil while the stored session is unreadable, but it must still go.
+        provider.clearStoredSession()
         publish(nil)
     }
 
@@ -363,6 +386,11 @@ final class AuthService {
     }
 
     private func publish(_ session: Session?) {
+        if session != nil, signedOutPending {
+            // Not a sign-in of this device's person: drop it (best effort) and stay signed out.
+            provider.clearStoredSession()
+            return publish(nil)
+        }
         if let session {
             let userID = session.user.id.uuidString.lowercased()
             self.session.follow(userID: userID)

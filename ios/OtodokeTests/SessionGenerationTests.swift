@@ -63,12 +63,14 @@ struct SessionGenerationTests {
 
     @Test func signingInAgainIsAnotherGeneration() async throws {
         let fake = FakeSupabase.make()
-        let (_, auth) = try await TestSession.signedIn(fake)
+        // One app, one UserDefaults: the second service shares the first one's logged-out mark.
+        let defaults = TestDefaults.fresh()
+        let (_, auth) = try await TestSession.signedIn(fake, userDefaults: defaults)
         let first = try #require(auth.session.stamp())
         await auth.signOut()
         // password-v1: signed in again with the password.
         await fake.addPasswordAccount(email: FakeSupabase.email, secret: PW.secret(email: FakeSupabase.email, password: PW.good))
-        try await AuthService(provider: auth.provider, deriver: PW.fastDeriver()).signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
+        try await AuthService(provider: auth.provider, deriver: PW.fastDeriver(), userDefaults: defaults).signIn(email: FakeSupabase.email, password: PW.good, captchaToken: nil)
         await auth.checkSession()
         let second = try #require(auth.session.stamp())
         #expect(second.userID == Self.me)

@@ -122,7 +122,7 @@ private struct DeletionOwnerWorld {
             urlSession.invalidateAndCancel()
             throw error
         }
-        let auth = AuthService(provider: provider)
+        let auth = AuthService(provider: provider, userDefaults: TestDefaults.fresh())
         // Do not start the event listener: SDK storage may move before AuthService consumes its event.
         await auth.checkSession()
         let cleanup = DeletionOwnerCleanup()
