@@ -68,4 +68,4 @@ export const RESET_SINGLE_SCREEN_NOTICE = "再設定は、この画面だけで�
  * no key), 「あなたのメールの扱い」 (mail-handling.tsx), /privacy and README.
  * Reword all of them once the pending SQL has run.
  */
-export const PLAINTEXT_DROP_NOTICE = "パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残る分は、11 月 14 日に件名・差出人・本文を消す予定です。荷物と、お使いのメールの受信箱は、そのままです。";
+export const PLAINTEXT_DROP_NOTICE = "パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残っていた分は、11 月 14 日に件名・差出人・本文を消しました。荷物と、お使いのメールの受信箱は、そのままです。";

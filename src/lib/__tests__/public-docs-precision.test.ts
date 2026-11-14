@@ -93,7 +93,7 @@ describe("public documents describe the implemented storage boundaries", () => {
   it("limits the legacy plaintext notice to read personal mail and a planned deletion", () => {
     expect(PLAINTEXT_DROP_NOTICE).toContain("暗号化前に読み取った実メール");
     expect(PLAINTEXT_DROP_NOTICE).toContain("順に暗号化します");
-    expect(PLAINTEXT_DROP_NOTICE).toMatch(/鍵がない.+11 月 14 日.+消す予定です/);
+    expect(PLAINTEXT_DROP_NOTICE).toMatch(/鍵がない.+11 月 14 日.+消しました/);
   });
 
   it("says samples do not need the user's own mail", () => {

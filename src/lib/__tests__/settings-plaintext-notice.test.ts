@@ -23,7 +23,7 @@ const { PasswordPanel } = await import("@/app/app/settings/password-panel");
 const { MailHandling } = await import("@/app/app/settings/mail-handling");
 
 const USER = "00000000-0000-4000-8000-00000000000a";
-const NOTICE = "鍵がないまま残る分は、11 月 14 日に件名・差出人・本文を消す予定です。荷物と、お使いのメールの受信箱は、そのままです";
+const NOTICE = "鍵がないまま残っていた分は、11 月 14 日に件名・差出人・本文を消しました。荷物と、お使いのメールの受信箱は、そのままです";
 
 const panel = (keyCreatedAt: string | null = null, hasPlain = true) =>
   parseHtml(renderToStaticMarkup(createElement(PasswordPanel, { state: { userId: USER, email: "qa@example.com", keyCreatedAt, oldKeyCount: 0, hasPlain } })));
