@@ -381,7 +381,7 @@ describe("/privacy: what it says", () => {
     }
   });
 
-  it("decision 7 limits the planned deletion to read personal mail without a key, keeping the own-inbox notice", () => {
+  it("decision 7 limits the deletion to read personal mail without a key, keeping the own-inbox notice", () => {
     expect(PLAINTEXT_DROP_NOTICE).toBe("パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残っていた分は、11 月 14 日に件名・差出人・本文を消しました。荷物と、お使いのメールの受信箱は、そのままです。");
     expect(PLAINTEXT_DROP_NOTICE.endsWith("荷物と、お使いのメールの受信箱は、そのままです。")).toBe(true);
     // No brackets.

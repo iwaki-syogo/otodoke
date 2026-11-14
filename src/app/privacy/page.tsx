@@ -44,7 +44,7 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
  *   claimSignIn), and before /auth/confirm asks Supabase to check a mail's link (claimLoginLink by
  *   IP, the press of 「確認する」 or 「再設定する」). Each claim first removes the rows older than an hour.
  * - 11 月 14 日 and what a reset costs: src/lib/mail-notices.ts, the same words in
- *   mail-handling.tsx, the password panel of 設定 and README. Reword them all once
+ *   mail-handling.tsx, the password panel of 設定 and README. They are in the past tense now, since
  *   supabase/pending/20261114090000 has run.
  * - What account deletion leaves: the receiving address's local part and when it was given out
  *   (supabase/migrations/20261106170000_issued_inbox_local_parts.sql), and the day's count of

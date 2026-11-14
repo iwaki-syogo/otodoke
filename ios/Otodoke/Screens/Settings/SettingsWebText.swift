@@ -64,7 +64,7 @@ enum SettingsWebText {
     /// password-panel.tsx:63
     static let makeKeyLead = "読み取った後のメールの件名・差出人・本文は、あなたのパスワードでしか開けない形で保存します。"
     /// src/lib/mail-notices.ts:35 (PLAINTEXT_DROP_NOTICE)
-    static let plainDropNotice = "パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残る分は、11 月 14 日に件名・差出人・本文を消す予定です。荷物と、お使いのメールの受信箱は、そのままです。"
+    static let plainDropNotice = "パスワードでログインすると、暗号化前に読み取った実メールを順に暗号化します。鍵がないまま残っていた分は、11 月 14 日に件名・差出人・本文を消しました。荷物と、お使いのメールの受信箱は、そのままです。"
 
     // MARK: 「メールの自動転送の設定」 (forwarding-guide.tsx)
 

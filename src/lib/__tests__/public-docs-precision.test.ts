@@ -90,7 +90,7 @@ describe("public documents describe the implemented storage boundaries", () => {
     expect(textOf(term(root, "Claude を使った回数"))).toContain("呼び出した日の 2 日後");
   });
 
-  it("limits the legacy plaintext notice to read personal mail and a planned deletion", () => {
+  it("limits the legacy plaintext notice to read personal mail and a deletion already done", () => {
     expect(PLAINTEXT_DROP_NOTICE).toContain("暗号化前に読み取った実メール");
     expect(PLAINTEXT_DROP_NOTICE).toContain("順に暗号化します");
     expect(PLAINTEXT_DROP_NOTICE).toMatch(/鍵がない.+11 月 14 日.+消しました/);
