@@ -74,11 +74,11 @@ export default async function Home() {
           <span className="mt-2 block text-sm text-neutral-600">デモ動画（3 分）</span>
         </a>
         <p className="mt-6 text-sm leading-6 text-neutral-600">
-          <a href="https://testflight.apple.com/join/8UPKQ6zR" target="_blank" rel="noopener noreferrer" className="inline-block py-1 font-medium underline underline-offset-4">
-            iPhone アプリ（ベータ版）
+          <a href="https://apps.apple.com/jp/app/id6830916184" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-medium underline underline-offset-4">
+            iPhone アプリ（App Store）
           </a>
           <br />
-          TestFlight で試せます。同じアカウントでログインできます
+          同じアカウントでログインできます
         </p>
       </div>
 

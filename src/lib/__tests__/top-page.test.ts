@@ -142,12 +142,14 @@ describe("share metadata", () => {
     expect(html.indexOf("<footer")).toBeGreaterThan(html.indexOf("youtu.be"));
   });
 
-  it("links the iPhone beta on TestFlight after the demo video, opening safely in a new tab", async () => {
+  it("links the iPhone app on the App Store after the demo video, opening safely in a new tab, with no TestFlight link", async () => {
     const html = renderToStaticMarkup(await Home());
-    const a = findAll(parseHtml(html), (n) => n.tag === "a" && n.attrs.href === "https://testflight.apple.com/join/8UPKQ6zR")[0];
+    const a = findAll(parseHtml(html), (n) => n.tag === "a" && n.attrs.href === "https://apps.apple.com/jp/app/id6830916184")[0];
     expect(a.attrs.target).toBe("_blank");
     expect(a.attrs.rel).toContain("noopener");
-    expect(textOf(a).trim()).toBe("iPhone アプリ（ベータ版）");
-    expect(html.indexOf("testflight.apple.com")).toBeGreaterThan(html.indexOf("youtu.be"));
+    expect(a.attrs.rel).toContain("noreferrer");
+    expect(textOf(a).trim()).toBe("iPhone アプリ（App Store）");
+    expect(html.indexOf("apps.apple.com")).toBeGreaterThan(html.indexOf("youtu.be"));
+    expect(html).not.toContain("testflight.apple.com");
   });
 });

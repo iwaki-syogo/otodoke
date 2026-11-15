@@ -16,6 +16,7 @@
 作者が自分の 1 年分の注文・配送メール 341 通を読んで分かった、店や運送会社ごとの書き方の癖を、読み取りの規則の土台にしました（`docs/email-field-map.md`）。
 
 - 本番: https://otodoke.app
+- iPhone アプリ: https://apps.apple.com/jp/app/id6830916184
 - デモ動画: https://youtu.be/BLPMP_bYJ8c （3 分）
 
 > Built with Claude: Japan 2026（2026-11-02 〜 11-08）の提出作品として作りました。コードはすべてこの期間に新しく書きました。最初のコミットは 2026-11-02 17:19（日本時間）です。
@@ -59,7 +60,7 @@
    - 「カレンダー」: 家にいる必要のある日が赤く出ます
    - 「支出」: 店・分類ごとの内訳と、月ごとの棒グラフ。「全期間」では、作り物の履歴の 1 年分の棒が分類ごとに色分けされて出ます
 4. 自分のメールで使うときは、「設定」の「メールの転送」を開き、画面に出ている自分専用の受信アドレスへの自動転送を、使っているメール（Gmail / iCloud / Outlook など）で 1 回だけ設定します。（やり方は[転送設定ガイド](https://otodoke.app/guide/forwarding)にもあります）。設定は最初の 1 回だけで、あとは何もしなくても、届いた注文・発送のメールが荷物にまとまります。サンプルの荷物を消したいときは、「サンプルで試す」の「すべての荷物を消す」を使います
-5. iPhone では、Web 版のトップにある「iPhone アプリ（ベータ版）」から TestFlight で入れて、同じアカウントでログインします（TestFlight のアプリが要ります）。TestFlight の公開ベータで、参加できる人数に上限があります。上限に達しているときは、参加できないことがあります
+5. iPhone では、[App Store](https://apps.apple.com/jp/app/id6830916184) から Otodoke を入れて、同じアカウントでログインします
 
 ## 仕組み
 
@@ -233,6 +234,8 @@ MIT
 
 Demo video: https://youtu.be/BLPMP_bYJ8c (3 min)
 
+iPhone app: https://apps.apple.com/jp/app/id6830916184
+
 Otodoke reads the order and shipping emails you already get from any Japanese online shop and turns them into one parcel calendar: what is coming and when, which days someone must be home because the parcel cannot be left at the door (置き配), and how much you spent this month.
 
 Why: Japan handles about 5.0 billion parcels a year, and about 7.6% (some 380 million) need redelivery (MLIT). Not knowing when to be home is one reason, and every shop and carrier has its own app.
@@ -247,7 +250,7 @@ Try it with your own account (no real mail needed):
 2. Open the link in the confirmation mail (from noreply@otodoke.app; it can take a minute or two, so check the spam folder too) in another tab and press 「確認する」. The first tab logs in by itself and lands on the first-run guide (/app/welcome). Press 「あとで」.
 3. Open 設定 › 「サンプルで試す」 and press 「サンプルのメールを読み込む」 (no real mail or API call needed).
 4. To use your own mail, open 設定 › 「メールの転送」, set up automatic forwarding to the receiving address shown there (once, in Gmail, iCloud, Outlook or similar). That is the only setup; after it, your order and shipping mails fold into parcels by themselves. To remove the sample parcels, use 「すべての荷物を消す」 under 「サンプルで試す」.
-5. On an iPhone, install the app with TestFlight from 「iPhone アプリ（ベータ版）」 on the web top page and log in with the same account (the TestFlight app is needed). It is a public TestFlight beta with a limit on how many people can join, so joining may not be possible when the limit is reached.
+5. On an iPhone, install the app from the [App Store](https://apps.apple.com/jp/app/id6830916184) and log in with the same account.
 
 The sample is anonymized real order and shipping mails plus a made-up year of delivered orders (made-up items, amounts and order numbers; the made-up orders’ senders and links are on sample.otodoke.app; sender names and subjects use real store names as labels). What to look at in the sample: the real mails fold into parcels from order to delivery (the made-up orders are all delivered, so they stay out of what is on its way); a red mark shows the parcels that need someone at home; a parcel's detail shows the source line (evidence) only for parcels the mail itself spelled out, and 「メールに記載なし」 otherwise; the calendar shows the days you must be home in red; and the spending tab breaks the month down by shop and category, and its 「全期間」 view shows a year of monthly bars from the made-up history, colored by category.
 
