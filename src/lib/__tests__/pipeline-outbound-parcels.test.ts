@@ -90,6 +90,19 @@ describe("what a false inbound must not reject", () => {
     expect(x.inbound.value).toBeNull();
     expect(startsParcel(x)).toBe(true);
   });
+  it("a true quoting a line the mail does not contain adds no review flag, in the reading or on the parcel", async () => {
+    const quote = { value: true, evidence: "メールに無い行", confidence: 0.95 };
+    const x = verifyEvidence(reading({ relevance: "shipped", tracking_number: sure(T_RAW), inbound: quote }), { subject: "テストのお知らせ", text: "テスト本文\n根拠の行" });
+    expect(x.evidence_review ?? []).not.toContain("inbound");
+    const db = new FakeDb({ parcels: [], emails: [], extractions: [] });
+    await run(db, reading({ relevance: "shipped", tracking_number: sure(T_RAW), inbound: quote }));
+    expect(db.rows("parcels")).toHaveLength(1);
+    expect(db.rows("parcels")[0].needs_review).toBe(false);
+  });
+  it("a false whose quotation is missing is still flagged for review", () => {
+    const x = verifyEvidence(reading({ relevance: "shipped", tracking_number: sure(T_RAW), inbound: { value: false, evidence: "メールに無い行", confidence: 0.95 } }), { subject: "テストのお知らせ", text: "テスト本文\n根拠の行" });
+    expect(x.evidence_review).toContain("inbound");
+  });
   it("a reading saved before the field existed reads as not stated", () => {
     const old = { ...reading({ relevance: "shipped" }) } as Partial<ReturnType<typeof reading>>;
     delete old.inbound;
