@@ -153,7 +153,7 @@ Haiku は最初 71/73 でした。外れは時間帯の書式の違いで、こ�
 - Claude API（Haiku 5.5 が既定。判定と構造化抽出）
 - Vercel
 - テスト: Vitest（API を呼ばない）
-- iOS アプリ（`ios/`、SwiftUI、iOS 17 以降）: 同じアカウントで、パスワードでログインします。荷物・カレンダー・支出・設定の 4 つのタブがあり、荷物の詳細や、届いた荷物・キャンセルした荷物も見られます。暗号化したメールは端末で開き、文字だけを表示します。パスワードの変更や再設定、アカウントの削除などは、ブラウザで Web 版を開いて行います。TestFlight の公開ベータで、Web 版のトップの「iPhone アプリ（ベータ版）」から入れます。iPhone に TestFlight のアプリが要ります。参加できる人数に上限があり、上限に達しているときは参加できないことがあります。ログインには、Web と同じアカウントを使えます。iOS 版では、一部の操作はブラウザで Web 版を開きます
+- iOS アプリ（`ios/`、SwiftUI、iOS 17 以降）: 同じアカウントで、パスワードでログインします。荷物・カレンダー・支出・設定の 4 つのタブがあり、荷物の詳細や、届いた荷物・キャンセルした荷物も見られます。暗号化したメールは端末で開き、文字だけを表示します。パスワードの変更や再設定、アカウントの削除などは、ブラウザで Web 版を開いて行います。App Store から入れます。ログインには、Web と同じアカウントを使えます。iOS 版では、一部の操作はブラウザで Web 版を開きます
 
 ## 動かし方
 
@@ -274,4 +274,4 @@ The voice (AivisSpeech, Mao, ACML 1.0) and music (Mixkit Free License) of the th
 
 The Claude Code setup used to build Otodoke (skills, commands, subagents, hooks and more) is published separately at https://github.com/iwaki-syogo/claude-code-setup; it is not part of the Otodoke code.
 
-Built as an entry to Built with Claude: Japan 2026 (2026-11-02 to 11-08); the reading rules come from the author's own 341 order and shipping emails. First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is on TestFlight as a public beta with a limit on how many people can join (joining may not be possible when the limit is reached); log in with the same account. Some actions in the iOS app open the web version in the browser.
+Built as an entry to Built with Claude: Japan 2026 (2026-11-02 to 11-08); the reading rules come from the author's own 341 order and shipping emails. First commit: 2026-11-02 17:19 JST. An iOS app (SwiftUI, iOS 17+, `ios/`) with the same password login and the four tabs is on the App Store; log in with the same account. Some actions in the iOS app open the web version in the browser.
