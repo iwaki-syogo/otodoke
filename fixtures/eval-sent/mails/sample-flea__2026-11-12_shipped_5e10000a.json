@@ -1,0 +1,12 @@
+{
+ "file": "sample-flea/2026-11-12_shipped_5e10000a.eml",
+ "source": "sample-flea",
+ "stage": "shipped",
+ "message_id": "<demo-5e10000a000a@example.invalid>",
+ "date": "2026-11-12T19:05:00+09:00",
+ "from": "info@sample-flea.example.test",
+ "from_name": "サンプルフリマ",
+ "subject": "出品者が商品を発送しました",
+ "text": "サンプル 太郎 様\n\nお買い上げの商品「サンプルの本棚」を、出品者が発送しました。\n商品の到着まで今しばらくお待ちください。\n\n追跡番号: 0005-5120-9340\n",
+ "html": null
+}

@@ -1,0 +1,12 @@
+{
+ "file": "other/2026-11-13_other_5e100005.eml",
+ "source": "other",
+ "stage": "other",
+ "message_id": "<demo-5e1000050005@example.invalid>",
+ "date": "2026-11-13T08:15:00+09:00",
+ "from": "noreply@sample-carrier.example.test",
+ "from_name": "サンプル配送",
+ "subject": "【サンプル配送】発送のお申し込みを受け付けました",
+ "text": "サンプル 太郎 様\n\nスマホ発送のお申し込みを受け付けました。\n営業所またはコンビニにお荷物をお持ち込みください。\n\n伝票番号: 0002-8804-4191\nお持ち込み期限: 2026年11月15日\n",
+ "html": null
+}

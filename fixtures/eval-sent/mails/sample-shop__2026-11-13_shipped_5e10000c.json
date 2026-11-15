@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-13_shipped_5e10000c.eml",
+ "source": "sample-shop",
+ "stage": "shipped",
+ "message_id": "<demo-5e10000c000c@example.invalid>",
+ "date": "2026-11-13T12:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "修理済みの商品をお送りしました",
+ "text": "サンプル 太郎 様\n\nお預かりしていた「サンプルの腕時計」の修理が完了し、本日お客様あてに発送しました。\n\nお届け予定日: 2026年11月15日\n伝票番号: 0007-1940-2650\n",
+ "html": null
+}

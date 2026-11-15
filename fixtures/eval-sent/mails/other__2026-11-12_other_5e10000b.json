@@ -1,0 +1,12 @@
+{
+ "file": "other/2026-11-12_other_5e10000b.eml",
+ "source": "other",
+ "stage": "other",
+ "message_id": "<demo-5e10000b000b@example.invalid>",
+ "date": "2026-11-12T10:50:00+09:00",
+ "from": "info@sample-carrier.example.test",
+ "from_name": "サンプル配送",
+ "subject": "お届け日時の変更を受け付けました",
+ "text": "サンプル 太郎 様\n\nお荷物のお届け日時の変更を受け付けました。\n\n伝票番号: 0006-3308-1720\n新しいお届け予定日時: 2026/11/16（月）19:00〜21:00\n",
+ "html": null
+}

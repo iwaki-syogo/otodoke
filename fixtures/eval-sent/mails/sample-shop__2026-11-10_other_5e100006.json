@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-10_other_5e100006.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e1000060006@example.invalid>",
+ "date": "2026-11-10T13:00:00+09:00",
+ "from": "teiki@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "定期お届け便を発送しました",
+ "text": "サンプル 太郎 様\n\nサンプル商店です。定期お届け便を発送いたしました。\n\nお届け予定日: 2026年11月12日\n伝票番号: 0009-0216-7330\n",
+ "html": null
+}

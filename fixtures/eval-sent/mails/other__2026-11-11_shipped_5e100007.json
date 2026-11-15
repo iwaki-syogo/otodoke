@@ -1,0 +1,12 @@
+{
+ "file": "other/2026-11-11_shipped_5e100007.eml",
+ "source": "other",
+ "stage": "shipped",
+ "message_id": "<demo-5e1000070007@example.invalid>",
+ "date": "2026-11-11T07:45:00+09:00",
+ "from": "info@sample-carrier.example.test",
+ "from_name": "サンプル配送",
+ "subject": "【お知らせ】お荷物お届け予定日",
+ "text": "サンプル 太郎 様\n\nお荷物のお届けについてお知らせいたします。\n\nご依頼主: サンプル商店\nお届け予定日時: 2026/11/13（金）14:00〜16:00\n伝票番号: 0003-7755-1080\n",
+ "html": null
+}

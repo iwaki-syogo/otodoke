@@ -1,0 +1,12 @@
+{
+ "file": "other/2026-11-11_other_5e100002.eml",
+ "source": "other",
+ "stage": "other",
+ "message_id": "<demo-5e1000020002@example.invalid>",
+ "date": "2026-11-11T15:20:00+09:00",
+ "from": "info@sample-carrier.example.test",
+ "from_name": "サンプル配送",
+ "subject": "お荷物のお届け完了のお知らせ（ご依頼主様へ）",
+ "text": "サンプル 太郎 様（ご依頼主様）\n\nご依頼いただいたお荷物は、お届け先へ配達完了しました。\n\n伝票番号: 0005-5120-9340\n配達完了日時: 2026年11月11日 15時12分\nお届け先: サンプル 花子 様\n",
+ "html": null
+}

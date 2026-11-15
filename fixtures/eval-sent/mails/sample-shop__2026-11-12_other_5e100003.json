@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-12_other_5e100003.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e1000030003@example.invalid>",
+ "date": "2026-11-12T09:30:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "返品のお申し込みを受け付けました",
+ "text": "サンプル 太郎 様\n\n返品のお申し込みを受け付けました。\n\nご注文番号: 1234567890123\n返品商品: サンプルの帽子 1点\n\n下記の伝票番号でサンプル商店あてにご返送ください。\n返送用伝票番号: 0006-3308-1720\n\n商品の到着を確認後、返金のお手続きをいたします。\n",
+ "html": null
+}

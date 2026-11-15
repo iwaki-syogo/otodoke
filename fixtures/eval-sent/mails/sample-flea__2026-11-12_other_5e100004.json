@@ -1,0 +1,12 @@
+{
+ "file": "sample-flea/2026-11-12_other_5e100004.eml",
+ "source": "sample-flea",
+ "stage": "other",
+ "message_id": "<demo-5e1000040004@example.invalid>",
+ "date": "2026-11-12T18:40:00+09:00",
+ "from": "info@sample-flea.example.test",
+ "from_name": "サンプルフリマ",
+ "subject": "発送が完了しました",
+ "text": "サンプル 太郎 様\n\nあなたが出品した商品「サンプルの置き時計」の発送が完了しました。\n購入者の受取評価をお待ちください。\n\n追跡番号: 0007-1940-2650\n",
+ "html": null
+}

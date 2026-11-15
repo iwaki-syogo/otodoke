@@ -1,0 +1,12 @@
+{
+ "file": "other/2026-11-10_other_5e100001.eml",
+ "source": "other",
+ "stage": "other",
+ "message_id": "<demo-5e1000010001@example.invalid>",
+ "date": "2026-11-10T11:05:00+09:00",
+ "from": "noreply@sample-carrier.example.test",
+ "from_name": "サンプル配送",
+ "subject": "【サンプル配送】スマホ発送のご利用明細と領収書のお知らせ",
+ "text": "サンプル 太郎 様\n\nスマホ発送にてお手続きいただきましたお荷物のご利用明細をお送りします。\n\n発送日時: 2026年11月10日 10時00分\n伝票番号: 0004-2017-3181\n運賃: 640円\n\n上記ご利用運賃のお支払い手続きが完了しました。\n",
+ "html": null
+}

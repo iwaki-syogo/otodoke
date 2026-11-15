@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-13_other_5e10000d.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e10000d000d@example.invalid>",
+ "date": "2026-11-13T16:20:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "集荷のご案内",
+ "text": "サンプル 太郎 様\n\nサンプル商店です。ご返品商品の集荷についてご案内します。\n\n集荷日時: 2026年11月17日（火）13:00〜15:00\nご自宅の玄関先でお荷物をお渡しください。\n",
+ "html": null
+}
