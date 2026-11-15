@@ -3,12 +3,16 @@
  *
  *   npm run eval -- --set demo [--write-demo-cache]   hand-labelled demo mails (fixtures/demo)
  *   npm run eval -- --set all  --max-usd 15           every local anonymized mail, relevance only
+ *   npm run eval -- --dir fixtures/eval-sent --max-usd 0.30   a directory of made-up mails (mails/, expected.json,
+ *                                                     optional inbound-labels.json for the sender-side score)
  *
  * Stops before starting another mail once `--max-usd` (default 1) has been spent.
  * Full results go to fixtures/raw/eval/ (git-ignored); a one-line summary goes to docs/eval-log.md.
  */
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { missTable, scoreInbound, type InboundLabels, type InboundResult } from "./eval-inbound";
 import { PRICES } from "./prices";
 
 const root = process.cwd();
@@ -26,6 +30,11 @@ const maxUsd = Number(opt("max-usd", "1"));
 const concurrency = Number(opt("concurrency", "4"));
 const limit = Number(opt("limit", "0"));
 if (args.includes("--model")) process.env.OTODOKE_MODEL = opt("model", "");
+/** A directory of made-up mails to read instead of a named set. The demo cache is never written from it. */
+const dir = args.includes("--dir") ? path.resolve(root, opt("dir", "")) : null;
+if (args.includes("--dir") && !opt("dir", "")) throw new Error("--dir needs a directory");
+if (dir && flag("write-demo-cache")) throw new Error("--write-demo-cache is only for --set demo; it cannot be combined with --dir");
+const setLabel = dir ? `dir:${path.basename(dir)}` : setName;
 
 interface Mail {
   file: string;
@@ -63,6 +72,12 @@ async function loadAll(): Promise<Mail[]> {
   return Promise.all(files.map(async (f) => JSON.parse(await readFile(path.join(root, "fixtures/anonymized", `${f}.json`), "utf8")) as Mail));
 }
 
+/** A made-up set kept in its own directory: `mails/*.json` and `expected.json` (and optionally `inbound-labels.json`). */
+async function loadDir(base: string): Promise<Mail[]> {
+  const names = (await readdir(path.join(base, "mails"))).filter((f) => f.endsWith(".json")).sort();
+  return Promise.all(names.map(async (f) => JSON.parse(await readFile(path.join(base, "mails", f), "utf8")) as Mail));
+}
+
 async function main() {
   // Imported after the env file is loaded: env() reads process.env once.
   const { extractEmail } = await import("../src/lib/extract/extract");
@@ -76,10 +91,15 @@ async function main() {
   const price = PRICES[model];
   if (!price) throw new Error(`no price known for ${model}; add it to PRICES after checking the pricing page`);
 
-  let mails: Mail[] = setName === "demo" ? await readDemoMails() : await loadAll();
+  let mails: Mail[] = dir ? await loadDir(dir) : setName === "demo" ? await readDemoMails() : await loadAll();
   if (limit > 0) mails = mails.slice(0, limit);
-  const expected: Expected =
-    setName === "demo" ? JSON.parse(await readFile(path.join(root, "fixtures/demo/expected.json"), "utf8")) : {};
+  const expected: Expected = dir
+    ? JSON.parse(await readFile(path.join(dir, "expected.json"), "utf8"))
+    : setName === "demo" ? JSON.parse(await readFile(path.join(root, "fixtures/demo/expected.json"), "utf8")) : {};
+  // The sender-side labels, when the directory carries them.
+  const labels: InboundLabels | null = dir && existsSync(path.join(dir, "inbound-labels.json"))
+    ? JSON.parse(await readFile(path.join(dir, "inbound-labels.json"), "utf8"))
+    : null;
 
   let spent = 0;
   let next = 0;
@@ -153,17 +173,22 @@ async function main() {
 
   const failed = results.filter((r) => r.error).length;
   const scored = Object.values(fields).reduce((a, f) => ({ ok: a.ok + f.ok, total: a.total + f.total }), { ok: 0, total: 0 });
-  console.log(`model=${model} set=${setName} mails=${results.length}/${mails.length} failed=${failed} spent=$${spent.toFixed(3)}${stopped ? " STOPPED AT BUDGET" : ""}`);
+  console.log(`model=${model} set=${setLabel} mails=${results.length}/${mails.length} failed=${failed} spent=$${spent.toFixed(3)}${stopped ? " STOPPED AT BUDGET" : ""}`);
   console.log(`relevance ${relevanceOk}/${relevanceTotal}`);
   for (const [k, f] of Object.entries(fields)) console.log(`  ${k}: ${f.ok}/${f.total}`);
   if (misses.length) console.log("misses:\n  " + misses.join("\n  "));
+  if (labels) {
+    const score = scoreInbound(labels, results.map((r) => ({ file: r.mail.file, data: r.data as InboundResult["data"], error: r.error })));
+    console.log(`inbound ${score.hit}/${score.total}`);
+    console.log(missTable(score));
+  }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   await mkdir(path.join(root, "fixtures/raw/eval"), { recursive: true });
-  await writeFile(path.join(root, `fixtures/raw/eval/${stamp}-${setName}-${model}.json`), JSON.stringify(results.map((r) => ({ file: r.mail.file, stage: r.mail.stage, data: r.data, error: r.error })), null, 2));
+  await writeFile(path.join(root, `fixtures/raw/eval/${stamp}-${setLabel}-${model}.json`), JSON.stringify(results.map((r) => ({ file: r.mail.file, stage: r.mail.stage, data: r.data, error: r.error })), null, 2));
   await appendFile(
     path.join(root, "docs/eval-log.md"),
-    `| ${stamp.slice(0, 16)} | ${setName} | ${model} | ${results.length} | ${failed} | ${relevanceOk}/${relevanceTotal} | ${scored.ok}/${scored.total} | $${spent.toFixed(2)} |\n`,
+    `| ${stamp.slice(0, 16)} | ${setLabel} | ${model} | ${results.length} | ${failed} | ${relevanceOk}/${relevanceTotal} | ${scored.ok}/${scored.total} | $${spent.toFixed(2)} |\n`,
   );
 
   if (flag("write-demo-cache")) {
