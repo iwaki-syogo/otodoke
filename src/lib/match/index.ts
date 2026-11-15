@@ -592,7 +592,8 @@ export function splitOrders(x: Extraction): Extraction[] {
  * the mails arrived one by one. Used when two parcels turn out to be one.
  */
 export function rebuildParcel(userId: string, mails: { x: Extraction; sentAt: string | null }[]): ParcelInsert {
-  const ordered = [...mails].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""));
+  // Mails to the sender never described this delivery, so the head of the rebuilt parcel is never one of them.
+  const ordered = [...arrivingReadings(mails)].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""));
   const [head, ...rest] = ordered;
   const row = { ...buildParcelInsert(userId, head.x, head.sentAt), itemNames: head.x.items.map((i) => i.name) } as unknown as ParcelRow & { itemNames: string[] };
   for (const m of rest) {

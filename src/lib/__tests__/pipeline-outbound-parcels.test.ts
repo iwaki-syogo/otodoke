@@ -224,11 +224,15 @@ describe("a sender's reading does not leak into a parcel's rebuilt fields or tot
   it("parcelTotal ignores it", () => {
     expect(parcelTotal([shipment(1000), shipment(500, sentByReader())])).toBe(parcelTotal([shipment(1000)]));
   });
-  it("the readings a merge rebuilds from leave it out, so the rebuilt status does not become delivered", () => {
+  it("rebuildParcel called directly leaves it out, so an oldest sender's reading does not make the status delivered", () => {
     const sent = reading({ relevance: "delivered", tracking_number: sure(T_RAW), inbound: sentByReader() });
     const readings = [{ x: reading({ relevance: "shipped", tracking_number: sure(T_RAW) }), sentAt: "2026-11-02T00:00:00Z" }, { x: sent, sentAt: "2026-11-01T00:00:00Z" }];
-    expect(rebuildParcel(USER, readings).status).toBe("delivered");
+    expect(rebuildParcel(USER, readings).status).toBe("shipped");
     expect(rebuildParcel(USER, arrivingReadings(readings)).status).toBe("shipped");
+  });
+  it("rebuildParcel still builds when every reading is the sender's", () => {
+    const sent = [{ x: reading({ relevance: "shipped", tracking_number: sure(T_RAW), inbound: sentByReader() }), sentAt: null }];
+    expect(rebuildParcel(USER, sent).status).toBe("shipped");
   });
   it("keeps every reading when all of them are the sender's, so something is left to rebuild from", () => {
     const sent = [{ x: reading({ relevance: "delivered", inbound: sentByReader() }), sentAt: null }];
