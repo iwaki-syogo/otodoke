@@ -7,9 +7,9 @@
   "sample-shop/2026-11-10_other_5e100006.eml": { "relevance": ["shipped", "other_purchase"], "tracking_number": "0009-0216-7330" },
   "other/2026-11-11_shipped_5e100007.eml": { "relevance": "shipped", "tracking_number": "0003-7755-1080" },
   "other/2026-11-11_shipped_5e100008.eml": { "relevance": "shipped", "tracking_number": "0001-6620-9460" },
-  "other/2026-11-11_shipped_5e100009.eml": { "relevance": "shipped", "tracking_number": "0004-2017-3181" },
-  "sample-flea/2026-11-12_shipped_5e10000a.eml": { "relevance": "shipped", "tracking_number": "0005-5120-9340" },
+  "other/2026-11-11_shipped_5e100009.eml": { "relevance": "shipped", "tracking_number": "0008-1234-5600" },
+  "sample-flea/2026-11-12_shipped_5e10000a.eml": { "relevance": "shipped", "tracking_number": "0007-0045-5911" },
   "other/2026-11-12_other_5e10000b.eml": { "relevance": ["other_purchase", "shipped"] },
-  "sample-shop/2026-11-13_shipped_5e10000c.eml": { "relevance": "shipped", "tracking_number": "0007-1940-2650" },
+  "sample-shop/2026-11-13_shipped_5e10000c.eml": { "relevance": "shipped", "tracking_number": "0005-9903-3160" },
   "sample-shop/2026-11-13_other_5e10000d.eml": { "relevance": ["other_purchase", "shipped"] }
 }

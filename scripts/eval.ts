@@ -178,7 +178,13 @@ async function main() {
   for (const [k, f] of Object.entries(fields)) console.log(`  ${k}: ${f.ok}/${f.total}`);
   if (misses.length) console.log("misses:\n  " + misses.join("\n  "));
   if (labels) {
-    const score = scoreInbound(labels, results.map((r) => ({ file: r.mail.file, data: r.data as InboundResult["data"], error: r.error })));
+    const score = scoreInbound(labels, results.map((r) => ({
+      file: r.mail.file,
+      // Checked against the mail as the pipeline does, so a quotation that is not in it counts for nothing.
+      mail: { subject: r.mail.subject, text: r.mail.text, html: r.mail.html },
+      data: r.data as InboundResult["data"],
+      error: r.error,
+    })));
     console.log(`inbound ${score.hit}/${score.total}`);
     console.log(missTable(score));
   }

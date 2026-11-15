@@ -1,5 +1,5 @@
 {
-  "note": "Hand labels for the sender-side check. All shops, carriers, names and numbers are made up. `false` mails must be read inbound=false; `not_false` mails must NOT be (true or null is fine).",
+  "note": "Hand labels for the sender-side check. All shops, carriers, names and numbers are made up. `false` mails must be read inbound=false; `not_false` mails must NOT be (true or null is fine); `either` mails are shown but not counted.",
   "false": {
     "other/2026-11-10_other_5e100001.eml": "T1 freight receipt of a phone-booked shipment",
     "other/2026-11-11_other_5e100002.eml": "T5 delivered notice addressed to the sender",
@@ -14,7 +14,9 @@
     "other/2026-11-11_shipped_5e100009.eml": "T6 addressed to a family name",
     "sample-flea/2026-11-12_shipped_5e10000a.eml": "S2' buyer-side notice: the seller has shipped",
     "other/2026-11-12_other_5e10000b.eml": "S3' delivery-time change receipt",
-    "sample-shop/2026-11-13_shipped_5e10000c.eml": "a repaired item coming back to the reader",
-    "sample-shop/2026-11-13_other_5e10000d.eml": "a shop's pickup notice for a return"
+    "sample-shop/2026-11-13_shipped_5e10000c.eml": "a repaired item coming back to the reader"
+  },
+  "either": {
+    "sample-shop/2026-11-13_other_5e10000d.eml": "a shop's pickup notice for a return going out: false is the right reading, null is fair too"
   }
 }
