@@ -142,7 +142,7 @@ export async function loadDemoEntries(today = todayJst(), now = new Date()): Pro
     const set = DemoSet.parse(JSON.parse(await readFile(path.join(dir, "set.json"), "utf8")));
     const cache = z
       // The cache was written before some fields existed; those are filled with "not stated".
-      .record(z.string(), ExtractionSchema.partial({ package_description: true, expected_date_end: true, other_orders: true, category: true }).transform((x) => withDefaults(x as Extraction)))
+      .record(z.string(), ExtractionSchema.partial({ package_description: true, expected_date_end: true, other_orders: true, category: true, inbound: true }).transform((x) => withDefaults(x as Extraction)))
       .parse(JSON.parse(await readFile(path.join(dir, "extractions.json"), "utf8")));
     for (const g of set.groups) {
       const days = daysBetween(g.anchor, addDays(today, g.target));

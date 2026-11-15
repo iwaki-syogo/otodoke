@@ -108,6 +108,9 @@ export const ExtractionSchema = z.object({
   requires_presence: BoolField.describe(
     "在宅が必要か。対面・手渡し・受領印・置き配対象外・本人限定・代金引換・クール便なら true。置き配・宅配ボックス・ポスト投函・ネコポス・ゆうパケット・クリックポスト・メール便なら false。明記がなければ null",
   ),
+  inbound: BoolField.describe(
+    "この荷物は、このメールの受け手に届くか。false にするのは、受け手が送った側（ご依頼主）だと本文がはっきり言っている時だけ（ご依頼主様控え・発送のご利用明細・運賃の領収・発送や集荷の申し込みの受付・返品の返送の受付・出品者として発送した通知）。受け手に届く荷物だと明記があれば true。宛名が家族や会社名でも、送った側だと言っていなければ false にしない。それ以外・分からなければ null",
+  ),
   other_orders: z.array(OtherOrderSchema).describe("同じメールに載っている 2 つ目以降の注文。1 注文だけなら空配列"),
   overall_confidence: z.number().describe("この抽出全体の確信度 0〜1"),
   notes: z.string().nullable().describe("抽出で迷った点や読み取れなかった点（日本語、1〜2 文）"),
@@ -128,6 +131,7 @@ export function withDefaults(x: Extraction): Extraction {
     package_description: partial.package_description ?? { ...NO_VALUE },
     expected_date_end: partial.expected_date_end ?? { ...NO_VALUE },
     category: partial.category ?? null,
+    inbound: partial.inbound ?? { ...NO_VALUE },
     other_orders: (partial.other_orders ?? []).map((o) => ({ ...o, category: o.category ?? null })),
   };
 }

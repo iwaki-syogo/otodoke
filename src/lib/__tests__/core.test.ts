@@ -47,6 +47,7 @@ function extraction(over: Partial<Extraction>): Extraction {
     expected_window_end: none,
     expected_text: null,
     requires_presence: none,
+    inbound: none,
     other_orders: [],
     overall_confidence: 0.9,
     notes: null,

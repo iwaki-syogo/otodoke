@@ -188,6 +188,8 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
  */
 export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }, x: Extraction, emailSentAt: string | null): ParcelUpdate {
   const update: ParcelUpdate = {};
+  // A mail to the sender (a return's label, a freight receipt) says nothing about this delivery: no number, carrier, link, date or clock.
+  if (isOutbound(x)) return update;
   const incomingStatus = statusOf(x);
   const isNewer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
 
@@ -257,6 +259,7 @@ function isManual(p: { source?: string | null }): boolean {
  */
 export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, x: Extraction, emailSentAt: string | null): ParcelUpdate {
   const update: ParcelUpdate = {};
+  if (isOutbound(x)) return update;
 
   // Forward along the delivery only, or to cancelled (the edit form then offers it while it stays).
   const incomingStatus = statusOf(x);
@@ -387,8 +390,26 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
   return null;
 }
 
-/** Subscription and account notices describe no parcel unless they carry a tracking number. */
+/**
+ * The mail says its reader is the sender (a freight receipt, a sender's copy, a return going out),
+ * so the parcel is not coming to them. Only a stated, confident `false` counts; null never does.
+ */
+export function isOutbound(x: Extraction): boolean {
+  return x.inbound !== undefined && confident(x.inbound) === false;
+}
+
+/** The readings that describe a delivery to the reader. When every one is the sender's, all of them (a parcel must still be rebuilt from something). */
+export function arrivingReadings<T extends { x: Extraction }>(readings: T[]): T[] {
+  const arriving = readings.filter((r) => !isOutbound(r.x));
+  return arriving.length > 0 ? arriving : readings;
+}
+
+/**
+ * Subscription and account notices describe no parcel unless they carry a tracking number.
+ * A mail that says the reader is the sender opens none, whatever it was read as.
+ */
 export function startsParcel(x: Extraction): boolean {
+  if (isOutbound(x)) return false;
   return x.relevance !== "other_purchase" || confident(x.tracking_number) !== null;
 }
 
@@ -402,7 +423,8 @@ const STATED_OUTRIGHT = 0.9;
  * own order number, so they win. Order mails are weaker: Amazon lists several order numbers
  * in one mail, and its total or item list can cover more or less than this parcel.
  */
-export function parcelTotal(mails: Extraction[]): number | null {
+export function parcelTotal(all: Extraction[]): number | null {
+  const mails = all.filter((m) => !isOutbound(m));
   const orderMails = mails.filter((m) => ORDER_MAILS.includes(m.relevance));
   // storableInt: a reading saved before extract.ts bounded its numbers may hold one the column cannot.
   const stated = orderMails.map((m) => m.total_amount).filter((f) => storableInt(f.value) && confident(f) !== null);

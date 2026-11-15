@@ -115,6 +115,7 @@ export function verifyEvidence(input: Extraction, mail: SourceMail): Extraction 
     expected_window_start: field("expected_window_start", x.expected_window_start, review),
     expected_window_end: field("expected_window_end", x.expected_window_end, review),
     requires_presence: field("requires_presence", x.requires_presence, review),
+    inbound: field("inbound", x.inbound, review),
     items: items(x.items, review),
     overall_confidence: validConfidence(x.overall_confidence) ? x.overall_confidence : 0,
     other_orders: x.other_orders.map(order),

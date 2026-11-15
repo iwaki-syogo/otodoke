@@ -596,7 +596,8 @@ export function buildHistory(seed = SEED): { mails: HistoryMail[]; extractions: 
       other_orders: [],
       overall_confidence: 0.95,
       notes: null,
-    } as Extraction;
+      // No `inbound`: the saved file keeps its shape, and withDefaults reads it as not stated.
+    } as unknown as Extraction;
   }
   return { mails, extractions };
 }

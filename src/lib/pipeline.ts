@@ -16,6 +16,8 @@ import {
   dismissedAfterMerge,
   receivedAfterMerge,
   splitOrders,
+  arrivingReadings,
+  isOutbound,
   startsParcel,
   twinsByTracking,
   type ParcelCandidate,
@@ -470,6 +472,11 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
     // never asks Claude again, nor assumes that the old id is still a match.
     const { parcel, snapshot } = await findParcel(db, mail.userId, x);
     if (!parcel && !startsParcel(x)) return null;
+    if (parcel && isOutbound(x)) {
+      // The reader sent this one: the reading is kept, but it must not move this parcel's status, date or presence.
+      parcelId = parcel.id;
+      break;
+    }
     if (parcel) {
       const update = parcel.source === "manual" ? mergeIntoManual(parcel, x, mail.sentAt) : buildParcelUpdate(parcel, x, mail.sentAt);
       const { rest, category } = splitCategory(update);
@@ -606,7 +613,8 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
     .eq("user_id", userId)
     .eq("emails.user_id", userId);
   if (mailsError) throw new Error(`extractions lookup failed: ${mailsError.message}`);
-  const readings = mails.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null }));
+  // A reading filed against these parcels that said the reader was the sender never described a delivery.
+  const readings = arrivingReadings(mails.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null })));
 
   // A typed-in parcel keeps what the person typed: the mails only fill its gaps, oldest first.
   // Twins from mails are built again from all their mails.
