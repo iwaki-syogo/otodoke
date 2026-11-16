@@ -384,6 +384,7 @@ export type Database = {
           shop_key: string | null
           source: string
           status: string
+          status_set_by_person_at: string | null
           title: string | null
           total_amount: number | null
           tracking_number: string | null
@@ -414,6 +415,7 @@ export type Database = {
           shop_key?: string | null
           source?: string
           status?: string
+          status_set_by_person_at?: string | null
           title?: string | null
           total_amount?: number | null
           tracking_number?: string | null
@@ -444,6 +446,7 @@ export type Database = {
           shop_key?: string | null
           source?: string
           status?: string
+          status_set_by_person_at?: string | null
           title?: string | null
           total_amount?: number | null
           tracking_number?: string | null

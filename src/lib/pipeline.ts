@@ -15,6 +15,8 @@ import {
   rebuildParcel,
   dismissedAfterMerge,
   receivedAfterMerge,
+  decidedAfter,
+  personStatusAfterMerge,
   splitOrders,
   arrivingReadings,
   bringsBack,
@@ -496,7 +498,7 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
       // A whole cancellation sent before the parcel's last mail: judging it alone cannot see what the newer mails
       // (a refund, a partial cancellation) left out of the status, so the state is the one the mails give oldest
       // first. Any other old mail stays as it was: re-reading it could undo a status the person set by hand.
-      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null && !isOutbound(x) && statusOf(x) === "cancelled") {
+      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null && !isOutbound(x) && statusOf(x) === "cancelled" && !decidedAfter(parcel, mail.sentAt)) {
         const status = await statusInSentOrder(db, mail.userId, emailId, parcel, x, mail.sentAt);
         // Only a cancelled result is applied: the point is to let the old cancellation count, not to restore a state the person undid.
         if (status === "cancelled" && status !== parcel.status) update.status = status;
@@ -673,26 +675,36 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
 
   // A typed-in parcel keeps what the person typed: the mails only fill its gaps, oldest first.
   // Twins from mails are built again from all their mails.
+  // A status the person decided is the starting point: only mails sent at or after the decision move it (decidedAfter, as when a
+  // mail arrives alone), so the twin merge and the one-by-one path cannot disagree.
+  const decided = personStatusAfterMerge(keep, absorb);
   let fields: ParcelUpdate;
   let merged: { category: string | null; category_source: string | null };
   if (keep.source === "manual") {
     const row: ParcelRow = { ...keep };
+    if (decided) { row.status = decided.status; row.status_set_by_person_at = decided.status_set_by_person_at; }
     fields = {};
     for (const m of [...readings].sort((a, b) => sentTime(a.sentAt) - sentTime(b.sentAt))) {
       const update = mergeIntoManual(row, m.x, m.sentAt);
       Object.assign(row, update);
       Object.assign(fields, update);
     }
+    if (decided) fields.status = row.status;
     merged = row;
   } else {
-    const { user_id: _owner, ...rebuilt } = rebuildParcel(userId, readings);
+    const { user_id: _owner, ...rebuilt } = rebuildParcel(userId, readings, decided);
     void _owner;
     fields = rebuilt;
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
   }
+  // The latest decision time goes with the merged status (the mail gateway allows the column since 20261117090000).
+  if (decided) {
+    if (decided.status_set_by_person_at !== keep.status_set_by_person_at) fields.status_set_by_person_at = decided.status_set_by_person_at;
+  }
   // 受け取り済み is the person's word, never the mails': either parcel having it is enough, and the merged
   // parcel keeps it (with the status it goes with). The mail processing never sets it by itself.
-  const carried = receivedAfterMerge(keep, absorb, fields.status ?? keep.status);
+  // Unless the person's last decision was a status other than delivered (e.g. they undid a delivery): that wins over an older received_at.
+  const carried = decided && decided.status !== "delivered" ? null : receivedAfterMerge(keep, absorb, fields.status ?? keep.status);
   if (carried && (carried.received_at !== keep.received_at || (fields.status ?? keep.status) !== carried.status)) {
     fields.received_at = carried.received_at;
     fields.status = carried.status;

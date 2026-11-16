@@ -187,6 +187,18 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
 }
 
 /**
+ * Whether the person decided this parcel's status after the mail was sent. Such a mail leaves the status
+ * alone (up, down or cancelling); its other fields still apply. With no decision time, or no sent time,
+ * the mail counts as it always did (an order swap must still agree with a rebuild).
+ */
+export function decidedAfter(existing: Pick<ParcelRow, "status_set_by_person_at">, emailSentAt: string | null): boolean {
+  if (!existing.status_set_by_person_at || !emailSentAt) return false;
+  const decided = Date.parse(existing.status_set_by_person_at);
+  const sent = Date.parse(emailSentAt);
+  return Number.isFinite(decided) && Number.isFinite(sent) && sent < decided;
+}
+
+/**
  * Merge a new extraction into an existing parcel. Later mails win for delivery
  * details; status never goes backwards except to `cancelled`.
  */
@@ -197,7 +209,7 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   const incomingStatus = statusOf(x);
   const isNewer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
 
-  if (incomingStatus) {
+  if (incomingStatus && !decidedAfter(existing, emailSentAt)) {
     const cur = STATUS_RANK[existing.status] ?? 0;
     const inc = STATUS_RANK[incomingStatus] ?? 0;
     if (incomingStatus === "cancelled") {
@@ -278,7 +290,9 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   // Forward along the delivery only, or to cancelled (the edit form then offers it while it stays).
   const incomingStatus = statusOf(x);
   const newer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
-  if (incomingStatus === "cancelled") {
+  if (decidedAfter(existing, emailSentAt)) {
+    // The person set this status after the mail was sent: it stays.
+  } else if (incomingStatus === "cancelled") {
     if (newer && existing.status !== "delivered") update.status = incomingStatus;
   } else if (incomingStatus && existing.status !== "delivered" && (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0))
     update.status = incomingStatus;
@@ -599,6 +613,24 @@ export function dismissedAfterMerge(
 }
 
 /**
+ * Of the parcels being merged, the one the person decided the status of last (the kept one on a tie)
+ * and the latest decision time. Null when none of them was decided by the person.
+ */
+export function personStatusAfterMerge(
+  keep: Pick<ParcelRow, "status" | "status_set_by_person_at">,
+  absorbed: Pick<ParcelRow, "status" | "status_set_by_person_at">[],
+): { status: string; status_set_by_person_at: string } | null {
+  let best: { status: string; at: string; t: number } | null = null;
+  for (const p of [keep, ...absorbed]) {
+    if (!p.status_set_by_person_at) continue;
+    const t = Date.parse(p.status_set_by_person_at);
+    if (!Number.isFinite(t)) continue;
+    if (best === null || t > best.t) best = { status: p.status, at: p.status_set_by_person_at, t };
+  }
+  return best === null ? null : { status: best.status, status_set_by_person_at: best.at };
+}
+
+/**
  * What a merge of parcels leaves of "the person said they received it". Either of them having said
  * so is enough: the merged parcel is delivered and received then, from the first received_at found
  * (the kept parcel's first). Merged into cancelled it is not received (the database clears it).
@@ -678,17 +710,31 @@ export function splitOrders(x: Extraction): Extraction[] {
  * A parcel built again from all of its mails, oldest first, with the same rules as when
  * the mails arrived one by one. Used when two parcels turn out to be one.
  */
-export function rebuildParcel(userId: string, mails: { x: Extraction; sentAt: string | null }[]): ParcelInsert {
+export function rebuildParcel(
+  userId: string,
+  mails: { x: Extraction; sentAt: string | null }[],
+  decision?: { status: string; status_set_by_person_at: string } | null,
+): ParcelInsert {
   // Mails to the sender never described this delivery, so the head of the rebuilt parcel is never one of them.
   const ordered = [...arrivingReadings(mails)].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""));
   const [head, ...rest] = ordered;
   const row = { ...buildParcelInsert(userId, head.x, head.sentAt), itemNames: head.x.items.map((i) => i.name) } as unknown as ParcelRow & { itemNames: string[] };
+  if (decision) {
+    // The person's decision is the starting row: a mail sent before it leaves the status alone, a later one counts (decidedAfter,
+    // the same rule as a mail arriving alone). The head mail is judged the same way.
+    row.status = decision.status;
+    row.status_set_by_person_at = decision.status_set_by_person_at;
+    const headStatus = buildParcelUpdate(row, head.x, head.sentAt).status;
+    if (headStatus) row.status = headStatus;
+  }
   for (const m of rest) {
     Object.assign(row, buildParcelUpdate(row, m.x, m.sentAt));
     if (row.itemNames.length === 0) row.itemNames = m.x.items.map((i) => i.name);
   }
   const { itemNames: _names, ...fields } = row;
   void _names;
+  // The time is written by the caller (the latest of the merged parcels), not taken from the decision row.
+  if (decision) delete (fields as { status_set_by_person_at?: unknown }).status_set_by_person_at;
   fields.total_amount = parcelTotal(ordered.map((m) => m.x));
   return fields as ParcelInsert;
 }

@@ -1,0 +1,207 @@
+import { describe, expect, it } from "vitest";
+import { buildParcelUpdate, mergeIntoManual, rebuildParcel } from "@/lib/match";
+import { processInboundEmail } from "@/lib/pipeline";
+import { FakeDb, type Row } from "./fake-db";
+import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
+
+/**
+ * Plan A: a parcel carries `status_set_by_person_at`, the time a person decided its status. A mail sent
+ * BEFORE that time must not move the status (up or down). With the time null, an older mail still counts
+ * (an order swap), as before. All shops and numbers here are made up.
+ */
+
+const T = "123456789012";
+const T_RAW = "1234-5678-9012";
+const BEFORE = "2026-11-01T00:00:00Z";
+const T1 = "2026-11-02T00:00:00Z";
+const T2 = "2026-11-04T00:00:00Z";
+const T3 = "2026-11-06T00:00:00Z";
+const AFTER_T3 = "2026-11-07T00:00:00Z";
+
+function parcelRow(over: Row = {}): Row {
+  return {
+    id: "p-existing",
+    user_id: USER,
+    shop: "サンプル商店",
+    shop_key: "other",
+    title: "サンプルの品",
+    status: "shipped",
+    source: "mail",
+    tracking_number: T,
+    expected_date: "2026-11-05",
+    requires_presence: null,
+    created_at: BEFORE,
+    updated_at: BEFORE,
+    last_email_at: BEFORE,
+    ...over,
+  };
+}
+
+const run = (db: FakeDb, x: ReturnType<typeof reading>, sentAt: string) => processInboundEmail(asConsentingAdmin(db), mailOf(sentAt), { precomputed: precomputed(x) });
+const statusOf = (db: FakeDb) => db.find("parcels", "p-existing")!.status;
+const mailReading = (relevance: "delivered" | "shipped") => reading({ relevance, tracking_number: sure(T_RAW) });
+
+describe("a status the person decided is not moved by a mail sent before the decision", () => {
+  it("P1: an older delivered mail does not bring back a parcel whose delivery record the person undid", async () => {
+    const db = new FakeDb({
+      parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T3, status_set_by_person_at: AFTER_T3 })],
+      emails: [],
+      extractions: [],
+    });
+    await run(db, mailReading("delivered"), T1);
+    expect(statusOf(db)).toBe("shipped");
+  });
+
+  it("P2: an older shipment mail does not change the status a person picked on a typed-in parcel", async () => {
+    const db = new FakeDb({
+      parcels: [parcelRow({ source: "manual", status: "ordered", last_email_at: T3, status_set_by_person_at: AFTER_T3 })],
+      emails: [],
+      extractions: [],
+    });
+    await run(db, mailReading("shipped"), T1);
+    expect(statusOf(db)).toBe("ordered");
+  });
+
+  it("P3: an older shipment still counts when the person has decided nothing (order swap)", async () => {
+    const db = new FakeDb({ parcels: [parcelRow({ status: "ordered", last_email_at: T3 })], emails: [], extractions: [] });
+    await run(db, mailReading("shipped"), T1);
+    expect(statusOf(db)).toBe("shipped");
+    const rebuilt = rebuildParcel(USER, [
+      { x: mailReading("shipped"), sentAt: T1 },
+      { x: reading({ relevance: "order", tracking_number: sure(T_RAW) }), sentAt: T3 },
+    ]);
+    expect(rebuilt.status).toBe(statusOf(db));
+  });
+
+  it("P4: a mail sent after the person's decision still moves the status", async () => {
+    const db = new FakeDb({
+      parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T1, status_set_by_person_at: T2 })],
+      emails: [],
+      extractions: [],
+    });
+    await run(db, mailReading("delivered"), T3);
+    expect(statusOf(db)).toBe("delivered");
+  });
+
+  it("P5: an older whole cancellation does not cancel what the person set afterwards", async () => {
+    const db = new FakeDb({
+      parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T3, status_set_by_person_at: AFTER_T3 })],
+      emails: [],
+      extractions: [],
+    });
+    await run(db, reading({ relevance: "cancelled", tracking_number: sure(T_RAW), cancel_partial: sure(false) }), T1);
+    expect(statusOf(db)).toBe("shipped");
+  });
+});
+
+describe("a mail with no sent time counts as before", () => {
+  it("P6: a mail with no sent time still moves a status the person decided", async () => {
+    const db = new FakeDb({
+      parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T1, status_set_by_person_at: AFTER_T3 })],
+      emails: [],
+      extractions: [],
+    });
+    await processInboundEmail(asConsentingAdmin(db), { ...mailOf(T1), sentAt: null }, { precomputed: precomputed(mailReading("delivered")) });
+    expect(statusOf(db)).toBe("delivered");
+  });
+});
+
+describe("twin parcels keep the status a person decided", () => {
+  const ORDER = "ORD-12345678";
+  const SENT = "2026-11-03T00:00:00Z";
+  function twoParcels(a: Row, b: Row, late: { sentAt: string; x: ReturnType<typeof reading> }[] = []) {
+    return new FakeDb({
+      emails: [
+        ...late.map((l, i) => ({ id: `m-late${i}`, user_id: USER, sent_at: l.sentAt })),
+        { id: "m-a", user_id: USER, sent_at: "2026-11-01T00:00:00Z" },
+        { id: "m-b", user_id: USER, sent_at: "2026-11-02T00:00:00Z" },
+      ],
+      parcels: [
+        parcelRow({ id: "p-a", order_number: ORDER, status: "ordered", tracking_number: null, last_email_at: BEFORE, ...a }),
+        parcelRow({ id: "p-b", shop: "送り主不明", status: "shipped", tracking_number: T, created_at: T1, ...b }),
+      ],
+      extractions: [
+        { id: "x-a", user_id: USER, email_id: "m-a", parcel_id: "p-a", result: reading({ relevance: "order", order_number: sure(ORDER) }) },
+        { id: "x-b", user_id: USER, email_id: "m-b", parcel_id: "p-b", result: reading({ relevance: "shipped", shop_name: null, tracking_number: sure(T_RAW) }) },
+        ...late.map((l, i) => ({ id: `x-late${i}`, user_id: USER, email_id: `m-late${i}`, parcel_id: "p-b", result: l.x })),
+      ],
+    });
+  }
+  // A mail sent before every decision, naming both the order and the tracking number, joins the two.
+  const joining = reading({ relevance: "shipped", order_number: sure(ORDER), tracking_number: sure(T_RAW), category: null });
+
+  it("T1: the status of the parcel the person decided last stays after the merge", async () => {
+    const db = twoParcels({ status: "ordered", status_set_by_person_at: T2 }, { status: "shipped", status_set_by_person_at: T3 });
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: T3 });
+  });
+
+  it("T2: a status the kept parcel's person decided later beats the absorbed one", async () => {
+    const db = twoParcels({ status: "ordered", status_set_by_person_at: T3 }, { status: "shipped", status_set_by_person_at: T2 });
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "ordered", status_set_by_person_at: T3 });
+  });
+
+  it("T4: a kept parcel with no decision takes the other parcel decision and its time", async () => {
+    const db = twoParcels({}, { status: "shipped", status_set_by_person_at: T2 });
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: T2 });
+  });
+
+  const DECIDED = "2026-11-04T11:00:00Z";
+  const deliveredAt = (sentAt: string) => ({ sentAt, x: reading({ relevance: "delivered", shop_name: null, tracking_number: sure(T_RAW) }) });
+
+  it("T5: a delivery mail sent after the decision still counts in the merge (as when it arrives alone)", async () => {
+    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, [deliveredAt("2026-11-04T12:00:00Z")]);
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "delivered", status_set_by_person_at: DECIDED });
+  });
+
+  it("T6: a delivery mail sent before the decision leaves the decided status in the merge", async () => {
+    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, [deliveredAt("2026-11-04T10:00:00Z")]);
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: DECIDED });
+  });
+
+  it("T3: with no decision time on either parcel, the merge is as before", async () => {
+    const db = twoParcels({}, {});
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")!.status).toBe("shipped");
+    expect(db.find("parcels", "p-a")!.status_set_by_person_at ?? null).toBeNull();
+  });
+
+  describe("the merge and the one-by-one path agree on the status when the person decided", () => {
+    const at = (hhmm: string) => `2026-11-04T${hhmm}:00Z`;
+    const delivered = (hhmm: string) => ({ sentAt: at(hhmm), x: reading({ relevance: "delivered", shop_name: null, tracking_number: sure(T_RAW) }) });
+    const cancelled = (hhmm: string) => ({ sentAt: at(hhmm), x: reading({ relevance: "cancelled", shop_name: null, tracking_number: sure(T_RAW), cancel_partial: sure(false) }) });
+    const combos: [string, ReturnType<typeof delivered>[]][] = [
+      ["delivered 10:00 only", [delivered("10:00")]],
+      ["delivered 12:00 only", [delivered("12:00")]],
+      ["cancelled 10:00, delivered 12:00", [cancelled("10:00"), delivered("12:00")]],
+      ["delivered 10:00, cancelled 12:00", [delivered("10:00"), cancelled("12:00")]],
+    ];
+    /** The mails arriving one at a time, oldest first, onto the parcel as the person left it. */
+    function oneByOne(manual: boolean, mails: ReturnType<typeof delivered>[]): string {
+      const row = { ...parcelRow({ status: "shipped", status_set_by_person_at: DECIDED, last_email_at: "2026-11-03T00:00:00Z", source: manual ? "manual" : "mail" }) } as Parameters<typeof buildParcelUpdate>[0];
+      for (const m of [...mails].sort((a, b) => a.sentAt.localeCompare(b.sentAt))) {
+        Object.assign(row, manual ? mergeIntoManual(row, m.x, m.sentAt) : buildParcelUpdate(row, m.x, m.sentAt));
+      }
+      return row.status;
+    }
+    it.each(combos)("mail parcel: %s", async (_name, mails) => {
+      const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, mails);
+      await run(db, joining, SENT);
+      expect(db.find("parcels", "p-b")).toBeUndefined();
+      expect(db.find("parcels", "p-a")!.status).toBe(oneByOne(false, mails));
+    });
+    it.each(combos)("typed-in parcel: %s", async (_name, mails) => {
+      const db = twoParcels({ source: "manual", status: "shipped", status_set_by_person_at: DECIDED }, {}, mails);
+      await run(db, joining, SENT);
+      expect(db.find("parcels", "p-b")).toBeUndefined();
+      expect(db.find("parcels", "p-a")!.status).toBe(oneByOne(true, mails));
+    });
+  });
+});
