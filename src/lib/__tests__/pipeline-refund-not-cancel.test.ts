@@ -333,8 +333,8 @@ describe("a mail read out of order: the state is the one a rebuild gives", () =>
   });
 
   it("accepted difference: a cancellation, a refund, then a shipment sent between them read last stays cancelled in place (a rebuild would say shipped)", async () => {
-    // Only an older mail that is a whole cancellation is re-read in sent order; an older shipment must not
-    // undo a state the person may have set by hand (an undone delivery, a typed-in status) with an old mail.
+    // Only an older mail that is a whole cancellation is re-read in sent order, and the rebuilt result is applied
+    // only when it is a cancellation: a shipment is not applied, to keep what the person set by hand.
     const steps: Step[] = [{ x: wholeCancel(), at: T1 }, { x: refund(), at: T3 }, { x: shipment(), at: T2 }];
     expect(rebuildParcel(USER, steps.map((s) => ({ x: s.x, sentAt: s.at }))).status).toBe("shipped");
     const db = await arrive(steps, false);
@@ -347,6 +347,14 @@ describe("a mail read out of order: the state is the one a rebuild gives", () =>
     const db = new FakeDb({ parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T3 })], emails: [], extractions: [] });
     await run(db, reading({ relevance: "delivered", tracking_number: sure(T_RAW) }), T1);
     expect(statusOf(db)).toBe("delivered");
+  });
+
+  it("an older whole cancellation leaves a received parcel alone", async () => {
+    const RECEIVED = "2026-11-05T00:00:00Z";
+    const db = new FakeDb({ parcels: [parcelRow({ status: "delivered", received_at: RECEIVED, last_email_at: T3 })], emails: [], extractions: [] });
+    await run(db, reading({ relevance: "cancelled", tracking_number: sure(T_RAW), cancel_partial: whole() }), T1);
+    const row = db.find("parcels", "p-existing")!;
+    expect([row.status, row.received_at, row.last_email_at]).toEqual(["delivered", RECEIVED, T3]);
   });
 
   it("an older whole cancellation does not bring back a delivered state onto a parcel whose delivery record the person undid", async () => {
