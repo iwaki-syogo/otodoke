@@ -653,28 +653,30 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
 
   // A typed-in parcel keeps what the person typed: the mails only fill its gaps, oldest first.
   // Twins from mails are built again from all their mails.
+  // A status the person decided is the starting point: only mails sent at or after the decision move it (decidedAfter, as when a
+  // mail arrives alone), so the twin merge and the one-by-one path cannot disagree.
+  const decided = personStatusAfterMerge(keep, absorb);
   let fields: ParcelUpdate;
   let merged: { category: string | null; category_source: string | null };
   if (keep.source === "manual") {
     const row: ParcelRow = { ...keep };
+    if (decided) { row.status = decided.status; row.status_set_by_person_at = decided.status_set_by_person_at; }
     fields = {};
     for (const m of [...readings].sort((a, b) => sentTime(a.sentAt) - sentTime(b.sentAt))) {
       const update = mergeIntoManual(row, m.x, m.sentAt);
       Object.assign(row, update);
       Object.assign(fields, update);
     }
+    if (decided) fields.status = row.status;
     merged = row;
   } else {
-    const { user_id: _owner, ...rebuilt } = rebuildParcel(userId, readings);
+    const { user_id: _owner, ...rebuilt } = rebuildParcel(userId, readings, decided);
     void _owner;
     fields = rebuilt;
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
   }
-  // A status the person decided stays: the merged parcel takes the status of the one decided last.
-  // The latest decision time goes with it (the mail gateway allows the column since 20261117090000).
-  const decided = personStatusAfterMerge(keep, absorb);
+  // The latest decision time goes with the merged status (the mail gateway allows the column since 20261117090000).
   if (decided) {
-    fields.status = decided.status;
     if (decided.status_set_by_person_at !== keep.status_set_by_person_at) fields.status_set_by_person_at = decided.status_set_by_person_at;
   }
   // 受け取り済み is the person's word, never the mails': either parcel having it is enough, and the merged

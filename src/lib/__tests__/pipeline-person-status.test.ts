@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rebuildParcel } from "@/lib/match";
+import { buildParcelUpdate, mergeIntoManual, rebuildParcel } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Row } from "./fake-db";
 import { USER, asConsentingAdmin, mailOf, precomputed, reading, sure } from "./pipeline-fixtures";
@@ -109,10 +109,10 @@ describe("a mail with no sent time counts as before", () => {
 describe("twin parcels keep the status a person decided", () => {
   const ORDER = "ORD-12345678";
   const SENT = "2026-11-03T00:00:00Z";
-  function twoParcels(a: Row, b: Row, late?: { sentAt: string; x: ReturnType<typeof reading> }) {
+  function twoParcels(a: Row, b: Row, late: { sentAt: string; x: ReturnType<typeof reading> }[] = []) {
     return new FakeDb({
       emails: [
-        ...(late ? [{ id: "m-late", user_id: USER, sent_at: late.sentAt }] : []),
+        ...late.map((l, i) => ({ id: `m-late${i}`, user_id: USER, sent_at: l.sentAt })),
         { id: "m-a", user_id: USER, sent_at: "2026-11-01T00:00:00Z" },
         { id: "m-b", user_id: USER, sent_at: "2026-11-02T00:00:00Z" },
       ],
@@ -123,7 +123,7 @@ describe("twin parcels keep the status a person decided", () => {
       extractions: [
         { id: "x-a", user_id: USER, email_id: "m-a", parcel_id: "p-a", result: reading({ relevance: "order", order_number: sure(ORDER) }) },
         { id: "x-b", user_id: USER, email_id: "m-b", parcel_id: "p-b", result: reading({ relevance: "shipped", shop_name: null, tracking_number: sure(T_RAW) }) },
-        ...(late ? [{ id: "x-late", user_id: USER, email_id: "m-late", parcel_id: "p-b", result: late.x }] : []),
+        ...late.map((l, i) => ({ id: `x-late${i}`, user_id: USER, email_id: `m-late${i}`, parcel_id: "p-b", result: l.x })),
       ],
     });
   }
@@ -153,14 +153,14 @@ describe("twin parcels keep the status a person decided", () => {
   const deliveredAt = (sentAt: string) => ({ sentAt, x: reading({ relevance: "delivered", shop_name: null, tracking_number: sure(T_RAW) }) });
 
   it("T5: a delivery mail sent after the decision still counts in the merge (as when it arrives alone)", async () => {
-    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, deliveredAt("2026-11-04T12:00:00Z"));
+    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, [deliveredAt("2026-11-04T12:00:00Z")]);
     await run(db, joining, SENT);
     expect(db.find("parcels", "p-b")).toBeUndefined();
     expect(db.find("parcels", "p-a")).toMatchObject({ status: "delivered", status_set_by_person_at: DECIDED });
   });
 
   it("T6: a delivery mail sent before the decision leaves the decided status in the merge", async () => {
-    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, deliveredAt("2026-11-04T10:00:00Z"));
+    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, [deliveredAt("2026-11-04T10:00:00Z")]);
     await run(db, joining, SENT);
     expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: DECIDED });
   });
@@ -171,5 +171,37 @@ describe("twin parcels keep the status a person decided", () => {
     expect(db.find("parcels", "p-b")).toBeUndefined();
     expect(db.find("parcels", "p-a")!.status).toBe("shipped");
     expect(db.find("parcels", "p-a")!.status_set_by_person_at ?? null).toBeNull();
+  });
+
+  describe("the merge and the one-by-one path agree on the status when the person decided", () => {
+    const at = (hhmm: string) => `2026-11-04T${hhmm}:00Z`;
+    const delivered = (hhmm: string) => ({ sentAt: at(hhmm), x: reading({ relevance: "delivered", shop_name: null, tracking_number: sure(T_RAW) }) });
+    const cancelled = (hhmm: string) => ({ sentAt: at(hhmm), x: reading({ relevance: "cancelled", shop_name: null, tracking_number: sure(T_RAW), cancel_partial: sure(false) }) });
+    const combos: [string, ReturnType<typeof delivered>[]][] = [
+      ["delivered 10:00 only", [delivered("10:00")]],
+      ["delivered 12:00 only", [delivered("12:00")]],
+      ["cancelled 10:00, delivered 12:00", [cancelled("10:00"), delivered("12:00")]],
+      ["delivered 10:00, cancelled 12:00", [delivered("10:00"), cancelled("12:00")]],
+    ];
+    /** The mails arriving one at a time, oldest first, onto the parcel as the person left it. */
+    function oneByOne(manual: boolean, mails: ReturnType<typeof delivered>[]): string {
+      const row = { ...parcelRow({ status: "shipped", status_set_by_person_at: DECIDED, last_email_at: "2026-11-03T00:00:00Z", source: manual ? "manual" : "mail" }) } as Parameters<typeof buildParcelUpdate>[0];
+      for (const m of [...mails].sort((a, b) => a.sentAt.localeCompare(b.sentAt))) {
+        Object.assign(row, manual ? mergeIntoManual(row, m.x, m.sentAt) : buildParcelUpdate(row, m.x, m.sentAt));
+      }
+      return row.status;
+    }
+    it.each(combos)("mail parcel: %s", async (_name, mails) => {
+      const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, mails);
+      await run(db, joining, SENT);
+      expect(db.find("parcels", "p-b")).toBeUndefined();
+      expect(db.find("parcels", "p-a")!.status).toBe(oneByOne(false, mails));
+    });
+    it.each(combos)("typed-in parcel: %s", async (_name, mails) => {
+      const db = twoParcels({ source: "manual", status: "shipped", status_set_by_person_at: DECIDED }, {}, mails);
+      await run(db, joining, SENT);
+      expect(db.find("parcels", "p-b")).toBeUndefined();
+      expect(db.find("parcels", "p-a")!.status).toBe(oneByOne(true, mails));
+    });
   });
 });
