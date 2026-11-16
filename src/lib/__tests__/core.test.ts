@@ -353,6 +353,14 @@ describe("chooseParcel", () => {
     const p = candidate({ itemNames: ["とても長い商品の名前です 黒 Lサイズ"] });
     expect(chooseParcel([p], extraction({ items: [item("とても長い商品の名前です...", null)] }), NOW)).toBe(p);
   });
+  it("does not join a shipment to a cancelled parcel with the same item name, but does to a shipped one", () => {
+    const name = "とても長い商品の名前です";
+    const shipment = extraction({ relevance: "shipped", tracking_number: sure("123456789012"), items: [item(name, null)] });
+    const cancelled = candidate({ status: "cancelled", itemNames: [name] });
+    expect(chooseParcel([cancelled], shipment, NOW)).toBeNull();
+    const shipped = candidate({ status: "shipped", itemNames: [name] });
+    expect(chooseParcel([shipped], shipment, NOW)).toBe(shipped);
+  });
   it("does not join an alike item with another order number", () => {
     const p = candidate({ order_number: "1", itemNames: ["とても長い商品の名前です"] });
     expect(chooseParcel([p], extraction({ order_number: sure("2"), items: [item("とても長い商品の名前です", null)] }), NOW)).toBeNull();

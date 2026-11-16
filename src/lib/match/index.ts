@@ -390,6 +390,8 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
         sameShop(p, x) &&
         p.created_at >= since &&
         p.status !== "delivered" &&
+        // A cancelled parcel is never brought back by another order's mail (the date match above leaves it out too).
+        p.status !== "cancelled" &&
         // A different order or tracking number is a different parcel, however alike the item.
         !(orderNumber && p.order_number && normalizeOrderNumber(p.order_number) !== orderNumber) &&
         !(tracking && p.tracking_number && p.tracking_number !== tracking),
