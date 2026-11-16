@@ -169,7 +169,8 @@ describe("scoreRefund", () => {
     const s = scoreRefund(labels, everyHit({ [file]: unquoted }));
     const row = s.rows.find((r) => r.file === file)!;
     expect(row.ok).toBe(false);
-    expect(row.miss).toContain("根拠が本文に無い・本番では動かない");
+    expect(row.miss).toContain(UNQUOTED_NOTE);
+    expect(row.miss).not.toContain("本番では動かない");
     expect(s.hit).toBe(9);
   });
 
@@ -185,5 +186,19 @@ describe("scoreRefund", () => {
     expect(table).toContain("refund misses (file | kind | what):");
     expect(table).toContain(`${KEEP[1]} | no_cancel | relevance=cancelled cancel_partial=null`);
     expect(table).toContain(`${CANCEL[1]} | cancel | relevance=other_purchase cancel_partial=null`);
+  });
+});
+
+describe("scoreRefund and a sender's reading", () => {
+  it("scoreRefund counts a sender's cancelled reading as not cancelling (the pipeline leaves the parcel alone)", () => {
+    const sender = () => reading({ relevance: "cancelled", inbound: sure(false), cancel_partial: { value: false, evidence: "根拠の行", confidence: 0.95 } });
+    // On the no-cancel side it is a hit that is counted as a misread, not a miss.
+    const keepRow = scoreRefund(labels, everyHit({ [KEEP[1]]: sender() })).rows.find((r) => r.file === KEEP[1])!;
+    expect(keepRow.ok).toBe(true);
+    expect(keepRow.misread).toBe(true);
+    // On the cancel side it is a miss: the pipeline cancels nothing for a mail the reader sent.
+    const cancelScore = scoreRefund(labels, everyHit({ [CANCEL[0]]: sender() }));
+    expect(cancelScore.rows.find((r) => r.file === CANCEL[0])!.ok).toBe(false);
+    expect(cancelScore.hit).toBe(9);
   });
 });

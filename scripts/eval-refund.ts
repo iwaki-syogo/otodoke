@@ -14,7 +14,7 @@
  */
 import { withDefaults, type Extraction } from "../src/lib/extract/schema";
 import { verifyEvidence } from "../src/lib/extract/verify-evidence";
-import { statusOf } from "../src/lib/match";
+import { isOutbound, statusOf } from "../src/lib/match";
 
 /** The confidence the matching code needs before it acts on a field (src/lib/match/index.ts MIN_CONFIDENCE). */
 export const REFUND_MIN_CONFIDENCE = 0.6;
@@ -67,13 +67,13 @@ function judge(kind: "no_cancel" | "cancel", result: RefundResult | undefined): 
   const x = verifyEvidence(raw, result.mail);
   // Whether the pipeline would cancel the parcel for this reading: the very function it uses, never a copy of it.
   // It gives null for an unquoted relevance, a sure "part" of an order, and a "part" whose quotation was dropped.
-  const cancels = statusOf(x) === "cancelled";
+  const cancels = !isOutbound(x) && statusOf(x) === "cancelled";
   const seen = `relevance=${x.relevance} cancel_partial=${x.cancel_partial.value === null ? "null" : String(x.cancel_partial.value)}`;
   // A true the check turned into null is reported as such, so the model's answer and the quotation can be told apart.
   const dropped = raw.cancel_partial.value === true && x.cancel_partial.value === null ? " (the true was dropped: its quotation is not in the mail, or its confidence is under 0.6)" : "";
   // The pipeline's statusOf gives no status when the quotation for the relevance is not in the mail, so nothing moves.
   const unverified = x.evidence_review?.includes("relevance") === true;
-  const unverifiedNote = unverified ? " (根拠が本文に無い・本番では動かない)" : "";
+  const unverifiedNote = unverified ? ` ${UNQUOTED_NOTE}` : "";
   if (kind === "no_cancel") {
     if (cancels) return { ok: false, miss: seen + dropped, misread: false };
     // A hit, but the model did say "cancelled": only the evidence check or the "part" rule kept the pipeline from cancelling.
