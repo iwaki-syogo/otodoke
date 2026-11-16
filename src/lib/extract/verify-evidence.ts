@@ -118,6 +118,8 @@ export function verifyEvidence(input: Extraction, mail: SourceMail): Extraction 
     // Only a false acts on anything, so only a false is held to its quotation. true and null behave the
     // same as not stated; checking them would add a review flag to parcels that have none today.
     inbound: x.inbound.value === false ? field("inbound", x.inbound, review) : x.inbound,
+    // Same for cancel_partial: only a true (a partial cancellation) acts, so only a true is held to its quotation.
+    cancel_partial: x.cancel_partial.value === true ? field("cancel_partial", x.cancel_partial, review) : x.cancel_partial,
     items: items(x.items, review),
     overall_confidence: validConfidence(x.overall_confidence) ? x.overall_confidence : 0,
     other_orders: x.other_orders.map(order),

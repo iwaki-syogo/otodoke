@@ -38,8 +38,8 @@ export const Relevance = z.enum([
   "out_for_delivery", // 本日配達・配達中
   "delivered", // 配達完了
   "attempted", // 不在で持ち帰り・再配達の案内
-  "cancelled", // キャンセル・返金
-  "other_purchase", // 買い物に関係するが上記のどれでもない（定期便の変更、返品受付など）
+  "cancelled", // 注文全体のキャンセル（一部のキャンセル・返金は other_purchase）
+  "other_purchase", // 買い物に関係するが上記のどれでもない（定期便の変更、返品受付、返金、一部のキャンセルなど）
   "unrelated", // 買い物・配達に関係しない（広告・ログイン通知・レビュー依頼など）
 ]);
 export type Relevance = z.infer<typeof Relevance>;
@@ -111,6 +111,9 @@ export const ExtractionSchema = z.object({
   inbound: BoolField.describe(
     "この荷物は、このメールの受け手に届くか。false にするのは、受け手が送った側（ご依頼主）だと本文がはっきり言っている時だけ（ご依頼主様控え・発送のご利用明細・運賃の領収・発送や集荷の申し込みの受付・返品の返送の受付・出品者として発送した通知）。受け手に届く荷物だと明記があれば true。宛名が家族や会社名でも、送った側だと言っていなければ false にしない。それ以外・分からなければ null",
   ),
+  cancel_partial: BoolField.describe(
+    "relevance が cancelled の時の取り消しの範囲。注文の一部だけ（商品の一部・数量の一部）の取り消しだと本文がはっきり言っている時だけ true にし、その行を evidence に入れる。注文全体の取り消しだとはっきり言っていれば false。迷う・書かれていない・cancelled 以外なら null",
+  ),
   other_orders: z.array(OtherOrderSchema).describe("同じメールに載っている 2 つ目以降の注文。1 注文だけなら空配列"),
   overall_confidence: z.number().describe("この抽出全体の確信度 0〜1"),
   notes: z.string().nullable().describe("抽出で迷った点や読み取れなかった点（日本語、1〜2 文）"),
@@ -132,6 +135,7 @@ export function withDefaults(x: Extraction): Extraction {
     expected_date_end: partial.expected_date_end ?? { ...NO_VALUE },
     category: partial.category ?? null,
     inbound: partial.inbound ?? { ...NO_VALUE },
+    cancel_partial: partial.cancel_partial ?? { ...NO_VALUE },
     other_orders: (partial.other_orders ?? []).map((o) => ({ ...o, category: o.category ?? null })),
   };
 }

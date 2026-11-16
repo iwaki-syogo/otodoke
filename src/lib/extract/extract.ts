@@ -65,6 +65,7 @@ function unrelatedPlaceholder(notes: string): Extraction {
     expected_text: null,
     requires_presence: { ...EMPTY_FIELD },
     inbound: { ...EMPTY_FIELD },
+    cancel_partial: { ...EMPTY_FIELD },
     other_orders: [],
     overall_confidence: 0,
     notes,

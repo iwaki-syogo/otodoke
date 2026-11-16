@@ -50,6 +50,8 @@ export function relevanceToStatus(r: Relevance): string | null {
 /** A payment notice that already names a tracking number means the parcel has left the shop. */
 function statusOf(x: Extraction): string | null {
   if (x.evidence_review?.includes("relevance")) return null;
+  // A cancellation of only part of an order says nothing about the parcel as a whole.
+  if (isPartialCancel(x)) return null;
   return x.relevance === "payment" && confident(x.tracking_number) ? "shipped" : relevanceToStatus(x.relevance);
 }
 
@@ -196,7 +198,16 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   if (incomingStatus) {
     const cur = STATUS_RANK[existing.status] ?? 0;
     const inc = STATUS_RANK[incomingStatus] ?? 0;
-    if (incomingStatus === "cancelled" || inc > cur || (inc === cur && isNewer)) update.status = incomingStatus;
+    if (incomingStatus === "cancelled") {
+      // Like every other status, a cancellation counts only when the mail is the newer one; a parcel
+      // that arrived is never cancelled by a mail (a rebuild reads the mails oldest first and must agree).
+      if (isNewer && existing.status !== "delivered") update.status = incomingStatus;
+    } else if (incomingStatus === "delivered" && existing.status === "cancelled") {
+      // scope-extension: A decides. Not in the brief ("a cancellation does not come back"): it exists only so a
+      // rebuild (oldest first) and one-mail-at-a-time agree. Removing this block turns the test
+      // "a delivered mail, then a cancellation sent earlier: delivered both ways" red.
+      if (isNewer) update.status = incomingStatus;
+    } else if (inc > cur || (inc === cur && isNewer)) update.status = incomingStatus;
   }
 
   const orderNumber = confident(x.order_number);
@@ -263,8 +274,10 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
 
   // Forward along the delivery only, or to cancelled (the edit form then offers it while it stays).
   const incomingStatus = statusOf(x);
-  if (incomingStatus === "cancelled") update.status = incomingStatus;
-  else if (incomingStatus && existing.status !== "delivered" && (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0))
+  const newer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
+  if (incomingStatus === "cancelled") {
+    if (newer && existing.status !== "delivered") update.status = incomingStatus;
+  } else if (incomingStatus && existing.status !== "delivered" && (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0))
     update.status = incomingStatus;
 
   const orderNumber = confident(x.order_number);
@@ -398,6 +411,15 @@ export function isOutbound(x: Extraction): boolean {
   return x.inbound !== undefined && confident(x.inbound) === false;
 }
 
+/**
+ * The mail cancels only part of an order (some of the items, some of the quantity). Only a stated,
+ * confident `true` counts; a whole cancellation and an unknown extent (null, or a reading saved before
+ * the field existed) keep acting as a cancellation.
+ */
+export function isPartialCancel(x: Extraction): boolean {
+  return x.relevance === "cancelled" && x.cancel_partial !== undefined && confident(x.cancel_partial) === true;
+}
+
 /** The readings that describe a delivery to the reader. When every one is the sender's, all of them (a parcel must still be rebuilt from something). */
 export function arrivingReadings<T extends { x: Extraction }>(readings: T[]): T[] {
   const arriving = readings.filter((r) => !isOutbound(r.x));
@@ -410,6 +432,7 @@ export function arrivingReadings<T extends { x: Extraction }>(readings: T[]): T[
  */
 export function startsParcel(x: Extraction): boolean {
   if (isOutbound(x)) return false;
+  if (isPartialCancel(x)) return false;
   return x.relevance !== "other_purchase" || confident(x.tracking_number) !== null;
 }
 
@@ -565,11 +588,13 @@ const NO_VALUE = { value: null, evidence: null, confidence: 0 };
 export function splitOrders(x: Extraction): Extraction[] {
   const others = (x.other_orders ?? []).filter((o: OtherOrder) => confident(o.order_number) !== null || (o.evidence_review?.length ?? 0) > 0);
   const first: Extraction = { ...x, other_orders: [] };
+  // Which order a cancellation names cannot be told from the mail: it goes to the first one only.
+  const rest: Extraction = first.relevance === "cancelled" ? { ...first, relevance: "other_purchase", cancel_partial: { ...NO_VALUE } } : first;
   return [
     first,
     ...others.map(
       (o: OtherOrder): Extraction => ({
-        ...first,
+        ...rest,
         order_number: o.order_number,
         items: o.items,
         category: o.category ?? null,

@@ -32,6 +32,7 @@ export function reading(over: Partial<Extraction> & { category?: string | null }
     expected_text: null,
     requires_presence: none,
     inbound: none,
+    cancel_partial: none,
     other_orders: [],
     overall_confidence: 0.9,
     notes: null,
