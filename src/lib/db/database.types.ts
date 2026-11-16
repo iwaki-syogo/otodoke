@@ -291,6 +291,20 @@ export type Database = {
         }
         Relationships: []
       }
+      parcel_exclusions: {
+        Row: { parcel_id: string; user_id: string; kind: string; from_domain: string | null; relevance: string | null; counted: boolean; created_at: string }
+        Insert: { parcel_id: string; user_id: string; kind: string; from_domain?: string | null; relevance?: string | null; counted?: boolean; created_at?: string }
+        Update: { parcel_id?: string; user_id?: string; kind?: string; from_domain?: string | null; relevance?: string | null; counted?: boolean; created_at?: string }
+        Relationships: [
+          {
+            foreignKeyName: "parcel_exclusions_parcel_id_fkey"
+            columns: ["parcel_id"]
+            isOneToOne: true
+            referencedRelation: "parcels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parcel_items: {
         Row: {
           created_at: string
@@ -526,6 +540,18 @@ export type Database = {
       restore_parcel_receipts: {
         Args: { p_receipts: Json }
         Returns: { id: string; outcome: string }[]
+      }
+      exclude_parcel: {
+        Args: { p_parcel_id: string }
+        Returns: string
+      }
+      restore_parcel: {
+        Args: { p_parcel_id: string }
+        Returns: string
+      }
+      excluded_parcels: {
+        Args: Record<PropertyKey, never>
+        Returns: { parcel_id: string; kind: string; excluded_at: string; shop: string; title: string | null; status: string; ordered_at: string | null; expected_date: string | null; total_amount: number | null; carrier: string | null; item_names: string[] }[]
       }
 
       activate_user_key: {

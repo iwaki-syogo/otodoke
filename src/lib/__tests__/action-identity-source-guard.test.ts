@@ -13,6 +13,8 @@ const policies: Record<string, Policy> = {
   "app/parcel-actions.ts#markDelivered": ownerRpc,
   "app/parcel-actions.ts#markDeliveredForUndo": ownerRpc,
   "app/parcel-actions.ts#restoreStatuses": ownerRpc,
+  "app/parcel-actions.ts#excludeParcel": ownerRpc,
+  "app/parcel-actions.ts#restoreExcluded": ownerRpc,
   "app/parcel-actions.ts#markNotDelivered": rows,
   "app/parcel-actions.ts#markNotReceived": rows,
   "app/parcel-actions.ts#dismissCheck": rows,
@@ -191,11 +193,14 @@ function audit(sources: Map<string, string>, decisions = policies): string[] {
         "app/parcel-actions.ts#markDelivered": "mark_parcels_received",
         "app/parcel-actions.ts#markDeliveredForUndo": "mark_parcels_received",
         "app/parcel-actions.ts#restoreStatuses": "restore_parcel_receipts",
+        "app/parcel-actions.ts#excludeParcel": "exclude_parcel",
+        "app/parcel-actions.ts#restoreExcluded": "restore_parcel",
       };
       const rpc = rpcs[key];
       if (!rpc) { errors.push(`${key}: owner-rpc exception was forged`); continue; }
       let target = fn;
-      if (!key.endsWith("#restoreStatuses")) {
+      // These actions call their one RPC themselves; the received ones go through deliver().
+      if (!["#restoreStatuses", "#excludeParcel", "#restoreExcluded"].some((name) => key.endsWith(name))) {
         const body = compact(fn.body!);
         if (body !== "{return(awaitdeliver(ids)).saved;}" && body !== "{returnawaitdeliver(ids);}") errors.push(`${key}: rpc wrapper changed`);
         target = namedFunction(file, "deliver")!;
@@ -207,7 +212,8 @@ function audit(sources: Map<string, string>, decisions = policies): string[] {
       if (!calls.some((call) => callName(call) === "signedIn")) errors.push(`${key}: signed-in session is not required`);
       if (calls.some((call) => ["from", "update", "insert", "upsert", "fetch", "signOut", "deleteUser"].includes(callName(call)))) errors.push(`${key}: direct table or account effect cannot use the owner-rpc exemption`);
       // The ownership argument lives in SQL: the function must derive the owner from the session.
-      const sql = readFileSync(path.resolve(app, "../../supabase/migrations/20261113130000_received_receipts.sql"), "utf8");
+      const migration = ["exclude_parcel", "restore_parcel"].includes(rpc) ? "20261117100000_parcel_exclusions.sql" : "20261113130000_received_receipts.sql";
+      const sql = readFileSync(path.resolve(app, "../../supabase/migrations", migration), "utf8");
       const start = sql.indexOf(`function public.${rpc}(`);
       const end = sql.indexOf("create or replace function", start + 1);
       const definition = start < 0 ? "" : sql.slice(start, end < 0 ? undefined : end);

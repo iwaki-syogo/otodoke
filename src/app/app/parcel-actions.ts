@@ -6,6 +6,7 @@ import { todayJst } from "@/lib/format";
 import { isReceivedAt, needsCheck } from "@/lib/match";
 import { createClient } from "@/lib/supabase/server";
 import { undeliveredStatus } from "@/lib/undelivered";
+import { EXCLUDE_FAILED } from "@/lib/not-parcel-text";
 
 import { RECEIPT_CHUNK_SIZE, type MarkReceivedResult, type ReceivedReceipt, type ReceiptKey, type RestoreResult } from "@/lib/receipt";
 import type { Json } from "@/lib/db/database.types";
@@ -102,6 +103,49 @@ export async function restoreStatuses(items: ReceiptKey[]): Promise<RestoreResul
     // A lost answer may follow a committed undo; retain local refusals without inferring an RPC refusal.
     return { ...result, unconfirmed: [...clean.keys()] };
   } finally {
+    revalidatePath("/app", "layout");
+  }
+}
+
+/**
+ * 「これは荷物ではありません」: the parcel is taken out of the list and the spending. The database function
+ * takes the owner from the session and answers ok / gone / manual; only ok is a success. The page the
+ * person was on cannot open the parcel any more, so the caller moves to the list on ok. No redraw is asked
+ * here: it would redraw the parcel page, which is gone for the person by then.
+ */
+export async function excludeParcel(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false, error: EXCLUDE_FAILED };
+  try {
+    const session = await signedIn();
+    if (!session) return { ok: false, error: EXCLUDE_FAILED };
+    const { data, error } = await session.supabase.rpc("exclude_parcel", { p_parcel_id: parsed.data });
+    if (error) throw new Error(error.message);
+    return data === "ok" ? { ok: true } : { ok: false, error: EXCLUDE_FAILED };
+  } catch (error) {
+    console.error("excludeParcel:", error instanceof Error ? error.message : String(error));
+    return { ok: false, error: EXCLUDE_FAILED };
+  }
+}
+
+/**
+ * Puts a taken-out parcel back (元に戻す, 一覧に戻す). `gone` means it is not marked any more, so it is
+ * already back (a second press, another tab): the same success, not a failure.
+ */
+export async function restoreExcluded(id: string): Promise<{ ok: boolean }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false };
+  try {
+    const session = await signedIn();
+    if (!session) return { ok: false };
+    const { data, error } = await session.supabase.rpc("restore_parcel", { p_parcel_id: parsed.data });
+    if (error) throw new Error(error.message);
+    return { ok: data === "ok" || data === "gone" };
+  } catch (error) {
+    console.error("restoreExcluded:", error instanceof Error ? error.message : String(error));
+    return { ok: false };
+  } finally {
+    // An unanswered call may have committed; reload the real state.
     revalidatePath("/app", "layout");
   }
 }
