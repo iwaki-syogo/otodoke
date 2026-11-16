@@ -132,12 +132,12 @@ end $$;
 -- Read-only: after the person pressed "not a parcel" on this parcel, will mail of the same group now be marked automatically?
 -- True only when the person's own counted mark exists and: two or more counted marks of the person share its sender domain and kind of mail,
 -- the kind is order or payment, the domain is not on the list of domains that are never marked automatically, and the person has no
--- unmarked parcel with a mail from that domain. What the database cannot see (a hand-forwarded mail, the person's own domain) is already
--- folded into `counted`, which is false then.
+-- unmarked parcel with a mail from that domain, and the domain is not the person's own. What the database cannot see (a hand-forwarded
+-- mail: its subject is sealed) is already folded into `counted`, which is false then.
 -- The list below is a copy of NO_AUTO_EXCLUDE_DOMAINS in src/lib/screen-senders.ts; src/lib/__tests__/no-auto-exclude-migration.test.ts keeps the two equal.
 create or replace function public.auto_exclusion_would_start(p_parcel_id uuid) returns boolean
 language plpgsql stable security definer set search_path='' as $$
-declare v_user uuid; v_domain text; v_relevance text;
+declare v_user uuid; v_domain text; v_relevance text; v_own text;
 begin
   v_user := auth.uid();
   if v_user is null then raise exception 'signed in owner required' using errcode='42501'; end if;
@@ -149,6 +149,13 @@ begin
   -- never-auto-domains:start
   if v_domain = any(array['mail.yahoo.co.jp']) then return false; end if;
   -- never-auto-domains:end
+  -- own-domain:start
+  -- The person's own domain (the domain of their login address, unless that is a shared domain such as gmail.com) is never marked
+  -- automatically. The same comparison as personalMailReason in src/lib/screen-senders.ts: the text after the first "@" with trim,
+  -- lower case and trailing dots removed, equal to the (same way normalized) sender domain, and not a shared domain.
+  select lower(rtrim(btrim(split_part(coalesce(u.email,''),'@',2)),'.')) into v_own from auth.users u where u.id=v_user;
+  if coalesce(v_own,'')<>'' and lower(rtrim(btrim(v_domain),'.'))=v_own and not public.is_shared_mail_domain(v_own) then return false; end if;
+  -- own-domain:end
   if (select count(*) from public.parcel_exclusions x where x.user_id=v_user and x.kind='user' and x.counted
       and x.from_domain=v_domain and x.relevance=v_relevance) < 2 then return false; end if;
   if exists(select 1 from public.parcels p where p.user_id=v_user

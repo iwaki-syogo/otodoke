@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { arrivingSign } from "@/lib/match";
+import { personalMailReason } from "@/lib/screen-senders";
 import { ARRIVAL_SIGN_COLUMNS, AUTO_EXCLUDE_KINDS, MARKS_BEFORE_AUTO } from "@/lib/not-parcel-auto";
 import { reading, sure } from "./pipeline-fixtures";
 
@@ -55,6 +56,14 @@ export function parityProblems(sql: string, ts: Ts): string[] {
   if (!kinds || JSON.stringify(sqlKinds) !== JSON.stringify(sorted(ts.kinds))) problems.push(`kinds: sql ${sqlKinds} / ts ${sorted(ts.kinds)}`);
   const count = would.match(/x\.relevance=v_relevance\)\s*<\s*(\d+)\s+then return false/)?.[1];
   if (count === undefined || Number(count) !== ts.marks) problems.push(`marks before auto: sql ${count} / ts ${ts.marks}`);
+  // The person's own domain (personalMailReason "own"): the login address's domain, compared after trim / lower case / trailing dots,
+  // never a shared domain. In SQL it reads auth.users.
+  const own = would.match(/-- own-domain:start([\s\S]*?)-- own-domain:end/)?.[1] ?? "";
+  if (!own) problems.push("own-domain block missing");
+  if (!/from auth\.users u where u\.id=v_user/.test(own)) problems.push("own domain: the auth.users lookup is missing");
+  if (!/split_part\(coalesce\(u\.email,''\),'@',2\)/.test(own)) problems.push("own domain: the part after the first @ is not taken");
+  if (!/lower\(rtrim\(btrim\(split_part/.test(own) || !/lower\(rtrim\(btrim\(v_domain\),'\.'\)\)=v_own/.test(own)) problems.push("own domain: the two sides are not normalised the same way");
+  if (!/not public\.is_shared_mail_domain\(v_own\)/.test(own)) problems.push("own domain: a shared domain must not count as own");
   return problems;
 }
 
@@ -81,7 +90,24 @@ describe("the database and the ingestion agree on when a parcel is taken out by 
     for (const field of Object.keys(ARRIVAL_SIGN_COLUMNS)) expect(arrivingSign(reading({ relevance: "order", ...alone[field] })), field).toBe(true);
   });
 
+  it("own domain: the TypeScript side does what the SQL block says", () => {
+    const own = (email: string | null) => personalMailReason({ from_domain: "own.example", subject: "" }, email);
+    expect(own("a@own.example")).toBe("own");
+    expect(own(" A@OWN.Example. ")).toBe("own"); // trim, lower case, trailing dot
+    expect(own("a@sub.own.example")).toBeNull(); // no subdomain match
+    expect(own("a@other.example")).toBeNull();
+    expect(own(null)).toBeNull();
+    expect(personalMailReason({ from_domain: "gmail.com", subject: "" }, "a@gmail.com")).toBeNull(); // a shared domain is nobody's own
+  });
+
   describe("negative controls: a change on one side only is caught", () => {
+    it("the own-domain condition changed or removed in SQL", () => {
+      const removed = SQL.replace(/-- own-domain:start[\s\S]*?-- own-domain:end/, "");
+      expect(parityProblems(removed, TS_NOW)).not.toEqual([]);
+      expect(parityProblems(SQL.replace(" and not public.is_shared_mail_domain(v_own)", ""), TS_NOW)).not.toEqual([]);
+      expect(parityProblems(SQL.replace("from auth.users u where u.id=v_user", "from auth.users u where u.id=u.id"), TS_NOW)).not.toEqual([]);
+      expect(parityProblems(SQL.replace("lower(rtrim(btrim(v_domain),'.'))=v_own", "v_domain=v_own"), TS_NOW)).not.toEqual([]);
+    });
     it("a sql condition column removed", () => {
       expect(parityProblems(SQL.replace("p.carrier is null and ", ""), TS_NOW)).not.toEqual([]);
       expect(parityProblems(SQL.replace("p.expected_window_end is null and ", ""), TS_NOW)).not.toEqual([]);

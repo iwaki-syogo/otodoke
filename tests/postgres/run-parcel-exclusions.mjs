@@ -586,6 +586,26 @@ commit;
   };
   test2("R-auto-6b the mark takes the parcel owner lock itself", fixture.rAuto6b);
   test2("R-auto-7 would the next mail be marked", fixture.rAuto7);
+  // The person's own domain (login address domain, unless shared) is never automatic: the same comparison as personalMailReason.
+  fixture.rAuto7own = async () => {
+    await reset();
+    const would = async (id) => (await rows("authenticated", A, `select public.auto_exclusion_would_start('${id}') as r`))[0].r;
+    const login = (email) => sql(`update auth.users set email=${email === null ? "null" : quote(email)} where id='${A}'`);
+    await addGroupParcel(P8, E(50), "own.example", "order"); await addGroupParcel(P9, E(51), "own.example", "order");
+    for (const id of [P8, P9]) assert.equal(await call(A, `public.exclude_parcel('${id}')`), "ok");
+    await login("a@other.example"); assert.equal(await would(P9), true, "another domain: automatic");
+    await login("a@own.example"); assert.equal(await would(P9), false, "the person's own domain");
+    await login("A@OWN.Example."); assert.equal(await would(P9), false, "case and a trailing dot do not matter");
+    await login(" a@own.example "); assert.equal(await would(P9), false, "spaces around do not matter");
+    await login("a@sub.own.example"); assert.equal(await would(P9), true, "a subdomain is not the same domain (as personalMailReason)");
+    await login("a@gmail.com"); assert.equal(await would(P9), true, "a shared-domain address owns no domain");
+    await login(null); assert.equal(await would(P9), true, "no login address");
+    // A shared sender domain that is the person's own address domain (yahoo.com): not "own", so the rest decides.
+    await addGroupParcel(P10, E(52), "yahoo.com", "order"); await addGroupParcel(P11, E(53), "yahoo.com", "order");
+    await sql(`insert into public.parcel_exclusions(parcel_id,user_id,kind,from_domain,relevance,counted) values ('${P10}','${A}','user','yahoo.com','order',true),('${P11}','${A}','user','yahoo.com','order',true)`);
+    await login("a@yahoo.com"); assert.equal(await would(P11), true, "a shared domain is never 'own'");
+  };
+  test2("R-auto-7own the person's own domain is not automatic", fixture.rAuto7own);
   test2("U-compat a stage-1 call still works", fixture.uCompat);
   test2("R-restore-twice put back twice", fixture.restoreTwice);
   test2("C3 no deadlock between ingestion, exclude, restore and the server's mark", async () => {
@@ -668,6 +688,7 @@ commit;
     assert.equal(await listening(), true); assert.equal(await scalar("show listen_addresses;"), "127.0.0.1");
     assert.equal(Number(await scalar("show port;")), port); assert.equal(await scalar("show data_directory;"), data);
     await file("tests/postgres/bootstrap.sql");
+    await sql("alter table auth.users add column email text;");  // Supabase's auth.users has it; the bootstrap keeps only the id
     await sql("create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key,name text,statements text[]);");
     for (const name of prior(await readdir(path.join(root, "supabase/migrations")))) {
       if (name === "20261106180000_screen_events_daily_purge.sql") {
@@ -831,6 +852,9 @@ commit;
       await fault("R-auto-6b mark without the parcel owner lock", fixture.rAuto6b, () => fake(rule, [["perform public.lock_parcel_owner(p_user);", ""]]));
       await fault("R-auto-6 mark that ignores a shipped parcel after the wait", fixture.rAuto6, () => fake(rule, [["and p.status in ('unknown','ordered')", ""]]));
       const would = "public.auto_exclusion_would_start(uuid)";
+      await fault("R-auto-7own would_start without the own-domain condition", fixture.rAuto7own, () => fake(would, [["if coalesce(v_own,'')<>'' and", "if false and"]]));
+      await fault("R-auto-7own would_start without the shared-domain exception", fixture.rAuto7own, () => fake(would, [[" and not public.is_shared_mail_domain(v_own)", ""]]));
+      await fault("R-auto-7own would_start comparing without normalising the login domain", fixture.rAuto7own, () => fake(would, [["select lower(rtrim(btrim(split_part(coalesce(u.email,''),'@',2)),'.'))", "select split_part(coalesce(u.email,''),'@',2)"]]));
       await fault("R-auto-7 would_start without the never-automatic list", fixture.rAuto7, () => fake(would, [["if v_domain = any(array['mail.yahoo.co.jp']) then return false; end if;", ""]]));
       await fault("R-auto-7 would_start counting one mark", fixture.rAuto7, () => fake(would, [["x.relevance=v_relevance) < 2", "x.relevance=v_relevance) < 1"]]));
       await fault("R-auto-7 would_start ignoring unmarked parcels of the domain", fixture.rAuto7, () => fake(would, [["if exists(select 1 from public.parcels p where p.user_id=v_user", "if false and exists(select 1 from public.parcels p where p.user_id=v_user"]]));
