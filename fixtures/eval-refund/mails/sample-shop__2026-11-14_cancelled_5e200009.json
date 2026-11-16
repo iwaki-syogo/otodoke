@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_cancelled_5e200009.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000090009@example.invalid>",
+ "date": "2026-11-14T18:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "【サンプル商店】ご注文取消のお知らせ",
+ "text": "サンプル 太郎 様\n\n在庫切れのため、ご注文番号: 2026111400000009 のご注文を取り消しました。\n\n取消した商品: サンプルの鞄 1点（ご注文の全商品）\nご不便をおかけしました。\n",
+ "html": null
+}

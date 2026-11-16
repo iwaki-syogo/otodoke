@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_other_5e200003.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000030003@example.invalid>",
+ "date": "2026-11-14T12:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "送料の一部を返金しました",
+ "text": "サンプル 太郎 様\n\nご注文番号: 2026111400000003 の送料のうち 330円 を返金しました。\n\n商品はすでにお届け済みです。商品代金の返金はありません。\n",
+ "html": null
+}

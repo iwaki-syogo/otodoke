@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_other_5e200005.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000050005@example.invalid>",
+ "date": "2026-11-14T14:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "価格改定による差額とポイントのお知らせ",
+ "text": "サンプル 太郎 様\n\nご注文の商品が値下げされたため、差額 500円 分のポイントを付与しました。\n\nご注文番号: 2026111400000005\n付与ポイント: 500ポイント\n",
+ "html": null
+}

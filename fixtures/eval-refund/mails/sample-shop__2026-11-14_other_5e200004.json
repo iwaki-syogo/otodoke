@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_other_5e200004.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000040004@example.invalid>",
+ "date": "2026-11-14T13:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "返品商品の返金が完了しました",
+ "text": "サンプル 太郎 様\n\nご返送いただいた商品を確認しました。\n\nご注文番号: 2026111400000004\n返品商品: サンプルの帽子 1点\n返金額: 3,500円\n\n返金は完了しました。\n",
+ "html": null
+}

@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_cancelled_5e200007.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000070007@example.invalid>",
+ "date": "2026-11-14T16:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "ご注文のキャンセルが完了しました",
+ "text": "サンプル 太郎 様\n\nご注文番号: 2026111400000007 のご注文をキャンセルしました。\n\nキャンセルした商品: サンプルの傘 1点（ご注文のすべて）\nまだ発送していません。\n",
+ "html": null
+}

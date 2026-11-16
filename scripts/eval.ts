@@ -4,7 +4,8 @@
  *   npm run eval -- --set demo [--write-demo-cache]   hand-labelled demo mails (fixtures/demo)
  *   npm run eval -- --set all  --max-usd 15           every local anonymized mail, relevance only
  *   npm run eval -- --dir fixtures/eval-sent --max-usd 0.30   a directory of made-up mails (mails/, expected.json,
- *                                                     optional inbound-labels.json for the sender-side score)
+ *                                                     optional inbound-labels.json for the sender-side score,
+ *                                                     optional refund-labels.json for the refund score)
  *
  * Stops before starting another mail once `--max-usd` (default 1) has been spent.
  * Full results go to fixtures/raw/eval/ (git-ignored); a one-line summary goes to docs/eval-log.md.
@@ -13,6 +14,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { missTable, scoreInbound, type InboundLabels, type InboundResult } from "./eval-inbound";
+import { refundMissTable, scoreRefund, type RefundLabels, type RefundResult } from "./eval-refund";
 import { PRICES } from "./prices";
 
 const root = process.cwd();
@@ -99,6 +101,10 @@ async function main() {
   // The sender-side labels, when the directory carries them.
   const labels: InboundLabels | null = dir && existsSync(path.join(dir, "inbound-labels.json"))
     ? JSON.parse(await readFile(path.join(dir, "inbound-labels.json"), "utf8"))
+    : null;
+  // The refund and cancellation labels, when the directory carries them.
+  const refundLabels: RefundLabels | null = dir && existsSync(path.join(dir, "refund-labels.json"))
+    ? JSON.parse(await readFile(path.join(dir, "refund-labels.json"), "utf8"))
     : null;
 
   let spent = 0;
@@ -187,6 +193,17 @@ async function main() {
     })));
     console.log(`inbound ${score.hit}/${score.total}`);
     console.log(missTable(score));
+  }
+  if (refundLabels) {
+    const score = scoreRefund(refundLabels, results.map((r) => ({
+      file: r.mail.file,
+      // Checked against the mail as the pipeline does, so a quotation that is not in it counts for nothing.
+      mail: { subject: r.mail.subject, text: r.mail.text, html: r.mail.html },
+      data: r.data as RefundResult["data"],
+      error: r.error,
+    })));
+    console.log(`refund ${score.hit}/${score.total}`);
+    console.log(refundMissTable(score));
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_other_5e200006.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000060006@example.invalid>",
+ "date": "2026-11-14T15:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "数量変更のご注文キャンセルを承りました",
+ "text": "サンプル 太郎 様\n\nご注文番号: 2026111400000006\n\nサンプルの手袋 3点のご注文のうち、1点のみキャンセルしました。残りの2点は発送準備中です。\n",
+ "html": null
+}

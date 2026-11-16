@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_other_5e200001.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000010001@example.invalid>",
+ "date": "2026-11-14T10:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "ご返金のお知らせ",
+ "text": "サンプル 太郎 様\n\nご返金の手続きが完了しました。\n\n返金額: 1,200円\n返金方法: ご利用のカードへ\n\nカード会社の締め日により、反映まで時間がかかる場合があります。\n",
+ "html": null
+}

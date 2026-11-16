@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_other_5e200002.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000020002@example.invalid>",
+ "date": "2026-11-14T11:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "ご注文の一部をキャンセルしました",
+ "text": "サンプル 太郎 様\n\nご注文番号: 2026111400000002 のうち、一部の商品をキャンセルしました。\n\nキャンセルした商品: サンプルの靴下 1点\nそのままお届けする商品: サンプルの帽子 1点\n\nご注文全体のキャンセルではありません。残りの商品は予定どおり発送します。\n",
+ "html": null
+}

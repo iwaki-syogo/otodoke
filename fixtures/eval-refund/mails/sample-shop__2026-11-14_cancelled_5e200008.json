@@ -1,0 +1,12 @@
+{
+ "file": "sample-shop/2026-11-14_cancelled_5e200008.eml",
+ "source": "sample-shop",
+ "stage": "other",
+ "message_id": "<demo-5e2000080008@example.invalid>",
+ "date": "2026-11-14T17:00:00+09:00",
+ "from": "support@sample-store.example.test",
+ "from_name": "サンプル商店",
+ "subject": "ご注文のキャンセルとご返金について",
+ "text": "サンプル 太郎 様\n\nご注文番号: 2026111400000008 のご注文全体をキャンセルしました。\n\nお支払い済みの 4,800円 は、ご利用のカードへ返金します。\n商品は発送前です。\n",
+ "html": null
+}

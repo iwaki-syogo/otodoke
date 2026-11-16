@@ -1,0 +1,11 @@
+{
+  "sample-shop/2026-11-14_other_5e200001.eml": { "relevance": ["other_purchase", "cancelled"] },
+  "sample-shop/2026-11-14_other_5e200002.eml": { "relevance": ["other_purchase", "cancelled"] },
+  "sample-shop/2026-11-14_other_5e200003.eml": { "relevance": ["other_purchase", "cancelled"] },
+  "sample-shop/2026-11-14_other_5e200004.eml": { "relevance": ["other_purchase", "cancelled"] },
+  "sample-shop/2026-11-14_other_5e200005.eml": { "relevance": ["other_purchase", "cancelled"] },
+  "sample-shop/2026-11-14_other_5e200006.eml": { "relevance": ["other_purchase", "cancelled"] },
+  "sample-shop/2026-11-14_cancelled_5e200007.eml": { "relevance": "cancelled" },
+  "sample-shop/2026-11-14_cancelled_5e200008.eml": { "relevance": "cancelled" },
+  "sample-shop/2026-11-14_cancelled_5e200009.eml": { "relevance": "cancelled" }
+}
