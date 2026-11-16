@@ -48,7 +48,7 @@ export function relevanceToStatus(r: Relevance): string | null {
 }
 
 /** A payment notice that already names a tracking number means the parcel has left the shop. */
-function statusOf(x: Extraction): string | null {
+export function statusOf(x: Extraction): string | null {
   if (x.evidence_review?.includes("relevance")) return null;
   // A cancellation of only part of an order says nothing about the parcel as a whole.
   // The same when the model said "part" but its quotation is not in the mail: the extent is then unverified, so

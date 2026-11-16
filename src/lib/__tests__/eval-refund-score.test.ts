@@ -76,13 +76,33 @@ describe("scoreRefund", () => {
     }
   });
 
-  it("a partial that quotes a line the mail does not contain, or is not sure, does not count", () => {
+  it("a partial that is not sure (quotation holds, confidence under the minimum) is dropped by the evidence check like an unquoted one, so it is a hit on the no-cancel side", () => {
     const file = KEEP[1];
-    const bad = scoreRefund(labels, everyHit({ [file]: read("cancelled", partial(0.95, "メールに無い行")) }));
-    expect(bad.rows.find((r) => r.file === file)!.ok).toBe(false);
-    expect(bad.rows.find((r) => r.file === file)!.miss).toContain("the true was dropped");
     const unsure = scoreRefund(labels, everyHit({ [file]: read("cancelled", partial(REFUND_MIN_CONFIDENCE - 0.1)) }));
-    expect(unsure.rows.find((r) => r.file === file)!.ok).toBe(false);
+    expect(unsure.rows.find((r) => r.file === file)!.ok).toBe(true);
+  });
+
+  it("a cancellation read as whole or with no extent stated is still a miss on the no-cancel side (the pipeline cancels it)", () => {
+    const file = KEEP[1];
+    for (const data of [read("cancelled"), read("cancelled", { value: false, evidence: "根拠の行", confidence: 0.95 })]) {
+      expect(scoreRefund(labels, everyHit({ [file]: data })).rows.find((r) => r.file === file)!.ok).toBe(false);
+    }
+  });
+
+  it("no-cancel side: a partial whose quotation is not in the mail is a hit (the pipeline cancels nothing and only flags the parcel for review)", () => {
+    const file = KEEP[1];
+    const dropped = scoreRefund(labels, everyHit({ [file]: read("cancelled", partial(0.95, "メールに無い行")) }));
+    expect(dropped.rows.find((r) => r.file === file)!.ok).toBe(true);
+    expect(dropped.hit).toBe(10);
+  });
+
+  it("cancel side: the same reading is a miss, a cancellation left out, and the table says the true was dropped", () => {
+    const file = CANCEL[0];
+    const s = scoreRefund(labels, everyHit({ [file]: read("cancelled", partial(0.95, "メールに無い行")) }));
+    const row = s.rows.find((r) => r.file === file)!;
+    expect(row.ok).toBe(false);
+    expect(row.miss).toContain("the true was dropped");
+    expect(s.hit).toBe(9);
   });
 
   it("a whole cancellation: cancelled with partial false or unknown is a hit", () => {
