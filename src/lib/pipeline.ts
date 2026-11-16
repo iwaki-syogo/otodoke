@@ -479,6 +479,13 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
     }
     if (parcel) {
       const update = parcel.source === "manual" ? mergeIntoManual(parcel, x, mail.sentAt) : buildParcelUpdate(parcel, x, mail.sentAt);
+      // A mail sent before the parcel's last one: judging it alone cannot see what the newer mails (a refund, a
+      // partial cancellation) left out of the status. The state is the one the mails give oldest first.
+      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null) {
+        const status = await statusInSentOrder(db, mail.userId, parcel, x, mail.sentAt);
+        if (status && status !== parcel.status) update.status = status;
+        else delete update.status;
+      }
       const { rest, category } = splitCategory(update);
       const saved = await db.rpc("update_mail_parcel", {
         p_snapshot: snapshot as unknown as Json, p_parcel_id: parcel.id, p_expected_updated_at: parcel.updated_at,
@@ -525,6 +532,23 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
   if (extractionError) throw new Error(`extractions insert failed: ${extractionError.message}`);
   await refreshTotal(db, mail.userId, parcelId);
   return { parcelId, created };
+}
+
+/**
+ * The status every mail of the parcel gives, this one included, read oldest first: a rebuild for a mail parcel,
+ * the typed-in merge for a typed-in one (twins are joined the same way). Null when no mail says a status.
+ */
+async function statusInSentOrder(db: AdminClient, userId: string, parcel: ParcelRow, x: Extraction, sentAt: string): Promise<string | null> {
+  const { data, error } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", parcel.id).eq("user_id", userId).eq("emails.user_id", userId);
+  if (error) throw new Error(`extractions lookup failed: ${error.message}`);
+  const readings = arrivingReadings([
+    ...data.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null })),
+    { x, sentAt: sentAt as string | null },
+  ]);
+  if (parcel.source !== "manual") return rebuildParcel(userId, readings).status ?? null;
+  const row: ParcelRow = { ...parcel, last_email_at: null };
+  for (const m of [...readings].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""))) Object.assign(row, mergeIntoManual(row, m.x, m.sentAt));
+  return row.status;
 }
 
 /** `category_source is distinct from 'user'`, in PostgREST's words. */
