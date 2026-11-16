@@ -24,7 +24,6 @@ const A = uuid(1), B = uuid(2);
 const P1 = uuid(101), P2 = uuid(102), P3 = uuid(103), P4 = uuid(104), P5 = uuid(105), PM = uuid(106), PB1 = uuid(201);
 const E = (n) => uuid(300 + n);
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const prior = (names) => names.filter((name) => /^\d{14}_.+\.sql$/.test(name) && name.slice(0, 14) < stem.slice(0, 14)).sort();
 const one = (output) => {
   const values = taggedResults(output);
