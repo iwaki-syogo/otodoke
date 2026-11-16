@@ -346,7 +346,7 @@ async function main(negative) {
   };
   fixture.rAuto5 = async () => {
     await reset();
-    for (const id of [P8, P9, P10, P11, P12, P13]) await addGroupParcel(id, E(40 + Number(id.slice(-3)) - 100), "shop.example", "order");
+    for (const id of [P8, P9, P10, P11, P12, P13, P14]) await addGroupParcel(id, E(40 + Number(id.slice(-3)) - 100), "shop.example", "order");
     assert.equal(await markRule(P1), 1, "an ordered parcel without a sign"); assert.equal(await markRule(P1), 0, "a second call adds nothing");
     const [m] = await marks(`parcel_id='${P1}'`); assert.deepEqual([m.kind, m.from_domain, m.relevance, m.counted], ["rule", "shop.example", "order", false]);
     assert.equal((await marks()).length, 1);
@@ -354,8 +354,8 @@ async function main(negative) {
     await st(A, `update public.parcels set carrier='yamato' where id='${P3}'; update public.parcels set expected_text='soon' where id='${P4}';
       update public.parcels set expected_date='2026-11-20' where id='${P8}'; update public.parcels set tracking_number='123456789012' where id='${P9}';
       update public.parcels set expected_window_start='09:00' where id='${P10}'; update public.parcels set requires_presence=true where id='${P11}';
-      update public.parcels set status='unknown' where id='${P12}';`);
-    for (const [id, why] of [[P3, "carrier"], [P4, "expected_text"], [P8, "expected_date"], [P9, "tracking_number"], [P10, "time window"], [P11, "requires_presence"]]) assert.equal(await markRule(id), 0, `a parcel with ${why}`);
+      update public.parcels set status='unknown' where id='${P12}'; update public.parcels set expected_window_end='10:00' where id='${P14}';`);
+    for (const [id, why] of [[P3, "carrier"], [P4, "expected_text"], [P8, "expected_date"], [P9, "tracking_number"], [P10, "time window"], [P14, "time window end"], [P11, "requires_presence"]]) assert.equal(await markRule(id), 0, `a parcel with ${why}`);
     assert.equal(await markRule(P12), 1, "status unknown is allowed"); assert.equal(await markRule(P13), 1);
     assert.equal(await markRule(PM), 0, "a typed-in parcel"); assert.equal(await markRule(PB1), 0, "another person's parcel"); assert.equal(await markRule(uuid(999)), 0);
     for (const [role, user] of [["authenticated", A], ["anon", ""]]) assert.equal((await err(role, user, `select public.mark_rule_exclusion('${A}','${P5}','x','order')`)).state, "42501", `${role} cannot run it`);
@@ -414,6 +414,18 @@ commit;
     await file(`supabase/rollback/${stem2}.down.sql`); assert.deepEqual(await markRows(), before, "no-backfill: rolling stage 2 back changes no mark");
     await apply2(); assert.deepEqual(await markRows(), before, "no-backfill: applying stage 2 forward again adds no mark");
     stage2 = true;
+  };
+  // The stage-2 rollback removes the automatic marks (kind='rule') and keeps the pressed ones (kind='user'); the number is printed.
+  const runText = async (text) => { const r = await launch("psql", args, { input: preamble + text }).complete; healthy(r); return r.stderr + r.stdout; };
+  fixture.downRemovesRule = async (downText) => {
+    await reset(); await call(A, `public.exclude_parcel('${P1}')`);
+    assert.equal(await markRule(P3), 1); assert.equal(await markRule(P4), 1); assert.equal(await markRule(PB1, "b.example", "order", B), 1);
+    const output = await runText(downText);
+    assert.match(output, /removed 3 automatic marks/, "the rollback prints how many automatic marks it removed");
+    assert.deepEqual((await marks()).map((m) => [m.parcel_id, m.kind]), [[P1, "user"]], "only the pressed mark is left");
+    const mine = await visible(A); assert.ok(mine.includes(P3) && mine.includes(P4), "the automatic parcels are visible again"); assert.ok(!mine.includes(P1), "the pressed one stays hidden");
+    assert.ok((await visible(B)).includes(PB1));
+    await file(migrationFile2); stage2 = true;
   };
   fixture.restoreTwice = async () => {
     await reset(); await call(A, `public.exclude_parcel('${P1}')`);
@@ -721,6 +733,7 @@ commit;
         ["auto_exclusion_would_start", "excluded_parcels_unseen", "has_open_auto_exclusion", "mark_auto_excluded_seen", "mark_rule_exclusion"]);
       for (const [name, fn] of tests) { await fn(); console.log(`OK: ${name} (stage 2)`); }
       for (const [name, fn] of tests2) { await fn(); console.log(`OK: ${name}`); }
+      await fixture.downRemovesRule(await readFile(path.join(root, `supabase/rollback/${stem2}.down.sql`), "utf8")); console.log("OK: the stage-2 rollback removes the automatic marks and keeps the pressed ones");
       await fixture.noBackfill(() => file(migrationFile), () => file(migrationFile2)); console.log("OK: no-backfill: applying the migrations again, and stage 2 rollback then forward, create no mark on existing rows");
       // Stage 2 rollback: restore_parcel is the stage-1 body again, the new objects are gone, the stage-1 shapes did not move.
       const down2 = async () => {
@@ -812,6 +825,7 @@ commit;
       await fault("R-auto-5 mark without the status condition", fixture.rAuto5, () => fake(rule, [["and p.status in ('unknown','ordered')", ""]]));
       await fault("R-auto-5 mark without the carrier condition", fixture.rAuto5, () => fake(rule, [["and p.tracking_number is null and p.carrier is null", "and p.tracking_number is null"]]));
       await fault("R-auto-5 mark without the expected_text condition", fixture.rAuto5, () => fake(rule, [[" and p.expected_text is null", ""]]));
+      await fault("R-auto-5 mark without the window end condition", fixture.rAuto5, () => fake(rule, [[" and p.expected_window_end is null", ""]]));
       await fault("R-auto-5 mark without the owner condition", fixture.rAuto5, () => fake(rule, [["and p.user_id=p_user", ""]]));
       await fault("R-auto-5 mark executable by the person", fixture.rAuto5, () => sql("grant execute on function public.mark_rule_exclusion(uuid,uuid,text,text) to authenticated;"));
       await fault("R-auto-6b mark without the parcel owner lock", fixture.rAuto6b, () => fake(rule, [["perform public.lock_parcel_owner(p_user);", ""]]));
@@ -834,6 +848,14 @@ commit;
         await red("U-compat with excluded_parcels returning other columns", fixture.uCompat);
       } finally { await sql("drop function if exists public.excluded_parcels();"); await reapplyAll(); }
       await fixture.uCompat();
+      // The stage-2 rollback: one that leaves the automatic marks, one that removes the pressed marks too.
+      const downText = await readFile(path.join(root, `supabase/rollback/${stem2}.down.sql`), "utf8");
+      const ruleDelete = "delete from public.parcel_exclusions where kind='rule';";
+      assert.ok(downText.includes(ruleDelete));
+      for (const [label, text] of [["leaves the automatic marks", downText.replace(ruleDelete, "")], ["removes the pressed marks too", downText.replace(ruleDelete, "delete from public.parcel_exclusions;")]]) {
+        try { await red(`down-removes-rule with a rollback that ${label}`, () => fixture.downRemovesRule(text)); } finally { await reapplyAll(); await sql("delete from public.parcel_exclusions;"); }
+      }
+      await fixture.downRemovesRule(downText);
       // No backfill: a migration that marks existing rows by itself is seen (each of the two migrations in turn).
       const bad1 = await backfilling(stem), bad2 = await backfilling(stem2);
       for (const [label, apply1, apply2] of [["stage 1", () => sql(bad1), () => file(migrationFile2)], ["stage 2", () => file(migrationFile), () => sql(bad2)]]) {

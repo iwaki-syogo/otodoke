@@ -2,7 +2,8 @@
 -- ORDER: put the Web (and any iOS build) back to the stage-1 build FIRST. A stage-2 Web calls the functions dropped here
 -- (has_open_auto_exclusion, mark_auto_excluded_seen, auto_exclusion_would_start, excluded_parcels_unseen); every such call fails once they are gone.
 -- Ingestion that calls mark_rule_exclusion must be back to the stage-1 build too.
--- The seen times are lost. The automatic ("rule") marks stay: they are stage-1 rows, hidden parcels stay hidden until put back.
+-- The seen times are lost. The automatic ("rule") marks are REMOVED (their number is printed as a NOTICE): stage-1 clients have no list-bottom
+-- row for them, so they would stay hidden without any notice. The marks the people pressed (kind='user') stay.
 -- restore_parcel goes back to its stage-1 body (an unmarked parcel is 'gone' again).
 begin;
 set local lock_timeout='5s';
@@ -19,6 +20,14 @@ begin
     raise exception 'parcel exclusions auto are not applied; nothing to roll back' using errcode='55000';
   end if;
 end $down_gate$;
+
+do $down_rule$
+declare v_rule bigint;
+begin
+  select count(*) into v_rule from public.parcel_exclusions where kind='rule';
+  delete from public.parcel_exclusions where kind='rule';
+  raise notice 'removed % automatic marks (kind=rule); the pressed marks (kind=user) stay', v_rule;
+end $down_rule$;
 
 create or replace function public.restore_parcel(p_parcel_id uuid) returns text
 language plpgsql security definer set search_path='' as $$

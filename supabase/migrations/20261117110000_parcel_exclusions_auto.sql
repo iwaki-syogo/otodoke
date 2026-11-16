@@ -11,7 +11,12 @@
 -- (pressing "put back" twice), and 'gone' means only "no such parcel of yours".
 -- Lock order of the new writer: auth owner U -> generation G (lock_sample_owner) -> parcel owner L (lock_parcel_owner), the same as exclude_parcel.
 -- update_mail_parcel and create_mail_parcel take the same L, so a mark and an ingestion update always line up.
--- Rollback: supabase/rollback/20261117110000_parcel_exclusions_auto.down.sql (put the Web back to the stage-1 build first)
+-- Rollback: supabase/rollback/20261117110000_parcel_exclusions_auto.down.sql (put the Web back to the stage-1 build first;
+-- it also removes the automatic marks, kind='rule', so nothing stays hidden without the list-bottom row; the pressed marks stay)
+-- The server (service role) writes parcel_exclusions directly (insert/update/delete), not through mail_run_write: this is the one
+-- exception to "server writes go through the gate"; the table is not part of the gateway's table list.
+-- Applying together with the earlier migration in one `db push`: the gate below needs 20261117100000 in the migration history.
+-- If it stops here with 55000 before that row is written, check the state and run `db push` once more.
 begin;
 set local lock_timeout='5s';
 
@@ -167,7 +172,7 @@ begin
     select p.id,p.user_id,'rule',p_from_domain,p_relevance,false from public.parcels p
     where p.id=p_parcel_id and p.user_id=p_user and p.source='mail' and p.status in ('unknown','ordered')
       and p.tracking_number is null and p.carrier is null and p.expected_date is null and p.expected_text is null
-      and p.expected_window_start is null and p.requires_presence is not true
+      and p.expected_window_start is null and p.expected_window_end is null and p.requires_presence is not true
     on conflict (parcel_id) do nothing;
   get diagnostics v_rows = row_count;
   return v_rows;
