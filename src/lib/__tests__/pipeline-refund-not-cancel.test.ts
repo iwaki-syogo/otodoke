@@ -332,11 +332,26 @@ describe("a mail read out of order: the state is the one a rebuild gives", () =>
     await sameAsRebuilt([{ x: orderMail(), at: T0 }, { x: partialCancel(), at: T2 }, { x: wholeCancel(), at: T1 }], false, "cancelled");
   });
 
-  it("a cancellation, a refund, then a shipment sent between them read last: same as rebuilt", async () => {
+  it("accepted difference: a cancellation, a refund, then a shipment sent between them read last stays cancelled in place (a rebuild would say shipped)", async () => {
+    // Only an older mail that is a whole cancellation is re-read in sent order; an older shipment must not
+    // undo a state the person may have set by hand (an undone delivery, a typed-in status) with an old mail.
     const steps: Step[] = [{ x: wholeCancel(), at: T1 }, { x: refund(), at: T3 }, { x: shipment(), at: T2 }];
-    const rebuilt = rebuildParcel(USER, steps.map((s) => ({ x: s.x, sentAt: s.at }))).status;
-    expect(rebuilt).toBe("shipped");
-    await sameAsRebuilt(steps, false, "shipped");
+    expect(rebuildParcel(USER, steps.map((s) => ({ x: s.x, sentAt: s.at }))).status).toBe("shipped");
+    const db = await arrive(steps, false);
+    expect(db.rows("parcels")).toHaveLength(1);
+    expect(db.rows("parcels")[0].status).toBe("cancelled");
+  });
+
+  it("an older delivered mail does not bring back a parcel whose delivery record the person undid", async () => {
+    const db = new FakeDb({ parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T3 })], emails: [], extractions: [] });
+    await run(db, reading({ relevance: "delivered", tracking_number: sure(T_RAW) }), T1);
+    expect(statusOf(db)).toBe("shipped");
+  });
+
+  it("an older shipment mail does not change the status a person picked on a typed-in parcel", async () => {
+    const db = new FakeDb({ parcels: [parcelRow({ source: "manual", status: "ordered", last_email_at: T3 })], emails: [], extractions: [] });
+    await run(db, reading({ relevance: "shipped", tracking_number: sure(T_RAW) }), T1);
+    expect(statusOf(db)).toBe("ordered");
   });
 
   it("a typed-in parcel: the same pairs as above give the oldest-first merge's state", async () => {
