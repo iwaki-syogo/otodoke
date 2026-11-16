@@ -252,6 +252,14 @@ describe("the rest of the rule: one thing short of it and nothing is taken out",
     expect(markCalls(db)).toHaveLength(0);
   });
 
+  it("zero marks by hand: no number of bare order mails of one sender and kind is ever taken out", async () => {
+    const db = new FakeDb({});
+    for (let n = 1; n <= 4; n++) await run(db, order({ order_number: sure(`Z-${n}${n}${n}${n}-0000`) }), n);
+    expect(db.rows("parcels")).toHaveLength(4);
+    expect(markCalls(db)).toHaveLength(0);
+    expect(db.rows("parcel_exclusions")).toHaveLength(0);
+  });
+
   it("the person's own domain", async () => {
     const db = new FakeDb(userMarks(2));
     (db as unknown as { auth: unknown }).auth = { admin: { getUserById: async () => ({ data: { user: { email: `me@${AMAZON}` } }, error: null }) } };
