@@ -471,7 +471,9 @@ export function arrivingSign(x: Extraction): boolean {
  * A mail that puts a parcel the app took out on its own (kind `rule`) back in the list: it is not the
  * sender's copy, and it is either a shipment-or-later mail by its raw kind (not `statusOf`, which is null when
  * the quotation of the kind was dropped), a payment notice naming a tracking number, or it carries a sign.
- * A cancellation is no sign of arrival. Decided by this one mail's reading only.
+ * A cancellation does not bring a parcel back by its kind (its rank is not "shipped or later"), but one that carries a
+ * sign (a tracking number, a carrier, ...) does: the parcel then shows, under the cancelled ones. Decided by this one
+ * mail's reading only.
  */
 export function bringsBack(x: Extraction): boolean {
   if (isOutbound(x)) return false;

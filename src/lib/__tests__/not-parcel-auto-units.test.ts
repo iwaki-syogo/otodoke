@@ -83,6 +83,12 @@ describe("arrivingSign and bringsBack", () => {
   it("the kind counts as it was read, not as a quotation-checked status", () => {
     expect(bringsBack({ ...reading({ relevance: "shipped" }), evidence_review: ["relevance"] })).toBe(true);
   });
+  it("a cancellation brings back only when it carries a sign, never by its kind", () => {
+    expect(bringsBack(reading({ relevance: "cancelled" }))).toBe(false);
+    expect(bringsBack(reading({ relevance: "cancelled", tracking_number: sure("1234-5678-9012") }))).toBe(true);
+    expect(bringsBack(reading({ relevance: "cancelled", carrier: sure("テスト運輸") }))).toBe(true);
+    expect(bringsBack(reading({ relevance: "cancelled", inbound: sure(false), tracking_number: sure("1234-5678-9012") }))).toBe(false);
+  });
   it("a payment notice with a tracking number brings back", () => {
     expect(bringsBack(reading({ relevance: "payment", tracking_number: sure("1234-5678-9012") }))).toBe(true);
   });
