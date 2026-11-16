@@ -1,0 +1,12 @@
+{
+ "file": "sample-mall/2026-11-16_other_5e300001.eml",
+ "source": "sample-mall",
+ "stage": "other",
+ "message_id": "<demo-5e3000010001@example.invalid>",
+ "date": "2026-11-16T10:00:00+09:00",
+ "from": "auto-confirm@sample-mall.example.test",
+ "from_name": "サンプルモール",
+ "subject": "ご購入ありがとうございます（電子書籍）",
+ "text": "サンプル 太郎 様\n\nご購入ありがとうございます。\n\n商品: サンプルの電子書籍 第1巻\n金額: 550円\n注文番号: D01-0000001-0000001\n\n購入した電子書籍は、お使いの端末に配信されます。\n",
+ "html": null
+}

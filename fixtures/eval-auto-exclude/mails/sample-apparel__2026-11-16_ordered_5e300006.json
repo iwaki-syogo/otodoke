@@ -1,0 +1,12 @@
+{
+ "file": "sample-apparel/2026-11-16_ordered_5e300006.eml",
+ "source": "sample-apparel",
+ "stage": "ordered",
+ "message_id": "<demo-5e3000060001@example.invalid>",
+ "date": "2026-11-16T11:10:00+09:00",
+ "from": "order@sample-apparel.example.test",
+ "from_name": "サンプルアパレル",
+ "subject": "ご注文ありがとうございます",
+ "text": "サンプル 太郎 様\n\nご注文を承りました。\n\n商品: テストのシャツ（Mサイズ）\n金額: 5,980円\n注文番号: AP-0000006\n配送予定日：2026/11/20 - 2026/11/21\n",
+ "html": null
+}

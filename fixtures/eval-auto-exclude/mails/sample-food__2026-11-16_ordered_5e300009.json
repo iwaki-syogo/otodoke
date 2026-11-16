@@ -1,0 +1,12 @@
+{
+ "file": "sample-food/2026-11-16_ordered_5e300009.eml",
+ "source": "sample-food",
+ "stage": "ordered",
+ "message_id": "<demo-5e3000090001@example.invalid>",
+ "date": "2026-11-16T11:40:00+09:00",
+ "from": "shop@sample-food.example.test",
+ "from_name": "サンプルフード",
+ "subject": "ご注文ありがとうございます",
+ "text": "サンプル 太郎 様\n\nご注文を承りました。\n\n商品: サンプルの冷凍ケーキ\n金額: 4,100円\n注文番号: FD-0000009\n配送：クール便（冷凍）\n",
+ "html": null
+}

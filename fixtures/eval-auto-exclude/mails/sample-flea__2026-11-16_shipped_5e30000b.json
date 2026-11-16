@@ -1,0 +1,12 @@
+{
+ "file": "sample-flea/2026-11-16_shipped_5e30000b.eml",
+ "source": "sample-flea",
+ "stage": "shipped",
+ "message_id": "<demo-5e30000b0001@example.invalid>",
+ "date": "2026-11-16T12:00:00+09:00",
+ "from": "noreply@sample-flea.example.test",
+ "from_name": "サンプルフリマ",
+ "subject": "出品者が商品を発送しました",
+ "text": "サンプル 太郎 様\n\nお買い上げの商品「サンプルの本棚」を、出品者が発送しました。\n配送方法: サンプルのかんたん便\n\n商品が届きましたら、受取評価をお願いします。\n",
+ "html": null
+}

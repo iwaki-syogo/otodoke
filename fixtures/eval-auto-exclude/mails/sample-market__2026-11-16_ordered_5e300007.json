@@ -1,0 +1,12 @@
+{
+ "file": "sample-market/2026-11-16_ordered_5e300007.eml",
+ "source": "sample-market",
+ "stage": "ordered",
+ "message_id": "<demo-5e3000070001@example.invalid>",
+ "date": "2026-11-16T11:20:00+09:00",
+ "from": "order@sample-market.example.test",
+ "from_name": "サンプルマーケット",
+ "subject": "ご注文内容の確認",
+ "text": "サンプル 太郎 様\n\nご注文ありがとうございます。\n\n[商品] サンプルのマグカップ\n[金額] 1,320円\n[注文番号] MK-0000007\n[配送方法] 追跡可能メール便(日本郵便)\n[お届け日時]\n",
+ "html": null
+}

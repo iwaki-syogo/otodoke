@@ -1,0 +1,13 @@
+{
+  "sample-mall/2026-11-16_other_5e300001.eml": { "relevance": ["other_purchase", "unrelated"] },
+  "sample-mall/2026-11-16_other_5e300002.eml": { "relevance": ["other_purchase", "unrelated"] },
+  "sample-mall/2026-11-16_other_5e300003.eml": { "relevance": ["other_purchase", "unrelated"] },
+  "sample-dl/2026-11-16_other_5e300004.eml": { "relevance": ["other_purchase", "unrelated"] },
+  "sample-mall/2026-11-16_ordered_5e300005.eml": { "relevance": "order", "expected_date": "2026-01-01" },
+  "sample-apparel/2026-11-16_ordered_5e300006.eml": { "relevance": "order", "expected_date": "2026-11-20" },
+  "sample-market/2026-11-16_ordered_5e300007.eml": { "relevance": "order", "carrier": "日本郵便", "expected_date": null },
+  "sample-food/2026-11-16_ordered_5e300008.eml": { "relevance": "order", "requires_presence": true },
+  "sample-food/2026-11-16_ordered_5e300009.eml": { "relevance": "order", "requires_presence": true },
+  "sample-band/2026-11-16_ordered_5e30000a.eml": { "relevance": "order", "expected_date": null, "carrier": null, "requires_presence": null, "package_description": null },
+  "sample-flea/2026-11-16_shipped_5e30000b.eml": { "relevance": "shipped", "tracking_number": null }
+}

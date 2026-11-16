@@ -1,0 +1,12 @@
+{
+ "file": "sample-mall/2026-11-16_other_5e300002.eml",
+ "source": "sample-mall",
+ "stage": "other",
+ "message_id": "<demo-5e3000020001@example.invalid>",
+ "date": "2026-11-16T10:10:00+09:00",
+ "from": "auto-confirm@sample-mall.example.test",
+ "from_name": "サンプルモール",
+ "subject": "ギフト券のご購入ありがとうございます",
+ "text": "サンプル 太郎 様\n\nギフト券のご購入を承りました。\n\n種類: サンプルギフト券（メールタイプ）\n金額: 3,000円\n受取人: gift@sample.example.test\n注文番号: D01-0000002-0000002\n\nギフト券は、受取人のメールアドレスにお渡しします。\n",
+ "html": null
+}
