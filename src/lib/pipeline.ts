@@ -485,7 +485,8 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
       // first. Any other old mail stays as it was: re-reading it could undo a status the person set by hand.
       if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null && !isOutbound(x) && statusOf(x) === "cancelled") {
         const status = await statusInSentOrder(db, mail.userId, emailId, parcel, x, mail.sentAt);
-        if (status && status !== parcel.status) update.status = status;
+        // Only a cancelled result is applied: the point is to let the old cancellation count, not to restore a state the person undid.
+        if (status === "cancelled" && status !== parcel.status) update.status = status;
         else delete update.status;
       }
       const { rest, category } = splitCategory(update);
