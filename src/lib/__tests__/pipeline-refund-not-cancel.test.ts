@@ -61,10 +61,16 @@ describe("the table of refund and cancellation mails", () => {
     expect(empty.rows("parcels")).toEqual([]);
   });
 
-  it("row 3: a full refund before the parcel arrived cancels it", async () => {
+  it("row 3: an order cancelled as a whole before the parcel arrived (its refund told in the same mail) cancels it", async () => {
     const db = new FakeDb({ parcels: [parcelRow({ status: "shipped" })], emails: [], extractions: [] });
     await run(db, cancelMail({ cancel_partial: none }));
     expect(statusOf(db)).toBe("cancelled");
+  });
+
+  it("row 3: a mail that only says a refund was made (read as another purchase mail) leaves a shipped parcel shipped", async () => {
+    const db = new FakeDb({ parcels: [parcelRow({ status: "shipped" })], emails: [], extractions: [] });
+    await run(db, reading({ relevance: "other_purchase", tracking_number: sure(T_RAW), total_amount: sure(1200) }));
+    expect(statusOf(db)).toBe("shipped");
   });
 
   it("row 4: a full refund after the parcel arrived leaves it delivered (a delivered parcel is never cancelled by a mail)", async () => {
@@ -187,6 +193,12 @@ describe("the same state from one mail at a time and from a rebuild", () => {
     expect(mergeIntoManual(manual("delivered", T2), cancelMail({ cancel_partial: none }), T1).status).toBeUndefined();
   });
 
+  it("a typed-in shipped parcel: a cancellation sent earlier than its last mail does nothing, a newer one cancels", () => {
+    const manual = { ...parcelRow({ status: "shipped", last_email_at: T2 }), source: "manual" } as unknown as Parameters<typeof mergeIntoManual>[0];
+    expect(mergeIntoManual(manual, cancelMail({ cancel_partial: none }), T1).status).toBeUndefined();
+    expect(mergeIntoManual(manual, cancelMail({ cancel_partial: none }), "2026-11-05T00:00:00Z").status).toBe("cancelled");
+  });
+
   it("known difference: a newer cancellation read first, then an older delivery, stays cancelled one mail at a time but is delivered when rebuilt (the delivered guard wins there)", () => {
     // Parcel is already cancelled (T2); the older delivery mail arrives late and does not undo it.
     expect(buildParcelUpdate(existing("cancelled", T2), delivered(), T1).status).toBeUndefined();
@@ -224,5 +236,6 @@ describe("a mail that lists several orders", () => {
     await run(db, reading({ relevance: "cancelled", order_number: sure("ORD-20261103-0001"), other_orders: [other("ORD-20261103-0002")] }));
     expect(statusOf(db, "p-a")).toBe("cancelled");
     expect(statusOf(db, "p-b")).toBe("ordered");
+    expect(db.rows("parcels")).toHaveLength(2);
   });
 });
