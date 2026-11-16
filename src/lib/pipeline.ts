@@ -18,6 +18,7 @@ import {
   splitOrders,
   arrivingReadings,
   isOutbound,
+  statusOf,
   startsParcel,
   twinsByTracking,
   type ParcelCandidate,
@@ -479,10 +480,11 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
     }
     if (parcel) {
       const update = parcel.source === "manual" ? mergeIntoManual(parcel, x, mail.sentAt) : buildParcelUpdate(parcel, x, mail.sentAt);
-      // A mail sent before the parcel's last one: judging it alone cannot see what the newer mails (a refund, a
-      // partial cancellation) left out of the status. The state is the one the mails give oldest first.
-      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null) {
-        const status = await statusInSentOrder(db, mail.userId, parcel, x, mail.sentAt);
+      // A whole cancellation sent before the parcel's last mail: judging it alone cannot see what the newer mails
+      // (a refund, a partial cancellation) left out of the status, so the state is the one the mails give oldest
+      // first. Any other old mail stays as it was: re-reading it could undo a status the person set by hand.
+      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null && !isOutbound(x) && statusOf(x) === "cancelled") {
+        const status = await statusInSentOrder(db, mail.userId, emailId, parcel, x, mail.sentAt);
         if (status && status !== parcel.status) update.status = status;
         else delete update.status;
       }
@@ -534,12 +536,18 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
   return { parcelId, created };
 }
 
+/** Sent time as a number. A missing or unreadable date counts as the epoch (the oldest), so a subtraction never gives NaN. */
+function sentTime(sentAt: string | null): number {
+  const t = sentAt ? Date.parse(sentAt) : NaN;
+  return Number.isNaN(t) ? 0 : t;
+}
+
 /**
  * The status every mail of the parcel gives, this one included, read oldest first: a rebuild for a mail parcel,
  * the typed-in merge for a typed-in one (twins are joined the same way). Null when no mail says a status.
  */
-async function statusInSentOrder(db: AdminClient, userId: string, parcel: ParcelRow, x: Extraction, sentAt: string): Promise<string | null> {
-  const { data, error } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", parcel.id).eq("user_id", userId).eq("emails.user_id", userId);
+async function statusInSentOrder(db: AdminClient, userId: string, emailId: string, parcel: ParcelRow, x: Extraction, sentAt: string): Promise<string | null> {
+  const { data, error } = await db.from("extractions").select("result, emails(sent_at)").eq("parcel_id", parcel.id).eq("user_id", userId).eq("emails.user_id", userId).neq("email_id", emailId);
   if (error) throw new Error(`extractions lookup failed: ${error.message}`);
   const readings = arrivingReadings([
     ...data.map((m) => ({ x: withDefaults(m.result as unknown as Extraction), sentAt: (m.emails as { sent_at: string | null } | null)?.sent_at ?? null })),
@@ -547,7 +555,7 @@ async function statusInSentOrder(db: AdminClient, userId: string, parcel: Parcel
   ]);
   if (parcel.source !== "manual") return rebuildParcel(userId, readings).status ?? null;
   const row: ParcelRow = { ...parcel, last_email_at: null };
-  for (const m of [...readings].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""))) Object.assign(row, mergeIntoManual(row, m.x, m.sentAt));
+  for (const m of [...readings].sort((a, b) => sentTime(a.sentAt) - sentTime(b.sentAt))) Object.assign(row, mergeIntoManual(row, m.x, m.sentAt));
   return row.status;
 }
 
@@ -647,7 +655,7 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
   if (keep.source === "manual") {
     const row: ParcelRow = { ...keep };
     fields = {};
-    for (const m of [...readings].sort((a, b) => (a.sentAt ?? "").localeCompare(b.sentAt ?? ""))) {
+    for (const m of [...readings].sort((a, b) => sentTime(a.sentAt) - sentTime(b.sentAt))) {
       const update = mergeIntoManual(row, m.x, m.sentAt);
       Object.assign(row, update);
       Object.assign(fields, update);
