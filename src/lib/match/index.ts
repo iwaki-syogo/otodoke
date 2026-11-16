@@ -328,7 +328,16 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   return update;
 }
 
-export type ParcelCandidate = ParcelRow & { itemNames: string[] };
+/** The mark that hides a parcel (table parcel_exclusions): `user` is the person's own word, `rule` is the app's. */
+export interface ParcelExclusion {
+  kind: string;
+  from_domain: string | null;
+  relevance: string | null;
+  counted: boolean;
+}
+
+/** `excluded`: the mark on the parcel, or null/absent when it is shown. */
+export type ParcelCandidate = ParcelRow & { itemNames: string[]; excluded?: ParcelExclusion | null };
 
 const MIN_ITEM_MATCH = 8;
 const UNIQUE_ORDER_LENGTH = 8;
@@ -372,6 +381,8 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
   if (expected && shopKey !== "other" && (orderNumber || tracking) && !(orderNumber && tracking)) {
     const hit = fromMails.find(
       (p) =>
+        // A parcel taken out of the list is found by its numbers only, never by the softer signals below.
+        !p.excluded &&
         p.shop_key === shopKey &&
         p.expected_date === expected &&
         p.status !== "cancelled" &&
@@ -387,6 +398,7 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
     const first = x.items[0].name.replace(/\.{3}|…/g, "").trim();
     const recent = fromMails.filter(
       (p) =>
+        !p.excluded &&
         sameShop(p, x) &&
         p.created_at >= since &&
         p.status !== "delivered" &&
@@ -428,6 +440,46 @@ export function isPartialCancel(x: Extraction): boolean {
 /** A cancellation read as "part of an order" whose quotation the evidence check dropped (it left a review flag). */
 function isPartialDropped(x: Extraction): boolean {
   return x.relevance === "cancelled" && x.evidence_review?.includes("cancel_partial") === true;
+}
+
+/** Fields whose value the evidence check clears when it is unsure or unquoted, leaving only a review flag. */
+const SIGN_FIELDS_CLEARED_WHEN_UNSURE = ["tracking_number", "carrier", "package_description", "requires_presence", "expected_window_start", "expected_window_end"];
+
+/**
+ * Whether a reading carries any sign that something is on its way to the reader: a tracking-number-like
+ * value, a confident delivery date, a need to be home, a carrier, a slip's item, the words of a date, or a time
+ * window. Only the date has to be confident: every other sign counts however unsure, so the app errs on the side of
+ * showing the parcel. The evidence check (verifyEvidence) clears an unsure or unquoted value and leaves only its
+ * name in `evidence_review`; that flag counts as the sign too, or an unsure carrier would read as no sign at all.
+ * (An unsure date does not: the date is the one sign that must be confident.)
+ */
+export function arrivingSign(x: Extraction): boolean {
+  return (
+    x.tracking_number.value !== null ||
+    x.carrier.value !== null ||
+    x.package_description.value !== null ||
+    x.requires_presence.value === true ||
+    (x.expected_window_start?.value ?? null) !== null ||
+    (x.expected_window_end?.value ?? null) !== null ||
+    confident(x.expected_date) !== null ||
+    (x.expected_text ?? null) !== null ||
+    SIGN_FIELDS_CLEARED_WHEN_UNSURE.some((field) => x.evidence_review?.includes(field) === true)
+  );
+}
+
+/**
+ * A mail that puts a parcel the app took out on its own (kind `rule`) back in the list: it is not the
+ * sender's copy, and it is either a shipment-or-later mail by its raw kind (not `statusOf`, which is null when
+ * the quotation of the kind was dropped), a payment notice naming a tracking number, or it carries a sign.
+ * A cancellation does not bring a parcel back by its kind (its rank is not "shipped or later"), but one that carries a
+ * sign (a tracking number, a carrier, ...) does: the parcel then shows, under the cancelled ones. Decided by this one
+ * mail's reading only.
+ */
+export function bringsBack(x: Extraction): boolean {
+  if (isOutbound(x)) return false;
+  const rank = STATUS_RANK[relevanceToStatus(x.relevance) ?? ""];
+  const shippedOrLater = rank !== undefined && rank >= STATUS_RANK.shipped && rank < STATUS_RANK.cancelled;
+  return shippedOrLater || (x.relevance === "payment" && x.tracking_number.value !== null) || arrivingSign(x);
 }
 
 /** The readings that describe a delivery to the reader. When every one is the sender's, all of them (a parcel must still be rebuilt from something). */

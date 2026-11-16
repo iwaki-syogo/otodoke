@@ -17,14 +17,17 @@ import {
   receivedAfterMerge,
   splitOrders,
   arrivingReadings,
+  bringsBack,
   isOutbound,
   statusOf,
   startsParcel,
   twinsByTracking,
   type ParcelCandidate,
+  type ParcelExclusion,
   type ParcelRow,
   type ParcelUpdate,
 } from "@/lib/match";
+import { autoExcludeNewParcel, carryExclusionsOnMerge, clearRuleExclusion, hasRuleExclusion, readExclusions } from "@/lib/not-parcel-auto";
 import { categoryForTwins, type TwinCategory } from "@/lib/match/category";
 import { forwardingConfirmUrl, isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
 import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
@@ -430,7 +433,7 @@ async function understandAndFile(db: AdminClient, mail: InboundEmail, emailId: s
 
   // 4. One reading per order: a mail listing several orders files each into its own parcel.
   const [main, ...others] = splitOrders(x);
-  const meta = { model: extraction.model, usage: extraction.usage, truncated: extraction.truncated };
+  const meta = { model: extraction.model, usage: extraction.usage, truncated: extraction.truncated, sample: options.publicSample === true };
   const filed = await fileReading(db, mail, emailId, main, meta);
   if (!filed) {
     const { error } = await db.from("extractions").insert({
@@ -462,6 +465,8 @@ interface ReadingMeta {
   model: string;
   usage: ExtractionResult["usage"] | null;
   truncated: boolean;
+  /** A public sample mail: the app never takes its parcel out by itself. */
+  sample: boolean;
 }
 
 /** File one reading into its parcel, or answer null when it describes no parcel. */
@@ -478,7 +483,15 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
       parcelId = parcel.id;
       break;
     }
+    // A mail from the other side of the parcel (not the sender's copy) that shows it is on its way puts back a
+    // parcel the app took out by itself. Decided by this one reading, never by a re-read of older mails below.
+    const bring = parcel !== null && bringsBack(x);
     if (parcel) {
+      // Before the update: if the update then fails, the parcel is shown (too much), never hidden with news.
+      if (bring && parcel.excluded?.kind === "rule") {
+        const failed = await clearRuleExclusion(db, mail.userId, parcel.id);
+        if (failed) console.error("parcel_exclusions clear failed:", failed);
+      }
       const update = parcel.source === "manual" ? mergeIntoManual(parcel, x, mail.sentAt) : buildParcelUpdate(parcel, x, mail.sentAt);
       // A whole cancellation sent before the parcel's last mail: judging it alone cannot see what the newer mails
       // (a refund, a partial cancellation) left out of the status, so the state is the one the mails give oldest
@@ -499,6 +512,12 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
       if (row?.verdict === "retry") continue;
       if (row?.verdict !== "ok" || row.parcel_id !== parcel.id || !row.parcel_row || typeof row.parcel_row !== "object" || Array.isArray(row.parcel_row)) throw new Error("parcels update returned no saved row");
       assertParcelWrite(rest, row.parcel_row as unknown as ParcelRow);
+      // After the update: another delivery may have marked this parcel between the check above and the update.
+      // The mark is read again and taken off; a parcel with news must not stay hidden, so a failure throws.
+      if (bring && (await hasRuleExclusion(db, mail.userId, parcel.id))) {
+        const failed = await clearRuleExclusion(db, mail.userId, parcel.id);
+        if (failed) throw new Error(`parcel_exclusions clear failed: ${failed}`);
+      }
       parcelId = parcel.id;
       break;
     }
@@ -512,6 +531,7 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
     if (row?.verdict !== "ok" || typeof row.parcel_id !== "string") throw new Error("parcels insert returned no verdict or id");
     parcelId = row.parcel_id;
     created = true;
+    await autoExcludeNewParcel(db, { userId: mail.userId, parcelId, from: mail.from, subject: mail.subject, x, sample: meta.sample });
     break;
   }
   if (parcelId === null) {
@@ -634,6 +654,8 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
   const twins = twinsByTracking(rows, parcelId);
   if (!twins) return parcelId;
   const { keep, absorb } = twins;
+  // Before any write: the person's "not a parcel" moves to the kept row first (see carryExclusionsOnMerge).
+  if (!(await carryExclusionsOnMerge(db, userId, keep, absorb))) return null;
   const absorbIds = absorb.map((p) => p.id);
   const seenBefore = retry ? new Map(seen) : undefined;
   for (const p of [keep, ...absorb]) seen.set(p.id, { category: p.category, category_source: p.category_source });
@@ -754,9 +776,19 @@ async function findParcel(db: AdminClient, userId: string, x: Extraction): Promi
     list.push(item.name);
     names.set(item.parcel_id, list);
   }
-  const candidates = data.map((row) => ({ ...row, itemNames: names.get(row.id) ?? [] }));
+  const candidates: ParcelCandidate[] = data.map((row) => ({ ...row, itemNames: names.get(row.id) ?? [], excluded: null }));
   const snapshot = candidates.map((row) => ({ id: row.id, updated_at: row.updated_at, item_names: row.itemNames }));
-  return { parcel: chooseParcel(candidates, x), snapshot };
+  // A mark only takes candidates away (from the soft matches), so no match without marks is no match with them: the marks
+  // are read only when there is something to file into. A mail that opens a parcel costs no extra round trip.
+  if (chooseParcel(candidates, x) === null) return { parcel: null, snapshot };
+  let marks: Map<string, ParcelExclusion>;
+  try {
+    marks = new Map((await readExclusions(db, userId)).map((m) => [m.parcel_id, m]));
+  } catch (err) {
+    throw new Error(`parcels lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const marked = candidates.map((row) => ({ ...row, excluded: marks.get(row.id) ?? null }));
+  return { parcel: chooseParcel(marked, x), snapshot };
 }
 
 /**

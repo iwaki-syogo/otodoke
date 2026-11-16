@@ -1,0 +1,12 @@
+{
+ "file": "sample-band/2026-11-16_ordered_5e30000a.eml",
+ "source": "sample-band",
+ "stage": "ordered",
+ "message_id": "<demo-5e30000a0001@example.invalid>",
+ "date": "2026-11-16T11:50:00+09:00",
+ "from": "info@sample-band.example.test",
+ "from_name": "サンプルバンド",
+ "subject": "ご注文ありがとうございます",
+ "text": "サンプル 太郎 様\n\nご注文ありがとうございます。\n\n商品: サンプルのバンドTシャツ\n金額: 3,800円\n注文番号: BD-000000A\n",
+ "html": null
+}

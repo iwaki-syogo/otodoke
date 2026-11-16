@@ -7,7 +7,10 @@ import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE, UNDO_UNCONFI
 import { runUndo } from "@/lib/undo-outcome";
 import { markReceivedInChunks } from "@/lib/receipt-client";
 import type { ReceivedReceipt } from "@/lib/receipt";
-import { markDeliveredForUndo, restoreStatuses } from "./parcel-actions";
+import { useRouter, useSearchParams } from "next/navigation";
+import { listPathWithoutExcluded } from "@/lib/excluded-query";
+import { EXCLUDED_TOAST, RESTORED_TOAST, RESTORE_FAILED } from "@/lib/not-parcel-text";
+import { markDeliveredForUndo, restoreExcluded, restoreStatuses } from "./parcel-actions";
 
 type Marked = { id: string; status: string; received_at: string | null }[];
 type Undoable = ReceivedReceipt[];
@@ -16,9 +19,11 @@ interface Toast {
   undo: Undoable | null;
   /** A second line under the text. */
   note?: string | null;
+  /** The parcel taken out by 「これは荷物ではありません」: 元に戻す puts this one back. */
+  exclusion?: string | null;
 }
 
-const ToastContext = createContext<(t: Toast) => void>(() => {});
+export const ToastContext = createContext<(t: Toast) => void>(() => {});
 
 /** What a press shows from the tap until the parcels are saved. */
 const SAVING = "保存しています…";
@@ -41,7 +46,22 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [toast, pending]);
 
+  const undoExclusion = (parcelId: string, toastId: number) => {
+    run(async () => {
+      let ok = false;
+      try {
+        ok = (await restoreExcluded(parcelId)).ok;
+      } catch {
+        ok = false;
+      }
+      // The answer belongs only to the notice from which it started. The button is gone with it, so a
+      // second press cannot start a second request.
+      setToast((current) => (current?.id !== toastId ? current : { id: toastId, text: ok ? RESTORED_TOAST : RESTORE_FAILED, undo: null }));
+    });
+  };
+
   const undo = () => {
+    if (toast?.exclusion) return undoExclusion(toast.exclusion, toast.id);
     const items = toast?.undo;
     if (!items) return;
     const toastId = toast.id;
@@ -67,7 +87,7 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
             {toast.text}
             {toast.note ? <span className="mt-0.5 block text-xs text-neutral-300">{toast.note}</span> : null}
           </span>
-          {toast.undo ? (
+          {toast.undo || toast.exclusion ? (
             <PendingButton pending={pending} pendingLabel={UNDOING} tone="light" onClick={undo} className="inline-flex shrink-0 items-center gap-1.5 font-bold text-emerald-300">
               元に戻す
             </PendingButton>
@@ -76,6 +96,26 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
       ) : null}
     </ToastContext.Provider>
   );
+}
+
+/**
+ * The list is opened as /app?excluded=<id> after 「これは荷物ではありません」. It shows the notice once and
+ * takes the query off the address (replace, not push), so going back or reloading does not show it again.
+ * The id is only passed to 元に戻す; nothing of it is drawn. Put it inside the provider.
+ */
+export function ExcludedToast({ id, text = EXCLUDED_TOAST }: { id: string; text?: string }) {
+  const showToast = useContext(ToastContext);
+  const router = useRouter();
+  const query = useSearchParams();
+  const shown = useRef(false);
+  useEffect(() => {
+    if (shown.current) return;
+    shown.current = true;
+    showToast({ text, undo: null, exclusion: id });
+    // Only `excluded` goes; any other value in the query stays.
+    router.replace(listPathWithoutExcluded(query));
+  }, [id, text, query, router, showToast]);
+  return null;
 }
 
 const REVEAL = 96;

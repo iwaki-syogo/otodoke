@@ -1,0 +1,12 @@
+{
+ "file": "sample-dl/2026-11-16_other_5e300004.eml",
+ "source": "sample-dl",
+ "stage": "other",
+ "message_id": "<demo-5e3000040001@example.invalid>",
+ "date": "2026-11-16T10:30:00+09:00",
+ "from": "noreply@sample-dl.example.test",
+ "from_name": "サンプルダウンロード",
+ "subject": "購入が完了しました",
+ "text": "サンプル 太郎 様\n\nご購入ありがとうございます。購入が完了しました。\n\n商品: サンプルの音楽アルバム（ダウンロード版）\n金額: 1,500円\n注文番号: DL-0000003\n\nダウンロードはこちら:\nhttps://dl.sample-dl.example.test/download/0000003\n",
+ "html": null
+}

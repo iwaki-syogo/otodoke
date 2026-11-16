@@ -1,0 +1,12 @@
+{
+ "file": "sample-mall/2026-11-16_other_5e300003.eml",
+ "source": "sample-mall",
+ "stage": "other",
+ "message_id": "<demo-5e3000030001@example.invalid>",
+ "date": "2026-11-16T10:20:00+09:00",
+ "from": "auto-confirm@sample-mall.example.test",
+ "from_name": "サンプルモール",
+ "subject": "この支払い方法でのご注文のお知らせ",
+ "text": "サンプル 太郎 様\n\nサンプルモールでご登録の支払い方法が、ほかのサイトでのご注文に使われました。\n\n加盟店: サンプルチケット\n金額: 4,200円\nご利用日: 2026年11月16日\n\nこの支払いにお心当たりがない場合は、サポートまでご連絡ください。\n",
+ "html": null
+}

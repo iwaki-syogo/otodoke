@@ -6,6 +6,7 @@ import { todayJst } from "@/lib/format";
 import { isReceivedAt, needsCheck } from "@/lib/match";
 import { createClient } from "@/lib/supabase/server";
 import { undeliveredStatus } from "@/lib/undelivered";
+import { EXCLUDE_FAILED } from "@/lib/not-parcel-text";
 
 import { RECEIPT_CHUNK_SIZE, type MarkReceivedResult, type ReceivedReceipt, type ReceiptKey, type RestoreResult } from "@/lib/receipt";
 import type { Json } from "@/lib/db/database.types";
@@ -103,6 +104,73 @@ export async function restoreStatuses(items: ReceiptKey[]): Promise<RestoreResul
     return { ...result, unconfirmed: [...clean.keys()] };
   } finally {
     revalidatePath("/app", "layout");
+  }
+}
+
+/**
+ * 「これは荷物ではありません」: the parcel is taken out of the list and the spending. The database function
+ * takes the owner from the session and answers ok / gone / manual; only ok is a success. The page the
+ * person was on cannot open the parcel any more, so the caller moves to the list on ok. No redraw is asked
+ * here: it would redraw the parcel page, which is gone for the person by then.
+ */
+export async function excludeParcel(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false, error: EXCLUDE_FAILED };
+  try {
+    const session = await signedIn();
+    if (!session) return { ok: false, error: EXCLUDE_FAILED };
+    const { data, error } = await session.supabase.rpc("exclude_parcel", { p_parcel_id: parsed.data });
+    if (error) throw new Error(error.message);
+    return data === "ok" ? { ok: true } : { ok: false, error: EXCLUDE_FAILED };
+  } catch (error) {
+    console.error("excludeParcel:", error instanceof Error ? error.message : String(error));
+    return { ok: false, error: EXCLUDE_FAILED };
+  }
+}
+
+/**
+ * Puts a taken-out parcel back (元に戻す, 一覧に戻す). The database answers ok also for a parcel of the person's own that has
+ * no mark (a second press, another tab); `gone` is only "no such parcel of yours", which is a failure.
+ */
+export async function restoreExcluded(id: string): Promise<{ ok: boolean }> {
+  const parsed = z.uuid().safeParse(id);
+  if (!parsed.success) return { ok: false };
+  try {
+    const session = await signedIn();
+    if (!session) return { ok: false };
+    const { data, error } = await session.supabase.rpc("restore_parcel", { p_parcel_id: parsed.data });
+    if (error) throw new Error(error.message);
+    return { ok: data === "ok" };
+  } catch (error) {
+    console.error("restoreExcluded:", error instanceof Error ? error.message : String(error));
+    return { ok: false };
+  } finally {
+    // An unanswered call may have committed; reload the real state.
+    revalidatePath("/app", "layout");
+  }
+}
+
+/**
+ * Writes "the person has seen the parcels the app took out by itself, up to this mark" (the list's row then goes). Called once
+ * from the page of 外した荷物 after it is drawn, never from a page render or a link's prefetch. The time is the newest mark
+ * the screen showed, so a mark made after the screen was read stays unseen. A failure changes nothing on the screen: the row
+ * only stays.
+ */
+export async function markAutoExcludedSeen(seenUntil: string): Promise<{ ok: boolean }> {
+  const parsed = z.iso.datetime({ offset: true }).safeParse(seenUntil);
+  if (!parsed.success) return { ok: false };
+  try {
+    const session = await signedIn();
+    if (!session) return { ok: false };
+    const { data, error } = await session.supabase.rpc("mark_auto_excluded_seen", { p_seen_until: parsed.data });
+    if (error) throw new Error(error.message);
+    if (data !== "ok") return { ok: false };
+    // The list is drawn without the row from now on.
+    revalidatePath("/app", "layout");
+    return { ok: true };
+  } catch (error) {
+    console.error("markAutoExcludedSeen:", error instanceof Error ? error.message : String(error));
+    return { ok: false };
   }
 }
 

@@ -13,6 +13,7 @@ import { CategorySheet } from "../../category-sheet";
 import { ASSUMED_FACE_TO_FACE, PresenceBadge, StatusBadge, showsPresence } from "../../parcel-card";
 import { MarkDeliveredButton } from "./mark-delivered-button";
 import { NotDeliveredButton } from "./not-delivered-button";
+import { NotParcelButton } from "./not-parcel-button";
 import { NotReceivedButton } from "./not-received-button";
 import { TrackingButton } from "./tracking-button";
 import { SealedMail } from "./sealed-mail";
@@ -110,6 +111,13 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
           </div>
         ) : null}
       </header>
+
+      {/* Right after the receipt buttons, outside the header. Not for a parcel typed in by hand: that one is deleted (編集 → 消す), as before. */}
+      {parcel.source !== "manual" ? (
+        <div className="-mt-3">
+          <NotParcelButton id={parcel.id} />
+        </div>
+      ) : null}
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-4">
         <dl className="grid grid-cols-[6rem_1fr] gap-y-3 text-sm">

@@ -1,0 +1,8 @@
+{
+  "note": "Hand labels for the auto-exclude eval. All shops, names and numbers are made up.",
+  "false": {},
+  "not_false": {
+    "sample-flea/2026-11-16_shipped_5e30000b.eml": "buyer-side shipped notice with no tracking number"
+  },
+  "either": {}
+}

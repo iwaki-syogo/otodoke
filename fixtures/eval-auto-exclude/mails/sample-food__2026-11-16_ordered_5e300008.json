@@ -1,0 +1,12 @@
+{
+ "file": "sample-food/2026-11-16_ordered_5e300008.eml",
+ "source": "sample-food",
+ "stage": "ordered",
+ "message_id": "<demo-5e3000080001@example.invalid>",
+ "date": "2026-11-16T11:30:00+09:00",
+ "from": "shop@sample-food.example.test",
+ "from_name": "サンプルフード",
+ "subject": "ご注文ありがとうございます",
+ "text": "サンプル 太郎 様\n\nご注文を承りました。\n\n商品: サンプルのお菓子詰め合わせ\n金額: 3,240円\n注文番号: FD-0000008\nお支払い方法：代金引換\n",
+ "html": null
+}

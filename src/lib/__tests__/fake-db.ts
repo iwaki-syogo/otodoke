@@ -491,6 +491,10 @@ export class FakeDb {
     if (name === "update_mail_parcel") return Promise.resolve(this.updateMailParcel(args as UpdateParcelArgs, headers));
     if (name === "create_mail_parcel") return Promise.resolve(this.createMailParcel(args as CreateParcelArgs, headers));
     if (name === "ensure_mail_parcel_items") return Promise.resolve(this.ensureMailParcelItems(args as EnsureItemsArgs, headers));
+    if (name === "mark_rule_exclusion") return Promise.resolve(this.markRuleExclusion(args as { p_user: string; p_parcel_id: string; p_from_domain: string; p_relevance: string }));
+    // What the real functions answer a person who has no marks (the fake keeps no per-person view of them here).
+    if (name === "has_open_auto_exclusion" || name === "auto_exclusion_would_start") return Promise.resolve({ data: false, error: null });
+    if (name === "excluded_parcels_unseen") return Promise.resolve({ data: [], error: null });
     if (name === "mail_parcel_snapshot") return Promise.resolve({ data: this.parcelSnapshot((args as { p_user_id: string }).p_user_id), error: null });
     if (name === "begin_sample_load") return Promise.resolve({ data: this.sampleGeneration((args as { p_user_id: string }).p_user_id), error: null });
     if (name === "receive_sample_parcels") {
@@ -612,6 +616,20 @@ export class FakeDb {
 
   private activeMail(emailId: string, runId: string) {
     return this.rows("emails").find((r) => r.id === emailId && r.processing_run_id === runId && r.processing_status === "pending" && Date.parse(String(r.processing_lease_until)) > Date.now());
+  }
+
+  /**
+   * mark_rule_exclusion (the not-parcel migration of the second stage): one statement that looks at the parcel's row as
+   * it is then. A mark goes in only for a mail parcel with no sign of arrival; an existing mark is left (on conflict do
+   * nothing). Answers the number of rows put in. The real function is exercised on Postgres; this mirrors its rule.
+   */
+  private markRuleExclusion(a: { p_user: string; p_parcel_id: string; p_from_domain: string; p_relevance: string }): Result {
+    const p = this.find("parcels", a.p_parcel_id);
+    const open = p && p.user_id === a.p_user && p.source === "mail" && ["unknown", "ordered"].includes(String(p.status))
+      && isNil(p.tracking_number) && isNil(p.carrier) && isNil(p.expected_date) && isNil(p.expected_text) && isNil(p.expected_window_start) && p.requires_presence !== true;
+    if (!open || this.rows("parcel_exclusions").some((e) => e.parcel_id === a.p_parcel_id)) return { data: 0, error: null };
+    this.rows("parcel_exclusions").push({ parcel_id: a.p_parcel_id, user_id: a.p_user, kind: "rule", from_domain: a.p_from_domain, relevance: a.p_relevance, counted: false, created_at: this.tick() });
+    return { data: 1, error: null };
   }
 
   private parcelSnapshot(userId: string) {
@@ -959,6 +977,8 @@ export class FakeDb {
     const hits = this.matching(q);
     this.tables[q.table] = this.rows(q.table).filter((r) => !hits.includes(r));
     if(q.table==="parcels") this.tables.parcel_receipt_undos=this.rows("parcel_receipt_undos").filter((r)=>!hits.some((p)=>p.id===r.parcel_id));
+    // parcel_exclusions.parcel_id references parcels on delete cascade.
+    if(q.table==="parcels") this.tables.parcel_exclusions=this.rows("parcel_exclusions").filter((r)=>!hits.some((p)=>p.id===r.parcel_id));
     if (!q.returning) return { data: null, error: null };
     return this.shape(
       q,

@@ -7,7 +7,10 @@ import { todayJst } from "@/lib/format";
 import type { ParcelRow } from "@/lib/match";
 import { parcelSections } from "@/lib/parcel-sections";
 import { PENDING_GRACE_MS, WAITING_MAIL_FILTER as UNREAD_FILTER } from "@/lib/unread";
-import { DeliverAll, DeliveredToastProvider, SwipeToDeliver } from "./delivered-controls";
+import { z } from "zod";
+import { AUTO_EXCLUDED_ROW_LABEL, EXCLUDED_PAGE_LABEL } from "@/lib/not-parcel-text";
+import { excludedNoticeText, readOpenAutoExclusion } from "@/lib/not-parcel-auto-view";
+import { DeliverAll, DeliveredToastProvider, ExcludedToast, SwipeToDeliver } from "./delivered-controls";
 import { NotYetButton } from "./not-yet-button";
 import { PageLink } from "./page-link";
 import { LOAD_DEMO_LABEL } from "./settings/demo-labels";
@@ -22,13 +25,16 @@ export const metadata = { title: "荷物" };
 // The permission form can read the waiting mail within the existing daily allowance.
 export const maxDuration = 300;
 
-type SearchParams = Promise<{ demo?: string | string[]; sample?: string | string[] }>;
+type SearchParams = Promise<{ demo?: string | string[]; sample?: string | string[]; excluded?: string | string[] }>;
 
 export default async function ParcelsPage({ searchParams }: { searchParams?: SearchParams } = {}) {
   // Only a fixed marker is read: the sample load leaves ?demo=busy when another load is running.
   const params = await searchParams;
   const sampleBusy = params?.demo === "busy";
   const tryingSample = params?.sample === "1";
+  // ?excluded=<id> after 「これは荷物ではありません」: only a well-formed id counts, and it is never drawn.
+  const excludedParam = typeof params?.excluded === "string" ? params.excluded : "";
+  const excludedId = z.uuid().safeParse(excludedParam).success ? excludedParam : null;
   const user = await getUser();
   if (!user) redirect("/login");
   // Old plaintext mail is sealed in the background, bounded; nothing to do without a key or plaintext.
@@ -38,6 +44,9 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   // Trying the precomputed sample is a choice of view, never a grant to send real mail to Claude.
   if (consent === "undecided" && !tryingSample) return <ReadingConsent userId={user.id} />;
   const readingGranted = consent === "granted";
+  // The notice is only for a parcel the person took out themselves (its mark is there): a made-up id gives no notice.
+  const excludedText = excludedId ? await excludedNoticeText(supabase, excludedId) : null;
+  const excludedToast = excludedId && excludedText ? <ExcludedToast id={excludedId} text={excludedText} /> : null;
   const permissionNotice = consent === "unknown" ? (
     <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
       <p>{AI_CONSENT_TEXT.readFailed}</p>
@@ -49,7 +58,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
   // Independent reads, sent together. Each keeps its own result: a failed count shows no count,
   // and never stands in for the list. The links to the received and cancelled pages carry no
   // count; the number is seen after opening the page.
-  const [list, { count: waiting }] =
+  const [list, { count: waiting }, autoRow] =
     await Promise.all([
       // Every parcel, past the 1000-row cap: the sections and their counts are read as complete.
       // A failed page is caught here, so the links below and the rest of the page still show.
@@ -68,6 +77,8 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
         },
       ),
       supabase.from("emails").select("id", { count: "exact", head: true }).or(UNREAD_FILTER()),
+      // A failed read is "failed": no row, and the notice below. It is never read as "nothing to show".
+      readOpenAutoExclusion(supabase),
     ]);
   // A failed read is told apart from having no parcels: by null, never by the empty list.
   const listFailed = list === null;
@@ -109,12 +120,23 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
     <div className="flex flex-col gap-3">
       <PageLink href="/app/delivered" label="受け取り済み" />
       <PageLink href="/app/cancelled" label="キャンセルした荷物" />
+      {autoRow === "yes" ? <PageLink href="/app/excluded" label={AUTO_EXCLUDED_ROW_LABEL} /> : null}
+      <PageLink href="/app/excluded" label={EXCLUDED_PAGE_LABEL} />
     </div>
   );
 
+  // Shown above the list like the other failed reads (the unreadable list says it once already).
+  const autoRowFailedNotice = autoRow === "failed" ? (
+    <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
+  ) : null;
+
+  // The provider is on every branch: taking out the last parcel leaves an empty list, and the notice with
+  // 元に戻す must still show there (and must not be lost when the query is taken off the address).
   if (listFailed) {
     return (
+      <DeliveredToastProvider>
       <div className="flex flex-col gap-4">
+        {excludedToast}
         {addLink}
         {permissionNotice}
         {sampleBusyNotice}
@@ -123,17 +145,21 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
         {pageLinks}
       </div>
+      </DeliveredToastProvider>
     );
   }
 
   if (parcels.length === 0) {
     return (
+      <DeliveredToastProvider>
       <div className="flex flex-col gap-4">
+        {excludedToast}
         {addLink}
         {permissionNotice}
         {sampleBusyNotice}
         {waitingNotice}
         {intakeNotice}
+        {autoRowFailedNotice}
         {readingGranted ? <EmptyState mail={await mailSoFar(supabase, user.id)} /> : (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <p className="text-5xl">📬</p>
@@ -144,17 +170,20 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
         )}
         {pageLinks}
       </div>
+      </DeliveredToastProvider>
     );
   }
 
   return (
     <DeliveredToastProvider>
     <div className="flex flex-col gap-8">
+      {excludedToast}
       {addLink}
       {permissionNotice}
       {sampleBusyNotice}
       {waitingNotice}
       {intakeNotice}
+      {autoRowFailedNotice}
       <Section title="配達済み" count={arrived.length} items={arrived} swipe />
       <CheckSection items={toCheck} />
       <Section title="配達中" count={delivering.length} items={delivering} swipe />
