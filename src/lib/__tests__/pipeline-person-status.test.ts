@@ -132,14 +132,19 @@ describe("twin parcels keep the status a person decided", () => {
     const db = twoParcels({ status: "ordered", status_set_by_person_at: T2 }, { status: "shipped", status_set_by_person_at: T3 });
     await run(db, joining, SENT);
     expect(db.find("parcels", "p-b")).toBeUndefined();
-    expect(db.find("parcels", "p-a")!.status).toBe("shipped");
-    // The latest time is not carried yet: the mail gateway's column allowlist (SQL) lacks the column until the migration.
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: T3 });
   });
 
   it("T2: a status the kept parcel's person decided later beats the absorbed one", async () => {
     const db = twoParcels({ status: "ordered", status_set_by_person_at: T3 }, { status: "shipped", status_set_by_person_at: T2 });
     await run(db, joining, SENT);
-    expect(db.find("parcels", "p-a")).toMatchObject({ status: "ordered" });
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "ordered", status_set_by_person_at: T3 });
+  });
+
+  it("T4: a kept parcel with no decision takes the other parcel decision and its time", async () => {
+    const db = twoParcels({}, { status: "shipped", status_set_by_person_at: T2 });
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: T2 });
   });
 
   it("T3: with no decision time on either parcel, the merge is as before", async () => {

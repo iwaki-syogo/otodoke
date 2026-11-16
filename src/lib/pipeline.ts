@@ -671,10 +671,12 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
   }
   // A status the person decided stays: the merged parcel takes the status of the one decided last.
-  // The latest decision time is NOT written here yet: the mail gateway (mail_run_write) rejects columns outside its
-  // allowlist, and status_set_by_person_at is not in it until the migration that adds the column also allows it.
+  // The latest decision time goes with it (the mail gateway allows the column since 20261117090000).
   const decided = personStatusAfterMerge(keep, absorb);
-  if (decided) fields.status = decided.status;
+  if (decided) {
+    fields.status = decided.status;
+    if (decided.status_set_by_person_at !== keep.status_set_by_person_at) fields.status_set_by_person_at = decided.status_set_by_person_at;
+  }
   // 受け取り済み is the person's word, never the mails': either parcel having it is enough, and the merged
   // parcel keeps it (with the status it goes with). The mail processing never sets it by itself.
   // Unless the person's last decision was a status other than delivered (e.g. they undid a delivery): that wins over an older received_at.

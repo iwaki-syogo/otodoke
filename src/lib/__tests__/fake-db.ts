@@ -10,7 +10,7 @@
  * saves in between) or return a result to answer the query itself (to inject an error).
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 /** Read the real gateway contract so pipeline tests cannot silently accept an SQL-rejected column. */
 const mailRunSql = readFileSync(new URL("../../../supabase/migrations/20261113100000_parcel_write_conflicts.sql", import.meta.url), "utf8");
@@ -18,6 +18,17 @@ export const MAIL_RUN_ALLOWED_COLUMNS = new Map(
   [...mailRunSql.matchAll(/when '(emails|extractions|parcel_items|parcels)' then[\s\S]*?v_allow := array\[([\s\S]*?)\];/g)]
     .map((match) => [match[1], new Set([...match[2].matchAll(/'([^']+)'/g)].map((column) => column[1]))] as const),
 );
+// 20261117090000 adds one column to the parcels allowlist. It waits in supabase/pending/ until applied; the parcels allowlist is read
+// from that file (or, once moved, from supabase/migrations/), so the fake never accepts a column the SQL would not.
+{
+  const name = "20261117090000_parcel_status_set_by_person.sql";
+  const dir = ["../../../supabase/pending/", "../../../supabase/migrations/"].find((d) => existsSync(new URL(`${d}${name}`, import.meta.url)));
+  if (!dir) throw new Error("fake-db: the status-set-by-person migration is missing");
+  const sql = readFileSync(new URL(`${dir}${name}`, import.meta.url), "utf8");
+  const parcels = sql.match(/when 'parcels' then[\s\S]*?v_allow := array\[([\s\S]*?)\];/);
+  if (!parcels) throw new Error("fake-db: could not read the parcels allowlist of the status-set-by-person migration");
+  MAIL_RUN_ALLOWED_COLUMNS.set("parcels", new Set([...parcels[1].matchAll(/'([^']+)'/g)].map((column) => column[1])));
+}
 if (MAIL_RUN_ALLOWED_COLUMNS.size !== 4) throw new Error("fake-db: could not read all mail gateway column allowlists");
 
 /** The fake reads the database's one retention constant; it never keeps a second period. */

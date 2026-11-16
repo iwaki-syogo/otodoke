@@ -218,3 +218,15 @@ down は 3 つの関数（`store_mail_run_without_sample_fence`・`clear_all_par
 `--cli-push` を付けると、130000 までの全版を履歴に記録した状態で、本物の `supabase db push --db-url postgresql://postgres@127.0.0.1:65447/postgres?sslmode=disable --skip-vault`（標準入力なし・`--yes` なし）を dry-run → 本番 push → verify → down → `migration repair --status reverted` → もう一度、の順に流し、履歴の行の増減と先頭の関門が CLI の下で通ることを確かめます。複製 DB では陰性対照（履歴に手で行を入れると 140000 が並ばない / 履歴に行が無いのに表だけあると 55000 で止まり行が増えない）も流します。`--project-ref` は使いません。CLI は自分の版確認で外へ出る場合があります。2 つのフラグは一緒に付けられます。
 
 `--negative-control` は使い捨て DB の中だけで、(1) 120000 の本体（印の確かめ無し）に戻して 2 を、(2) provider ID の確かめを新しい行だけに戻した本体（A27-2 の直す前の形。2 は通ることも確かめる）で 2b を流し、それぞれの固有の assert（`NEGATIVE: DETECTED ...` の行）で落ちることを見ます。期待は `negative-control=ALL-DETECTED` の行と `verdict=FAILED`・終了コード 1 です。`negative-control=MISSED` なら、その確かめは検出力を失っています。作業ツリーのファイルは変えません。
+
+## 本人が決めた状態の時刻（20261117090000）
+
+`run-person-status.mjs` は `127.0.0.1:65478` の新しい専用 cluster に、本物の migration を全部順に当ててから、`supabase/pending/20261117090000_parcel_status_set_by_person.sql` の before・2 回適用・verify・挙動・rollback 2 回・再適用を検査します（pg_cron だけは関数部分の近似）。
+
+```sh
+node tests/postgres/run-person-status.mjs --self-test
+node tests/postgres/run-person-status.mjs
+node tests/postgres/run-person-status.mjs --negative-control
+```
+
+本人の書き込みは `set local role authenticated` と JWT claims で再現し、RLS が効く形です。状態を変える本人の UPDATE（Web の手入力の編集・届いていない、iOS の受け取った・元に戻す・届いていない・手入力の編集、配布済みの 1.0 (16) の PATCH の列の組）は時刻が入り、状態を変えない更新・INSERT・security definer の受け取り／戻し・サービス側のメール書き込みは入りません。クライアントが送った時刻の値は無視されます。`--negative-control` は、トリガーを `return old`（本人の書き込みが丸ごと消える版）に差し替えた時に (b) の検査が止めることを確かめ、止めたときだけ `verdict=OK` です。
