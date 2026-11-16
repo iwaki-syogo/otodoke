@@ -50,7 +50,9 @@ export interface RefundRow {
   misread: boolean;
 }
 
-export const MISREAD_NOTE = "読み違い（本番では動かない）";
+export const MISREAD_NOTE = "読み違い（本番で取り消しにはならない）";
+/** Added to a misread whose relevance quotation is not in the mail (the parcel is then built with no status, flagged for review). */
+export const UNQUOTED_NOTE = "(根拠が本文に無い)";
 
 export interface RefundScore {
   rows: RefundRow[];
@@ -75,7 +77,7 @@ function judge(kind: "no_cancel" | "cancel", result: RefundResult | undefined): 
   if (kind === "no_cancel") {
     if (cancels) return { ok: false, miss: seen + dropped, misread: false };
     // A hit, but the model did say "cancelled": only the evidence check or the "part" rule kept the pipeline from cancelling.
-    return x.relevance === "cancelled" ? { ok: true, miss: `${MISREAD_NOTE} ${seen}${dropped}`, misread: true } : { ok: true, miss: "", misread: false };
+    return x.relevance === "cancelled" ? { ok: true, miss: `${MISREAD_NOTE}${unverified ? ` ${UNQUOTED_NOTE}` : ""} ${seen}${dropped}`, misread: true } : { ok: true, miss: "", misread: false };
   }
   return cancels ? { ok: true, miss: "", misread: false } : { ok: false, miss: seen + dropped + unverifiedNote, misread: false };
 }

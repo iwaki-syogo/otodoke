@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Extraction } from "@/lib/extract/schema";
-import { MISREAD_NOTE, REFUND_MIN_CONFIDENCE, refundMisreadLines, refundMissTable, scoreRefund, type RefundLabels, type RefundMail } from "../../../scripts/eval-refund";
+import { MISREAD_NOTE, REFUND_MIN_CONFIDENCE, UNQUOTED_NOTE, refundMisreadLines, refundMissTable, scoreRefund, type RefundLabels, type RefundMail } from "../../../scripts/eval-refund";
 import { none, reading, sure } from "./pipeline-fixtures";
 
 /**
@@ -116,6 +116,27 @@ describe("scoreRefund", () => {
     const lines = refundMisreadLines(s);
     expect(lines).toContain("refund misreads (read as cancelled, but the pipeline cancels nothing): 1");
     expect(lines).toContain(file);
+  });
+
+  it("misread note wording: a dropped partial says the parcel is not cancelled, and does not say the quotation is missing", () => {
+    const file = KEEP[1];
+    const row = scoreRefund(labels, everyHit({ [file]: read("cancelled", partial(0.95, "メールに無い行")) })).rows.find((r) => r.file === file)!;
+    expect(MISREAD_NOTE).toBe("読み違い（本番で取り消しにはならない）");
+    expect(row.miss).toContain(MISREAD_NOTE);
+    expect(row.miss).not.toContain(UNQUOTED_NOTE);
+  });
+
+  it("misread note wording: a cancelled reading whose relevance quotation is not in the mail also says so", () => {
+    const file = KEEP[1];
+    const unquoted = reading({ relevance: "cancelled", relevance_evidence: "メールに無い行" });
+    const s = scoreRefund(labels, everyHit({ [file]: unquoted }));
+    const row = s.rows.find((r) => r.file === file)!;
+    expect(row.ok).toBe(true);
+    expect(row.misread).toBe(true);
+    expect(row.miss).toContain(MISREAD_NOTE);
+    expect(row.miss).toContain("(根拠が本文に無い)");
+    expect(s.hit).toBe(10);
+    expect(refundMisreadLines(s)).toContain("refund misreads (read as cancelled, but the pipeline cancels nothing): 1");
   });
 
   it("no note and a count of 0 for an ordinary reading, and a miss on the cancel side is not a misread", () => {
