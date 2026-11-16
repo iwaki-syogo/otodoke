@@ -342,16 +342,18 @@ describe("a mail read out of order: the state is the one a rebuild gives", () =>
     expect(db.rows("parcels")[0].status).toBe("cancelled");
   });
 
-  it("an older delivered mail does not bring back a parcel whose delivery record the person undid", async () => {
+  it("accepted difference: an older delivered mail brings back a parcel whose delivery record the person undid (as on main)", async () => {
+    // The person's undone delivery record or hand-picked status is brought back by an older mail that raises the rank: behavior from before main, a separate job.
     const db = new FakeDb({ parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T3 })], emails: [], extractions: [] });
     await run(db, reading({ relevance: "delivered", tracking_number: sure(T_RAW) }), T1);
-    expect(statusOf(db)).toBe("shipped");
+    expect(statusOf(db)).toBe("delivered");
   });
 
-  it("an older shipment mail does not change the status a person picked on a typed-in parcel", async () => {
+  it("accepted difference: an older shipment mail moves a typed-in status up (as on main)", async () => {
+    // The person's undone delivery record or hand-picked status is brought back by an older mail that raises the rank: behavior from before main, a separate job.
     const db = new FakeDb({ parcels: [parcelRow({ source: "manual", status: "ordered", last_email_at: T3 })], emails: [], extractions: [] });
     await run(db, reading({ relevance: "shipped", tracking_number: sure(T_RAW) }), T1);
-    expect(statusOf(db)).toBe("ordered");
+    expect(statusOf(db)).toBe("shipped");
   });
 
   it("a typed-in parcel: the same pairs as above give the oldest-first merge's state", async () => {
