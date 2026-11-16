@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { missTable, scoreInbound, type InboundLabels, type InboundResult } from "./eval-inbound";
-import { refundMissTable, scoreRefund, type RefundLabels, type RefundResult } from "./eval-refund";
+import { refundMisreadLines, refundMissTable, scoreRefund, type RefundLabels, type RefundResult } from "./eval-refund";
 import { PRICES } from "./prices";
 
 const root = process.cwd();
@@ -204,6 +204,7 @@ async function main() {
     })));
     console.log(`refund ${score.hit}/${score.total}`);
     console.log(refundMissTable(score));
+    console.log(refundMisreadLines(score));
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

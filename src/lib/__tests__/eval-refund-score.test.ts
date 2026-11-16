@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Extraction } from "@/lib/extract/schema";
-import { REFUND_MIN_CONFIDENCE, refundMissTable, scoreRefund, type RefundLabels, type RefundMail } from "../../../scripts/eval-refund";
+import { MISREAD_NOTE, REFUND_MIN_CONFIDENCE, refundMisreadLines, refundMissTable, scoreRefund, type RefundLabels, type RefundMail } from "../../../scripts/eval-refund";
 import { none, reading, sure } from "./pipeline-fixtures";
 
 /**
@@ -103,6 +103,27 @@ describe("scoreRefund", () => {
     expect(row.ok).toBe(false);
     expect(row.miss).toContain("the true was dropped");
     expect(s.hit).toBe(9);
+  });
+
+  it("a no-cancel hit that the model read as cancelled (a dropped partial) carries the misread note and is counted apart, without changing the score", () => {
+    const file = KEEP[1];
+    const s = scoreRefund(labels, everyHit({ [file]: read("cancelled", partial(0.95, "メールに無い行")) }));
+    const row = s.rows.find((r) => r.file === file)!;
+    expect(row.ok).toBe(true);
+    expect(row.misread).toBe(true);
+    expect(row.miss).toContain(MISREAD_NOTE);
+    expect(s.hit).toBe(10);
+    const lines = refundMisreadLines(s);
+    expect(lines).toContain("refund misreads (read as cancelled, but the pipeline cancels nothing): 1");
+    expect(lines).toContain(file);
+  });
+
+  it("no note and a count of 0 for an ordinary reading, and a miss on the cancel side is not a misread", () => {
+    const s = scoreRefund(labels, everyHit());
+    expect(s.rows.some((r) => r.misread || r.miss !== "")).toBe(false);
+    expect(refundMisreadLines(s)).toBe("refund misreads (read as cancelled, but the pipeline cancels nothing): 0");
+    const missed = scoreRefund(labels, everyHit({ [CANCEL[0]]: read("cancelled", partial(0.95, "メールに無い行")) }));
+    expect(missed.rows.filter((r) => r.misread)).toEqual([]);
   });
 
   it("a whole cancellation: cancelled with partial false or unknown is a hit", () => {

@@ -44,9 +44,13 @@ export interface RefundRow {
   kind: "no_cancel" | "cancel";
   note: string;
   ok: boolean;
-  /** What went wrong; empty for a hit. */
+  /** What went wrong; empty for a hit, except for a misread, which carries its note. */
   miss: string;
+  /** A hit on the no-cancel side where the model still read `cancelled` but the pipeline cancels nothing. Counted apart from the score. */
+  misread: boolean;
 }
+
+export const MISREAD_NOTE = "読み違い（本番では動かない）";
 
 export interface RefundScore {
   rows: RefundRow[];
@@ -54,9 +58,9 @@ export interface RefundScore {
   total: number;
 }
 
-function judge(kind: "no_cancel" | "cancel", result: RefundResult | undefined): { ok: boolean; miss: string } {
-  if (!result) return { ok: false, miss: "not read" };
-  if (result.error || !result.data) return { ok: false, miss: `reading failed${result.error ? `: ${result.error}` : ""}` };
+function judge(kind: "no_cancel" | "cancel", result: RefundResult | undefined): { ok: boolean; miss: string; misread: boolean } {
+  if (!result) return { ok: false, miss: "not read", misread: false };
+  if (result.error || !result.data) return { ok: false, miss: `reading failed${result.error ? `: ${result.error}` : ""}`, misread: false };
   const raw = withDefaults(result.data);
   const x = verifyEvidence(raw, result.mail);
   // Whether the pipeline would cancel the parcel for this reading: the very function it uses, never a copy of it.
@@ -68,8 +72,12 @@ function judge(kind: "no_cancel" | "cancel", result: RefundResult | undefined): 
   // The pipeline's statusOf gives no status when the quotation for the relevance is not in the mail, so nothing moves.
   const unverified = x.evidence_review?.includes("relevance") === true;
   const unverifiedNote = unverified ? " (根拠が本文に無い・本番では動かない)" : "";
-  if (kind === "no_cancel") return !cancels ? { ok: true, miss: "" } : { ok: false, miss: seen + dropped };
-  return cancels ? { ok: true, miss: "" } : { ok: false, miss: seen + dropped + unverifiedNote };
+  if (kind === "no_cancel") {
+    if (cancels) return { ok: false, miss: seen + dropped, misread: false };
+    // A hit, but the model did say "cancelled": only the evidence check or the "part" rule kept the pipeline from cancelling.
+    return x.relevance === "cancelled" ? { ok: true, miss: `${MISREAD_NOTE} ${seen}${dropped}`, misread: true } : { ok: true, miss: "", misread: false };
+  }
+  return cancels ? { ok: true, miss: "", misread: false } : { ok: false, miss: seen + dropped + unverifiedNote, misread: false };
 }
 
 export function scoreRefund(labels: RefundLabels, results: RefundResult[]): RefundScore {
@@ -79,6 +87,12 @@ export function scoreRefund(labels: RefundLabels, results: RefundResult[]): Refu
     for (const [file, note] of Object.entries(labels[kind] ?? {})) rows.push({ file, kind, note, ...judge(kind, byFile.get(file)) });
   }
   return { rows, hit: rows.filter((r) => r.ok).length, total: rows.length };
+}
+
+/** How many no-cancel mails were read as cancelled although the pipeline cancels nothing, then one line each. Not part of the score. */
+export function refundMisreadLines(score: RefundScore): string {
+  const misreads = score.rows.filter((r) => r.misread);
+  return [`refund misreads (read as cancelled, but the pipeline cancels nothing): ${misreads.length}`, ...misreads.map((r) => `  ${r.file} | ${r.miss}  [${r.note}]`)].join("\n");
 }
 
 /** A table of the misses, one line per mail: file, kind, what missed. */

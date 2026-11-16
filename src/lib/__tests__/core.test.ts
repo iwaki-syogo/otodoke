@@ -361,6 +361,14 @@ describe("chooseParcel", () => {
     const shipped = candidate({ status: "shipped", itemNames: [name] });
     expect(chooseParcel([shipped], shipment, NOW)).toBe(shipped);
   });
+  it("a shipment mail with no order number, sent after a cancellation of the same item, opens a new parcel rather than joining the cancelled one", () => {
+    const name = "とても長い商品の名前です";
+    const cancelled = candidate({ status: "cancelled", order_number: "ORD-20261103-0001", itemNames: [name] });
+    const later = extraction({ relevance: "shipped", order_number: none, tracking_number: sure("123456789012"), items: [item(name, null)] });
+    expect(chooseParcel([cancelled], later, NOW)).toBeNull();
+    // The same mail would join a parcel that is still open, so the null above is the cancellation's doing.
+    expect(chooseParcel([{ ...cancelled, status: "ordered" }], later, NOW)).not.toBeNull();
+  });
   it("does not join an alike item with another order number", () => {
     const p = candidate({ order_number: "1", itemNames: ["とても長い商品の名前です"] });
     expect(chooseParcel([p], extraction({ order_number: sure("2"), items: [item("とても長い商品の名前です", null)] }), NOW)).toBeNull();
