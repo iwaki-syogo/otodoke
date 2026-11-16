@@ -109,9 +109,10 @@ describe("a mail with no sent time counts as before", () => {
 describe("twin parcels keep the status a person decided", () => {
   const ORDER = "ORD-12345678";
   const SENT = "2026-11-03T00:00:00Z";
-  function twoParcels(a: Row, b: Row) {
+  function twoParcels(a: Row, b: Row, late?: { sentAt: string; x: ReturnType<typeof reading> }) {
     return new FakeDb({
       emails: [
+        ...(late ? [{ id: "m-late", user_id: USER, sent_at: late.sentAt }] : []),
         { id: "m-a", user_id: USER, sent_at: "2026-11-01T00:00:00Z" },
         { id: "m-b", user_id: USER, sent_at: "2026-11-02T00:00:00Z" },
       ],
@@ -122,6 +123,7 @@ describe("twin parcels keep the status a person decided", () => {
       extractions: [
         { id: "x-a", user_id: USER, email_id: "m-a", parcel_id: "p-a", result: reading({ relevance: "order", order_number: sure(ORDER) }) },
         { id: "x-b", user_id: USER, email_id: "m-b", parcel_id: "p-b", result: reading({ relevance: "shipped", shop_name: null, tracking_number: sure(T_RAW) }) },
+        ...(late ? [{ id: "x-late", user_id: USER, email_id: "m-late", parcel_id: "p-b", result: late.x }] : []),
       ],
     });
   }
@@ -145,6 +147,22 @@ describe("twin parcels keep the status a person decided", () => {
     const db = twoParcels({}, { status: "shipped", status_set_by_person_at: T2 });
     await run(db, joining, SENT);
     expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: T2 });
+  });
+
+  const DECIDED = "2026-11-04T11:00:00Z";
+  const deliveredAt = (sentAt: string) => ({ sentAt, x: reading({ relevance: "delivered", shop_name: null, tracking_number: sure(T_RAW) }) });
+
+  it("T5: a delivery mail sent after the decision still counts in the merge (as when it arrives alone)", async () => {
+    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, deliveredAt("2026-11-04T12:00:00Z"));
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "delivered", status_set_by_person_at: DECIDED });
+  });
+
+  it("T6: a delivery mail sent before the decision leaves the decided status in the merge", async () => {
+    const db = twoParcels({ status: "shipped", status_set_by_person_at: DECIDED }, {}, deliveredAt("2026-11-04T10:00:00Z"));
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "shipped", status_set_by_person_at: DECIDED });
   });
 
   it("T3: with no decision time on either parcel, the merge is as before", async () => {
