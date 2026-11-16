@@ -212,6 +212,49 @@ describe("the same state from one mail at a time and from a rebuild", () => {
     // The shipment is the later word here: a cancellation sent earlier does not reach it.
     expect(buildParcelUpdate(existing("shipped", T2), cancelMail({ cancel_partial: none }), T1).status).toBeUndefined();
   });
+
+  it("the newest mail by sent time decides, whichever order the mails arrive in and whether read one at a time or rebuilt", () => {
+    const cancel = () => cancelMail({ cancel_partial: none });
+    const later = (rel: "shipped" | "out_for_delivery" | "attempted") => reading({ relevance: rel, tracking_number: sure(T_RAW) });
+    const live = (firstStatus: string, firstAt: string, x: ReturnType<typeof reading>, at: string) => buildParcelUpdate(existing(firstStatus, firstAt), x, at).status ?? firstStatus;
+    for (const rel of ["shipped", "out_for_delivery", "attempted"] as const) {
+      // A cancellation sent first, a later shipment-side mail: the parcel is back, on every road.
+      expect(live("cancelled", T1, later(rel), T2)).toBe(rel); // cancellation arrives first
+      expect(live(rel, T2, cancel(), T1)).toBe(rel); // the later mail arrives first
+      expect(rebuildParcel(USER, [{ x: cancel(), sentAt: T1 }, { x: later(rel), sentAt: T2 }]).status).toBe(rel); // rebuilt, oldest first
+      // A shipment-side mail sent first, a later cancellation: cancelled, on every road.
+      expect(live(rel, T1, cancel(), T2)).toBe("cancelled"); // the shipment arrives first
+      expect(live("cancelled", T2, later(rel), T1)).toBe("cancelled"); // the later cancellation arrives first
+      expect(rebuildParcel(USER, [{ x: later(rel), sentAt: T1 }, { x: cancel(), sentAt: T2 }]).status).toBe("cancelled");
+    }
+  });
+});
+
+describe("a partial cancellation whose quotation does not hold", () => {
+  const MAIL = { subject: "テストのお知らせ", text: "テスト本文\n根拠の行" };
+  const existing = (status: string) => parcelRow({ status, last_email_at: BEFORE }) as unknown as Parameters<typeof buildParcelUpdate>[0];
+  const unquotedPartial = () => verifyEvidence(cancelMail({ cancel_partial: { value: true, evidence: "メールに無い行", confidence: 0.95 } }), MAIL);
+  const unknownExtent = () => verifyEvidence(cancelMail({ cancel_partial: none }), MAIL);
+
+  it("positive: a dropped 「part」 moves no status, opens no parcel and flags the parcel for review (one mail at a time and rebuilt)", () => {
+    const x = unquotedPartial();
+    expect(x.evidence_review).toContain("cancel_partial");
+    const update = buildParcelUpdate(existing("shipped"), x, WHEN);
+    expect(update.status).toBeUndefined();
+    expect(update.needs_review).toBe(true);
+    expect(startsParcel(x)).toBe(false);
+    const rebuilt = rebuildParcel(USER, [{ x: reading({ relevance: "shipped", tracking_number: sure(T_RAW) }), sentAt: "2026-11-02T00:00:00Z" }, { x, sentAt: WHEN }]);
+    expect(rebuilt.status).toBe("shipped");
+    expect(rebuilt.needs_review).toBe(true);
+  });
+
+  it("negative: an extent that was never stated (null from the start) still cancels the parcel (one mail at a time and rebuilt)", () => {
+    const x = unknownExtent();
+    expect(x.evidence_review ?? []).not.toContain("cancel_partial");
+    expect(buildParcelUpdate(existing("shipped"), x, WHEN).status).toBe("cancelled");
+    expect(startsParcel(x)).toBe(true);
+    expect(rebuildParcel(USER, [{ x: reading({ relevance: "shipped", tracking_number: sure(T_RAW) }), sentAt: "2026-11-02T00:00:00Z" }, { x, sentAt: WHEN }]).status).toBe("cancelled");
+  });
 });
 
 describe("a mail that lists several orders", () => {

@@ -51,7 +51,9 @@ export function relevanceToStatus(r: Relevance): string | null {
 function statusOf(x: Extraction): string | null {
   if (x.evidence_review?.includes("relevance")) return null;
   // A cancellation of only part of an order says nothing about the parcel as a whole.
-  if (isPartialCancel(x)) return null;
+  // The same when the model said "part" but its quotation is not in the mail: the extent is then unverified, so
+  // nothing moves and the parcel is only flagged for review. A "don't know" from the start (null) still cancels.
+  if (isPartialCancel(x) || isPartialDropped(x)) return null;
   return x.relevance === "payment" && confident(x.tracking_number) ? "shipped" : relevanceToStatus(x.relevance);
 }
 
@@ -202,10 +204,11 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
       // Like every other status, a cancellation counts only when the mail is the newer one; a parcel
       // that arrived is never cancelled by a mail (a rebuild reads the mails oldest first and must agree).
       if (isNewer && existing.status !== "delivered") update.status = incomingStatus;
-    } else if (incomingStatus === "delivered" && existing.status === "cancelled") {
-      // scope-extension: A decides. Not in the brief ("a cancellation does not come back"): it exists only so a
-      // rebuild (oldest first) and one-mail-at-a-time agree. Removing this block turns the test
-      // "a delivered mail, then a cancellation sent earlier: delivered both ways" red.
+    } else if (existing.status === "cancelled" && inc >= (STATUS_RANK.shipped ?? 2)) {
+      // scope-extension: A decides. Not in the brief ("a cancellation does not come back"): the status is the
+      // one the newest mail (by sent time) says, so a rebuild (oldest first) and one-mail-at-a-time agree.
+      // A shipment, delivery notice or missed delivery newer than the cancellation brings the parcel back.
+      // Removing this block turns the "same end state ... whichever way" tests red.
       if (isNewer) update.status = incomingStatus;
     } else if (inc > cur || (inc === cur && isNewer)) update.status = incomingStatus;
   }
@@ -420,6 +423,11 @@ export function isPartialCancel(x: Extraction): boolean {
   return x.relevance === "cancelled" && x.cancel_partial !== undefined && confident(x.cancel_partial) === true;
 }
 
+/** A cancellation read as "part of an order" whose quotation the evidence check dropped (it left a review flag). */
+function isPartialDropped(x: Extraction): boolean {
+  return x.relevance === "cancelled" && x.evidence_review?.includes("cancel_partial") === true;
+}
+
 /** The readings that describe a delivery to the reader. When every one is the sender's, all of them (a parcel must still be rebuilt from something). */
 export function arrivingReadings<T extends { x: Extraction }>(readings: T[]): T[] {
   const arriving = readings.filter((r) => !isOutbound(r.x));
@@ -432,7 +440,7 @@ export function arrivingReadings<T extends { x: Extraction }>(readings: T[]): T[
  */
 export function startsParcel(x: Extraction): boolean {
   if (isOutbound(x)) return false;
-  if (isPartialCancel(x)) return false;
+  if (isPartialCancel(x) || isPartialDropped(x)) return false;
   return x.relevance !== "other_purchase" || confident(x.tracking_number) !== null;
 }
 
