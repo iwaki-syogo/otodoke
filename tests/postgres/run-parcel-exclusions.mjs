@@ -25,7 +25,7 @@ const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const added = " and not exists(select 1 from public.parcel_exclusions e where e.parcel_id=p.id)";
 const pinned = { mark_parcels_received: "266c7b11c6af28f28aa06cd435315db8", restore_parcel_receipts: "19d60a59dcb759c1f51b55d507d1dec8" };
-const stage2Names = ["R0", "R-auto-1", "R-auto-2", "R-auto-3", "R-auto-4", "R-auto-5", "R-auto-6", "R-auto-6b", "R-auto-7", "U-compat", "R-restore-twice", "C3"];
+const stage2Names = ["R0", "R-auto-1", "R-auto-2", "R-auto-3", "R-auto-4", "R-auto-5", "R-auto-6", "R-auto-6b", "R-auto-7", "U-compat", "R-restore-twice", "C3", "no-backfill"];
 const testNames = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15", "R16", "R17", "R18"];
 const prior = (names) => names.filter((name) => /^\d{14}_.+\.sql$/.test(name) && name.slice(0, 14) < stem.slice(0, 14)).sort();
 
@@ -106,7 +106,7 @@ async function selfTest() {
   assert.equal(source.split(added).length - 1, 5, "four added conditions in the two replaced receipt functions, plus the gate's own constant");
   for (const md5 of Object.values(pinned)) assert.ok(source.includes(md5), "migration gate pins the 130000 body");
   assert.ok(source.indexOf("perform public.lock_sample_owner(v_user);") < source.indexOf("perform public.lock_parcel_owner(v_user);"), "sample owner lock comes first");
-  assert.equal(new Set(stage2Names).size, 12);
+  assert.equal(new Set(stage2Names).size, 13);
   const verify2Row = (verdict) => `${verdict}|${"t|".repeat(8)}0\n`;
   assert.equal(verdict2Of(verify2Row("OK")).verdict, "OK"); assert.throws(() => verdict2Of("OK|t\n"));
   const source2 = await readFile(path.join(root, `supabase/migrations/${stem2}.sql`), "utf8");
@@ -398,6 +398,23 @@ async function main(negative) {
     const list = await rows("authenticated", A, "select * from public.excluded_parcels()");
     assert.deepEqual(Object.keys(list[0]).sort(), [...columns11].sort(), "U-compat: the stage-1 reader gets the same 11 columns");
   };
+  // No backfill: applying the migrations (again), rolling stage 2 back and forward, never creates a mark on an existing row.
+  const markRows = () => suRows("select * from public.parcel_exclusions order by parcel_id");
+  const backfilling = async (name) => (await readFile(path.join(root, `supabase/migrations/${name}.sql`), "utf8")).replace(/\ncommit;\s*$/, `
+insert into public.parcel_exclusions(parcel_id,user_id,kind,from_domain,relevance,counted)
+  select p.id,p.user_id,'rule',null,null,false from public.parcels p where p.source='mail' and p.status in ('unknown','ordered') on conflict (parcel_id) do nothing;
+commit;
+`);
+  fixture.noBackfill = async (apply1, apply2) => {
+    await reset(); await call(A, `public.exclude_parcel('${P1}')`);   // A has a mark of its own, B has none; unmarked mail parcels exist
+    assert.ok((await suRows("select count(*)::int as n from public.parcels where source='mail' and status in ('unknown','ordered')"))[0].n >= 4);
+    const before = await markRows(); assert.equal(before.length, 1);
+    await apply1(); assert.deepEqual(await markRows(), before, "no-backfill: the first migration (applied again) adds no mark");
+    await apply2(); assert.deepEqual(await markRows(), before, "no-backfill: the stage-2 migration (applied again) adds no mark");
+    await file(`supabase/rollback/${stem2}.down.sql`); assert.deepEqual(await markRows(), before, "no-backfill: rolling stage 2 back changes no mark");
+    await apply2(); assert.deepEqual(await markRows(), before, "no-backfill: applying stage 2 forward again adds no mark");
+    stage2 = true;
+  };
   fixture.restoreTwice = async () => {
     await reset(); await call(A, `public.exclude_parcel('${P1}')`);
     assert.equal(await call(A, `public.restore_parcel('${P1}')`), "ok"); assert.equal(await call(A, `public.restore_parcel('${P1}')`), "ok", "a second press is ok");
@@ -685,12 +702,15 @@ async function main(negative) {
     const verified = verdictOf(await file(`supabase/verify/${stem}.sql`)); assert.equal(verified.verdict, "OK", `verify row: ${verified.cells}`);
     console.log("OK: supabase/verify/" + stem + ".sql verdict OK");
     await fixture.r0(); console.log("OK: R0 the person's parcel rows are the same before and after the first migration");
+    assert.equal((await markRows()).length, 0, "no-backfill: the first migration made no mark on the existing parcels"); console.log("OK: no-backfill: the first migration made no mark on existing parcels");
     // Footprint: only the table, the policy, the trigger function and the three functions are new.
     assert.deepEqual((await suRows("select proname from pg_proc where pronamespace='public'::regnamespace and proname in ('exclude_parcel','restore_parcel','excluded_parcels','parcel_exclusion_owner_check') order by 1")).map((r) => r.proname),
       ["exclude_parcel", "excluded_parcels", "parcel_exclusion_owner_check", "restore_parcel"]);
 
     const applyStage2 = async () => {
+      await reset(); await call(A, `public.exclude_parcel('${P1}')`); const marksBefore = await markRows();
       await file(migrationFile2); await record2(); await file(migrationFile2);  // twice: idempotent
+      assert.deepEqual(await markRows(), marksBefore, "no-backfill: the first application of stage 2 adds no mark to existing rows");
       const v2 = verdict2Of(await file(`supabase/verify/${stem2}.sql`)); assert.equal(v2.verdict, "OK", `stage 2 verify row: ${v2.cells}`);
       console.log("OK: stage 2 migration applied twice; supabase/verify/" + stem2 + ".sql verdict OK");
     };
@@ -701,6 +721,7 @@ async function main(negative) {
         ["auto_exclusion_would_start", "excluded_parcels_unseen", "has_open_auto_exclusion", "mark_auto_excluded_seen", "mark_rule_exclusion"]);
       for (const [name, fn] of tests) { await fn(); console.log(`OK: ${name} (stage 2)`); }
       for (const [name, fn] of tests2) { await fn(); console.log(`OK: ${name}`); }
+      await fixture.noBackfill(() => file(migrationFile), () => file(migrationFile2)); console.log("OK: no-backfill: applying the migrations again, and stage 2 rollback then forward, create no mark on existing rows");
       // Stage 2 rollback: restore_parcel is the stage-1 body again, the new objects are gone, the stage-1 shapes did not move.
       const down2 = async () => {
         await file(`supabase/rollback/${stem2}.down.sql`);
@@ -813,6 +834,12 @@ async function main(negative) {
         await red("U-compat with excluded_parcels returning other columns", fixture.uCompat);
       } finally { await sql("drop function if exists public.excluded_parcels();"); await reapplyAll(); }
       await fixture.uCompat();
+      // No backfill: a migration that marks existing rows by itself is seen (each of the two migrations in turn).
+      const bad1 = await backfilling(stem), bad2 = await backfilling(stem2);
+      for (const [label, apply1, apply2] of [["stage 1", () => sql(bad1), () => file(migrationFile2)], ["stage 2", () => file(migrationFile), () => sql(bad2)]]) {
+        try { await red(`no-backfill with a ${label} migration that marks existing parcels`, () => fixture.noBackfill(apply1, apply2)); } finally { await reapplyAll(); await sql("delete from public.parcel_exclusions;"); }
+      }
+      await fixture.noBackfill(() => file(migrationFile), () => file(migrationFile2));
     }
   };
   try { await run(); } finally { await cleanup(); }
