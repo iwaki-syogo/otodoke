@@ -328,7 +328,16 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   return update;
 }
 
-export type ParcelCandidate = ParcelRow & { itemNames: string[] };
+/** The mark that hides a parcel (table parcel_exclusions): `user` is the person's own word, `rule` is the app's. */
+export interface ParcelExclusion {
+  kind: string;
+  from_domain: string | null;
+  relevance: string | null;
+  counted: boolean;
+}
+
+/** `excluded`: the mark on the parcel, or null/absent when it is shown. */
+export type ParcelCandidate = ParcelRow & { itemNames: string[]; excluded?: ParcelExclusion | null };
 
 const MIN_ITEM_MATCH = 8;
 const UNIQUE_ORDER_LENGTH = 8;
@@ -372,6 +381,8 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
   if (expected && shopKey !== "other" && (orderNumber || tracking) && !(orderNumber && tracking)) {
     const hit = fromMails.find(
       (p) =>
+        // A parcel taken out of the list is found by its numbers only, never by the softer signals below.
+        !p.excluded &&
         p.shop_key === shopKey &&
         p.expected_date === expected &&
         p.status !== "cancelled" &&
@@ -387,6 +398,7 @@ export function chooseParcel(candidates: ParcelCandidate[], x: Extraction, now: 
     const first = x.items[0].name.replace(/\.{3}|…/g, "").trim();
     const recent = fromMails.filter(
       (p) =>
+        !p.excluded &&
         sameShop(p, x) &&
         p.created_at >= since &&
         p.status !== "delivered" &&

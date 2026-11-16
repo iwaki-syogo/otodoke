@@ -291,6 +291,20 @@ export type Database = {
         }
         Relationships: []
       }
+      parcel_exclusions: {
+        Row: { parcel_id: string; user_id: string; kind: string; from_domain: string | null; relevance: string | null; counted: boolean; created_at: string }
+        Insert: { parcel_id: string; user_id: string; kind: string; from_domain?: string | null; relevance?: string | null; counted?: boolean; created_at?: string }
+        Update: { parcel_id?: string; user_id?: string; kind?: string; from_domain?: string | null; relevance?: string | null; counted?: boolean; created_at?: string }
+        Relationships: [
+          {
+            foreignKeyName: "parcel_exclusions_parcel_id_fkey"
+            columns: ["parcel_id"]
+            isOneToOne: true
+            referencedRelation: "parcels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       parcel_items: {
         Row: {
           created_at: string
