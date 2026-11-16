@@ -62,8 +62,11 @@ function judge(kind: "no_cancel" | "cancel", result: RefundResult | undefined): 
   const seen = `relevance=${x.relevance} cancel_partial=${x.cancel_partial.value === null ? "null" : String(x.cancel_partial.value)}`;
   // A true the check turned into null is reported as such, so the model's answer and the quotation can be told apart.
   const dropped = raw.cancel_partial.value === true && x.cancel_partial.value === null ? " (the true was dropped: its quotation is not in the mail)" : "";
+  // The pipeline's statusOf gives no status when the quotation for the relevance is not in the mail, so nothing moves.
+  const unverified = x.evidence_review?.includes("relevance") === true;
+  const unverifiedNote = unverified ? " (根拠が本文に無い・本番では動かない)" : "";
   if (kind === "no_cancel") return x.relevance !== "cancelled" || partial ? { ok: true, miss: "" } : { ok: false, miss: seen + dropped };
-  return x.relevance === "cancelled" && !partial ? { ok: true, miss: "" } : { ok: false, miss: seen + dropped };
+  return x.relevance === "cancelled" && !partial && !unverified ? { ok: true, miss: "" } : { ok: false, miss: seen + dropped + unverifiedNote };
 }
 
 export function scoreRefund(labels: RefundLabels, results: RefundResult[]): RefundScore {

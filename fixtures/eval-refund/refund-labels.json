@@ -6,7 +6,8 @@
     "sample-shop/2026-11-14_other_5e200003.eml": "row 5 a part of the shipping fee refunded, parcel delivered",
     "sample-shop/2026-11-14_other_5e200004.eml": "row 6 the refund of a returned item",
     "sample-shop/2026-11-14_other_5e200005.eml": "row 7 a price difference paid back as points",
-    "sample-shop/2026-11-14_other_5e200006.eml": "row 2 one of three pieces cancelled"
+    "sample-shop/2026-11-14_other_5e200006.eml": "row 2 one of three pieces cancelled",
+    "sample-shop/2026-11-14_other_5e20000a.eml": "row 4 the whole price refunded after delivery for a defect, no return"
   },
   "cancel": {
     "sample-shop/2026-11-14_cancelled_5e200007.eml": "row 1 the whole order cancelled before shipping",

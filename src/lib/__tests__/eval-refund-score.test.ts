@@ -41,7 +41,7 @@ describe("the refund set in fixtures/eval-refund", () => {
     const labelled = [...KEEP, ...CANCEL].sort();
     expect(mails.sort()).toEqual(labelled);
     expect(Object.keys(expected).sort()).toEqual(labelled);
-    expect(KEEP.length).toBe(6);
+    expect(KEEP.length).toBe(7);
     expect(CANCEL.length).toBe(3);
   });
   it("is read by scripts/eval.ts through --dir with its own score line", () => {
@@ -55,8 +55,8 @@ describe("the refund set in fixtures/eval-refund", () => {
 describe("scoreRefund", () => {
   it("scores every mail read as it should be as a hit", () => {
     const s = scoreRefund(labels, everyHit());
-    expect(s.hit).toBe(9);
-    expect(s.total).toBe(9);
+    expect(s.hit).toBe(10);
+    expect(s.total).toBe(10);
     expect(refundMissTable(s)).toBe("refund: no misses");
   });
 
@@ -72,7 +72,7 @@ describe("scoreRefund", () => {
     for (const data of [read("cancelled"), read("cancelled", { value: false, evidence: "根拠の行", confidence: 0.95 })]) {
       const s = scoreRefund(labels, everyHit({ [file]: data }));
       expect(s.rows.find((r) => r.file === file)!.ok).toBe(false);
-      expect(s.hit).toBe(8);
+      expect(s.hit).toBe(9);
     }
   });
 
@@ -97,13 +97,23 @@ describe("scoreRefund", () => {
     for (const data of [read("other_purchase"), read("cancelled", partial())]) {
       const s = scoreRefund(labels, everyHit({ [file]: data }));
       expect(s.rows.find((r) => r.file === file)!.ok).toBe(false);
-      expect(s.hit).toBe(8);
+      expect(s.hit).toBe(9);
     }
+  });
+
+  it("a whole cancellation whose relevance quotation is not in the mail is a miss: the pipeline moves nothing for it", () => {
+    const file = CANCEL[0];
+    const unquoted = reading({ relevance: "cancelled", relevance_evidence: "メールに無い行" });
+    const s = scoreRefund(labels, everyHit({ [file]: unquoted }));
+    const row = s.rows.find((r) => r.file === file)!;
+    expect(row.ok).toBe(false);
+    expect(row.miss).toContain("根拠が本文に無い・本番では動かない");
+    expect(s.hit).toBe(9);
   });
 
   it("a mail that was not read, or whose reading failed, is a miss on either side", () => {
     const s = scoreRefund(labels, everyHit({ [KEEP[0]]: null, [CANCEL[0]]: null }).filter((r) => r.file !== KEEP[1]));
-    expect(s.hit).toBe(6);
+    expect(s.hit).toBe(7);
     expect(s.rows.find((r) => r.file === KEEP[1])!.miss).toBe("not read");
     expect(s.rows.find((r) => r.file === KEEP[0])!.miss).toContain("reading failed");
   });
