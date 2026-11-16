@@ -697,7 +697,7 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
     fields = rebuilt;
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
   }
-  // The latest decision time goes with the merged status (the mail gateway allows the column since 20261117090000).
+  // The latest decision time goes with the merged status (the mail gateway allows the column since 20261117120000).
   if (decided) {
     if (decided.status_set_by_person_at !== keep.status_set_by_person_at) fields.status_set_by_person_at = decided.status_set_by_person_at;
   }

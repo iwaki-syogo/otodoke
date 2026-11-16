@@ -219,9 +219,9 @@ down は 3 つの関数（`store_mail_run_without_sample_fence`・`clear_all_par
 
 `--negative-control` は使い捨て DB の中だけで、(1) 120000 の本体（印の確かめ無し）に戻して 2 を、(2) provider ID の確かめを新しい行だけに戻した本体（A27-2 の直す前の形。2 は通ることも確かめる）で 2b を流し、それぞれの固有の assert（`NEGATIVE: DETECTED ...` の行）で落ちることを見ます。期待は `negative-control=ALL-DETECTED` の行と `verdict=FAILED`・終了コード 1 です。`negative-control=MISSED` なら、その確かめは検出力を失っています。作業ツリーのファイルは変えません。
 
-## 本人が決めた状態の時刻（20261117090000）
+## 本人が決めた状態の時刻（20261117120000）
 
-`run-person-status.mjs` は `127.0.0.1:65478` の新しい専用 cluster に、本物の migration を全部順に当ててから、`supabase/pending/20261117090000_parcel_status_set_by_person.sql` の before・2 回適用・verify・挙動・rollback 2 回・再適用を検査します（pg_cron だけは関数部分の近似）。
+`run-person-status.mjs` は `127.0.0.1:65478` の新しい専用 cluster に、本物の migration を全部順に当ててから、`supabase/migrations/20261117120000_parcel_status_set_by_person.sql` の before・2 回適用・verify・挙動・rollback 2 回・再適用を検査します（pg_cron だけは関数部分の近似）。
 
 ```sh
 node tests/postgres/run-person-status.mjs --self-test

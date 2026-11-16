@@ -1,4 +1,4 @@
--- Run BEFORE applying 20261117090000_parcel_status_set_by_person.sql. Returns ONE row; go only if verdict is 'OK'.
+-- Run BEFORE applying 20261117120000_parcel_status_set_by_person.sql. Returns ONE row; go only if verdict is 'OK'.
 -- OK = parcels exists without status_set_by_person_at and without its trigger, and the mail gateway body is still
 -- the 20261113100000 one (allowlist ends in received_at). Reads only; prints counts only.
 select

@@ -195,6 +195,12 @@ export type Database = {
         }
         Relationships: []
       }
+      excluded_seen: {
+        Row: { user_id: string; auto_excluded_seen_at: string }
+        Insert: { user_id: string; auto_excluded_seen_at: string }
+        Update: { user_id?: string; auto_excluded_seen_at?: string }
+        Relationships: []
+      }
       extractions: {
         Row: {
           confidence: number | null

@@ -18,12 +18,12 @@ export const MAIL_RUN_ALLOWED_COLUMNS = new Map(
   [...mailRunSql.matchAll(/when '(emails|extractions|parcel_items|parcels)' then[\s\S]*?v_allow := array\[([\s\S]*?)\];/g)]
     .map((match) => [match[1], new Set([...match[2].matchAll(/'([^']+)'/g)].map((column) => column[1]))] as const),
 );
-// 20261117090000 adds one column to the parcels allowlist. It waits in supabase/pending/ until applied; the parcels allowlist is read
-// from that file (or, once moved, from supabase/migrations/), so the fake never accepts a column the SQL would not.
+// 20261117120000 adds one column to the parcels allowlist; the parcels allowlist is read from that migration, so the fake never
+// accepts a column the SQL would not.
 {
-  const name = "20261117090000_parcel_status_set_by_person.sql";
-  const dir = ["../../../supabase/pending/", "../../../supabase/migrations/"].find((d) => existsSync(new URL(`${d}${name}`, import.meta.url)));
-  if (!dir) throw new Error("fake-db: the status-set-by-person migration is missing");
+  const name = "20261117120000_parcel_status_set_by_person.sql";
+  const dir = "../../../supabase/migrations/";
+  if (!existsSync(new URL(`${dir}${name}`, import.meta.url))) throw new Error("fake-db: the status-set-by-person migration is missing");
   const sql = readFileSync(new URL(`${dir}${name}`, import.meta.url), "utf8");
   const parcels = sql.match(/when 'parcels' then[\s\S]*?v_allow := array\[([\s\S]*?)\];/);
   if (!parcels) throw new Error("fake-db: could not read the parcels allowlist of the status-set-by-person migration");

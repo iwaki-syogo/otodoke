@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "./run-cost-guards.mjs";
 
-// 20261117090000_parcel_status_set_by_person: the time a person last changed a parcel's status, written by a
+// 20261117120000_parcel_status_set_by_person: the time a person last changed a parcel's status, written by a
 // trigger for the signed-in role only. A disposable PostgreSQL 17 cluster on 127.0.0.1:65478; no external service.
 //
 //   node tests/postgres/run-person-status.mjs --self-test        (no database)
@@ -14,10 +14,10 @@ import { runCommand } from "./run-cost-guards.mjs";
 //                                                                  must be CAUGHT; verdict=OK means it was caught)
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const stem = "20261117090000_parcel_status_set_by_person";
+const stem = "20261117120000_parcel_status_set_by_person";
 const files = {
   before: `supabase/verify/${stem}.before.sql`,
-  migration: `supabase/pending/${stem}.sql`,
+  migration: `supabase/migrations/${stem}.sql`,
   verify: `supabase/verify/${stem}.sql`,
   down: `supabase/rollback/${stem}.down.sql`,
 };

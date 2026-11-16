@@ -1,65 +1,8 @@
--- Plan A (an older mail must not move a status the person decided): the time a person last changed a
--- parcel's status, and the mail gateway's permission to write it.
---
--- 1. public.parcels.status_set_by_person_at (null = the person never decided it; existing rows stay null,
---    so they behave exactly as before).
--- 2. BEFORE INSERT OR UPDATE trigger parcels_status_set_by_person. For the signed-in role (current_user =
---    'authenticated', what PostgREST uses for the Web and iOS) an UPDATE that changes status stamps now();
---    any other UPDATE keeps the old value; an INSERT stores null. Whatever value such a client sends for the
---    column is ignored, so a person cannot write it directly (authenticated has a table-wide UPDATE grant,
---    so the trigger is what closes the column). It always returns NEW: returning OLD from a BEFORE UPDATE
---    trigger silently discards the whole write.
---    Not stamped, on purpose: INSERT (a typed-in parcel's first choice yields to a real mail), service_role
---    mail writes (update_mail_parcel, mail_run_write) and the security definer functions
---    mark_parcels_received / restore_parcel_receipts (current_user is their owner, not authenticated; a
---    receipt is already protected by received_at and its receipt journal).
--- 3. mail_run_write_without_sample_fence (the body the public mail_run_write wraps; renamed there by
---    20261113110000) is replaced by its 20261113100000 text with ONE change: 'status_set_by_person_at' joins
---    the parcels column allowlist, so the twin merge can carry the time. Owner and ACL are kept.
---
--- Before:   supabase/verify/20261117090000_parcel_status_set_by_person.before.sql
--- After:    supabase/verify/20261117090000_parcel_status_set_by_person.sql
--- Rollback: supabase/rollback/20261117090000_parcel_status_set_by_person.down.sql
--- Waits in supabase/pending/ until the owner says YES to apply it (rename with a fresh timestamp when moved).
-
+-- Undo supabase/migrations/20261117120000_parcel_status_set_by_person.sql.
+-- Safe to run twice. Puts the 20261113100000 body of mail_run_write_without_sample_fence back (the allowlist
+-- without status_set_by_person_at), then drops the trigger, its function and the column.
+-- Deploy code that no longer writes the column BEFORE rolling back.
 begin;
-
-do $$
-declare v_src text;
-begin
-  select prosrc into v_src from pg_proc where oid = to_regprocedure('public.mail_run_write_without_sample_fence(uuid,uuid,text,text,jsonb,jsonb)');
-  if v_src is null or to_regclass('public.parcels') is null
-    or not exists (select 1 from pg_proc where oid = to_regprocedure('public.mail_run_write_without_sample_fence(uuid,uuid,text,text,jsonb,jsonb)')
-                   and prosecdef and proconfig is not distinct from array['search_path=""'])
-    or (position($q$'check_dismissed_at','received_at']$q$ in v_src) = 0 and position($q$'received_at','status_set_by_person_at']$q$ in v_src) = 0) then
-    raise exception 'parcel status set by person: mail_run_write_without_sample_fence is not the 20261113100000 body; review before applying' using errcode = '55000';
-  end if;
-end $$;
-
-alter table public.parcels add column if not exists status_set_by_person_at timestamptz;
-
-create or replace function public.parcels_status_set_by_person()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  if current_user is distinct from 'authenticated' then
-    return new;
-  end if;
-  if tg_op = 'INSERT' then
-    new.status_set_by_person_at := null;
-  elsif new.status is distinct from old.status then
-    new.status_set_by_person_at := now();
-  else
-    new.status_set_by_person_at := old.status_set_by_person_at;
-  end if;
-  return new;
-end $$;
-
-drop trigger if exists parcels_status_set_by_person on public.parcels;
-create trigger parcels_status_set_by_person before insert or update on public.parcels
-  for each row execute function public.parcels_status_set_by_person();
 
 create or replace function public.mail_run_write_without_sample_fence(
   p_email_id uuid, p_run_id uuid, p_table text, p_operation text, p_values jsonb, p_filters jsonb
@@ -101,7 +44,7 @@ begin
     when 'parcel_items' then v_allow := array['user_id','parcel_id','name','quantity','unit_price','evidence'];
     when 'parcels' then v_allow := array['user_id','shop','shop_key','order_number','title','status','ordered_at','expected_date','expected_date_end','expected_text',
       'expected_window_start','expected_window_end','carrier','tracking_number','tracking_url','requires_presence','presence_evidence','total_amount',
-      'needs_review','last_email_at','category','category_source','source','check_dismissed_at','received_at','status_set_by_person_at'];
+      'needs_review','last_email_at','category','category_source','source','check_dismissed_at','received_at'];
     else raise exception 'unsupported mail table' using errcode = '22023';
   end case;
   v_where := format('t.user_id = %L::uuid', v_mail.user_id);
@@ -142,5 +85,9 @@ begin
   end loop;
   return v_rows;
 end $$;
+
+drop trigger if exists parcels_status_set_by_person on public.parcels;
+drop function if exists public.parcels_status_set_by_person();
+alter table public.parcels drop column if exists status_set_by_person_at;
 
 commit;

@@ -47,5 +47,3 @@ Now waiting:
   and newest_in_use_at as expected; see its header), then
   `supabase/verify/20261107090000_retire_passphrase_keys.after.sql` (verdict 'OK'). It gives up after
   5 s on a held row and changes nothing; run it again then.
-
-- `20261117090000_parcel_status_set_by_person.sql` — adds `parcels.status_set_by_person_at` (stamped by a trigger only when the signed-in role changes status) and lets the mail gateway write it. Apply only with the owner's YES, after the 20261113140000 set; rename with a fresh timestamp when moved. Before: `supabase/verify/20261117090000_parcel_status_set_by_person.before.sql`, after: `.sql` (one row, verdict first). Test: `node tests/postgres/run-person-status.mjs`.
