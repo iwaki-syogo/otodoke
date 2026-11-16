@@ -100,6 +100,19 @@ export function isRememberableDomain(domain: string | null | undefined): domain 
   return normalized(domain) !== "" && !isSharedMailDomain(domain);
 }
 
+/**
+ * Domains the app never takes a parcel out of by itself (「荷物ではありません」 learned from the person), though
+ * they are not shared: one domain stands for many shops. Not the list of senders 「これは荷物」 remembers, where
+ * mail.yahoo.co.jp may be remembered. Only a domain the repository's own note says shops send from; nothing is
+ * added on a guess. The database's auto_exclusion_would_start has the same list.
+ */
+export const NO_AUTO_EXCLUDE_DOMAINS: readonly string[] = ["mail.yahoo.co.jp"];
+
+/** True when the app may take a parcel from this domain out by itself: rememberable, and not in NO_AUTO_EXCLUDE_DOMAINS. */
+export function isAutoExcludableDomain(domain: string | null | undefined): domain is string {
+  return isRememberableDomain(domain) && !NO_AUTO_EXCLUDE_DOMAINS.includes(normalized(domain));
+}
+
 /** A subject of a mail forwarded by hand (Gmail Fwd:, Outlook FW:, 転送:). */
 const FORWARDED_SUBJECT = /^\s*(?:fwd?|fw|転送)\s*[:：]/i;
 

@@ -553,6 +553,22 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: { parcel_id: string; kind: string; excluded_at: string; shop: string; title: string | null; status: string; ordered_at: string | null; expected_date: string | null; total_amount: number | null; carrier: string | null; item_names: string[] }[]
       }
+      mark_rule_exclusion: {
+        Args: { p_user: string; p_parcel_id: string; p_from_domain: string; p_relevance: string }
+        Returns: number
+      }
+      has_open_auto_exclusion: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      mark_auto_excluded_seen: {
+        Args: { p_seen_until: string }
+        Returns: string
+      }
+      auto_exclusion_would_start: {
+        Args: { p_parcel_id: string }
+        Returns: boolean
+      }
 
       activate_user_key: {
         Args: { p_challenge_hash: string; p_key_id: string; p_user_id: string }

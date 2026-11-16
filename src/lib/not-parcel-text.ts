@@ -21,3 +21,8 @@ export const EXCLUDED_EMPTY = "外した荷物はありません";
 export const EXCLUDED_BY_USER = "あなたが外しました";
 export const EXCLUDED_BY_RULE = "おとどけが自動で外しました";
 export const RESTORE_BUTTON_LABEL = "一覧に戻す";
+
+/** The notice right after taking out, when the app will from now on do it by itself (instead of EXCLUDED_TOAST). */
+export const EXCLUDED_TOAST_AUTO = "おとどけは、この荷物を外しました。次から、同じ差出人の同じ知らせは、おとどけが自動で外します";
+/** The notice after putting back a parcel the app took out by itself. */
+export const RESTORED_RULE_TOAST = "おとどけは、この荷物を一覧に戻しました。この差出人の荷物は、おとどけが自動で外すのをやめます";
