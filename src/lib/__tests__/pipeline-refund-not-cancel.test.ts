@@ -349,6 +349,19 @@ describe("a mail read out of order: the state is the one a rebuild gives", () =>
     expect(statusOf(db)).toBe("delivered");
   });
 
+  it("an older whole cancellation does not bring back a delivered state onto a parcel whose delivery record the person undid", async () => {
+    // The delivery mail is already read into the parcel; the person undid it. A rebuild would say delivered, so only a cancelled result may be applied.
+    for (const status of ["shipped", "ordered"]) {
+      const db = new FakeDb({
+        parcels: [parcelRow({ status, received_at: null, last_email_at: T3 })],
+        emails: [{ id: "e-del", user_id: USER, sent_at: T2 }],
+        extractions: [{ id: "x-del", user_id: USER, email_id: "e-del", parcel_id: "p-existing", result: reading({ relevance: "delivered", tracking_number: sure(T_RAW) }) }],
+      });
+      await run(db, reading({ relevance: "cancelled", tracking_number: sure(T_RAW), cancel_partial: whole() }), T1);
+      expect(statusOf(db)).toBe(status);
+    }
+  });
+
   it("accepted difference: an older shipment mail moves a typed-in status up (as on main)", async () => {
     // The person's undone delivery record or hand-picked status is brought back by an older mail that raises the rank: behavior from before main, a separate job.
     const db = new FakeDb({ parcels: [parcelRow({ source: "manual", status: "ordered", last_email_at: T3 })], emails: [], extractions: [] });
