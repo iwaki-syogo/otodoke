@@ -23,6 +23,7 @@ import {
   startsParcel,
   twinsByTracking,
   type ParcelCandidate,
+  type ParcelExclusion,
   type ParcelRow,
   type ParcelUpdate,
 } from "@/lib/match";
@@ -775,10 +776,19 @@ async function findParcel(db: AdminClient, userId: string, x: Extraction): Promi
     list.push(item.name);
     names.set(item.parcel_id, list);
   }
-  const marks = new Map((await readExclusions(db, userId).catch((err: unknown) => { throw new Error(`parcels lookup failed: ${err instanceof Error ? err.message : String(err)}`); })).map((m) => [m.parcel_id, m]));
-  const candidates: ParcelCandidate[] = data.map((row) => ({ ...row, itemNames: names.get(row.id) ?? [], excluded: marks.get(row.id) ?? null }));
+  const candidates: ParcelCandidate[] = data.map((row) => ({ ...row, itemNames: names.get(row.id) ?? [], excluded: null }));
   const snapshot = candidates.map((row) => ({ id: row.id, updated_at: row.updated_at, item_names: row.itemNames }));
-  return { parcel: chooseParcel(candidates, x), snapshot };
+  // A mark only takes candidates away (from the soft matches), so no match without marks is no match with them: the marks
+  // are read only when there is something to file into. A mail that opens a parcel costs no extra round trip.
+  if (chooseParcel(candidates, x) === null) return { parcel: null, snapshot };
+  let marks: Map<string, ParcelExclusion>;
+  try {
+    marks = new Map((await readExclusions(db, userId)).map((m) => [m.parcel_id, m]));
+  } catch (err) {
+    throw new Error(`parcels lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const marked = candidates.map((row) => ({ ...row, excluded: marks.get(row.id) ?? null }));
+  return { parcel: chooseParcel(marked, x), snapshot };
 }
 
 /**

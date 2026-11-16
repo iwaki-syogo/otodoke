@@ -492,6 +492,9 @@ export class FakeDb {
     if (name === "create_mail_parcel") return Promise.resolve(this.createMailParcel(args as CreateParcelArgs, headers));
     if (name === "ensure_mail_parcel_items") return Promise.resolve(this.ensureMailParcelItems(args as EnsureItemsArgs, headers));
     if (name === "mark_rule_exclusion") return Promise.resolve(this.markRuleExclusion(args as { p_user: string; p_parcel_id: string; p_from_domain: string; p_relevance: string }));
+    // What the real functions answer a person who has no marks (the fake keeps no per-person view of them here).
+    if (name === "has_open_auto_exclusion" || name === "auto_exclusion_would_start") return Promise.resolve({ data: false, error: null });
+    if (name === "excluded_parcels_unseen") return Promise.resolve({ data: [], error: null });
     if (name === "mail_parcel_snapshot") return Promise.resolve({ data: this.parcelSnapshot((args as { p_user_id: string }).p_user_id), error: null });
     if (name === "begin_sample_load") return Promise.resolve({ data: this.sampleGeneration((args as { p_user_id: string }).p_user_id), error: null });
     if (name === "receive_sample_parcels") {
