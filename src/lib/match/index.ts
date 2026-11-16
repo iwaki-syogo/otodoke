@@ -187,6 +187,18 @@ export function buildParcelInsert(userId: string, x: Extraction, emailSentAt: st
 }
 
 /**
+ * Whether the person decided this parcel's status after the mail was sent. Such a mail leaves the status
+ * alone (up, down or cancelling); its other fields still apply. With no decision time, or no sent time,
+ * the mail counts as it always did (an order swap must still agree with a rebuild).
+ */
+export function decidedAfter(existing: Pick<ParcelRow, "status_set_by_person_at">, emailSentAt: string | null): boolean {
+  if (!existing.status_set_by_person_at || !emailSentAt) return false;
+  const decided = Date.parse(existing.status_set_by_person_at);
+  const sent = Date.parse(emailSentAt);
+  return Number.isFinite(decided) && Number.isFinite(sent) && sent < decided;
+}
+
+/**
  * Merge a new extraction into an existing parcel. Later mails win for delivery
  * details; status never goes backwards except to `cancelled`.
  */
@@ -197,7 +209,7 @@ export function buildParcelUpdate(existing: ParcelRow & { itemNames?: string[] }
   const incomingStatus = statusOf(x);
   const isNewer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
 
-  if (incomingStatus) {
+  if (incomingStatus && !decidedAfter(existing, emailSentAt)) {
     const cur = STATUS_RANK[existing.status] ?? 0;
     const inc = STATUS_RANK[incomingStatus] ?? 0;
     if (incomingStatus === "cancelled") {
@@ -278,7 +290,9 @@ export function mergeIntoManual(existing: ParcelRow & { itemNames?: string[] }, 
   // Forward along the delivery only, or to cancelled (the edit form then offers it while it stays).
   const incomingStatus = statusOf(x);
   const newer = !existing.last_email_at || !emailSentAt || emailSentAt >= existing.last_email_at;
-  if (incomingStatus === "cancelled") {
+  if (decidedAfter(existing, emailSentAt)) {
+    // The person set this status after the mail was sent: it stays.
+  } else if (incomingStatus === "cancelled") {
     if (newer && existing.status !== "delivered") update.status = incomingStatus;
   } else if (incomingStatus && existing.status !== "delivered" && (STATUS_RANK[incomingStatus] ?? 0) > (STATUS_RANK[existing.status] ?? 0))
     update.status = incomingStatus;
@@ -544,6 +558,24 @@ export function dismissedAfterMerge(
 ): string | null {
   if (mergedStatus !== "delivered") return null;
   return keep.check_dismissed_at ?? absorbed.map((p) => p.check_dismissed_at).find((v): v is string => v !== null && v !== undefined) ?? null;
+}
+
+/**
+ * Of the parcels being merged, the one the person decided the status of last (the kept one on a tie)
+ * and the latest decision time. Null when none of them was decided by the person.
+ */
+export function personStatusAfterMerge(
+  keep: Pick<ParcelRow, "status" | "status_set_by_person_at">,
+  absorbed: Pick<ParcelRow, "status" | "status_set_by_person_at">[],
+): { status: string; status_set_by_person_at: string } | null {
+  let best: { status: string; at: string; t: number } | null = null;
+  for (const p of [keep, ...absorbed]) {
+    if (!p.status_set_by_person_at) continue;
+    const t = Date.parse(p.status_set_by_person_at);
+    if (!Number.isFinite(t)) continue;
+    if (best === null || t > best.t) best = { status: p.status, at: p.status_set_by_person_at, t };
+  }
+  return best === null ? null : { status: best.status, status_set_by_person_at: best.at };
 }
 
 /**

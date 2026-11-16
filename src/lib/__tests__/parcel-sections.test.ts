@@ -52,6 +52,7 @@ function row(title: string, over: Partial<ParcelRow>): ParcelRow {
     presence_evidence: null,
     received_at: null,
     check_dismissed_at: null,
+    status_set_by_person_at: null,
     total_amount: null,
     created_at: "2026-11-01T00:00:00+00:00",
     updated_at: "2026-11-01T00:00:00.000000+00:00",

@@ -146,7 +146,8 @@ function parcel(id: string, over: Partial<ParcelRow>): ParcelRow {
     created_at: "2026-10-01T00:00:00+00:00",
     updated_at: "2026-10-01T00:00:00.123456+00:00",
     ...over,
-  };
+    // status_set_by_person_at is server-only: the iOS ParcelRow does not read it, so the fixtures leave it out.
+  } as ParcelRow;
 }
 
 /** A made-up UUID whose text order follows (group, n). */

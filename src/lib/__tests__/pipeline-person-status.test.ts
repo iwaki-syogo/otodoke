@@ -93,3 +93,60 @@ describe("a status the person decided is not moved by a mail sent before the dec
     expect(statusOf(db)).toBe("shipped");
   });
 });
+
+describe("a mail with no sent time counts as before", () => {
+  it("P6: a mail with no sent time still moves a status the person decided", async () => {
+    const db = new FakeDb({
+      parcels: [parcelRow({ status: "shipped", received_at: null, last_email_at: T1, status_set_by_person_at: AFTER_T3 })],
+      emails: [],
+      extractions: [],
+    });
+    await processInboundEmail(asConsentingAdmin(db), { ...mailOf(T1), sentAt: null }, { precomputed: precomputed(mailReading("delivered")) });
+    expect(statusOf(db)).toBe("delivered");
+  });
+});
+
+describe("twin parcels keep the status a person decided", () => {
+  const ORDER = "ORD-12345678";
+  const SENT = "2026-11-03T00:00:00Z";
+  function twoParcels(a: Row, b: Row) {
+    return new FakeDb({
+      emails: [
+        { id: "m-a", user_id: USER, sent_at: "2026-11-01T00:00:00Z" },
+        { id: "m-b", user_id: USER, sent_at: "2026-11-02T00:00:00Z" },
+      ],
+      parcels: [
+        parcelRow({ id: "p-a", order_number: ORDER, status: "ordered", tracking_number: null, last_email_at: BEFORE, ...a }),
+        parcelRow({ id: "p-b", shop: "送り主不明", status: "shipped", tracking_number: T, created_at: T1, ...b }),
+      ],
+      extractions: [
+        { id: "x-a", user_id: USER, email_id: "m-a", parcel_id: "p-a", result: reading({ relevance: "order", order_number: sure(ORDER) }) },
+        { id: "x-b", user_id: USER, email_id: "m-b", parcel_id: "p-b", result: reading({ relevance: "shipped", shop_name: null, tracking_number: sure(T_RAW) }) },
+      ],
+    });
+  }
+  // A mail sent before every decision, naming both the order and the tracking number, joins the two.
+  const joining = reading({ relevance: "shipped", order_number: sure(ORDER), tracking_number: sure(T_RAW), category: null });
+
+  it("T1: the status of the parcel the person decided last stays after the merge", async () => {
+    const db = twoParcels({ status: "ordered", status_set_by_person_at: T2 }, { status: "shipped", status_set_by_person_at: T3 });
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")!.status).toBe("shipped");
+    // The latest time is not carried yet: the mail gateway's column allowlist (SQL) lacks the column until the migration.
+  });
+
+  it("T2: a status the kept parcel's person decided later beats the absorbed one", async () => {
+    const db = twoParcels({ status: "ordered", status_set_by_person_at: T3 }, { status: "shipped", status_set_by_person_at: T2 });
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-a")).toMatchObject({ status: "ordered" });
+  });
+
+  it("T3: with no decision time on either parcel, the merge is as before", async () => {
+    const db = twoParcels({}, {});
+    await run(db, joining, SENT);
+    expect(db.find("parcels", "p-b")).toBeUndefined();
+    expect(db.find("parcels", "p-a")!.status).toBe("shipped");
+    expect(db.find("parcels", "p-a")!.status_set_by_person_at ?? null).toBeNull();
+  });
+});

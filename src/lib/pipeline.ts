@@ -15,6 +15,8 @@ import {
   rebuildParcel,
   dismissedAfterMerge,
   receivedAfterMerge,
+  decidedAfter,
+  personStatusAfterMerge,
   splitOrders,
   arrivingReadings,
   isOutbound,
@@ -483,7 +485,7 @@ async function fileReading(db: AdminClient, mail: InboundEmail, emailId: string,
       // A whole cancellation sent before the parcel's last mail: judging it alone cannot see what the newer mails
       // (a refund, a partial cancellation) left out of the status, so the state is the one the mails give oldest
       // first. Any other old mail stays as it was: re-reading it could undo a status the person set by hand.
-      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null && !isOutbound(x) && statusOf(x) === "cancelled") {
+      if (mail.sentAt && parcel.last_email_at && mail.sentAt < parcel.last_email_at && parcel.received_at === null && !isOutbound(x) && statusOf(x) === "cancelled" && !decidedAfter(parcel, mail.sentAt)) {
         const status = await statusInSentOrder(db, mail.userId, emailId, parcel, x, mail.sentAt);
         // Only a cancelled result is applied: the point is to let the old cancellation count, not to restore a state the person undid.
         if (status === "cancelled" && status !== parcel.status) update.status = status;
@@ -668,9 +670,15 @@ async function tryAbsorbTwins(db: AdminClient, userId: string, parcelId: string,
     fields = rebuilt;
     merged = { category: rebuilt.category ?? null, category_source: rebuilt.category_source ?? null };
   }
+  // A status the person decided stays: the merged parcel takes the status of the one decided last.
+  // The latest decision time is NOT written here yet: the mail gateway (mail_run_write) rejects columns outside its
+  // allowlist, and status_set_by_person_at is not in it until the migration that adds the column also allows it.
+  const decided = personStatusAfterMerge(keep, absorb);
+  if (decided) fields.status = decided.status;
   // 受け取り済み is the person's word, never the mails': either parcel having it is enough, and the merged
   // parcel keeps it (with the status it goes with). The mail processing never sets it by itself.
-  const carried = receivedAfterMerge(keep, absorb, fields.status ?? keep.status);
+  // Unless the person's last decision was a status other than delivered (e.g. they undid a delivery): that wins over an older received_at.
+  const carried = decided && decided.status !== "delivered" ? null : receivedAfterMerge(keep, absorb, fields.status ?? keep.status);
   if (carried && (carried.received_at !== keep.received_at || (fields.status ?? keep.status) !== carried.status)) {
     fields.received_at = carried.received_at;
     fields.status = carried.status;
