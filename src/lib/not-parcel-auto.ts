@@ -14,6 +14,28 @@ import type { Extraction } from "@/lib/extract/schema";
 /** Marks of the same sender and kind the person must have made before the app does it by itself. */
 export const MARKS_BEFORE_AUTO = 2;
 
+/**
+ * The kinds of mail the app may take a parcel out for. Also in public.auto_exclusion_would_start() (the SQL is
+ * checked against this list, and against MARKS_BEFORE_AUTO, by auto-exclude-sql-parity.test.ts).
+ */
+export const AUTO_EXCLUDE_KINDS: readonly string[] = ["order", "payment"];
+
+/**
+ * The signs of arrival arrivingSign looks at, with the parcels column public.mark_rule_exclusion() requires empty
+ * for the same sign (null: a sign of the reading that no parcels column holds). One table, so a sign added to one
+ * side only is caught by auto-exclude-sql-parity.test.ts. Behaviour is in arrivingSign and the SQL, not here.
+ */
+export const ARRIVAL_SIGN_COLUMNS: Readonly<Record<string, string | null>> = {
+  tracking_number: "tracking_number",
+  carrier: "carrier",
+  package_description: null,
+  requires_presence: "requires_presence",
+  expected_date: "expected_date",
+  expected_text: "expected_text",
+  expected_window_start: "expected_window_start",
+  expected_window_end: "expected_window_end",
+};
+
 export interface ExclusionRow extends ParcelExclusion {
   parcel_id: string;
 }
@@ -94,7 +116,7 @@ export interface NewParcelFacts {
 export async function autoExcludeNewParcel(db: AdminClient, f: NewParcelFacts): Promise<void> {
   try {
     if (f.sample) return;
-    if (f.x.relevance !== "order" && f.x.relevance !== "payment") return;
+    if (!AUTO_EXCLUDE_KINDS.includes(f.x.relevance)) return;
     if (arrivingSign(f.x)) return;
     const domain = domainOf(f.from);
     if (!isAutoExcludableDomain(domain)) return;
