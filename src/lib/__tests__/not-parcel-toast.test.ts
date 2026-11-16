@@ -1,6 +1,6 @@
 import { type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EXCLUDED_TOAST, EXCLUDE_BUTTON_LABEL, EXCLUDE_FAILED, RESTORED_TOAST, RESTORE_BUTTON_LABEL, RESTORE_FAILED } from "@/lib/not-parcel-text";
+import { EXCLUDED_TOAST, EXCLUDED_TOAST_AUTO, EXCLUDE_BUTTON_LABEL, EXCLUDE_FAILED, RESTORED_RULE_TOAST, RESTORED_TOAST, RESTORE_BUTTON_LABEL, RESTORE_FAILED } from "@/lib/not-parcel-text";
 import { fakeEvent, hostText, type Host } from "./element-tree";
 import { mount, type Mounted } from "./hook-harness";
 
@@ -21,6 +21,7 @@ const ctl = vi.hoisted(() => ({
   replace: vi.fn(),
   exclude: vi.fn(),
   restoreExcluded: vi.fn(),
+  seen: vi.fn(),
   transitionErrors: [] as unknown[],
 }));
 
@@ -59,11 +60,14 @@ vi.mock("@/app/app/parcel-actions", () => ({
   restoreStatuses: vi.fn(),
   excludeParcel: (...args: unknown[]) => ctl.exclude(...args),
   restoreExcluded: (...args: unknown[]) => ctl.restoreExcluded(...args),
+  markAutoExcludedSeen: (...args: unknown[]) => ctl.seen(...args),
 }));
 
 const { DeliveredToastProvider, ExcludedToast } = await import("@/app/app/delivered-controls");
 const { NotParcelButton } = await import("@/app/app/parcels/[id]/not-parcel-button");
 const { RestoreExcludedButton } = await import("@/app/app/excluded/restore-button");
+const { RestoreWithNotice } = await import("@/app/app/excluded/restore-with-notice");
+const { MarkAutoSeen } = await import("@/app/app/excluded/mark-auto-seen");
 
 const views: Mounted[] = [];
 const keep = (view: Mounted) => { views.push(view); return view; };
@@ -103,6 +107,8 @@ beforeEach(() => {
   ctl.replace.mockReset();
   ctl.exclude.mockReset();
   ctl.restoreExcluded.mockReset();
+  ctl.seen.mockReset();
+  ctl.seen.mockResolvedValue({ ok: true });
 });
 afterEach(() => {
   for (const view of views.splice(0)) view.unmount();
@@ -222,5 +228,64 @@ describe("一覧に戻す on 外した荷物", () => {
       expect(view.text()).toContain(RESTORE_FAILED);
       expect(view.text()).not.toContain(EXCLUDE_FAILED);
     }
+  });
+});
+
+describe("the second sentence of the notice", () => {
+  it("ExcludedToast shows the sentence the list gave it, with 元に戻す", async () => {
+    const toast = provider();
+    keep(mount(() => ExcludedToast({ id: ID, text: EXCLUDED_TOAST_AUTO })));
+    await shown(() => toast.text().includes(EXCLUDED_TOAST_AUTO), "second sentence");
+    expect(toast.text()).not.toContain(EXCLUDED_TOAST + "。");
+    expect(button(toast, "元に戻す")).toBeDefined();
+  });
+
+  it("without a sentence it shows the plain one (the first-stage form)", async () => {
+    const toast = provider();
+    keep(mount(() => ExcludedToast({ id: ID })));
+    await shown(() => toast.text().includes(EXCLUDED_TOAST), "plain sentence");
+    expect(toast.text()).not.toContain(EXCLUDED_TOAST_AUTO);
+  });
+});
+
+describe("一覧に戻す on 外した荷物 says what happened", () => {
+  it.each([["rule", RESTORED_RULE_TOAST, RESTORED_TOAST], ["user", RESTORED_TOAST, RESTORED_RULE_TOAST]])("a %s mark: the sentence after it worked, and not the other one", async (kind, expected, other) => {
+    ctl.restoreExcluded.mockResolvedValue({ ok: true });
+    const toast = provider();
+    const view = keep(mount(() => RestoreExcludedButton((RestoreWithNotice({ id: ID, kind }) as ReactElement<{ id: string; onRestored: () => void }>).props)));
+    press(button(view, RESTORE_BUTTON_LABEL));
+    await shown(() => toast.text().includes(expected), "sentence");
+    expect(toast.text()).not.toContain(other);
+    expect(toast.hosts((host) => host.type === "button")).toHaveLength(0);
+  });
+
+  it("a refusal shows no sentence of success (negative control)", async () => {
+    ctl.restoreExcluded.mockResolvedValue({ ok: false });
+    const toast = provider();
+    const view = keep(mount(() => RestoreExcludedButton((RestoreWithNotice({ id: ID, kind: "rule" }) as ReactElement<{ id: string; onRestored: () => void }>).props)));
+    press(button(view, RESTORE_BUTTON_LABEL));
+    await shown(() => alerts(view).length === 1, "failure sentence");
+    expect(notices(toast)).toHaveLength(0);
+    expect(view.text()).toContain(RESTORE_FAILED);
+  });
+});
+
+describe("C7: the client part says seen once, after it is shown", () => {
+  it("calls the action once with the time it was given, however often it renders again", async () => {
+    const view = keep(mount(() => MarkAutoSeen({ seenUntil: "2026-11-17T03:30:00+00:00" })));
+    view.rerender();
+    view.rerender();
+    await Promise.resolve();
+    expect(ctl.seen).toHaveBeenCalledTimes(1);
+    expect(ctl.seen).toHaveBeenCalledWith("2026-11-17T03:30:00+00:00");
+  });
+
+  it("a rejected write throws nothing and changes nothing (the row only stays)", async () => {
+    ctl.seen.mockRejectedValue(new Error("network"));
+    keep(mount(() => MarkAutoSeen({ seenUntil: "2026-11-17T03:30:00+00:00" })));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ctl.seen).toHaveBeenCalledTimes(1);
+    expect(ctl.transitionErrors).toEqual([]);
   });
 });

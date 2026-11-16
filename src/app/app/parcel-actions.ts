@@ -129,8 +129,8 @@ export async function excludeParcel(id: string): Promise<{ ok: true } | { ok: fa
 }
 
 /**
- * Puts a taken-out parcel back (元に戻す, 一覧に戻す). `gone` means it is not marked any more, so it is
- * already back (a second press, another tab): the same success, not a failure.
+ * Puts a taken-out parcel back (元に戻す, 一覧に戻す). The database answers ok also for a parcel of the person's own that has
+ * no mark (a second press, another tab); `gone` is only "no such parcel of yours", which is a failure.
  */
 export async function restoreExcluded(id: string): Promise<{ ok: boolean }> {
   const parsed = z.uuid().safeParse(id);
@@ -140,13 +140,37 @@ export async function restoreExcluded(id: string): Promise<{ ok: boolean }> {
     if (!session) return { ok: false };
     const { data, error } = await session.supabase.rpc("restore_parcel", { p_parcel_id: parsed.data });
     if (error) throw new Error(error.message);
-    return { ok: data === "ok" || data === "gone" };
+    return { ok: data === "ok" };
   } catch (error) {
     console.error("restoreExcluded:", error instanceof Error ? error.message : String(error));
     return { ok: false };
   } finally {
     // An unanswered call may have committed; reload the real state.
     revalidatePath("/app", "layout");
+  }
+}
+
+/**
+ * Writes "the person has seen the parcels the app took out by itself, up to this mark" (the list's row then goes). Called once
+ * from the page of 外した荷物 after it is drawn, never from a page render or a link's prefetch. The time is the newest mark
+ * the screen showed, so a mark made after the screen was read stays unseen. A failure changes nothing on the screen: the row
+ * only stays.
+ */
+export async function markAutoExcludedSeen(seenUntil: string): Promise<{ ok: boolean }> {
+  const parsed = z.iso.datetime({ offset: true }).safeParse(seenUntil);
+  if (!parsed.success) return { ok: false };
+  try {
+    const session = await signedIn();
+    if (!session) return { ok: false };
+    const { data, error } = await session.supabase.rpc("mark_auto_excluded_seen", { p_seen_until: parsed.data });
+    if (error) throw new Error(error.message);
+    if (data !== "ok") return { ok: false };
+    // The list is drawn without the row from now on.
+    revalidatePath("/app", "layout");
+    return { ok: true };
+  } catch (error) {
+    console.error("markAutoExcludedSeen:", error instanceof Error ? error.message : String(error));
+    return { ok: false };
   }
 }
 

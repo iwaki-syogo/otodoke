@@ -26,3 +26,6 @@ export const RESTORE_BUTTON_LABEL = "一覧に戻す";
 export const EXCLUDED_TOAST_AUTO = "おとどけは、この荷物を外しました。次から、同じ差出人の同じ知らせは、おとどけが自動で外します";
 /** The notice after putting back a parcel the app took out by itself. */
 export const RESTORED_RULE_TOAST = "おとどけは、この荷物を一覧に戻しました。この差出人の荷物は、おとどけが自動で外すのをやめます";
+
+/** The row under キャンセルした荷物, only while the app has taken out a parcel that has not arrived and that the person has not seen. No count. */
+export const AUTO_EXCLUDED_ROW_LABEL = "おとどけが自動で外した荷物があります";

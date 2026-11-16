@@ -6,7 +6,7 @@ import { EXCLUDE_FAILED } from "@/lib/not-parcel-text";
  * person's own session; the owner is taken from the session in SQL, never from the caller.
  * excludeParcel: ok is the only success. gone (not there, not theirs, already out), manual, an error and a
  * thrown call all fail, and none of them moves the page.
- * restoreExcluded: ok and gone both succeed (gone = no longer marked = already back, as on a second press).
+ * restoreExcluded: ok is the only success (the database answers ok to a second press); gone = no such parcel of yours fails.
  */
 
 const ID = "10000000-0000-4000-8000-000000000001";
@@ -75,12 +75,17 @@ describe("restoreExcluded", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/app", "layout");
   });
 
-  it("a second press gives the same result: ok then gone are both a success", async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: "ok", error: null }).mockResolvedValueOnce({ data: "gone", error: null });
+  it("a second press gives the same result: the database answers ok both times", async () => {
+    mocks.rpc.mockResolvedValue({ data: "ok", error: null });
     const first = await actions.restoreExcluded(ID);
     const second = await actions.restoreExcluded(ID);
     expect(second).toEqual(first);
     expect(second).toEqual({ ok: true });
+  });
+
+  it("gone (no such parcel of yours) is a failure (negative control)", async () => {
+    mocks.rpc.mockResolvedValue({ data: "gone", error: null });
+    expect(await actions.restoreExcluded(ID)).toEqual({ ok: false });
   });
 
   it("negative control: an unknown answer, a database error and a thrown call are failures", async () => {

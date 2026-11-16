@@ -42,6 +42,13 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const withAuth = (db: FakeDb) => Object.assign(db, { auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) } });
+/** The list asks the database for the person's own mark behind ?excluded=<id>: this one has it. */
+const withOwnMark = (db: FakeDb) => {
+  const rpc = db.rpc.bind(db);
+  return Object.assign(db, {
+    rpc: (name: string, args?: unknown) => (name === "excluded_parcels" ? Promise.resolve({ data: [{ parcel_id: ID, kind: "user" }], error: null }) : name === "auto_exclusion_would_start" ? Promise.resolve({ data: false, error: null }) : rpc(name, args)),
+  });
+};
 let seq = 0;
 const parcel = (over: Record<string, unknown> = {}) => ({
   id: `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`,
@@ -94,7 +101,7 @@ describe("the parcel page", () => {
 });
 
 describe("the list", () => {
-  const seed = (parcels: Record<string, unknown>[]) => { mocks.state.client = withAuth(new FakeDb({ parcels, emails: [] })); };
+  const seed = (parcels: Record<string, unknown>[]) => { mocks.state.client = withOwnMark(withAuth(new FakeDb({ parcels, emails: [] }))); };
   beforeEach(() => seed([parcel()]));
 
   it("ends with 外した荷物 › under キャンセルした荷物, and the link carries no number", async () => {
@@ -125,7 +132,7 @@ describe("the list", () => {
       ["unreadable", () => {
         const failing = new FakeDb({ parcels: [], emails: [] });
         failing.hooks.push((q) => (q.table === "parcels" ? { data: null, error: { message: "boom" }, count: null } : undefined));
-        mocks.state.client = withAuth(failing);
+        mocks.state.client = withOwnMark(withAuth(failing));
       }],
     ];
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -161,7 +168,7 @@ describe("外した荷物", () => {
 
   it("asks the database function with the person's session and lists the rows in the order it gave (newest first)", async () => {
     const newer = row({ shop: "新しい店", item_names: ["りんご", "みかん"], excluded_at: "2026-11-17T02:00:00Z" });
-    const older = row({ shop: "古い店", item_names: [], title: "題だけ", kind: "rule" });
+    const older = row({ shop: "古い店", item_names: [], title: "題だけ", kind: "rule", status: "delivered" });
     const rpc = client({ data: [newer, older], error: null });
     const root = await render();
     expect(rpc).toHaveBeenCalledWith("excluded_parcels");
@@ -173,7 +180,7 @@ describe("外した荷物", () => {
   });
 
   it("says who took each one out, by kind, and each row has 一覧に戻す", async () => {
-    client({ data: [row({ kind: "user" }), row({ kind: "rule" })], error: null });
+    client({ data: [row({ kind: "user" }), row({ kind: "rule", status: "delivered" })], error: null });
     const items = findAll(await render(), (n) => n.tag === "li");
     expect(textOf(items[0])).toContain(EXCLUDED_BY_USER);
     expect(textOf(items[0])).not.toContain(EXCLUDED_BY_RULE);

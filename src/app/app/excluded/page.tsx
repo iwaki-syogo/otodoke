@@ -4,7 +4,10 @@ import { formatDateJa, yen } from "@/lib/format";
 import { EXCLUDED_BY_RULE, EXCLUDED_BY_USER, EXCLUDED_EMPTY, EXCLUDED_PAGE_TITLE } from "@/lib/not-parcel-text";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { StatusBadge } from "../parcel-card";
-import { RestoreExcludedButton } from "./restore-button";
+import { orderExcluded, readMarkTimes, seenUntilOf } from "@/lib/not-parcel-auto-view";
+import { DeliveredToastProvider } from "../delivered-controls";
+import { MarkAutoSeen } from "./mark-auto-seen";
+import { RestoreWithNotice } from "./restore-with-notice";
 
 export const metadata = { title: EXCLUDED_PAGE_TITLE };
 
@@ -19,10 +22,15 @@ export default async function ExcludedPage() {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("excluded_parcels");
   if (error) console.error("excluded page:", error.message);
-  const rows = error ? null : (data ?? []);
+  // The parcels the app took out by itself that have not arrived come first.
+  const rows = error ? null : orderExcluded(data ?? []);
+  // Written by the client part after this page is drawn; nothing is written when none of them is listed or the read failed.
+  const seenUntil = rows ? seenUntilOf(rows, await readMarkTimes(supabase)) : null;
 
   return (
+    <DeliveredToastProvider>
     <div className="flex flex-col gap-6">
+      {seenUntil ? <MarkAutoSeen seenUntil={seenUntil} /> : null}
       <Link href="/app" className="text-sm text-neutral-500">
         ‹ 荷物
       </Link>
@@ -47,7 +55,7 @@ export default async function ExcludedPage() {
                 </div>
                 <p className="mt-2 text-xs text-neutral-500">{r.kind === "rule" ? EXCLUDED_BY_RULE : EXCLUDED_BY_USER}</p>
                 <div className="mt-3">
-                  <RestoreExcludedButton id={r.parcel_id} />
+                  <RestoreWithNotice id={r.parcel_id} kind={r.kind} />
                 </div>
               </li>
             );
@@ -55,5 +63,6 @@ export default async function ExcludedPage() {
         </ul>
       )}
     </div>
+    </DeliveredToastProvider>
   );
 }

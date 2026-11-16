@@ -553,6 +553,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: { parcel_id: string; kind: string; excluded_at: string; shop: string; title: string | null; status: string; ordered_at: string | null; expected_date: string | null; total_amount: number | null; carrier: string | null; item_names: string[] }[]
       }
+      excluded_parcels_unseen: {
+        Args: Record<PropertyKey, never>
+        Returns: { parcel_id: string; kind: string; created_at: string; unseen: boolean }[]
+      }
       mark_rule_exclusion: {
         Args: { p_user: string; p_parcel_id: string; p_from_domain: string; p_relevance: string }
         Returns: number

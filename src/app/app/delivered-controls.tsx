@@ -22,7 +22,7 @@ interface Toast {
   exclusion?: string | null;
 }
 
-const ToastContext = createContext<(t: Toast) => void>(() => {});
+export const ToastContext = createContext<(t: Toast) => void>(() => {});
 
 /** What a press shows from the tap until the parcels are saved. */
 const SAVING = "保存しています…";
@@ -102,16 +102,16 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
  * takes the query off the address (replace, not push), so going back or reloading does not show it again.
  * The id is only passed to 元に戻す; nothing of it is drawn. Put it inside the provider.
  */
-export function ExcludedToast({ id }: { id: string }) {
+export function ExcludedToast({ id, text = EXCLUDED_TOAST }: { id: string; text?: string }) {
   const showToast = useContext(ToastContext);
   const router = useRouter();
   const shown = useRef(false);
   useEffect(() => {
     if (shown.current) return;
     shown.current = true;
-    showToast({ text: EXCLUDED_TOAST, undo: null, exclusion: id });
+    showToast({ text, undo: null, exclusion: id });
     router.replace("/app");
-  }, [id, router, showToast]);
+  }, [id, text, router, showToast]);
   return null;
 }
 

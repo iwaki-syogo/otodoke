@@ -9,7 +9,7 @@ import { restoreExcluded } from "../parcel-actions";
  * 一覧に戻す on a row of 外した荷物. On success the action's revalidatePath("/app", "layout") sends this page
  * back redrawn, without the row. A failure says so in the words of putting back, not of taking out.
  */
-export function RestoreExcludedButton({ id }: { id: string }) {
+export function RestoreExcludedButton({ id, onRestored }: { id: string; onRestored?: () => void }) {
   const { pending, run } = usePendingAction();
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +17,8 @@ export function RestoreExcludedButton({ id }: { id: string }) {
     setError(null);
     run(async () => {
       try {
-        if (!(await restoreExcluded(id)).ok) setError(RESTORE_FAILED);
+        if ((await restoreExcluded(id)).ok) onRestored?.();
+        else setError(RESTORE_FAILED);
       } catch {
         setError(RESTORE_FAILED);
       }
