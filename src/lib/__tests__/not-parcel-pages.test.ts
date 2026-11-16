@@ -213,7 +213,7 @@ describe("the sentences", () => {
     expect(EXCLUDED_TOAST).toBe("おとどけは、この荷物を一覧と支出から外しました");
     expect(RESTORED_TOAST).toBe("おとどけは、この荷物を一覧と支出に戻しました");
     expect(EXCLUDE_FAILED).toBe("おとどけは、この荷物を外せませんでした。もう一度お試しください");
-    expect(RESTORE_FAILED).toBe("おとどけは、この荷物を一覧に戻せませんでした");
+    expect(RESTORE_FAILED).toBe("おとどけは、この荷物を一覧に戻せませんでした。もう一度お試しください");
     expect(EXCLUDED_BY_USER).toBe("あなたが外しました");
     expect(EXCLUDED_BY_RULE).toBe("おとどけが自動で外しました");
     expect(EXCLUDE_BUTTON_LABEL).toBe("これは荷物ではありません");

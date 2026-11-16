@@ -7,7 +7,8 @@ import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE, UNDO_UNCONFI
 import { runUndo } from "@/lib/undo-outcome";
 import { markReceivedInChunks } from "@/lib/receipt-client";
 import type { ReceivedReceipt } from "@/lib/receipt";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { listPathWithoutExcluded } from "@/lib/excluded-query";
 import { EXCLUDED_TOAST, RESTORED_TOAST, RESTORE_FAILED } from "@/lib/not-parcel-text";
 import { markDeliveredForUndo, restoreExcluded, restoreStatuses } from "./parcel-actions";
 
@@ -105,13 +106,15 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
 export function ExcludedToast({ id, text = EXCLUDED_TOAST }: { id: string; text?: string }) {
   const showToast = useContext(ToastContext);
   const router = useRouter();
+  const query = useSearchParams();
   const shown = useRef(false);
   useEffect(() => {
     if (shown.current) return;
     shown.current = true;
     showToast({ text, undo: null, exclusion: id });
-    router.replace("/app");
-  }, [id, text, router, showToast]);
+    // Only `excluded` goes; any other value in the query stays.
+    router.replace(listPathWithoutExcluded(query));
+  }, [id, text, query, router, showToast]);
   return null;
 }
 

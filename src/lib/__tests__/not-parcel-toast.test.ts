@@ -22,6 +22,7 @@ const ctl = vi.hoisted(() => ({
   exclude: vi.fn(),
   restoreExcluded: vi.fn(),
   seen: vi.fn(),
+  query: "",
   transitionErrors: [] as unknown[],
 }));
 
@@ -54,7 +55,10 @@ vi.mock("react", async (original) => {
   };
 });
 vi.mock("react-dom", () => ({ useFormStatus: () => ({ pending: false, data: null, method: null, action: null }) }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: ctl.replace, push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: ctl.replace, push: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(ctl.query),
+}));
 vi.mock("@/app/app/parcel-actions", () => ({
   markDeliveredForUndo: vi.fn(),
   restoreStatuses: vi.fn(),
@@ -109,6 +113,7 @@ beforeEach(() => {
   ctl.restoreExcluded.mockReset();
   ctl.seen.mockReset();
   ctl.seen.mockResolvedValue({ ok: true });
+  ctl.query = "";
 });
 afterEach(() => {
   for (const view of views.splice(0)) view.unmount();
@@ -228,6 +233,21 @@ describe("一覧に戻す on 外した荷物", () => {
       expect(view.text()).toContain(RESTORE_FAILED);
       expect(view.text()).not.toContain(EXCLUDE_FAILED);
     }
+  });
+});
+
+describe("taking ?excluded off the address keeps the other values", () => {
+  it.each([
+    [`excluded=${ID}&demo=busy`, "/app?demo=busy"],
+    [`sample=1&excluded=${ID}&x=a%20b`, "/app?sample=1&x=a+b"],
+    [`excluded=${ID}`, "/app"],
+  ])("?%s goes to %s", async (query, expected) => {
+    ctl.query = query;
+    const toast = provider();
+    keep(mount(() => ExcludedToast({ id: ID })));
+    await shown(() => toast.text().includes(EXCLUDED_TOAST), "notice");
+    expect(ctl.replace).toHaveBeenCalledTimes(1);
+    expect(ctl.replace).toHaveBeenCalledWith(expected);
   });
 });
 

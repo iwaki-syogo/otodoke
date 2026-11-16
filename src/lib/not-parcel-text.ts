@@ -12,7 +12,7 @@ export const EXCLUDE_FAILED = "おとどけは、この荷物を外せません�
 /** The notice after 「元に戻す」 worked. */
 export const RESTORED_TOAST = "おとどけは、この荷物を一覧と支出に戻しました";
 /** Putting back failed (the notice on the list, and the row on the page of taken-out parcels). */
-export const RESTORE_FAILED = "おとどけは、この荷物を一覧に戻せませんでした";
+export const RESTORE_FAILED = "おとどけは、この荷物を一覧に戻せませんでした。もう一度お試しください";
 
 /** The way in from the end of the list. No count: the number is seen after opening the page. */
 export const EXCLUDED_PAGE_LABEL = "外した荷物";
