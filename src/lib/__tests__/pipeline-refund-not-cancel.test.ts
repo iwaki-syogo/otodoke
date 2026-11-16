@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { withDefaults } from "@/lib/extract/schema";
 import { verifyEvidence } from "@/lib/extract/verify-evidence";
-import { buildParcelUpdate, isPartialCancel, mergeIntoManual, rebuildParcel, splitOrders, startsParcel } from "@/lib/match";
+import { buildParcelUpdate, isOutbound, isPartialCancel, mergeIntoManual, rebuildParcel, splitOrders, startsParcel } from "@/lib/match";
 import { processInboundEmail } from "@/lib/pipeline";
 import { FakeDb, type Row } from "./fake-db";
 import { USER, asConsentingAdmin, mailOf, none, precomputed, reading, sure } from "./pipeline-fixtures";
@@ -280,5 +280,92 @@ describe("a mail that lists several orders", () => {
     expect(statusOf(db, "p-a")).toBe("cancelled");
     expect(statusOf(db, "p-b")).toBe("ordered");
     expect(db.rows("parcels")).toHaveLength(2);
+  });
+});
+
+describe("a mail read out of order: the state is the one a rebuild gives", () => {
+  const ORDER_NO = "ORD-20261103-0001";
+  const T0 = "2026-11-01T00:00:00Z";
+  const T1 = "2026-11-02T00:00:00Z";
+  const T2 = "2026-11-04T00:00:00Z";
+  const T3 = "2026-11-06T00:00:00Z";
+  type Reading = ReturnType<typeof reading>;
+  type Step = { x: Reading; at: string };
+  const orderMail = (): Reading => reading({ relevance: "order", order_number: sure(ORDER_NO) });
+  const refund = (): Reading => reading({ relevance: "other_purchase", order_number: sure(ORDER_NO) });
+  const wholeCancel = (): Reading => reading({ relevance: "cancelled", order_number: sure(ORDER_NO), cancel_partial: whole() });
+  const partialCancel = (): Reading => reading({ relevance: "cancelled", order_number: sure(ORDER_NO), cancel_partial: partial() });
+  const shipment = (): Reading => reading({ relevance: "shipped", order_number: sure(ORDER_NO) });
+
+  /** The state a rebuild (mail parcel) or an oldest-first merge (typed-in parcel) gives for the same mails. */
+  function settled(steps: Step[], manual: boolean): string | null | undefined {
+    const mails = steps.map((s) => ({ x: s.x, sentAt: s.at }));
+    if (!manual) return rebuildParcel(USER, mails).status;
+    const row = { ...parcelRow({ status: "ordered", last_email_at: null, order_number: ORDER_NO, tracking_number: null }), source: "manual" } as unknown as Parameters<typeof mergeIntoManual>[0];
+    for (const m of [...mails].sort((a, b) => a.sentAt.localeCompare(b.sentAt))) Object.assign(row, mergeIntoManual(row, m.x, m.sentAt));
+    return row.status;
+  }
+
+  async function arrive(steps: Step[], manual: boolean) {
+    const db = new FakeDb({
+      parcels: manual ? [parcelRow({ source: "manual", status: "ordered", order_number: ORDER_NO, tracking_number: null, last_email_at: null })] : [],
+      emails: [],
+      extractions: [],
+    });
+    for (const s of steps) await run(db, s.x, s.at);
+    return db;
+  }
+
+  async function sameAsRebuilt(steps: Step[], manual: boolean, expected: string) {
+    const db = await arrive(steps, manual);
+    const parcels = db.rows("parcels");
+    expect(parcels).toHaveLength(1);
+    expect(parcels[0].status).toBe(expected);
+    expect(settled(steps, manual)).toBe(expected);
+  }
+
+  it("a newer refund read first, then an older whole cancellation: cancelled, the same as rebuilt", async () => {
+    await sameAsRebuilt([{ x: orderMail(), at: T0 }, { x: refund(), at: T2 }, { x: wholeCancel(), at: T1 }], false, "cancelled");
+  });
+
+  it("a newer sure partial cancellation read first, then an older whole cancellation: cancelled (the whole one wins)", async () => {
+    await sameAsRebuilt([{ x: orderMail(), at: T0 }, { x: partialCancel(), at: T2 }, { x: wholeCancel(), at: T1 }], false, "cancelled");
+  });
+
+  it("a cancellation, a refund, then a shipment sent between them read last: same as rebuilt", async () => {
+    const steps: Step[] = [{ x: wholeCancel(), at: T1 }, { x: refund(), at: T3 }, { x: shipment(), at: T2 }];
+    const rebuilt = rebuildParcel(USER, steps.map((s) => ({ x: s.x, sentAt: s.at }))).status;
+    expect(rebuilt).toBe("shipped");
+    await sameAsRebuilt(steps, false, "shipped");
+  });
+
+  it("a typed-in parcel: the same pairs as above give the oldest-first merge's state", async () => {
+    await sameAsRebuilt([{ x: orderMail(), at: T0 }, { x: refund(), at: T2 }, { x: wholeCancel(), at: T1 }], true, "cancelled");
+    await sameAsRebuilt([{ x: orderMail(), at: T0 }, { x: partialCancel(), at: T2 }, { x: wholeCancel(), at: T1 }], true, "cancelled");
+  });
+
+  it("a sender's mail read as a whole cancellation neither cancels nor opens a parcel, mail or typed-in", async () => {
+    const sender = () => cancelMail({ inbound: sure(false), cancel_partial: whole() });
+    const mailParcel = parcelRow({ status: "shipped" }) as unknown as Parameters<typeof buildParcelUpdate>[0];
+    const typedIn = { ...mailParcel, source: "manual" } as unknown as Parameters<typeof mergeIntoManual>[0];
+    expect(buildParcelUpdate(mailParcel, sender(), WHEN)).toEqual({});
+    expect(mergeIntoManual(typedIn, sender(), WHEN)).toEqual({});
+    expect(startsParcel(sender())).toBe(false);
+    for (const source of ["mail", "manual"]) {
+      const db = new FakeDb({ parcels: [parcelRow({ status: "shipped", source })], emails: [], extractions: [] });
+      await run(db, sender());
+      expect(statusOf(db)).toBe("shipped");
+      expect(db.find("parcels", "p-existing")!.last_email_at).toBe(BEFORE);
+    }
+    const empty = new FakeDb({ parcels: [], emails: [], extractions: [] });
+    await run(empty, sender());
+    expect(empty.rows("parcels")).toEqual([]);
+  });
+
+  it("splitOrders keeps a sender's reading on every order", () => {
+    const other = (n: string) => ({ order_number: sure(n), items: [], category: null, total_amount: none, expected_date: none, expected_date_end: none, expected_text: null });
+    const parts = splitOrders(cancelMail({ order_number: sure("ORD-A"), inbound: sure(false), cancel_partial: whole(), other_orders: [other("ORD-B"), other("ORD-C")] }));
+    expect(parts).toHaveLength(3);
+    expect(parts.every(isOutbound)).toBe(true);
   });
 });
