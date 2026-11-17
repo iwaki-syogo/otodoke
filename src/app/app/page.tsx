@@ -237,7 +237,7 @@ function CheckSection({ items }: { items: ParcelRow[] }) {
 function CheckCard({ parcel }: { parcel: ParcelRow }) {
   return (
     <div>
-      <SwipeToDeliver id={parcel.id} status={parcel.status} receivedAt={parcel.received_at}>
+      <SwipeToDeliver id={parcel.id} status={parcel.status} receivedAt={parcel.received_at} canExclude={parcel.source !== "manual"}>
         <ParcelCard parcel={parcel} />
       </SwipeToDeliver>
       {parcel.status === "delivered" ? <NotYetButton id={parcel.id} /> : null}
@@ -259,7 +259,7 @@ function Section({ title, count, items, empty, swipe = false }: { title: string;
         <div className="mt-3 flex flex-col gap-3">
           {items.map((p) =>
             swipe ? (
-              <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at}>
+              <SwipeToDeliver key={p.id} id={p.id} status={p.status} receivedAt={p.received_at} canExclude={p.source !== "manual"}>
                 <ParcelCard parcel={p} />
               </SwipeToDeliver>
             ) : (

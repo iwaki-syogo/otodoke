@@ -9,8 +9,8 @@ import { markReceivedInChunks } from "@/lib/receipt-client";
 import type { ReceivedReceipt } from "@/lib/receipt";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listPathWithoutExcluded } from "@/lib/excluded-query";
-import { EXCLUDED_TOAST, RESTORED_TOAST, RESTORE_FAILED } from "@/lib/not-parcel-text";
-import { markDeliveredForUndo, restoreExcluded, restoreStatuses } from "./parcel-actions";
+import { EXCLUDED_TOAST, EXCLUDE_BUTTON_LABEL, EXCLUDE_FAILED, RESTORED_TOAST, RESTORE_FAILED } from "@/lib/not-parcel-text";
+import { excludeParcel, markDeliveredForUndo, restoreExcluded, restoreStatuses } from "./parcel-actions";
 
 type Marked = { id: string; status: string; received_at: string | null }[];
 type Undoable = ReceivedReceipt[];
@@ -120,13 +120,52 @@ export function ExcludedToast({ id, text = EXCLUDED_TOAST }: { id: string; text?
 
 const REVEAL = 96;
 const COMMIT = 120;
+/** A move to the right that starts this close to the screen's left edge is the browser's 戻る, not ours. */
+const BACK_EDGE = 24;
 
-/** Swipe a card to the left to say the parcel is received (受け取った). Vertical scrolling is left alone. */
-export function SwipeToDeliver({ id, children }: { id: string; status: string; receivedAt?: string | null; children: ReactNode }) {
+/**
+ * The grey face under a card swiped to the right: 「これは荷物ではありません」. Its own component so that useRouter
+ * runs only for cards that can be taken out. It opens and stays open; only its button takes the parcel out.
+ */
+function ExcludeFace({ visible, busy, width, onPress }: { visible: boolean; busy: boolean; width: number; onPress: (router: ReturnType<typeof useRouter>) => void }) {
+  const router = useRouter();
+  return (
+    <div
+      aria-hidden={!visible}
+      className={`absolute inset-y-0 left-0 flex items-center bg-neutral-200 pr-6 pl-3 text-xs font-bold text-neutral-800 ${visible ? "" : "invisible"}`}
+      style={{ width }}
+    >
+      <button
+        type="button"
+        onClick={() => onPress(router)}
+        aria-busy={busy || undefined}
+        aria-disabled={busy || undefined}
+        className={`flex w-full items-center justify-start gap-2 text-left leading-tight ${busy ? "pointer-events-none" : ""}`}
+      >
+        {busy ? (
+          <>
+            <Spinner />
+            外しています…
+          </>
+        ) : (
+          EXCLUDE_BUTTON_LABEL
+        )}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Swipe a card to the left to say the parcel is received (受け取った). Vertical scrolling is left alone.
+ * With canExclude, a swipe to the right opens 「これは荷物ではありません」 (never a manual parcel: it cannot be taken out).
+ */
+export function SwipeToDeliver({ id, children, canExclude = false }: { id: string; status: string; receivedAt?: string | null; children: ReactNode; canExclude?: boolean }) {
   const showToast = useContext(ToastContext);
   const [dx, setDx] = useState(0);
   const [state, setState] = useState<"idle" | "dragging" | "saving" | "error">("idle");
-  const start = useRef<{ x: number; y: number; horizontal: boolean | null } | null>(null);
+  const [excluding, setExcluding] = useState(false);
+  const [excludeError, setExcludeError] = useState<string | null>(null);
+  const start = useRef<{ x: number; y: number; horizontal: boolean | null; fromEdge: boolean } | null>(null);
   const moved = useRef(false);
   // Set before anything is awaited: a second swipe or tap meanwhile saves nothing more.
   const saving = useRef(false);
@@ -152,9 +191,37 @@ export function SwipeToDeliver({ id, children }: { id: string; status: string; r
     });
   }, [id, showToast]);
 
+  // Only the button takes a parcel out. One `saving` ref serves both sides: while 受け取った or this is in flight, the other does not start.
+  const exclude = (router: ReturnType<typeof useRouter>) => {
+    if (saving.current) return;
+    saving.current = true;
+    setExcluding(true);
+    setExcludeError(null);
+    setDx(REVEAL);
+    void (async () => {
+        try {
+        const r = await excludeParcel(id);
+        if (r.ok) {
+          router.replace(`/app?excluded=${id}`);
+          // excludeParcel asks for no redraw on the server (the parcel page is gone by then), so the list asks for its own:
+          // the card must be gone from the list, not only the query changed.
+          router.refresh();
+          return;
+        }
+      } catch {
+        // The same words as on the parcel page, whatever the answer or the failure was.
+      }
+      saving.current = false;
+      setExcluding(false);
+      setExcludeError(EXCLUDE_FAILED);
+      setDx(0);
+    })();
+  };
+  const rightOpen = canExclude && state !== "saving" && !excluding;
+
   const onPointerDown = (e: React.PointerEvent) => {
-    if (state === "saving") return;
-    start.current = { x: e.clientX, y: e.clientY, horizontal: null };
+    if (state === "saving" || saving.current) return;
+    start.current = { x: e.clientX, y: e.clientY, horizontal: null, fromEdge: e.clientX <= BACK_EDGE };
     moved.current = false;
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -166,7 +233,7 @@ export function SwipeToDeliver({ id, children }: { id: string; status: string; r
     if (!s.horizontal) return;
     moved.current = true;
     setState("dragging");
-    setDx(Math.max(-COMMIT * 1.5, Math.min(0, mx)));
+    setDx(Math.max(-COMMIT * 1.5, Math.min(rightOpen && !s.fromEdge ? REVEAL * 1.25 : 0, mx)));
   };
   const onPointerUp = () => {
     const s = start.current;
@@ -175,15 +242,16 @@ export function SwipeToDeliver({ id, children }: { id: string; status: string; r
     if (dx <= -COMMIT) commit();
     else {
       setState("idle");
-      setDx(dx <= -REVEAL / 2 ? -REVEAL : 0);
+      // To the right it opens and waits; it never takes the parcel out by itself.
+      setDx(dx <= -REVEAL / 2 ? -REVEAL : dx >= REVEAL / 2 ? REVEAL : 0);
     }
   };
 
   return (
     <div className="relative overflow-hidden rounded-2xl">
       <div
-        aria-hidden={dx === 0}
-        className={`absolute inset-y-0 right-0 flex items-center bg-emerald-600 pr-4 pl-6 text-sm font-bold text-white ${dx === 0 && state !== "saving" ? "invisible" : ""}`}
+        aria-hidden={dx >= 0}
+        className={`absolute inset-y-0 right-0 flex items-center bg-emerald-600 pr-4 pl-6 text-sm font-bold text-white ${dx >= 0 && state !== "saving" ? "invisible" : ""}`}
         style={{ width: Math.max(REVEAL, -dx) }}
       >
         <button
@@ -203,6 +271,7 @@ export function SwipeToDeliver({ id, children }: { id: string; status: string; r
           )}
         </button>
       </div>
+      {canExclude ? <ExcludeFace visible={dx > 0} busy={excluding} width={Math.max(REVEAL, dx)} onPress={exclude} /> : null}
       <div
         className={`relative touch-pan-y ${state === "dragging" ? "" : "transition-transform duration-200"}`}
         style={{ transform: `translateX(${dx}px)` }}
@@ -223,6 +292,11 @@ export function SwipeToDeliver({ id, children }: { id: string; status: string; r
         {children}
       </div>
       {state === "error" ? <p className="mt-1 text-xs text-red-700">保存できませんでした。もう一度スワイプしてください。</p> : null}
+      {excludeError ? (
+        <p role="alert" className="mt-1 text-xs text-red-800">
+          {excludeError}
+        </p>
+      ) : null}
     </div>
   );
 }
