@@ -28,10 +28,12 @@ function rpcResult(query: Promise<Result>, work: (source: Promise<Result>) => Pr
 const incoming = (id: string, sentAt = "2026-11-12T00:00:00Z") => ({ ...mailOf(sentAt), providerEmailId: `provider-${id}`, messageId: `<${id}@example.test>`, text: "テスト本文\nSynthetic item\n根拠の行" });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-13T00:00:00Z"));
   mocks.extract.mockReset(); mocks.triage.mockReset();
   vi.stubGlobal("fetch", () => { throw new Error("external fetch is forbidden in parcel conflict tests"); });
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("different mails filing the same parcel", () => {
   it("B1: concurrent distinct mails for one order keep one parcel and one 1000-yen expense", async () => {
