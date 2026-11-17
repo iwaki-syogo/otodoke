@@ -7,8 +7,8 @@ import { CANNOT_UNDO_NOTE, UNDO_CHANGED_NOTICE, UNDO_FAILED_NOTICE, UNDO_UNCONFI
 import { runUndo } from "@/lib/undo-outcome";
 import { markReceivedInChunks } from "@/lib/receipt-client";
 import type { ReceivedReceipt } from "@/lib/receipt";
-import { useRouter, useSearchParams } from "next/navigation";
-import { listPathWithoutExcluded } from "@/lib/excluded-query";
+import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
+import { listPathWithExcluded, listPathWithoutExcluded } from "@/lib/excluded-query";
 import { EXCLUDED_TOAST, EXCLUDE_BUTTON_LABEL, EXCLUDE_FAILED, RESTORED_TOAST, RESTORE_FAILED } from "@/lib/not-parcel-text";
 import { excludeParcel, markDeliveredForUndo, restoreExcluded, restoreStatuses } from "./parcel-actions";
 
@@ -124,11 +124,13 @@ const COMMIT = 120;
 const BACK_EDGE = 24;
 
 /**
- * The grey face under a card swiped to the right: 「これは荷物ではありません」. Its own component so that useRouter
+ * The grey face under a card swiped to the right: 「外す」. Its own component so that useRouter
  * runs only for cards that can be taken out. It opens and stays open; only its button takes the parcel out.
  */
-function ExcludeFace({ visible, busy, width, onPress }: { visible: boolean; busy: boolean; width: number; onPress: (router: ReturnType<typeof useRouter>) => void }) {
+function ExcludeFace({ visible, busy, width, onPress }: { visible: boolean; busy: boolean; width: number; onPress: (router: ReturnType<typeof useRouter>, query: URLSearchParams | ReadonlyURLSearchParams) => void }) {
   const router = useRouter();
+  // Read here, not in SwipeToDeliver: only cards that can be taken out need the current query.
+  const query = useSearchParams();
   return (
     <div
       aria-hidden={!visible}
@@ -137,7 +139,7 @@ function ExcludeFace({ visible, busy, width, onPress }: { visible: boolean; busy
     >
       <button
         type="button"
-        onClick={() => onPress(router)}
+        onClick={() => onPress(router, query)}
         aria-busy={busy || undefined}
         aria-disabled={busy || undefined}
         className={`flex w-full items-center justify-start gap-2 text-left leading-tight ${busy ? "pointer-events-none" : ""}`}
@@ -157,7 +159,7 @@ function ExcludeFace({ visible, busy, width, onPress }: { visible: boolean; busy
 
 /**
  * Swipe a card to the left to say the parcel is received (受け取った). Vertical scrolling is left alone.
- * With canExclude, a swipe to the right opens 「これは荷物ではありません」 (never a manual parcel: it cannot be taken out).
+ * With canExclude, a swipe to the right opens 「外す」 (never a manual parcel: it cannot be taken out).
  */
 export function SwipeToDeliver({ id, children, canExclude = false }: { id: string; status: string; receivedAt?: string | null; children: ReactNode; canExclude?: boolean }) {
   const showToast = useContext(ToastContext);
@@ -192,7 +194,7 @@ export function SwipeToDeliver({ id, children, canExclude = false }: { id: strin
   }, [id, showToast]);
 
   // Only the button takes a parcel out. One `saving` ref serves both sides: while 受け取った or this is in flight, the other does not start.
-  const exclude = (router: ReturnType<typeof useRouter>) => {
+  const exclude = (router: ReturnType<typeof useRouter>, query: URLSearchParams | ReadonlyURLSearchParams) => {
     if (saving.current) return;
     saving.current = true;
     setExcluding(true);
@@ -202,7 +204,8 @@ export function SwipeToDeliver({ id, children, canExclude = false }: { id: strin
         try {
         const r = await excludeParcel(id);
         if (r.ok) {
-          router.replace(`/app?excluded=${id}`);
+          // Every other value in the query stays (?sample=1, ?demo=busy), so the list is not sent to the consent screen.
+          router.replace(listPathWithExcluded(query, id));
           // excludeParcel asks for no redraw on the server (the parcel page is gone by then), so the list asks for its own:
           // the card must be gone from the list, not only the query changed.
           router.refresh();

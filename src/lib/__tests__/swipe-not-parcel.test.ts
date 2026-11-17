@@ -17,6 +17,7 @@ const ctl = vi.hoisted(() => ({
   excludeParcel: vi.fn(),
   replace: vi.fn(),
   refresh: vi.fn(),
+  search: "",
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -24,7 +25,7 @@ vi.mock("react", async (importOriginal) => {
   const { harnessHooks } = await import("./hook-harness");
   return { ...harnessHooks(actual), useTransition: () => [false, (fn: () => unknown) => void fn()], useContext: () => ctl.toast };
 });
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: ctl.replace, refresh: ctl.refresh }), useSearchParams: () => new URLSearchParams() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: ctl.replace, refresh: ctl.refresh }), useSearchParams: () => new URLSearchParams(ctl.search) }));
 vi.mock("@/app/app/parcel-actions", () => ({
   markDeliveredForUndo: (...a: unknown[]) => ctl.markDeliveredForUndo(...a),
   restoreStatuses: vi.fn(),
@@ -60,17 +61,18 @@ const excludeButton = (view: Mounted): Host => view.host((h) => h.type === "butt
 const receivedFace = (view: Mounted) => view.host((h) => String(h.props.className ?? "").includes("bg-emerald-600"));
 
 beforeEach(() => {
-  for (const f of Object.values(ctl)) f.mockReset();
+  ctl.search = "";
+  for (const f of Object.values(ctl)) if (typeof f !== "string") f.mockReset();
 });
 afterEach(() => vi.useRealTimers());
 
-describe("swipe to the right: これは荷物ではありません", () => {
+describe("swipe to the right: 外す", () => {
   it("opens a grey face with the label and stays open at 96px", async () => {
     const view = setup(true);
     expect(faceShown(view)).toBe(false);
     await drag(view, 100, 130);
     expect(faceShown(view)).toBe(true);
-    expect(hostText(excludeButton(view))).toBe("これは荷物ではありません");
+    expect(hostText(excludeButton(view))).toBe(EXCLUDE_BUTTON_LABEL);
     expect(translate(view)).toBe("translateX(96px)");
     expect(ctl.excludeParcel).not.toHaveBeenCalled();
   });
@@ -111,6 +113,18 @@ describe("swipe to the right: これは荷物ではありません", () => {
     release({ ok: true });
     await flush();
     expect(ctl.replace).toHaveBeenCalledWith("/app?excluded=p1");
+  });
+
+  it("keeps the other values of the query (?sample=1&demo=busy) and adds excluded=<id> after them", async () => {
+    ctl.search = "sample=1&demo=busy";
+    ctl.excludeParcel.mockResolvedValue({ ok: true });
+    const view = setup(true);
+    await drag(view, 100, 130);
+    (excludeButton(view).props.onClick as (e: unknown) => void)(fakeEvent());
+    await flush();
+    expect(ctl.replace).toHaveBeenCalledWith("/app?sample=1&demo=busy&excluded=p1");
+    // negative control: the old form drops the query, so the check above would fail for it
+    expect(`/app?excluded=${"p1"}`).not.toBe("/app?sample=1&demo=busy&excluded=p1");
   });
 
   it("a refusal says so under the card, keeps the card and does not move", async () => {

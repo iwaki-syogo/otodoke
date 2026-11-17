@@ -123,7 +123,7 @@ afterEach(() => {
 });
 
 describe("the button on the parcel page", () => {
-  it("says 「これは荷物ではありません」 and, on ok, moves to the list with the id in the query", async () => {
+  it("says 「外す」 and, on ok, moves to the list with the id in the query", async () => {
     ctl.exclude.mockResolvedValue({ ok: true });
     const view = keep(mount(() => NotParcelButton({ id: ID })));
     expect(button(view, EXCLUDE_BUTTON_LABEL)).toBeDefined();

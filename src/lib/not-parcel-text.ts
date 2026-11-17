@@ -4,7 +4,7 @@
  */
 
 /** The button on the parcel page. */
-export const EXCLUDE_BUTTON_LABEL = "これは荷物ではありません";
+export const EXCLUDE_BUTTON_LABEL = "外す";
 /** The notice on the list right after taking a parcel out. */
 export const EXCLUDED_TOAST = "おとどけは、この荷物を一覧と支出から外しました";
 /** Taking out failed (on the parcel page). */

@@ -87,7 +87,7 @@ describe("the parcel page", () => {
     return parseHtml(renderToStaticMarkup(await DetailPage({ params: Promise.resolve({ id: String(p.id) }) })));
   };
 
-  it.each(["ordered", "shipped", "delivered", "cancelled"])("offers 「これは荷物ではありません」 once on a mail parcel (%s)", async (status) => {
+  it.each(["ordered", "shipped", "delivered", "cancelled"])("offers 「外す」 once on a mail parcel (%s)", async (status) => {
     expect(buttonsNamed(await detail({ status }), EXCLUDE_BUTTON_LABEL)).toHaveLength(1);
   });
 
@@ -216,7 +216,7 @@ describe("the sentences", () => {
     expect(RESTORE_FAILED).toBe("おとどけは、この荷物を一覧に戻せませんでした。もう一度お試しください");
     expect(EXCLUDED_BY_USER).toBe("あなたが外しました");
     expect(EXCLUDED_BY_RULE).toBe("おとどけが自動で外しました");
-    expect(EXCLUDE_BUTTON_LABEL).toBe("これは荷物ではありません");
+    expect(EXCLUDE_BUTTON_LABEL).toBe("外す");
   });
 
   it("taking out and putting back fail with different sentences", () => {
