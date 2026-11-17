@@ -33,6 +33,8 @@ function mark(db: FakeDb, from_domain: string) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-04T00:00:00Z"));
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon");
   mocks.extractEmail.mockReset();
@@ -40,6 +42,7 @@ beforeEach(() => {
   mocks.isPurchaseMail.mockReset();
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
