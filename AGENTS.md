@@ -25,4 +25,6 @@ DBはU→G→E→C→L→Rの部分順序。候補鍵はprivateな `public.lock_
 
 undoはDB証跡と現在のreceived_at/updated_atで照合し、3結果を分ける。通信200件と論理全件を混同しない。verifyはファイル別の判定列を読み、自己試験と実SQL測定を区別する。全件vitestは負荷20未満で1プロセス、専用PGは停止・listener0・専用データ削除まで確認する。
 
+本番 DB は main より先：dev の migration 20261117100000〜120000 まで当たっている（2026-11-25 読むだけで確認・報告 ~/goro-runs/share/otodoke-parcel-exclusions-1125/REPORT.md）。
+
 <!-- END:agent-pointer -->
