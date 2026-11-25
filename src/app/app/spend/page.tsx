@@ -209,7 +209,7 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
       ) : null}
 
       <section>
-        <h2 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base font-bold">
+        <h2 className="flex flex-wrap items-baseline gap-x-3 gap-y-7 text-base font-bold">
           注文
           {only !== undefined ? <Chip href={here({ s: shop })} label={categoryLabel(only)} /> : null}
           {shop !== undefined ? <Chip href={here({ c: only })} label={shopLabel(shop)} /> : null}

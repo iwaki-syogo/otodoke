@@ -121,11 +121,11 @@ describe("phone width", () => {
     expect(read("components/forwarding-steps.tsx")).toContain("min-w-0 flex-1 break-all");
   });
 
-  it("the small links under the forms have a tap area (py-2)", () => {
+  it("the small links under the forms take a finger on 44px (the tap utility, or min-h-11)", () => {
     for (const file of ["app/login/page.tsx", "app/signup/signup-form.tsx", "app/login/forgot/page.tsx"]) {
       const found = [...read(file).matchAll(/<Link href="\/(privacy|login|signup)[^"]*"[^>]*className="([^"]*)"/g)];
       expect(found.length, file).toBeGreaterThan(0);
-      for (const m of found) expect(m[2], file).toContain("py-2");
+      for (const m of found) expect(m[2], file).toMatch(/(^| )(tap|min-h-11)( |$)/);
     }
   });
 });

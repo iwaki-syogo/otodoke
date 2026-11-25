@@ -563,7 +563,7 @@ export function SignupForm() {
           <p className="text-center text-sm leading-6 text-neutral-600">{CONFIRM_WAIT.loginHelp}</p>
           <Link href="/login" className="tap self-center py-2 text-sm underline underline-offset-4">ログイン</Link>
           {resent && !resent.ok ? <p role="alert" className="text-sm text-red-800">{resent.text}</p> : null}
-          <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="tap flex items-center justify-center gap-2 self-center px-4 py-2 text-xs text-neutral-500 underline underline-offset-4">
+          <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex min-h-11 items-center justify-center gap-2 self-center px-4 text-xs text-neutral-500 underline underline-offset-4">
             {CONFIRM_WAIT.restart}
           </PendingButton>
         </div>
@@ -609,7 +609,7 @@ export function SignupForm() {
           ログイン
         </Link>
       </div>
-      <Link href="/privacy" className="tap mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
+      <Link href="/privacy" className="mt-6 inline-flex min-h-11 items-center self-start text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
       </Link>
       {leaveFor ? <LeaveFor href={leaveFor} /> : null}
