@@ -57,10 +57,11 @@ async function main() {
   const { beginMailGeneration } = await import("../src/lib/sample-generation-db");
   const { readAll } = await import("../src/lib/supabase/read-all");
   const { requireEnv } = await import("../src/lib/env");
-  const { PRICES } = await import("./prices");
+  const { LONG_PROMPT_PRICES, PRICES } = await import("./prices");
+  const { priceCardFor, priceForPrompt, usageCostUsd } = await import("../src/lib/eval-budget");
 
-  const price = PRICES[MODEL];
-  if (!price) throw new Error(`no price known for ${MODEL}; add it to scripts/prices.ts after checking the pricing page`);
+  const card = priceCardFor(MODEL, PRICES, LONG_PROMPT_PRICES);
+  if (!card) throw new Error(`no price known for ${MODEL}; add it to scripts/prices.ts after checking the pricing page`);
 
   let db = createAdminClient();
   const userId = await findUserId(db, args.user);
@@ -105,8 +106,11 @@ async function main() {
         }),
       )
       .join("\n");
-  const estimateFor = (batch: Target[]) =>
-    estimateCallUsd({ inputChars: system.length + userText(batch).length + SCHEMA_CHARS, maxTokens: maxTokensFor(batch.length) }, price);
+  const estimateFor = (batch: Target[]) => {
+    const inputChars = system.length + userText(batch).length + SCHEMA_CHARS;
+    // At the card that many prompt tokens would fall on.
+    return estimateCallUsd({ inputChars, maxTokens: maxTokensFor(batch.length) }, priceForPrompt(card, inputChars));
+  };
 
   const batches = toBatches(targets);
   const estimate = batches.reduce((sum, b) => sum + estimateFor(b), 0);
@@ -160,9 +164,9 @@ async function main() {
           messages: [{ role: "user", content: userText(part) }],
           output_config: { format: zodOutputFormat(Answer) },
         });
-        const u = response.usage;
-        const actual =
-          (u.input_tokens * price[0] + u.output_tokens * price[1] + (u.cache_read_input_tokens ?? 0) * price[2] + (u.cache_creation_input_tokens ?? 0) * price[3]) / 1_000_000;
+        // At the card the prompt's length falls on (cache reads and writes count into the length).
+        const actual = usageCostUsd(card, response.usage);
+        if (!Number.isFinite(actual)) throw new Error("the call's usage could not be read");
         budget.settle(reserved, actual);
         answers = response.parsed_output?.answers ?? null;
       } catch (err) {

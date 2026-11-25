@@ -17,8 +17,8 @@ import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promise
 import path from "node:path";
 import { missTable, scoreInbound, type InboundLabels, type InboundResult } from "./eval-inbound";
 import { refundMisreadLines, refundMissTable, scoreRefund, type RefundLabels, type RefundResult } from "./eval-refund";
-import { PRICES } from "./prices";
-import { extractCallCeilingUsd, parseEvalLimits, runWithinBudget } from "../src/lib/eval-budget";
+import { LONG_PROMPT_PRICES, PRICES } from "./prices";
+import { extractCallCeilingUsd, parseEvalLimits, priceCardFor, runWithinBudget, usageCostUsd } from "../src/lib/eval-budget";
 
 const root = process.cwd();
 process.loadEnvFile(path.join(root, [".env", "local"].join(".")));
@@ -91,8 +91,8 @@ async function main() {
   const { env } = await import("../src/lib/env");
 
   const model = env().OTODOKE_MODEL;
-  const price = PRICES[model];
-  if (!price) throw new Error(`no price known for ${model}; add it to PRICES after checking the pricing page`);
+  const card = priceCardFor(model, PRICES, LONG_PROMPT_PRICES);
+  if (!card) throw new Error(`no price known for ${model}; add it to PRICES after checking the pricing page`);
 
   let mails: Mail[] = dir ? await loadDir(dir) : setName === "demo" ? await readDemoMails() : await loadAll();
   if (limit > 0) mails = mails.slice(0, limit);
@@ -119,13 +119,11 @@ async function main() {
     items: mails,
     concurrency,
     maxUsd,
-    ceilingUsd: (mail) => extractCallCeilingUsd(extractRequestText(asPrompt(mail)), EXTRACT_MAX_TOKENS, price),
+    ceilingUsd: (mail) => extractCallCeilingUsd(extractRequestText(asPrompt(mail)), EXTRACT_MAX_TOKENS, card),
     call: async (mail) => {
       const r = await extractEmail(asPrompt(mail));
-      const u = r.usage;
-      const costUsd =
-        (u.input_tokens * price[0] + u.output_tokens * price[1] + u.cache_read_input_tokens * price[2] + u.cache_creation_input_tokens * price[3]) / 1_000_000;
-      return { result: r.data, costUsd };
+      // At the card the prompt's length falls on (cache reads and writes count into the length).
+      return { result: r.data, costUsd: usageCostUsd(card, r.usage) };
     },
     onSettled: ({ finished, spentUsd }) => process.stderr.write(`\r${finished}/${mails.length}  $${spentUsd.toFixed(3)}`),
   });

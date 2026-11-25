@@ -35,12 +35,63 @@ export function parseEvalLimits(raw: { maxUsd: string | undefined; concurrency: 
 }
 
 /**
- * What one extraction call may cost at most: every UTF-8 byte of what is sent counted as a token (a token is never
- * shorter than a byte), at the dearest input rate (plain, cache read or cache write), plus the whole max_tokens as output.
+ * A model's rate cards (scripts/prices.ts): `base` for every prompt, unless `long` is set and the prompt is longer than
+ * `long.abovePromptTokens`. The prompt is every input token: plain, cache read and cache write.
  */
-export function extractCallCeilingUsd(inputText: string, maxTokens: number, price: TokenPrice): number {
+export interface PriceCard {
+  base: TokenPrice;
+  long?: { abovePromptTokens: number; price: TokenPrice };
+}
+
+/** The card of `model`, or null when its price is not known. */
+export function priceCardFor(
+  model: string,
+  base: Record<string, TokenPrice>,
+  long: Record<string, { abovePromptTokens: number; price: TokenPrice }>,
+): PriceCard | null {
+  const price = base[model];
+  if (!price) return null;
+  return long[model] ? { base: price, long: long[model] } : { base: price };
+}
+
+/** The rates a prompt of `promptTokens` input tokens is billed at. */
+export function priceForPrompt(card: PriceCard, promptTokens: number): TokenPrice {
+  return card.long && promptTokens > card.long.abovePromptTokens ? card.long.price : card.base;
+}
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
+
+/** What an answered call cost, from its usage, at the card its prompt length falls on. NaN when the usage cannot be read. */
+export function usageCostUsd(card: PriceCard, u: TokenUsage): number {
+  const parts = [u.input_tokens, u.output_tokens, u.cache_read_input_tokens ?? 0, u.cache_creation_input_tokens ?? 0];
+  if (!parts.every((n) => Number.isFinite(n) && n >= 0)) return Number.NaN;
+  const [input, output, cacheRead, cacheWrite] = parts;
+  const price = priceForPrompt(card, input + cacheRead + cacheWrite);
+  return (input * price[0] + output * price[1] + cacheRead * (price[2] ?? price[0]) + cacheWrite * (price[3] ?? price[0])) / 1_000_000;
+}
+
+/**
+ * Room for what the API adds to the prompt for structured outputs (the format's own instructions). Its size is not
+ * published, so this is a generous allowance, not a measured bound; a call that costs more than it reserved still
+ * stops the run (`over_ceiling`).
+ */
+export const STRUCTURED_OUTPUT_ALLOWANCE_TOKENS = 4_096;
+
+/**
+ * What one extraction call may cost at most: every UTF-8 byte of what is sent counted as a token (a token is never
+ * shorter than a byte), plus the structured-output allowance, at the dearest input rate (plain, cache read or cache
+ * write) of the card that prompt length falls on, plus the whole max_tokens as output at that card.
+ */
+export function extractCallCeilingUsd(inputText: string, maxTokens: number, card: PriceCard): number {
+  const promptTokens = Buffer.byteLength(inputText, "utf8") + STRUCTURED_OUTPUT_ALLOWANCE_TOKENS;
+  const price = priceForPrompt(card, promptTokens);
   const inputRate = Math.max(...price.slice(0, 1), ...price.slice(2));
-  return (Buffer.byteLength(inputText, "utf8") * inputRate + maxTokens * price[1]) / 1_000_000;
+  return (promptTokens * inputRate + maxTokens * price[1]) / 1_000_000;
 }
 
 export type EvalStop = "budget" | "failed" | "over_ceiling" | null;

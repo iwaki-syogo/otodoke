@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractCallCeilingUsd, MAX_EVAL_CONCURRENCY, parseEvalLimits, runWithinBudget } from "@/lib/eval-budget";
+import { STRUCTURED_OUTPUT_ALLOWANCE_TOKENS, extractCallCeilingUsd, MAX_EVAL_CONCURRENCY, parseEvalLimits, runWithinBudget } from "@/lib/eval-budget";
 
 /**
  * The spending limit of `npm run eval`, with made-up calls and made-up amounts (no API, no real price):
@@ -63,12 +63,12 @@ describe("parseEvalLimits", () => {
 });
 
 describe("extractCallCeilingUsd", () => {
-  it("counts every UTF-8 byte at the dearest input rate, plus the whole max_tokens of output", () => {
+  it("counts every UTF-8 byte and the structured-output allowance at the dearest input rate, plus the whole max_tokens of output", () => {
     // Made-up rates: input 1, output 10, cache read 0.5, cache write 2 (per million).
-    const price = [1, 10, 0.5, 2] as const;
+    const card = { base: [1, 10, 0.5, 2] as const };
     const text = "あいう" + "abc"; // 9 + 3 bytes
-    near(extractCallCeilingUsd(text, 100, price), (12 * 2 + 100 * 10) / 1_000_000);
-    near(extractCallCeilingUsd("", 0, price), 0);
+    near(extractCallCeilingUsd(text, 100, card), ((12 + STRUCTURED_OUTPUT_ALLOWANCE_TOKENS) * 2 + 100 * 10) / 1_000_000);
+    near(extractCallCeilingUsd("", 0, card), (STRUCTURED_OUTPUT_ALLOWANCE_TOKENS * 2) / 1_000_000);
   });
 
   it("is tied to the real extraction call's max_tokens and request text", () => {
@@ -76,7 +76,7 @@ describe("extractCallCeilingUsd", () => {
     expect(src).toContain("max_tokens: EXTRACT_MAX_TOKENS,");
     expect(src).not.toMatch(/max_tokens:\s*\d/);
     const script = readFileSync(path.resolve(__dirname, "../../../scripts/eval.ts"), "utf8");
-    expect(script).toContain("extractCallCeilingUsd(extractRequestText(asPrompt(mail)), EXTRACT_MAX_TOKENS, price)");
+    expect(script).toContain("extractCallCeilingUsd(extractRequestText(asPrompt(mail)), EXTRACT_MAX_TOKENS, card)");
     expect(script).toContain("parseEvalLimits(");
     expect(script).toContain("runWithinBudget(");
     // The old per-worker check that compared only settled spending is gone.
