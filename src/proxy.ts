@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hostName } from "@/lib/request-origin";
+import { sessionCookieOptions } from "@/lib/supabase/cookie-options";
 
 /** The site's own address: a host the Turnstile widget is registered for (the list is in src/lib/turnstile.ts). */
 const SITE = "https://otodoke.app";
@@ -44,6 +45,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: sessionCookieOptions(),
       cookies: {
         getAll() {
           return request.cookies.getAll();
