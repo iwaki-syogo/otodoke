@@ -5,6 +5,7 @@ import { z } from "zod";
 import { todayJst } from "@/lib/format";
 import { isReceivedAt, needsCheck } from "@/lib/match";
 import { createClient } from "@/lib/supabase/server";
+import { displayedUserMatches } from "@/lib/action-identity";
 import { undeliveredStatus } from "@/lib/undelivered";
 import { EXCLUDE_FAILED } from "@/lib/not-parcel-text";
 
@@ -154,14 +155,16 @@ export async function restoreExcluded(id: string): Promise<{ ok: boolean }> {
  * Writes "the person has seen the parcels the app took out by itself, up to this mark" (the list's row then goes). Called once
  * from the page of 外した荷物 after it is drawn, never from a page render or a link's prefetch. The time is the newest mark
  * the screen showed, so a mark made after the screen was read stays unseen. A failure changes nothing on the screen: the row
- * only stays.
+ * only stays. `expectedUserId` is the account the page was drawn for; when the verified session now belongs to someone else
+ * (or the page did not say), nothing is written: the time on that page says nothing about the other account's marks.
  */
-export async function markAutoExcludedSeen(seenUntil: string): Promise<{ ok: boolean }> {
+export async function markAutoExcludedSeen(seenUntil: string, expectedUserId?: string): Promise<{ ok: boolean }> {
   const parsed = z.iso.datetime({ offset: true }).safeParse(seenUntil);
   if (!parsed.success) return { ok: false };
   try {
     const session = await signedIn();
     if (!session) return { ok: false };
+    if (!displayedUserMatches({ id: session.userId }, expectedUserId)) return { ok: false };
     const { data, error } = await session.supabase.rpc("mark_auto_excluded_seen", { p_seen_until: parsed.data });
     if (error) throw new Error(error.message);
     if (data !== "ok") return { ok: false };

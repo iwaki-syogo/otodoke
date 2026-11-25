@@ -177,7 +177,7 @@ describe("C6, C10 to C13: 外した荷物", () => {
     mocks.state.client = { rpc: vi.fn(async (name: string) => (name === "excluded_parcels_unseen" ? own : answer)) };
   };
   const page = async () => ExcludedPage();
-  const marks = async () => elementsOf<{ seenUntil: string }>(await page(), MarkAutoSeen);
+  const marks = async () => elementsOf<{ seenUntil: string; expectedUserId: string }>(await page(), MarkAutoSeen);
 
   it("C6 the open automatic ones come first, then the others in the order the database gave", async () => {
     const userNewest = row({ kind: "user", shop: "押した店", excluded_at: "2026-11-17T05:00:00Z" });
@@ -210,6 +210,8 @@ describe("C6, C10 to C13: 外した荷物", () => {
     const found = await marks();
     expect(found).toHaveLength(1);
     expect(found[0].props.seenUntil).toBe("2026-11-17T03:30:00.123456+00:00");
+    // The page hands over the account it was drawn for, so the write can refuse a session that changed meanwhile.
+    expect(found[0].props.expectedUserId).toBe(USER);
   });
 
   it.each([
@@ -256,7 +258,7 @@ describe("C6, C10 to C13: 外した荷物", () => {
     const client = source("src/app/app/excluded/mark-auto-seen.tsx");
     expect(client.startsWith('"use client";')).toBe(true);
     expect(client).toMatch(/useEffect\(/);
-    expect(client).toContain("markAutoExcludedSeen(seenUntil)");
+    expect(client).toContain("markAutoExcludedSeen(seenUntil, expectedUserId)");
   });
 });
 

@@ -291,18 +291,18 @@ describe("一覧に戻す on 外した荷物 says what happened", () => {
 });
 
 describe("C7: the client part says seen once, after it is shown", () => {
-  it("calls the action once with the time it was given, however often it renders again", async () => {
-    const view = keep(mount(() => MarkAutoSeen({ seenUntil: "2026-11-17T03:30:00+00:00" })));
+  it("calls the action once with the time and the account it was given, however often it renders again", async () => {
+    const view = keep(mount(() => MarkAutoSeen({ seenUntil: "2026-11-17T03:30:00+00:00", expectedUserId: "00000000-0000-4000-8000-00000000000a" })));
     view.rerender();
     view.rerender();
     await Promise.resolve();
     expect(ctl.seen).toHaveBeenCalledTimes(1);
-    expect(ctl.seen).toHaveBeenCalledWith("2026-11-17T03:30:00+00:00");
+    expect(ctl.seen).toHaveBeenCalledWith("2026-11-17T03:30:00+00:00", "00000000-0000-4000-8000-00000000000a");
   });
 
   it("a rejected write throws nothing and changes nothing (the row only stays)", async () => {
     ctl.seen.mockRejectedValue(new Error("network"));
-    keep(mount(() => MarkAutoSeen({ seenUntil: "2026-11-17T03:30:00+00:00" })));
+    keep(mount(() => MarkAutoSeen({ seenUntil: "2026-11-17T03:30:00+00:00", expectedUserId: "00000000-0000-4000-8000-00000000000a" })));
     await Promise.resolve();
     await Promise.resolve();
     expect(ctl.seen).toHaveBeenCalledTimes(1);

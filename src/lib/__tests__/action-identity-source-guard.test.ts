@@ -213,6 +213,11 @@ function audit(sources: Map<string, string>, decisions = policies): string[] {
       if (rpcCalls.length !== 1 || compact(rpcCalls[0].expression) !== "session.supabase.rpc" || !ts.isStringLiteral(rpcCalls[0].arguments[0]) || rpcCalls[0].arguments[0].text !== rpc) errors.push(`${key}: must call only ${rpc} through the signed-in client`);
       if (!calls.some((call) => callName(call) === "signedIn")) errors.push(`${key}: signed-in session is not required`);
       if (calls.some((call) => ["from", "update", "insert", "upsert", "fetch", "signOut", "deleteUser"].includes(callName(call)))) errors.push(`${key}: direct table or account effect cannot use the owner-rpc exemption`);
+      // A write sent from a page in the background: the account that page was drawn for must still be the session's, before the RPC.
+      if (key.endsWith("#markAutoExcludedSeen")) {
+        const check = nodes(fn.body!, ts.isIfStatement).filter((s) => compact(s.expression) === "!displayedUserMatches({id:session.userId},expectedUserId)" && compact(s.thenStatement) === "return{ok:false};");
+        if (check.length !== 1 || !rpcCalls[0] || check[0].end > rpcCalls[0].pos) errors.push(`${key}: the displayed account is not checked before the RPC`);
+      }
       // The ownership argument lives in SQL: the function must derive the owner from the session.
       const migration = rpc === "mark_auto_excluded_seen" ? "20261117110000_parcel_exclusions_auto.sql" : ["exclude_parcel", "restore_parcel"].includes(rpc) ? "20261117100000_parcel_exclusions.sql" : "20261113130000_received_receipts.sql";
       const sql = readFileSync(path.resolve(app, "../../supabase/migrations", migration), "utf8");
@@ -293,6 +298,25 @@ describe("every Web Server Action has an executable identity policy", () => {
     const sources = realSources();
     sources.set("app/category-actions.ts", sources.get("app/category-actions.ts")!.replace('.eq("user_id", user.id)', ""));
     expect(audit(sources)).toContain("app/category-actions.ts#setCategory: mutation lost immutable id/current owner filters");
+  });
+
+  it("requires the displayed account before the background seen write, and rejects removing or moving the check", () => {
+    const name = "app/parcel-actions.ts";
+    const key = "app/parcel-actions.ts#markAutoExcludedSeen";
+    const original = realSources().get(name)!;
+    const check = "    if (!displayedUserMatches({ id: session.userId }, expectedUserId)) return { ok: false };\n";
+    expect(original).toContain(check);
+    const rpcLine = '    const { data, error } = await session.supabase.rpc("mark_auto_excluded_seen", { p_seen_until: parsed.data });\n';
+    expect(original).toContain(rpcLine);
+    for (const changed of [
+      original.replace(check, ""),
+      original.replace(check, "").replace(rpcLine, rpcLine + check),
+      original.replace(check, check.replace("expectedUserId)", "session.userId)")),
+    ]) {
+      const sources = realSources();
+      sources.set(name, changed);
+      expect(audit(sources)).toContain(`${key}: the displayed account is not checked before the RPC`);
+    }
   });
 
   it("holds the owner-scoped RPC actions to the signed-in client, the named RPC and no direct table access", () => {

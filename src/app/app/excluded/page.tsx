@@ -30,7 +30,7 @@ export default async function ExcludedPage() {
   return (
     <DeliveredToastProvider>
     <div className="flex flex-col gap-6">
-      {seenUntil ? <MarkAutoSeen seenUntil={seenUntil} /> : null}
+      {seenUntil ? <MarkAutoSeen seenUntil={seenUntil} expectedUserId={user.id} /> : null}
       <Link href="/app" className="text-sm text-neutral-500">
         ‹ 荷物
       </Link>
