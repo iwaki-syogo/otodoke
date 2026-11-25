@@ -32,7 +32,7 @@ export interface PasswordPanelState {
 /** Codes after which this page cannot go on: the way on is to log in again. */
 const LOG_IN_AGAIN: ReadonlySet<FlowCode> = new Set(["stale_session", "signed_out"]);
 
-const input = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base";
+const input = "min-h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base";
 const primary = "inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white";
 
 /**
@@ -87,7 +87,7 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium">パスワードを忘れたとき</summary>
         <div className="border-t border-neutral-100 p-4 text-sm leading-6">
           <p>{RESET_LOSES_MAIL}</p>
-          <Link href="/login/forgot" className="mt-3 inline-block rounded-lg border border-neutral-300 px-4 py-2 font-medium">
+          <Link href="/login/forgot" className="tap mt-3 inline-block rounded-lg border border-neutral-300 px-4 py-2 font-medium">
             再設定のメールを送る
           </Link>
         </div>
@@ -99,7 +99,7 @@ export function PasswordPanel({ state }: { state: PasswordPanelState }) {
 /** The way on after stale_session or signed_out: the login, back to 設定. */
 function LogInAgain() {
   return (
-    <Link href="/login?next=%2Fapp%2Fsettings%2Fpassword" className="mt-1 inline-block font-medium underline underline-offset-4">
+    <Link href="/login?next=%2Fapp%2Fsettings%2Fpassword" className="tap mt-1 inline-block font-medium underline underline-offset-4">
       ログイン
     </Link>
   );
@@ -176,7 +176,7 @@ export function MakeKeyForm({ userId, email }: { userId: string; email: string }
               <div className="mt-2">
                 <OtherPasswordForm openWithAnother={error.openWithAnother} onOpened={() => router.refresh()} onLogInAgain={(code) => setError({ text: flowMessage(code), logIn: true })} />
               </div>
-              <Link href="/login/forgot" className="mt-1 inline-block font-medium underline underline-offset-4">
+              <Link href="/login/forgot" className="tap mt-1 inline-block font-medium underline underline-offset-4">
                 再設定する
               </Link>
             </>

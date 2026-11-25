@@ -3,12 +3,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { TrackingLink } from "@/lib/carriers";
 
-const LINK = "font-medium text-sky-700 underline underline-offset-4";
+const LINK = "tap font-medium text-sky-700 underline underline-offset-4";
 /**
  * A small framed control at the right end of a step row. One shared minimum width, so the
  * controls of steps 1 and 2 line up in size as well as at their right ends.
  */
-const SMALL = "min-w-20 shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1 text-center text-sm font-medium";
+const SMALL = "tap min-w-20 shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1 text-center text-sm font-medium";
 
 /**
  * Copies during the tap itself, without the async Clipboard API: that one needs a secure
@@ -167,7 +167,7 @@ function CopyThenOpen({
                 <p className="min-w-0 flex-1 pt-0.5 leading-relaxed text-neutral-700">送り状番号を貼り付けて『お問い合わせ開始』を押す</p>
               </li>
             </ol>
-            <button type="button" onClick={close} className="mt-6 w-full rounded-xl px-4 py-2.5 font-medium text-neutral-600">
+            <button type="button" onClick={close} className="mt-6 min-h-11 w-full rounded-xl px-4 py-2.5 font-medium text-neutral-600">
               閉じる
             </button>
           </div>

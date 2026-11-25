@@ -77,7 +77,7 @@ export function SealedMail({ userId, email, emailId, fromDomain, notes, confiden
       )}
       {confidence}
       <details className="mt-2">
-        <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
+        <summary className="tap cursor-pointer text-xs text-sky-700">元メールを見る</summary>
         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
         <div className="mt-2">
           {!key ? (

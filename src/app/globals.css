@@ -26,3 +26,23 @@ body {
 input[type=date]::-webkit-date-and-time-value {
   text-align: left;
 }
+
+/*
+ * A pressable thing drawn smaller than 44×44px still takes a finger on at least 44×44px around its
+ * centre, without changing how it is drawn or where anything sits. The area is the ::after, which
+ * the browser hit-tests as the element itself. Keep 44px free between two of them (or they share
+ * the gap), and not for an element already placed with `absolute`/`fixed` (this makes it relative)
+ * or for a link inside a sentence (it would cover the lines above and below).
+ */
+@utility tap {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}

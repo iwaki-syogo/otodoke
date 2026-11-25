@@ -22,11 +22,11 @@ export function DemoLoader({ userId, loaded, error, cleared }: { userId: string;
       {error ? <p className="break-words text-sm text-red-800">{error}</p> : null}
 
       <details className="text-sm">
-        <summary className="cursor-pointer text-neutral-500">すべての荷物を消す</summary>
+        <summary className="tap cursor-pointer text-neutral-500">すべての荷物を消す</summary>
         <form action={clearAllParcels} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
           <input type="hidden" name="expectedUserId" value={userId} />
           <p id={warningId} className="text-sm leading-6">Otodoke の荷物と、Otodoke に保存したメールを消します。お使いのメールの受信箱は、そのままです。消すと元に戻せません。</p>
-          <label className="flex items-center gap-2">
+          <label className="flex min-h-11 items-center gap-2">
             <input type="checkbox" name="confirm" value="yes" aria-describedby={warningId} className="h-4 w-4" />
             本当に消す
           </label>
@@ -42,5 +42,5 @@ function LoadButton() {
 }
 
 function ClearButton() {
-  return <PressButton label="消す" busyLabel="消しています…" className="self-start rounded-lg border border-red-300 px-3 py-2 text-sm text-red-800" />;
+  return <PressButton label="消す" busyLabel="消しています…" className="tap self-start rounded-lg border border-red-300 px-3 py-2 text-sm text-red-800" />;
 }

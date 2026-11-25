@@ -65,7 +65,7 @@ export function OtherPasswordForm({
 
   if (!shown) {
     return (
-      <button type="button" onClick={() => setShown(true)} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
+      <button type="button" onClick={() => setShown(true)} className="tap rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
         {OPEN_WITH_ANOTHER_PASSWORD}
       </button>
     );
@@ -81,9 +81,9 @@ export function OtherPasswordForm({
           placeholder="ほかのパスワード"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
+          className="min-h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
         />
-        <PendingSubmitButton pending={busy} pendingLabel="開いています…" tone="light" className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white">
+        <PendingSubmitButton pending={busy} pendingLabel="開いています…" tone="light" className="tap inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white">
           開く
         </PendingSubmitButton>
       </div>

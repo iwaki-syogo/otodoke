@@ -53,7 +53,7 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
 export default function PrivacyPage() {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-10">
-      <Link href="/" className="-my-2 inline-block py-2 text-sm text-neutral-500">
+      <Link href="/" className="tap -my-2 inline-block py-2 text-sm text-neutral-500">
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="mt-8 text-2xl font-bold">プライバシーポリシー</h1>
@@ -195,7 +195,7 @@ export default function PrivacyPage() {
       <Section title="問い合わせ先">
         <p>このポリシーについてのお問い合わせと、あなたのデータの開示・訂正・削除などのお求めは、次のアドレスで受け付けます。</p>
         <p>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="break-all font-medium text-sky-700 underline underline-offset-4">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="inline-block min-h-11 break-all py-2.5 font-medium text-sky-700 underline underline-offset-4">
             {CONTACT_EMAIL}
           </a>
         </p>

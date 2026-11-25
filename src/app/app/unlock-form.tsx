@@ -47,13 +47,13 @@ export function UnlockForm({ userId, email }: { userId: string; email: string })
           placeholder="パスワード"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
+          className="min-h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base"
         />
         <button
           type="submit"
           disabled={busy || !password}
           aria-busy={busy || undefined}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="tap inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
         >
           {busy ? (
             <>

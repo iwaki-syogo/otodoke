@@ -20,7 +20,7 @@ export default function AccountDeletedPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
       <ForgetTabKey />
-      <Link href="/" className="-mt-2 mb-6 py-2 text-sm text-neutral-500">
+      <Link href="/" className="tap -mt-2 mb-6 py-2 text-sm text-neutral-500">
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">アカウントを削除しました</h1>
@@ -28,7 +28,7 @@ export default function AccountDeletedPage() {
       <Link href="/login" className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-neutral-900 px-5 py-4 text-base font-medium text-white active:opacity-80">
         ログイン画面へ
       </Link>
-      <Link href="/privacy" className="mt-6 self-center text-xs text-neutral-500 underline underline-offset-4">
+      <Link href="/privacy" className="tap mt-6 self-center text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
       </Link>
     </main>

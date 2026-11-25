@@ -75,7 +75,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
           <div className={`mt-2 text-sm leading-6 ${note.ok ? "text-emerald-800" : "text-red-800"}`}>
             <p>{note.text}</p>
             {note.register ? (
-              <Link href="/app/parcels/new" className="mt-2 inline-block rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900">
+              <Link href="/app/parcels/new" className="tap mt-2 inline-block rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900">
                 荷物を登録する
               </Link>
             ) : null}
@@ -102,7 +102,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
                     <form action={markWronglyDropped} className="shrink-0">
                       <input type="hidden" name="expectedUserId" value={user.id} />
                       <input type="hidden" name="id" value={d.id} />
-                      <PressButton label="これは荷物" busyLabel="記録しています…" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
+                      <PressButton label="これは荷物" busyLabel="記録しています…" className="tap rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                     </form>
                   )}
                 </li>
@@ -122,7 +122,7 @@ export default async function DroppedPage({ searchParams }: { searchParams: Sear
                   <form action={forgetSender} className="shrink-0">
                     <input type="hidden" name="expectedUserId" value={user.id} />
                     <input type="hidden" name="domain" value={domain} />
-                    <PressButton label={REMEMBERED_SENDER_TEXT.remove} busyLabel={REMEMBERED_SENDER_TEXT.removing} className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
+                    <PressButton label={REMEMBERED_SENDER_TEXT.remove} busyLabel={REMEMBERED_SENDER_TEXT.removing} className="tap rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium" />
                   </form>
                 </li>
               ))}

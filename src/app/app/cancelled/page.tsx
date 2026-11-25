@@ -28,7 +28,7 @@ export default async function CancelledPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/app" className="text-sm text-neutral-500">
+      <Link href="/app" className="tap text-sm text-neutral-500">
         ‹ 荷物
       </Link>
       <h1 className="flex items-baseline gap-2 text-lg font-bold">

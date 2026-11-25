@@ -87,7 +87,7 @@ export default async function ParcelsPage({ searchParams }: { searchParams?: Sea
 
   const addLink = (
     <div className="flex justify-end">
-      <Link href="/app/parcels/new" className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium active:bg-neutral-100">
+      <Link href="/app/parcels/new" className="tap rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium active:bg-neutral-100">
         ＋ 登録
       </Link>
     </div>
@@ -221,7 +221,7 @@ function CheckSection({ items }: { items: ParcelRow[] }) {
       </div>
       {rest.length > 0 ? (
         <details className="mt-3">
-          <summary className="cursor-pointer text-sm text-amber-900">ほか {rest.length} 件を見る</summary>
+          <summary className="tap cursor-pointer text-sm text-amber-900">ほか {rest.length} 件を見る</summary>
           <div className="mt-3 flex flex-col gap-3">
             {rest.map((p) => (
               <CheckCard key={p.id} parcel={p} />

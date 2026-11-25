@@ -238,7 +238,7 @@ describe("the edit and the delete", () => {
     expect(EDIT_PAGE).toContain(`<h1 className="text-xl font-bold">${constant(TEXT, "editHeading")}</h1>`);
     expect(DETAIL_PAGE).toMatch(new RegExp(`>\\s*${constant(TEXT, "edit")}\\s*</Link>`));
     expect(FORM).toContain(`{parcel ? "${constant(TEXT, "save")}" :`);
-    expect(FORM).toContain(`<summary className="cursor-pointer text-neutral-500">${constant(TEXT, "deleteSummary")}</summary>`);
+    expect(FORM).toContain(`<summary className="tap cursor-pointer text-neutral-500">${constant(TEXT, "deleteSummary")}</summary>`);
     expect(FORM).toContain(`<p id={warningId} className="text-sm leading-6">${constant(TEXT, "deleteWarning")}</p>`);
     expect(FORM).toMatch(new RegExp(`/>\\s*${constant(TEXT, "deleteConfirm")}\\s*</label>`));
     expect(FORM).toContain(`pendingLabel="${constant(TEXT, "deleting")}"`);

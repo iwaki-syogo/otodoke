@@ -525,10 +525,10 @@ export function SignupForm() {
       <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
         <p>{notice.text}</p>
         <div className="mt-3 flex flex-wrap gap-3">
-          <Link href={safeNextPath(null)} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
+          <Link href={safeNextPath(null)} className="tap rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
             このまま進む
           </Link>
-          <Link href="/app/settings/password" className="rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
+          <Link href="/app/settings/password" className="tap rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900">
             パスワードとメールの鍵
           </Link>
         </div>
@@ -557,13 +557,13 @@ export function SignupForm() {
               {notice.text}
             </p>
           ) : null}
-          <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
+          <PendingButton pending={resending && !ticking("resend")} pendingLabel="送っています…" onClick={resend} className="tap flex items-center justify-center gap-2 self-center px-4 py-2 text-sm text-neutral-600 underline underline-offset-4">
             {resending && ticking("resend") ? TURNSTILE_TICK_PROMPT : CONFIRM_WAIT.resend}
           </PendingButton>
           <p className="text-center text-sm leading-6 text-neutral-600">{CONFIRM_WAIT.loginHelp}</p>
-          <Link href="/login" className="self-center py-2 text-sm underline underline-offset-4">ログイン</Link>
+          <Link href="/login" className="tap self-center py-2 text-sm underline underline-offset-4">ログイン</Link>
           {resent && !resent.ok ? <p role="alert" className="text-sm text-red-800">{resent.text}</p> : null}
-          <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex items-center justify-center gap-2 self-center px-4 py-2 text-xs text-neutral-500 underline underline-offset-4">
+          <PendingButton pending={restartPending} pendingLabel={CONFIRM_WAIT.restart} onClick={restart} className="flex min-h-11 items-center justify-center gap-2 self-center px-4 text-xs text-neutral-500 underline underline-offset-4">
             {CONFIRM_WAIT.restart}
           </PendingButton>
         </div>
@@ -605,11 +605,11 @@ export function SignupForm() {
         ) : null}
       </form>
       <div className="mt-4 flex flex-wrap gap-x-6 text-sm">
-        <Link href="/login" className="py-2 font-medium text-neutral-900 underline underline-offset-4">
+        <Link href="/login" className="tap py-2 font-medium text-neutral-900 underline underline-offset-4">
           ログイン
         </Link>
       </div>
-      <Link href="/privacy" className="mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
+      <Link href="/privacy" className="mt-6 inline-flex min-h-11 items-center self-start text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
       </Link>
       {leaveFor ? <LeaveFor href={leaveFor} /> : null}

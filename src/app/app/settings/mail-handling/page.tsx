@@ -37,7 +37,7 @@ export default async function MailHandlingPage() {
       <MailHandling hideHeading />
       {/* The whole policy, right under the summary of how mail is handled. */}
       <p className="-mt-6 text-xs text-neutral-500">
-        <Link href="/privacy" className="underline underline-offset-4">
+        <Link href="/privacy" className="tap underline underline-offset-4">
           プライバシーポリシー
         </Link>
       </p>

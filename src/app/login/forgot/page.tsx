@@ -13,16 +13,16 @@ export const metadata = { title: "パスワードの再設定" };
 export default function ForgotPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
-      <Link href="/" className="-mt-2 mb-6 py-2 text-sm text-neutral-500">
+      <Link href="/" className="tap -mt-2 mb-6 py-2 text-sm text-neutral-500">
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">パスワードの再設定</h1>
       <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">{RESET_LOSES_MAIL}</p>
       <ForgotForm />
-      <Link href="/login" className="mt-4 self-start py-2 text-sm text-neutral-600 underline underline-offset-4">
+      <Link href="/login" className="tap mt-4 self-start py-2 text-sm text-neutral-600 underline underline-offset-4">
         ログイン
       </Link>
-      <Link href="/privacy" className="mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
+      <Link href="/privacy" className="tap mt-6 self-start py-2 text-xs text-neutral-500 underline underline-offset-4">
         プライバシーポリシー
       </Link>
     </main>

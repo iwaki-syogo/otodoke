@@ -7,7 +7,7 @@ import { PUBLIC_CONTACT_EMAIL, PUBLIC_PAGE_TEXT, type PublicSection } from "@/li
 export function PublicDocument({ title, lead, sections, current }: { title: string; lead?: string; sections: readonly PublicSection[]; current: "/terms" | "/support" }) {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-10">
-      <Link href="/" aria-label={PUBLIC_PAGE_TEXT.home} className="-my-2 inline-flex min-h-11 items-center gap-1 py-2 text-sm text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+      <Link href="/" aria-label={PUBLIC_PAGE_TEXT.home} className="tap -my-2 inline-flex min-h-11 items-center gap-1 py-2 text-sm text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="mt-8 text-2xl font-bold">{title}</h1>

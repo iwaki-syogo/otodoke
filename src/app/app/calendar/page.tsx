@@ -60,13 +60,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
     <FilterScope>
       <div className="flex flex-col gap-6">
         <header className="flex items-center justify-between">
-          <FilterLink href={`/app/calendar?m=${shiftMonth(ym, -1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="前の月">
+          <FilterLink href={`/app/calendar?m=${shiftMonth(ym, -1)}`} className="tap rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="前の月">
             <FilterSpinner>‹</FilterSpinner> 前月
           </FilterLink>
           <h1 className="text-lg font-bold">
             <MonthPicker value={ym} basePath="/app/calendar" min={MONTH_MIN} max={monthMax(today)} />
           </h1>
-          <FilterLink href={`/app/calendar?m=${shiftMonth(ym, 1)}`} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="次の月">
+          <FilterLink href={`/app/calendar?m=${shiftMonth(ym, 1)}`} className="tap rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100" aria-label="次の月">
             翌月 <FilterSpinner>›</FilterSpinner>
           </FilterLink>
         </header>

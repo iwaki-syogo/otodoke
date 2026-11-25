@@ -153,7 +153,7 @@ export function MonthPicker({
               // Not allowed or not there (iPhone opens the wheels on the tap anyway).
             }
           }}
-          className="absolute inset-0 h-full w-full cursor-pointer text-base opacity-0"
+          className="absolute left-0 top-1/2 h-[max(100%,2.75rem)] w-full -translate-y-1/2 cursor-pointer text-base opacity-0"
         />
       ) : null}
     </span>
