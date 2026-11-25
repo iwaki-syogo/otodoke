@@ -58,7 +58,7 @@ export function manualFormDefaults(parcel: ParcelRow | null, today: string): Rec
   };
 }
 
-const field = "mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-base";
+const field = "mt-1 min-h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-base";
 // iOS Safari gives type=date a minimum width of its own; min-h is the other fields' height.
 const dateField = `${field} block min-w-0 max-w-full appearance-none min-h-[2.875rem]`;
 
@@ -172,11 +172,11 @@ function DeleteForm({ id }: { id: string }) {
   const warningId = useId();
   return (
     <details className="text-sm">
-      <summary className="cursor-pointer text-neutral-500">この荷物を消す</summary>
+      <summary className="tap cursor-pointer text-neutral-500">この荷物を消す</summary>
       <form action={action} className="mt-2 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3">
         <input type="hidden" name="id" value={id} />
         <p id={warningId} className="text-sm leading-6">消すと元に戻せません。</p>
-        <label className="flex items-center gap-2">
+        <label className="flex min-h-11 items-center gap-2">
           <input type="checkbox" name="confirm" value="yes" required aria-describedby={warningId} className="h-4 w-4" />
           本当に消す
         </label>
@@ -186,7 +186,7 @@ function DeleteForm({ id }: { id: string }) {
           </p>
         ) : null}
         {/* Not disabled while sending (a disabled button drops out of the POST): see SubmitButton. */}
-        <SubmitButton pendingLabel="消しています…" className="flex items-center gap-2 self-start rounded-lg border border-red-300 px-3 py-2 text-sm text-red-800">
+        <SubmitButton pendingLabel="消しています…" className="tap flex items-center gap-2 self-start rounded-lg border border-red-300 px-3 py-2 text-sm text-red-800">
           消す
         </SubmitButton>
       </form>

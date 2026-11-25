@@ -54,7 +54,7 @@ export default async function DeliveredPage({ searchParams }: { searchParams: Se
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href="/app" className="text-sm text-neutral-500">
+      <Link href="/app" className="tap text-sm text-neutral-500">
         ‹ 荷物
       </Link>
       {/* With the filters, the heading is drawn by DeliveredFilter: its count fades with the results. */}

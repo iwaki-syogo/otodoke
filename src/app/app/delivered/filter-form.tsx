@@ -64,7 +64,7 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
       disabled={pending}
       onChange={(e) => pick(name, e.target.value)}
       aria-label={all}
-      className={`${wide ? "col-span-2 " : ""}w-full min-w-0 truncate rounded-lg border border-neutral-300 bg-white px-2 py-2 text-base disabled:opacity-60`}
+      className={`${wide ? "col-span-2 " : ""}min-h-11 w-full min-w-0 truncate rounded-lg border border-neutral-300 bg-white px-2 py-2 text-base disabled:opacity-60`}
     >
       <option value="">{all}</option>
       {choices.map((o) => (
@@ -102,7 +102,7 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
           }}
           placeholder="品名・店名"
           aria-label="検索"
-          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base read-only:opacity-60"
+          className="min-h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base read-only:opacity-60"
         />
         {pending ? <Spinner /> : null}
         {narrowed ? (
@@ -115,7 +115,7 @@ function Fields({ initial, options, pending, go }: { initial: Values; options: O
               setValues({ q: "", s: "", c: "", m: "" });
               go({});
             }}
-            className="shrink-0 rounded-lg px-2 py-2 text-sm text-neutral-500 underline underline-offset-4 aria-disabled:opacity-60"
+            className="tap shrink-0 rounded-lg px-2 py-2 text-sm text-neutral-500 underline underline-offset-4 aria-disabled:opacity-60"
           >
             クリア
           </Link>

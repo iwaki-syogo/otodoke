@@ -49,7 +49,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
   if (parcelError) {
     return (
       <article className="flex flex-col gap-6">
-        <Link href="/app" className="text-sm text-neutral-500">
+        <Link href="/app" className="tap text-sm text-neutral-500">
           ‹ 荷物
         </Link>
         <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">読み込めませんでした</p>
@@ -77,12 +77,12 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
   return (
     <article className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <Link href="/app" className="text-sm text-neutral-500">
+        <Link href="/app" className="tap text-sm text-neutral-500">
           ‹ 荷物
         </Link>
         {/* Only a parcel typed in by hand is edited; a mail parcel changes its category alone. */}
         {parcel.source === "manual" ? (
-          <Link href={`/app/parcels/${parcel.id}/edit`} className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm active:bg-neutral-100">
+          <Link href={`/app/parcels/${parcel.id}/edit`} className="tap rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm active:bg-neutral-100">
             編集
           </Link>
         ) : null}
@@ -114,7 +114,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
 
       {/* Right after the receipt buttons, outside the header. Not for a parcel typed in by hand: that one is deleted (編集 → 消す), as before. */}
       {parcel.source !== "manual" ? (
-        <div className="-mt-3">
+        <div className="-mt-2">
           <NotParcelButton id={parcel.id} />
         </div>
       ) : null}
@@ -160,7 +160,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
               </div>
             ) : null}
             {amazonUrl ? (
-              <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className={`${parcel.carrier || parcel.tracking_number ? "mt-1 " : ""}block text-xs font-medium text-sky-700 underline underline-offset-4`}>
+              <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className={`${parcel.carrier || parcel.tracking_number ? "mt-1 " : ""}tap block text-xs font-medium text-sky-700 underline underline-offset-4`}>
                 注文の詳細を見る
               </a>
             ) : null}
@@ -236,7 +236,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                       {email.from_domain ? <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_domain}</p> : null}
                       {confidence}
                       <details className="mt-2">
-                        <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
+                        <summary className="tap cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
                         <p className="mt-2 text-xs leading-5 text-neutral-600">{email.error === "ai_consent_wait_expired" ? CONSENT_WAIT_EXPIRED_NOTICE : "本文は保存していません"}</p>
                       </details>
@@ -251,7 +251,7 @@ export default async function ParcelDetailPage({ params }: { params: Params }) {
                       <p className="mt-0.5 truncate text-xs text-neutral-500">{email.from_name ? `${email.from_name} <${email.from_address}>` : email.from_address}</p>
                       {confidence}
                       <details className="mt-2">
-                        <summary className="cursor-pointer text-xs text-sky-700">元メールを見る</summary>
+                        <summary className="tap cursor-pointer text-xs text-sky-700">元メールを見る</summary>
                         {notes ? <p className="mt-2 text-xs leading-5 text-neutral-500">読み取りメモ: {notes}</p> : null}
                         <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-700">
                           {body || NO_BODY_TEXT}

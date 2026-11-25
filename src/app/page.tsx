@@ -17,7 +17,7 @@ export default async function Home() {
       <header className="flex items-center justify-between">
         <Wordmark className="text-2xl" />
         {user ? (
-          <Link href="/app" className="text-sm font-medium text-neutral-700 underline-offset-4 hover:underline">
+          <Link href="/app" className="tap text-sm font-medium text-neutral-700 underline-offset-4 hover:underline">
             荷物を見る
           </Link>
         ) : null}
@@ -85,10 +85,10 @@ export default async function Home() {
       <footer className="mt-auto pt-16 text-xs leading-5 text-neutral-500">
         Built with Claude: Japan 2026 の作品。メールの判定・読み取りに Claude を使っています。
         <br />
-        <a href="https://github.com/iwaki-syogo/otodoke" className="inline-block py-2 underline underline-offset-4" target="_blank" rel="noopener noreferrer">
+        <a href="https://github.com/iwaki-syogo/otodoke" className="tap inline-block py-2 underline underline-offset-4" target="_blank" rel="noopener noreferrer">
           GitHub
         </a>
-        <Link href="/privacy" className="ml-4 inline-block py-2 underline underline-offset-4">
+        <Link href="/privacy" className="tap ml-4 inline-block py-2 underline underline-offset-4">
           プライバシーポリシー
         </Link>
         <PublicPageLinks includePrivacy={false} />

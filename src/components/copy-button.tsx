@@ -15,7 +15,7 @@ export function CopyButton({ text, label = "コピー" }: { text: string; label?
           .catch(() => setState("failed"));
         setTimeout(() => setState("idle"), 2000);
       }}
-      className="shrink-0 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium active:bg-neutral-100"
+      className="tap shrink-0 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium active:bg-neutral-100"
     >
       {state === "done" ? "コピーしました" : state === "failed" ? "長押しでコピー" : label}
     </button>

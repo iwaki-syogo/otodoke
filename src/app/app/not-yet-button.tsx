@@ -32,7 +32,7 @@ export function NotYetButton({ id }: { id: string }) {
         pending={pending}
         pendingLabel="保存しています…"
         onClick={press}
-        className="inline-flex items-center gap-2 rounded-full border border-amber-400 bg-white px-3 py-1 text-sm text-amber-950 active:bg-amber-100"
+        className="tap inline-flex items-center gap-2 rounded-full border border-amber-400 bg-white px-3 py-1 text-sm text-amber-950 active:bg-amber-100"
       >
         まだ
       </PendingButton>

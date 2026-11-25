@@ -7,7 +7,7 @@ type Month = ReturnType<typeof spendByMonth>[number];
 
 const PLOT = 160; // px, the bars' area; month labels sit below it
 const BAR = 20; // px, under the 24px cap
-const SLOT = 32; // px, each bar's tap target
+const SLOT = 44; // px, each bar's tap target (a finger's 44px; the row scrolls sideways)
 
 /**
  * Spending per order month as stacked columns, one colour per category in a fixed order.

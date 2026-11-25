@@ -57,7 +57,7 @@ export default async function WelcomePage() {
         <section id="gmail-approval" className="mt-6 scroll-mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <h2 className="text-base font-bold">Gmail の転送を承認してください</h2>
           <p className="mt-1 text-sm leading-6">Gmail から転送の確認が届いています。承認済みなら、この案内は無視して大丈夫です。</p>
-          <a href={confirmUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
+          <a href={confirmUrl} target="_blank" rel="noopener noreferrer" className="tap mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white">
             承認ページを開く
           </a>
           <ApprovalFilterCopy />

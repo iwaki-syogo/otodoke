@@ -66,7 +66,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
     <FilterScope>
       <div className="flex flex-col gap-6">
         <nav className="grid grid-cols-2 rounded-xl bg-neutral-100 p-1 text-sm" aria-label="期間">
-          <FilterLink href={here({ m: today.slice(0, 7), s: shop })} aria-current={!all ? "page" : undefined} className={`rounded-lg py-2 text-center ${!all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
+          <FilterLink href={here({ m: today.slice(0, 7), s: shop })} aria-current={!all ? "page" : undefined} className={`tap rounded-lg py-2 text-center ${!all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
             {/* The spinner sits left of the word, so the word does not move when it shows. */}
             <span className="relative">
               月
@@ -75,7 +75,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
               </span>
             </span>
           </FilterLink>
-          <FilterLink href={here({ m: ALL, s: shop })} aria-current={all ? "page" : undefined} className={`rounded-lg py-2 text-center ${all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
+          <FilterLink href={here({ m: ALL, s: shop })} aria-current={all ? "page" : undefined} className={`tap rounded-lg py-2 text-center ${all ? "bg-white font-bold shadow-sm" : "text-neutral-600"}`}>
             <span className="relative">
               全期間
               <span className="absolute right-full top-1/2 mr-1.5 flex -translate-y-1/2">
@@ -89,13 +89,13 @@ export default async function SpendPage({ searchParams }: { searchParams: Search
           <h1 className="text-center text-lg font-bold">全期間</h1>
         ) : (
           <header className="flex items-center justify-between">
-            <FilterLink href={here({ m: shiftMonth(ym, -1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
+            <FilterLink href={here({ m: shiftMonth(ym, -1), c: only, s: shop })} className="tap rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
               <FilterSpinner>‹</FilterSpinner> 前月
             </FilterLink>
             <h1 className="text-lg font-bold">
               <MonthPicker value={ym} basePath="/app/spend" keep={{ c: only === undefined ? undefined : cParam(only), s: shop }} min={MONTH_MIN} max={monthMax(today)} />
             </h1>
-            <FilterLink href={here({ m: shiftMonth(ym, 1), c: only, s: shop })} className="rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
+            <FilterLink href={here({ m: shiftMonth(ym, 1), c: only, s: shop })} className="tap rounded-lg px-3 py-2 text-sm text-neutral-600 active:bg-neutral-100">
               翌月 <FilterSpinner>›</FilterSpinner>
             </FilterLink>
           </header>
@@ -188,7 +188,7 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
                     href={selected ? here({ c: only }) : here({ c: only, s: name })}
                     prefetch={false}
                     aria-current={selected ? "true" : undefined}
-                    className={`block rounded-xl px-3 py-1.5 active:bg-neutral-100 ${selected ? "bg-neutral-100" : ""} ${shop !== undefined && !selected ? "opacity-50" : ""}`}
+                    className={`flex min-h-11 flex-col justify-center rounded-xl px-3 py-1.5 active:bg-neutral-100 ${selected ? "bg-neutral-100" : ""} ${shop !== undefined && !selected ? "opacity-50" : ""}`}
                   >
                     <div className="flex items-baseline justify-between text-xs">
                       <span className="truncate text-neutral-700">{name}</span>
@@ -227,7 +227,7 @@ function Spend({ parcels, all, only, shop, here }: { parcels: ParcelRow[]; all: 
 /** 「◯◯だけ ×」: takes its own condition off and keeps the other. */
 function Chip({ href, label }: { href: string; label: string }) {
   return (
-    <FilterLink href={href} className="inline-flex min-w-0 max-w-full items-center gap-1 text-sm font-normal text-neutral-500 underline underline-offset-4">
+    <FilterLink href={href} className="tap inline-flex min-w-0 max-w-full items-center gap-1 text-sm font-normal text-neutral-500 underline underline-offset-4">
       <span className="min-w-0 truncate">{label}だけ</span> <FilterSpinner>×</FilterSpinner>
     </FilterLink>
   );

@@ -53,7 +53,7 @@ export const metadata: Metadata = { title: "プライバシーポリシー" };
 export default function PrivacyPage() {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-10">
-      <Link href="/" className="-my-2 inline-block py-2 text-sm text-neutral-500">
+      <Link href="/" className="tap -my-2 inline-block py-2 text-sm text-neutral-500">
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="mt-8 text-2xl font-bold">プライバシーポリシー</h1>

@@ -34,7 +34,7 @@ function pairs(): Array<[string, string | null]> {
     ["loadLabel", LABELS.match(/LOAD_DEMO_LABEL = "([^"]*)"/)?.[1] ?? null],
     ["loadBusy", LOADER.match(/busyLabel="(読み込んでいます…)"/)?.[1] ?? null],
     ["loadFailed", errorWord("demo_failed")],
-    ["clearSummary", LOADER.match(/<summary className="cursor-pointer text-neutral-500">([^<]*)<\/summary>/)?.[1] ?? null],
+    ["clearSummary", LOADER.match(/<summary className="tap cursor-pointer text-neutral-500">([^<]*)<\/summary>/)?.[1] ?? null],
     ["clearWarning", LOADER.match(/leading-6">(Otodoke の荷物と、Otodoke に保存したメールを消します[^<]*)<\/p>/)?.[1] ?? null],
     ["clearCheck", LOADER.match(/className="h-4 w-4" \/>\s*([^\n<]+)\n/)?.[1]?.trim() ?? null],
     ["clearButton", /label="消す" busyLabel="/.test(LOADER) ? "消す" : null],

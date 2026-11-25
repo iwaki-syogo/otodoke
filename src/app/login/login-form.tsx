@@ -108,7 +108,7 @@ export function LoginForm({ next }: { next: string }) {
         <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
           <p className="font-medium">{EXISTING_ACCOUNT_NOTICE}</p>
           <div className="mt-3">
-            <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+            <Link href="/login/forgot" className="tap rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
               パスワードを忘れた
             </Link>
           </div>
@@ -150,11 +150,11 @@ export function LoginForm({ next }: { next: string }) {
           )}
           <div className="mt-3 flex flex-wrap gap-3">
             {notice.kind === "not_opened" ? (
-              <Link href="/login/forgot" className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+              <Link href="/login/forgot" className="tap rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
                 再設定する
               </Link>
             ) : null}
-            <Link href={next} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+            <Link href={next} className="tap rounded-lg border border-neutral-300 bg-white px-4 py-2 font-medium text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
               このまま進む
             </Link>
           </div>

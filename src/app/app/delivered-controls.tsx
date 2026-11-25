@@ -88,7 +88,7 @@ export function DeliveredToastProvider({ children }: { children: ReactNode }) {
             {toast.note ? <span className="mt-0.5 block text-xs text-neutral-300">{toast.note}</span> : null}
           </span>
           {toast.undo || toast.exclusion ? (
-            <PendingButton pending={pending} pendingLabel={UNDOING} tone="light" onClick={undo} className="inline-flex shrink-0 items-center gap-1.5 font-bold text-emerald-300">
+            <PendingButton pending={pending} pendingLabel={UNDOING} tone="light" onClick={undo} className="tap inline-flex shrink-0 items-center gap-1.5 font-bold text-emerald-300">
               元に戻す
             </PendingButton>
           ) : null}
@@ -142,7 +142,7 @@ function ExcludeFace({ visible, busy, width, onPress }: { visible: boolean; busy
         onClick={() => onPress(router, query)}
         aria-busy={busy || undefined}
         aria-disabled={busy || undefined}
-        className={`flex w-full items-center justify-start gap-2 text-left leading-tight ${busy ? "pointer-events-none" : ""}`}
+        className={`flex w-full self-stretch items-center justify-start gap-2 text-left leading-tight ${busy ? "pointer-events-none" : ""}`}
       >
         {busy ? (
           <>
@@ -262,7 +262,7 @@ export function SwipeToDeliver({ id, children, canExclude = false }: { id: strin
           onClick={commit}
           aria-busy={state === "saving" || undefined}
           aria-disabled={state === "saving" || undefined}
-          className={`flex w-full items-center justify-end gap-2 ${state === "saving" ? "pointer-events-none" : ""}`}
+          className={`flex w-full self-stretch items-center justify-end gap-2 ${state === "saving" ? "pointer-events-none" : ""}`}
         >
           {state === "saving" ? (
             <>

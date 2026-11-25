@@ -41,7 +41,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
           <form action={dismissIntakeNotice} className="mt-3">
             <input type="hidden" name="expectedUserId" value={user?.id ?? ""} />
             <input type="hidden" name="limited_at" value={intake.at} />
-            <PressButton label={READ_STORAGE_CONFIRM} busyLabel={READ_STORAGE_CONFIRMING} className="rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium" />
+            <PressButton label={READ_STORAGE_CONFIRM} busyLabel={READ_STORAGE_CONFIRMING} className="tap rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium" />
           </form>
         </section>
       ) : null}
@@ -53,7 +53,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
           {reasons && reasons.stopped > 0 ? (
             <>
               <p className="mt-1 text-sm leading-6">{READ_STOPPED_REASON}</p>
-              <Link href="/app/parcels/new" className="mt-2 inline-block rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium">
+              <Link href="/app/parcels/new" className="tap mt-2 inline-block rounded-lg border border-neutral-900 px-4 py-2 text-sm font-medium">
                 {READ_STOPPED_BUTTON}
               </Link>
             </>
@@ -63,7 +63,7 @@ export default async function TroublePage({ searchParams }: { searchParams: Sear
           {consent === "granted" ? (
             <form action={readWaitingMail} className="mt-3">
               <input type="hidden" name="expectedUserId" value={user?.id ?? ""} />
-              <PressButton label="読み取る" busyLabel="読み取っています…" className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
+              <PressButton label="読み取る" busyLabel="読み取っています…" className="tap rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white" />
             </form>
           ) : consent === "unknown" ? (
             <div role="alert" className="mt-3 text-sm">

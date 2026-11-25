@@ -75,7 +75,7 @@ export default function ForwardingGuidePage() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-4 py-10">
       <div>
-        <Link href="/" className="-my-2 inline-block py-2 text-sm text-neutral-500">
+        <Link href="/" className="tap -my-2 inline-block py-2 text-sm text-neutral-500">
           <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
         </Link>
         <h1 className="mt-8 text-2xl font-bold">{FORWARDING_TITLE}</h1>
@@ -83,7 +83,7 @@ export default function ForwardingGuidePage() {
         <p className="mt-2 text-xs text-neutral-500">{FORWARDING_LEAD_NOTE}</p>
         <nav className="mt-4 flex flex-wrap gap-2">
           {FORWARDING_GUIDES.map((g) => (
-            <a key={g.id} href={`#${g.id}`} className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium active:bg-neutral-100">
+            <a key={g.id} href={`#${g.id}`} className="tap rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium active:bg-neutral-100">
               {g.chip}
             </a>
           ))}

@@ -20,7 +20,7 @@ export default async function ResetPasswordPage() {
   const session = check.ok && check.session.email ? { email: check.session.email, userId: check.session.userId } : null;
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-4 py-10">
-      <Link href="/" className="-mt-2 mb-6 py-2 text-sm text-neutral-500">
+      <Link href="/" className="tap -mt-2 mb-6 py-2 text-sm text-neutral-500">
         <span aria-hidden="true">←</span> <Wordmark className="text-lg" />
       </Link>
       <h1 className="text-2xl font-bold">パスワードの再設定</h1>
@@ -36,7 +36,7 @@ export default async function ResetPasswordPage() {
       ) : (
         <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-4 text-sm leading-6">
           <p>{notShownWords(read, check)}</p>
-          <Link href="/login/forgot" className="mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white">
+          <Link href="/login/forgot" className="tap mt-3 inline-block rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white">
             再設定のメールを送る
           </Link>
         </div>

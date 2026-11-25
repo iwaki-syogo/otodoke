@@ -31,7 +31,7 @@ export function NotDeliveredButton({ id }: { id: string }) {
         pending={pending}
         pendingLabel="戻しています…"
         onClick={press}
-        className="inline-flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm active:bg-neutral-100"
+        className="tap inline-flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm active:bg-neutral-100"
       >
         {REMOVE_DELIVERED_LABEL}
       </PendingButton>

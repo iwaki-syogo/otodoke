@@ -56,7 +56,7 @@ export function AccountDeletion({ userId }: { userId: string }) {
   if (!confirming) {
     return (
       <section>
-        <button ref={opener} type="button" onClick={() => toggle(true)} className="rounded-lg border border-red-300 px-4 py-2 text-sm text-red-800">
+        <button ref={opener} type="button" onClick={() => toggle(true)} className="tap rounded-lg border border-red-300 px-4 py-2 text-sm text-red-800">
           アカウントを削除
         </button>
       </section>
@@ -78,7 +78,7 @@ export function AccountDeletion({ userId }: { userId: string }) {
           type="submit"
           aria-busy={pending || undefined}
           onClick={press}
-          className="flex items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white active:opacity-80"
+          className="tap flex items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white active:opacity-80"
         >
           {pending ? (
             <>
@@ -89,7 +89,7 @@ export function AccountDeletion({ userId }: { userId: string }) {
             "削除する"
           )}
         </button>
-        <button type="button" onClick={() => toggle(false)} aria-disabled={pending || undefined} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm aria-disabled:opacity-60">
+        <button type="button" onClick={() => toggle(false)} aria-disabled={pending || undefined} className="tap rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm aria-disabled:opacity-60">
           やめる
         </button>
       </form>

@@ -33,7 +33,7 @@ export function MarkDeliveredButton({ id }: { id: string }) {
         pending={pending}
         pendingLabel="保存しています…"
         onClick={press}
-        className="inline-flex items-center gap-2 rounded-full border border-emerald-600 bg-white px-3 py-1 text-sm font-medium text-emerald-700 active:bg-emerald-50"
+        className="tap inline-flex items-center gap-2 rounded-full border border-emerald-600 bg-white px-3 py-1 text-sm font-medium text-emerald-700 active:bg-emerald-50"
       >
         受け取った
       </PendingButton>

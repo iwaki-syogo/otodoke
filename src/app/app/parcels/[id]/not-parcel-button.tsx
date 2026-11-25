@@ -36,7 +36,7 @@ export function NotParcelButton({ id }: { id: string }) {
         pending={pending}
         pendingLabel="外しています…"
         onClick={press}
-        className="inline-flex items-center gap-2 py-1 text-sm text-neutral-500 underline underline-offset-4"
+        className="tap inline-flex items-center gap-2 py-1 text-sm text-neutral-500 underline underline-offset-4"
       >
         {EXCLUDE_BUTTON_LABEL}
       </PendingButton>

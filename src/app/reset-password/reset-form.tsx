@@ -104,11 +104,11 @@ export function ResetForm({ email, userId }: { email: string; userId: string }) 
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
           <p>{error.text}</p>
           {error.newLink ? (
-            <Link href="/login/forgot" className="mt-2 inline-block font-medium underline underline-offset-4">
+            <Link href="/login/forgot" className="tap mt-2 inline-block font-medium underline underline-offset-4">
               再設定のメールを送る
             </Link>
           ) : error.restart ? (
-            <a href="/reset-password" className="mt-2 inline-block font-medium underline underline-offset-4">
+            <a href="/reset-password" className="tap mt-2 inline-block font-medium underline underline-offset-4">
               最初からやり直す
             </a>
           ) : null}
