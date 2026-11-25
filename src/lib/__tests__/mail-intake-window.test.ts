@@ -19,7 +19,7 @@ import { OTHER, USER, asConsentingAdmin, item, mailOf, precomputed, reading, sur
 const mocks = vi.hoisted(() => ({ extractEmail: vi.fn(), isPurchaseMail: vi.fn() }));
 vi.mock("@/lib/extract/extract", () => ({ extractEmail: mocks.extractEmail }));
 vi.mock("@/lib/extract/triage", () => ({ isPurchaseMail: mocks.isPurchaseMail }));
-const { processInboundEmail } = await import("@/lib/pipeline");
+const { processInboundEmail, deliveryKeyOf } = await import("@/lib/pipeline");
 
 const order = reading({ relevance: "order", order_number: sure("ORD-88880000"), items: [item("テスト商品", 1200)], total_amount: sure(1200) });
 beforeEach(() => {
@@ -237,6 +237,80 @@ describe("a confirmation that could not be stored on its first delivery (review 
     expect(keys[1]).toBe(mail.messageId);
     expect(keys[2]).not.toBe(mail.messageId);
     expect(keys[2]).toBeTruthy();
+  });
+});
+
+describe("one key per delivery for the stored-row lookup, the claim and the screen log (review C1)", () => {
+  it.each([
+    ["a Message-ID", { messageId: "<m@x.test>", providerEmailId: "PID-1" }, { column: "message_id", value: "<m@x.test>" }],
+    ["no Message-ID (null), a provider ID", { messageId: null, providerEmailId: "PID-1" }, { column: "provider_email_id", value: "PID-1" }],
+    ["an empty Message-ID, a provider ID", { messageId: "", providerEmailId: "PID-1" }, { column: "provider_email_id", value: "PID-1" }],
+    ["neither (null)", { messageId: null, providerEmailId: null }, null],
+    ["neither (empty)", { messageId: "", providerEmailId: "" }, null],
+  ])("%s", (_label, mail, key) => {
+    expect(deliveryKeyOf(mail)).toEqual(key);
+  });
+
+  it("an empty Message-ID: many failures before storing, then recovery: stored, one taken, every claim names the provider ID", async () => {
+    const db = fresh();
+    const mail = confirmation({ messageId: "", providerEmailId: "PID-empty-mid" });
+    const limit = MAIL_INTAKE_LIMITS.forwarding_confirmation.user_count;
+    keyReadFails(db, limit + 2);
+    for (let i = 0; i < limit + 2; i++) await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+    const keys = calls(db, "claim_mail_intake").map((c) => (c.args as { p_delivery_key?: string | null }).p_delivery_key);
+    expect(new Set(keys)).toEqual(new Set(["PID-empty-mid"]));
+    // Stored once, the same delivery again is found by the same key: a duplicate, nothing more taken.
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("duplicate");
+    expect(used(db)).toBe(1);
+  });
+
+  it("(positive) a null Message-ID with a provider ID: the same, one taken", async () => {
+    const db = fresh();
+    const mail = confirmation({ messageId: null, providerEmailId: "PID-null-mid" });
+    keyReadFails(db, 3);
+    for (let i = 0; i < 3; i++) await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(used(db)).toBe(1);
+  });
+
+  it("neither key: every call is counted (the stated behaviour for a delivery that cannot be named)", async () => {
+    const db = fresh();
+    const mail = confirmation({ messageId: null, providerEmailId: null });
+    keyReadFails(db, 2);
+    for (let i = 0; i < 2; i++) await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(used(db)).toBe(3);
+    expect(calls(db, "claim_mail_intake").every((c) => (c.args as { p_delivery_key?: string | null }).p_delivery_key === null)).toBe(true);
+  });
+
+  it("an ad with an empty Message-ID delivered twice by the same provider ID leaves one log row", async () => {
+    const db = fresh();
+    const mail = ad({ messageId: "", providerEmailId: "PID-ad-empty-mid" });
+    for (let i = 0; i < 2; i++) expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("screened_out");
+    expect(events(db)).toHaveLength(1);
+    expect(calls(db, "log_screen_event").map((c) => ((c.args as { p_event: { delivery_key: string | null } }).p_event.delivery_key))).toEqual(["PID-ad-empty-mid", "PID-ad-empty-mid"]);
+  });
+});
+
+describe("a claim older than yesterday (review B1; the SQL itself on Postgres by tests/postgres/run-mail-intake-window.mjs)", () => {
+  it("the same delivery only: yesterday's claim is its place, an older one is counted anew", async () => {
+    const db = fresh();
+    let now = Date.parse("2026-11-03T03:00:00Z");
+    db.claudeNow = () => now;
+    const mail = confirmation();
+    keyReadFails(db, 3);
+    await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect(used(db)).toBe(1);
+    now += 86_400_000;
+    await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect(used(db)).toBe(1);
+    now += 86_400_000;
+    await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect(used(db)).toBe(2);
+    expect([...db.intakeClaims.values()]).toEqual(["2026-11-05"]);
   });
 });
 

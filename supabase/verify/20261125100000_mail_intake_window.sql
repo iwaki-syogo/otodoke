@@ -64,7 +64,9 @@ from (select
   exists (select 1 from pg_proc where oid = to_regprocedure('public.claim_mail_intake(uuid,text,bigint,jsonb,text)') and prosecdef
           and proconfig is not distinct from array['search_path=""'] and prorettype = 'text'::regtype
           and position('for key share' in prosrc) > 0 and position('for update' in prosrc) > 0
-          and position('public.mail_intake_claims' in prosrc) > 0) as claim_fn,
+          and position('public.mail_intake_claims' in prosrc) > 0
+          -- A claim older than yesterday is not taken as this delivery's place.
+          and position('day >= v_day - 1' in prosrc) > 0 and position('do update set day = excluded.day' in prosrc) > 0) as claim_fn,
   exists (select 1 from pg_proc where oid = to_regprocedure('public.log_screen_event(uuid,jsonb,jsonb)') and prosecdef
           and proconfig is not distinct from array['search_path=""'] and prorettype = 'text'::regtype
           and position('public.claim_mail_intake(' in prosrc) > 0 and position('unique_violation' in prosrc) > 0)

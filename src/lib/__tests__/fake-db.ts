@@ -786,13 +786,16 @@ export class FakeDb {
   mailIntakeLostAnswers = 0;
   /** The intake counts of supabase/migrations/20261125100000, by "user|kind|day" and "global|kind|day". */
   intakeCounts = new Map<string, { count: number; bytes: number }>();
-  /** mail_intake_claims: the deliveries that took their place, by "user|kind|key". */
-  intakeClaims = new Set<string>();
+  /** mail_intake_claims: the deliveries that took their place, by "user|kind|key", with the JST day each was taken. */
+  intakeClaims = new Map<string, string>();
 
   /** claim_mail_intake: the user's row first, then the app-wide row; a refusal takes nothing. Mirrors the SQL. */
   private claimMailIntake(userId: string, kind: string, bytes: number, limits: IntakeLimits, deliveryKey: string | null = null): string {
     const day = this.jstDay();
-    // The same delivery claimed again keeps its place and is not counted again (the claims table of the SQL).
+    const yesterday = new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    // Claims older than yesterday are removed first, whatever this call answers.
+    for (const [k, taken] of this.intakeClaims) if (k.startsWith(`${userId}|${kind}|`) && taken < yesterday) this.intakeClaims.delete(k);
+    // The same delivery claimed again (today or yesterday) keeps its place and is not counted again (the claims table of the SQL).
     const claimKey = deliveryKey ? `${userId}|${kind}|${deliveryKey}` : null;
     if (claimKey && this.intakeClaims.has(claimKey)) return "ok";
     const own = this.intakeCounts.get(`${userId}|${kind}|${day}`) ?? { count: 0, bytes: 0 };
@@ -801,7 +804,7 @@ export class FakeDb {
     if (all.count + 1 > limits.global_count || all.bytes + bytes > limits.global_bytes) return "global_intake_limit";
     this.intakeCounts.set(`${userId}|${kind}|${day}`, { count: own.count + 1, bytes: own.bytes + bytes });
     this.intakeCounts.set(`global|${kind}|${day}`, { count: all.count + 1, bytes: all.bytes + bytes });
-    if (claimKey) this.intakeClaims.add(claimKey);
+    if (claimKey) this.intakeClaims.set(claimKey, day);
     return "ok";
   }
 

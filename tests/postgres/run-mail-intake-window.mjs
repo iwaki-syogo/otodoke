@@ -18,6 +18,12 @@ import { cleanEnvironment, requireVerdict } from "./run-person-status.mjs";
 //   node tests/postgres/run-mail-intake-window.mjs --negative-control-delivery
 //                                                 (claim_mail_intake swapped for a version that counts every call of the
 //                                                  same delivery must be CAUGHT; verdict=OK means it was caught)
+//   node tests/postgres/run-mail-intake-window.mjs --negative-control-expiry
+//                                                 (claim_mail_intake swapped, in turn, for the version of 8042e6d that takes
+//                                                  a claim of any age as the delivery's place, and for one that looks at the
+//                                                  day only in its first check, and for the real one with its insert
+//                                                  conflict turned back to DO NOTHING: each must be CAUGHT; verdict=OK
+//                                                  means all three were)
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const stem = "20261125100000_mail_intake_window";
@@ -33,6 +39,7 @@ const bin = process.env.OTODOKE_PG_BINDIR ?? "";
 const uuid = (number) => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const A = uuid(1), B = uuid(2), C = uuid(3), D = uuid(4), E = uuid(5), F = uuid(6), G = uuid(7), H = uuid(8);
+const I = uuid(9), J = uuid(10), K = uuid(11), L = uuid(12), M = uuid(13), N = uuid(14);
 const LIMITS = { user_count: 3, user_bytes: 1000, global_count: 5, global_bytes: 100000 };
 const lim = (o = LIMITS) => `${quote(JSON.stringify(o))}::jsonb`;
 // The shapes of the before and after rows (verdict first, then t/f checks, then counts).
@@ -65,6 +72,85 @@ begin
   return 'ok';
 end $$;`;
 
+/**
+ * Review B1, the claim of 8042e6d as it was: a claim of any age answers 'ok', so a delivery whose claim is older than
+ * yesterday goes in without taking from today's allowance, for as long as no other delivery of that user succeeds.
+ */
+export const staleClaim = `create or replace function public.claim_mail_intake(p_user_id uuid, p_kind text, p_bytes bigint, p_limits jsonb, p_delivery_key text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v_day date := (pg_catalog.clock_timestamp() at time zone 'Asia/Tokyo')::date;
+  v_user_count bigint; v_user_bytes bigint; v_global_count bigint; v_global_bytes bigint;
+  v_count integer; v_bytes bigint; v_digest bytea;
+begin
+  if jsonb_typeof(p_limits) is distinct from 'object'
+     or (select count(*) from jsonb_each(p_limits) e
+          where e.key in ('user_count', 'user_bytes', 'global_count', 'global_bytes')
+            and jsonb_typeof(e.value) = 'number' and (e.value #>> '{}') ~ '^[0-9]+$') <> 4 then
+    raise exception 'claim_mail_intake: limits must be four whole numbers' using errcode = '22023';
+  end if;
+  v_user_count := (p_limits->>'user_count')::bigint; v_user_bytes := (p_limits->>'user_bytes')::bigint;
+  v_global_count := (p_limits->>'global_count')::bigint; v_global_bytes := (p_limits->>'global_bytes')::bigint;
+  if p_user_id is null or p_kind is null or p_kind not in ('forwarding_confirmation', 'screen_event')
+     or p_bytes is null or p_bytes < 0 or least(v_user_count, v_user_bytes, v_global_count, v_global_bytes) < 1 then
+    raise exception 'claim_mail_intake: bad argument' using errcode = '22023';
+  end if;
+  -- Auth deletion holds this row before its cascade reaches the counts: take the parent first.
+  perform id from auth.users where id = p_user_id for key share;
+  if not found then raise exception 'mail intake owner no longer exists' using errcode = '23503'; end if;
+
+  insert into public.mail_intake_user_counts(user_id, kind, day) values (p_user_id, p_kind, v_day) on conflict do nothing;
+  select count, bytes into v_count, v_bytes from public.mail_intake_user_counts
+    where user_id = p_user_id and kind = p_kind and day = v_day for update;
+
+  -- This delivery already took its place (today or yesterday): it is not counted again, whatever is left today.
+  if nullif(p_delivery_key, '') is not null then
+    v_digest := pg_catalog.sha256(convert_to(p_user_id::text || chr(10) || p_kind || chr(10) || p_delivery_key, 'UTF8'));
+    if exists (select 1 from public.mail_intake_claims where user_id = p_user_id and kind = p_kind and delivery_digest = v_digest) then
+      return 'ok';
+    end if;
+  end if;
+  if v_count + 1 > v_user_count or v_bytes + p_bytes > v_user_bytes then return 'user_intake_limit'; end if;
+
+  insert into public.mail_intake_global_counts(kind, day) values (p_kind, v_day) on conflict do nothing;
+  select count, bytes into v_count, v_bytes from public.mail_intake_global_counts
+    where kind = p_kind and day = v_day for update;
+  if v_count + 1 > v_global_count or v_bytes + p_bytes > v_global_bytes then return 'global_intake_limit'; end if;
+
+  if v_digest is not null then
+    -- Another transaction of the same delivery that started on the other side of midnight (another user row) waits
+    -- here for it and then finds it: that one is counted, this one is not.
+    insert into public.mail_intake_claims(user_id, kind, delivery_digest, day) values (p_user_id, p_kind, v_digest, v_day)
+      on conflict do nothing;
+    if not found then return 'ok'; end if;
+  end if;
+  update public.mail_intake_user_counts set count = count + 1, bytes = bytes + p_bytes
+    where user_id = p_user_id and kind = p_kind and day = v_day;
+  update public.mail_intake_global_counts set count = count + 1, bytes = bytes + p_bytes
+    where kind = p_kind and day = v_day;
+  -- Older than yesterday: no longer needed. Only rows of this kind, which this transaction's locks already serialize.
+  delete from public.mail_intake_user_counts where user_id = p_user_id and kind = p_kind and day < v_day - 1;
+  delete from public.mail_intake_claims where user_id = p_user_id and kind = p_kind and day < v_day - 1;
+  delete from public.mail_intake_global_counts where kind = p_kind and day < v_day - 1;
+  return 'ok';
+end $$;`;
+
+/** Review B1's warning: the day looked at only in the first check; the insert's conflict still answers 'ok' for an old claim. */
+export const existsOnlyClaim = (() => {
+  const from = "and delivery_digest = v_digest) then";
+  if (!staleClaim.includes(from)) throw new Error("existsOnlyClaim: the control's anchor is gone");
+  return staleClaim.replace(from, "and delivery_digest = v_digest and day >= v_day - 1) then");
+})();
+
+/** The real claim with its conflict turned back to DO NOTHING: an old claim met there answers 'ok' uncounted. */
+export function conflictBlindClaim(migration) {
+  const start = migration.indexOf("create or replace function public.claim_mail_intake(");
+  const end = migration.indexOf("end $$;", start) + "end $$;".length;
+  const from = /on conflict \(user_id, kind, delivery_digest\) do update set day = excluded\.day\s+where public\.mail_intake_claims\.day < v_day - 1;/;
+  if (start < 0 || end < start || !from.test(migration)) throw new Error("conflictBlindClaim: the claim's anchor is gone");
+  return migration.slice(start, end).replace(from, "on conflict do nothing;");
+}
+
 export function priorMigrations(names) {
   return names.filter((name) => /^\d{14}_.+\.sql$/.test(name) && name.slice(0, 14) < stem.slice(0, 14)).sort();
 }
@@ -93,6 +179,15 @@ async function selfTest() {
   // The real claim records the delivery; the keyless control does not.
   assert.match(migration, /from public\.mail_intake_claims where user_id = p_user_id and kind = p_kind and delivery_digest = v_digest/);
   assert.doesNotMatch(keylessClaim, /mail_intake_claims/);
+  // Review B1: a claim older than yesterday is not this delivery's place, in the first check and in the insert's conflict.
+  assert.match(migration, /delivery_digest = v_digest\s+and day >= v_day - 1\) then/);
+  assert.match(migration, /on conflict \(user_id, kind, delivery_digest\) do update set day = excluded\.day\s+where public\.mail_intake_claims\.day < v_day - 1;/);
+  assert.doesNotMatch(staleClaim, /day >= v_day - 1|do update/);
+  assert.match(existsOnlyClaim, /day >= v_day - 1/);
+  assert.doesNotMatch(existsOnlyClaim, /do update/);
+  const blind = conflictBlindClaim(migration);
+  assert.match(blind, /day >= v_day - 1/);
+  assert.doesNotMatch(blind, /do update/);
   // The after check runs both functions as their owner.
   const verify = await readFile(path.join(root, files.verify), "utf8");
   assert.match(verify, /perform public\.claim_mail_intake\(v_probe,/);
@@ -109,7 +204,7 @@ async function selfTest() {
   const dummy = (source, options = {}) => runCommand(process.execPath, ["-e", source], options);
   await assert.rejects(dummy("process.stderr.write('ERROR: synthetic\\n'); process.exit(0)"), /synthetic/);
   await assert.rejects(dummy("process.exit(1)"), /failed/);
-  console.log("OK: self-test (locks and the delivery record in the real claim, none in the controls, ACL line, the owner probe, rollback drops the column, verify parser, child errors)");
+  console.log("OK: self-test (locks, the delivery record and its expiry in the real claim, none in the controls, ACL line, the owner probe, rollback drops the column, verify parser, child errors)");
   console.log("NOT RUN: PostgreSQL startup, migrations, SQL behaviour, the owner shapes and the negative controls");
 }
 
@@ -206,6 +301,87 @@ async function main(negative) {
     assert.equal(await scalar(`select count(*) from public.mail_intake_claims where user_id='${H}';`), "0", "deleting the account removes its claims");
     console.log("OK: yesterday's claim still counts as taken, older claims go, only digests are kept, deleting the account removes them");
     // The global counts of this check are not part of the cases below.
+    await sql("delete from public.mail_intake_global_counts;");
+  };
+
+  /**
+   * Review B1: a claim is the delivery's place on the JST day it was taken and the next one, no longer. Only the same key
+   * of the same user is claimed again here, and no other delivery of that user succeeds in between (that success is what
+   * used to remove old claims and hid the fault). The stale and exists-only controls must fail here.
+   */
+  const expiryCheck = async () => {
+    const users = [I, J, K, L, M, N];
+    await sql(`delete from public.mail_intake_claims where user_id in (${users.map(quote).join(",")});
+      delete from public.mail_intake_user_counts where user_id in (${users.map(quote).join(",")});
+      delete from public.mail_intake_global_counts;`);
+    const today = "(clock_timestamp() at time zone 'Asia/Tokyo')::date";
+    const ages = (user) => scalar(`select coalesce(string_agg((${today} - day)::text, ',' order by day), 'none') from public.mail_intake_claims where user_id='${user}';`);
+    const age = (user, days) => sql(`update public.mail_intake_claims set day = ${today} - ${days} where user_id='${user}';`);
+    const fc = "forwarding_confirmation";
+    const key = "<expiry@google.test>";
+    const two = { ...LIMITS, user_count: 2, global_count: 1000 };
+
+    assert.equal(await claim(I, fc, 10, two, key), "ok");
+    assert.equal(await counts(I, fc), "1/10");
+    await age(I, 1);
+    assert.equal(await claim(I, fc, 10, two, key), "ok", "yesterday's claim is still this delivery's place");
+    assert.equal(await counts(I, fc), "1/10", "yesterday's claim: not counted again");
+    assert.equal(await ages(I), "1");
+    await age(I, 2);
+    assert.equal(await claim(I, fc, 10, two, key), "ok", "a claim two days old, the same key only");
+    assert.equal(await counts(I, fc), "2/20", "a claim older than yesterday is counted anew");
+    assert.equal(await ages(I), "0", "the old claim is replaced by today's");
+    assert.equal(await claim(I, fc, 10, two, key), "ok");
+    assert.equal(await counts(I, fc), "2/20", "and from then on counted once");
+    // Expired with the user's count used up: refused, takes nothing, and the old claim goes with the refusal.
+    await age(I, 3);
+    assert.equal(await claim(I, fc, 10, two, key), "user_intake_limit", "an expired claim with no room left today is refused");
+    assert.equal(await ages(I), "none", "the expired claim does not stay behind a refusal");
+    assert.equal(await claim(I, fc, 10, two, key), "user_intake_limit", "and stays refused");
+    assert.equal(await counts(I, fc), "2/20", "refusals take nothing");
+    console.log("OK: the same key only: yesterday's claim counts once, an older one is counted anew or refused, and does not stay");
+
+    // Expired with the user's bytes used up.
+    const bytes15 = { ...LIMITS, user_count: 10, user_bytes: 15, global_count: 1000 };
+    assert.equal(await claim(J, fc, 10, bytes15, key), "ok");
+    await age(J, 2);
+    assert.equal(await claim(J, fc, 10, bytes15, key), "user_intake_limit", "an expired claim over the user's bytes is refused");
+    assert.equal(await ages(J), "none");
+    assert.equal(await counts(J, fc), "1/10");
+    // Expired with the global count used up by another user's delivery (which does not touch K's claims).
+    const global2 = { ...LIMITS, user_count: 10, global_count: 2 };
+    await sql("delete from public.mail_intake_global_counts;");
+    assert.equal(await claim(K, fc, 1, global2, key), "ok");
+    await age(K, 2);
+    assert.equal(await claim(L, fc, 1, global2, "<another-user@google.test>"), "ok", "another user's delivery fills the global count");
+    assert.equal(await claim(L, fc, 1, global2, "<another-user-2@google.test>"), "global_intake_limit", "a new delivery is over the global count");
+    assert.equal(await claim(K, fc, 1, global2, key), "global_intake_limit", "an expired claim is over the global count too");
+    assert.equal(await ages(K), "none");
+    assert.equal(await counts(K, fc), "1/1");
+    assert.equal(await scalar(`select count||'/'||bytes from public.mail_intake_global_counts where kind='${fc}' and day=${today};`), "2/2", "nothing more taken");
+    console.log("OK: an expired claim over the user's bytes or the global count is refused and removed, taking nothing");
+
+    // The insert's conflict: an old claim written by a call that began before this one removed the old ones (not yet
+    // committed then, so neither the removal nor the first check sees it). It is taken over for today and counted.
+    const digest = (user) => `pg_catalog.sha256(convert_to('${user}' || chr(10) || '${fc}' || chr(10) || ${quote(key)}, 'UTF8'))`;
+    const withHeldClaim = async (user, days) => {
+      const holder = sql(`begin; insert into public.mail_intake_claims(user_id, kind, delivery_digest, day) values ('${user}', '${fc}', ${digest(user)}, ${today} - ${days});
+        select pg_sleep(1.5); commit;`, 20_000);
+      await new Promise((r) => setTimeout(r, 300));
+      const verdict = await claim(user, fc, 10, two, key);
+      await holder;
+      return verdict;
+    };
+    assert.equal(await withHeldClaim(M, 5), "ok");
+    assert.equal(await counts(M, fc), "1/10", "an old claim met in the insert's conflict is counted anew");
+    assert.equal(await ages(M), "0");
+    assert.equal(await withHeldClaim(N, 0), "ok");
+    assert.equal(await counts(N, fc), "0/0", "a claim of today met in the insert's conflict is that delivery's place: not counted");
+    console.log("OK: in the insert's conflict, an old claim is counted anew and today's is not");
+
+    // The same key for another kind is its own place.
+    assert.equal(await claim(I, "screen_event", 10, two, key), "ok");
+    assert.equal(await counts(I, "screen_event"), "1/10");
     await sql("delete from public.mail_intake_global_counts;");
   };
 
@@ -390,7 +566,7 @@ async function main(negative) {
       } else await file(`supabase/migrations/${name}`);
       await history(name);
     }
-    await sql(`insert into auth.users(id) values ${[A, B, C, D, E, F, G, H].map((u) => `('${u}')`).join(",")};`);
+    await sql(`insert into auth.users(id) values ${[A, B, C, D, E, F, G, H, I, J, K, L, M, N].map((u) => `('${u}')`).join(",")};`);
     // An existing log row from before this migration stays through apply and rollback.
     await sql(`insert into public.screen_events(user_id,from_domain,subject,decision,reason) values ('${A}','old.example','old','dropped','ad');`);
 
@@ -400,7 +576,21 @@ async function main(negative) {
     await verifyFile(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
     assert.equal(await events(A), "1", "the earlier row is kept");
 
-    if (negative === "delivery") {
+    if (negative === "expiry") {
+      const conflictBlind = conflictBlindClaim(await readFile(path.join(root, files.migration), "utf8"));
+      for (const [label, control] of [["the claim of 8042e6d", staleClaim], ["the exists-only claim", existsOnlyClaim], ["the conflict-blind claim", conflictBlind]]) {
+        await sql(control);
+        let caught = null;
+        try { await expiryCheck(); } catch (error) { caught = error; }
+        assert.ok(caught, `NEGATIVE CONTROL NOT CAUGHT: ${label} passed the expiry check`);
+        assert.match(String(caught.message), /counted anew|is refused|does not stay|older than yesterday/, `${label} failed for another reason: ${caught.message}`);
+        console.log(`OK: NEGATIVE CONTROL, ${label} was caught: ${String(caught.message).split("\n")[0]}`);
+      }
+      // The real claim back: the same check passes.
+      await file(files.migration);
+      await expiryCheck();
+      console.log("OK: with the real claim back, the expiry check passes");
+    } else if (negative === "delivery") {
       await sql(keylessClaim);
       let caught = null;
       try { await deliveryCheck(); } catch (error) { caught = error; }
@@ -417,6 +607,7 @@ async function main(negative) {
     } else {
       await raceCheck();
       await deliveryCheck();
+      await expiryCheck();
       await behaviour();
       await file(files.down);
       await file(files.down);
@@ -439,11 +630,11 @@ async function main(negative) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length > 1 || args.some((arg) => !["--self-test", "--negative-control", "--negative-control-delivery"].includes(arg))) {
-    console.error("Usage: node tests/postgres/run-mail-intake-window.mjs [--self-test|--negative-control|--negative-control-delivery]");
+  if (args.length > 1 || args.some((arg) => !["--self-test", "--negative-control", "--negative-control-delivery", "--negative-control-expiry"].includes(arg))) {
+    console.error("Usage: node tests/postgres/run-mail-intake-window.mjs [--self-test|--negative-control|--negative-control-delivery|--negative-control-expiry]");
     process.exitCode = 2;
   } else {
-    (args[0] === "--self-test" ? selfTest() : main(args[0] === "--negative-control-delivery" ? "delivery" : args[0] === "--negative-control")).catch((error) => {
+    (args[0] === "--self-test" ? selfTest() : main(args[0] === "--negative-control-delivery" ? "delivery" : args[0] === "--negative-control-expiry" ? "expiry" : args[0] === "--negative-control")).catch((error) => {
       console.error(`verdict=FAILED: ${error instanceof Error ? error.message : String(error)}`);
       process.exitCode = 1;
     });

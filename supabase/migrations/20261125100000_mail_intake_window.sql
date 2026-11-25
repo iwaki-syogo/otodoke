@@ -5,8 +5,10 @@
 --    how many bytes. Counts only (no mail content). Rows older than yesterday are removed by the next claim of the same
 --    kind (of the same user, for the user rows); a user's rows go with the account.
 -- 2. public.mail_intake_claims: which delivery already took its place (a per-user SHA-256 of the delivery key, never
---    the key itself), kept for today and yesterday. The same delivery claimed again (a retry after a failure before it
---    was stored, or an answer that did not come back) is answered 'ok' and counted once.
+--    the key itself), valid on the JST day it was taken and the next one. The same delivery claimed again within that
+--    (a retry after a failure before it was stored, or an answer that did not come back) is answered 'ok' and counted
+--    once. Once a claim is older than that it is no claim at all: the delivery is counted anew, or refused when there is
+--    no room, and the old claim is removed by the next claim of the same user and kind, whatever its answer.
 -- 3. public.claim_mail_intake(user, kind, bytes, limits, delivery_key) -> 'ok' | 'user_intake_limit' |
 --    'global_intake_limit'. One transaction: the owner's Auth row (KEY SHARE), then the user's row, then the global
 --    row, each FOR UPDATE. It never touches emails, generations, consents or parcels, so it adds no edge to the
@@ -134,10 +136,17 @@ begin
   select count, bytes into v_count, v_bytes from public.mail_intake_user_counts
     where user_id = p_user_id and kind = p_kind and day = v_day for update;
 
+  -- Claims older than yesterday are no longer anyone's place: removed first, under the user's row, so that they go with
+  -- this call whatever it answers (in digest order, so two calls on either side of midnight lock them alike).
+  delete from public.mail_intake_claims where (user_id, kind, delivery_digest) in (
+    select c.user_id, c.kind, c.delivery_digest from public.mail_intake_claims c
+     where c.user_id = p_user_id and c.kind = p_kind and c.day < v_day - 1 order by c.delivery_digest for update);
+
   -- This delivery already took its place (today or yesterday): it is not counted again, whatever is left today.
   if nullif(p_delivery_key, '') is not null then
     v_digest := pg_catalog.sha256(convert_to(p_user_id::text || chr(10) || p_kind || chr(10) || p_delivery_key, 'UTF8'));
-    if exists (select 1 from public.mail_intake_claims where user_id = p_user_id and kind = p_kind and delivery_digest = v_digest) then
+    if exists (select 1 from public.mail_intake_claims where user_id = p_user_id and kind = p_kind and delivery_digest = v_digest
+                and day >= v_day - 1) then
       return 'ok';
     end if;
   end if;
@@ -150,18 +159,19 @@ begin
 
   if v_digest is not null then
     -- Another transaction of the same delivery that started on the other side of midnight (another user row) waits
-    -- here for it and then finds it: that one is counted, this one is not.
+    -- here for it and then finds it: that one is counted, this one is not. A claim found here that is older than
+    -- yesterday (written by a call that began before the removal above) is taken over for today and counted.
     insert into public.mail_intake_claims(user_id, kind, delivery_digest, day) values (p_user_id, p_kind, v_digest, v_day)
-      on conflict do nothing;
+      on conflict (user_id, kind, delivery_digest) do update set day = excluded.day
+      where public.mail_intake_claims.day < v_day - 1;
     if not found then return 'ok'; end if;
   end if;
   update public.mail_intake_user_counts set count = count + 1, bytes = bytes + p_bytes
     where user_id = p_user_id and kind = p_kind and day = v_day;
   update public.mail_intake_global_counts set count = count + 1, bytes = bytes + p_bytes
     where kind = p_kind and day = v_day;
-  -- Older than yesterday: no longer needed. Only rows of this kind, which this transaction's locks already serialize.
+  -- Count rows older than yesterday: no longer needed. Only rows of this kind, which this transaction's locks serialize.
   delete from public.mail_intake_user_counts where user_id = p_user_id and kind = p_kind and day < v_day - 1;
-  delete from public.mail_intake_claims where user_id = p_user_id and kind = p_kind and day < v_day - 1;
   delete from public.mail_intake_global_counts where kind = p_kind and day < v_day - 1;
   return 'ok';
 end $$;

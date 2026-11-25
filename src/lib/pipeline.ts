@@ -88,6 +88,18 @@ export interface PipelineOptions {
   replacesCreatedAt?: string;
 }
 
+/**
+ * The one key a delivery is known by: its Message-ID, or the provider's ID when the Message-ID is missing or empty.
+ * The stored-row lookup, the intake claim and the screen log all take it from here, so that they never name the same
+ * delivery by different keys (an empty Message-ID would otherwise be no key to the database and counted every time).
+ * Null: neither is there.
+ */
+export function deliveryKeyOf(mail: Pick<InboundEmail, "messageId" | "providerEmailId">): { column: "message_id" | "provider_email_id"; value: string } | null {
+  if (mail.messageId) return { column: "message_id", value: mail.messageId };
+  if (mail.providerEmailId) return { column: "provider_email_id", value: mail.providerEmailId };
+  return null;
+}
+
 /** The stored row of a mail, as far as deciding what to do with it goes. */
 interface StoredRow {
   id: string;
@@ -99,11 +111,12 @@ interface StoredRow {
   classification: string | null;
 }
 
-/** The row this mail already has: by its Message-ID, or the row being read again. Throws when it cannot tell. */
+/** The row this mail already has: by its delivery key (deliveryKeyOf), or the row being read again. Throws when it cannot tell. */
 async function storedRow(db: AdminClient, mail: InboundEmail, rowId: string | null): Promise<StoredRow | null> {
-  if (!mail.messageId && !rowId && !mail.providerEmailId) return null;
+  const key = deliveryKeyOf(mail);
+  if (!key && !rowId) return null;
   const query = db.from("emails").select("id, processing_status, created_at, processing_run_id, processing_lease_until, provider_email_id, classification").eq("user_id", mail.userId);
-  const { data, error } = await (rowId ? query.eq("id", rowId) : mail.messageId ? query.eq("message_id", mail.messageId) : query.eq("provider_email_id", mail.providerEmailId!)).maybeSingle();
+  const { data, error } = await (rowId ? query.eq("id", rowId) : query.eq(key!.column, key!.value)).maybeSingle();
   if (error) throw new Error(`emails lookup failed: ${error.message}`);
   return data;
 }
@@ -174,7 +187,7 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // so that it is not sent again. The claim names the mail by the same key the stored row is found by, so a retry of a
   // mail that was not stored (a failure below, or a lost answer) keeps its place instead of taking another.
   if (isForwardingConfirmation && !options.replacesEmailId && !options.publicSample) {
-    const intake = await claimMailIntake(db, mail.userId, "forwarding_confirmation", incomingBytes([mail.subject, mail.from, mail.fromName, mail.text, mail.html]), mail.messageId ?? mail.providerEmailId ?? null);
+    const intake = await claimMailIntake(db, mail.userId, "forwarding_confirmation", incomingBytes([mail.subject, mail.from, mail.fromName, mail.text, mail.html]), deliveryKeyOf(mail)?.value ?? null);
     if (intake === "user_intake_limit" || intake === "global_intake_limit") return { kind: "discarded", reason: intake };
   }
 
@@ -381,7 +394,7 @@ async function logScreenEvent(db: AdminClient, mail: InboundEmail, decision: "dr
   // the mail is dropped all the same.
   let logged: Awaited<ReturnType<typeof logScreenEventOnce>> | null = null;
   try {
-    logged = await logScreenEventOnce(db, mail.userId, { decision, fromDomain: domainOf(mail.from), subject: mail.subject, reason, deliveryKey: mail.messageId ?? mail.providerEmailId });
+    logged = await logScreenEventOnce(db, mail.userId, { decision, fromDomain: domainOf(mail.from), subject: mail.subject, reason, deliveryKey: deliveryKeyOf(mail)?.value ?? null });
   } catch (err) {
     console.error("screen_events log failed:", err instanceof Error ? err.message : String(err));
   }
