@@ -34,16 +34,20 @@ describe("the widget", () => {
 });
 
 describe("the security headers let Turnstile load", () => {
-  it("does not restrict scripts, frames or connections (only frame-ancestors is set)", async () => {
+  it("allows https://challenges.cloudflare.com wherever scripts, frames or connections are restricted or watched", async () => {
     const [rule] = await nextConfig.headers!();
-    const csp = rule.headers.find((h) => h.key === "Content-Security-Policy")!.value;
-    // If a fuller CSP is added later, it must allow https://challenges.cloudflare.com in
-    // script-src, frame-src and connect-src, or the login widget stops loading.
-    for (const directive of ["default-src", "script-src", "frame-src", "child-src", "connect-src"]) {
-      if (csp.includes(directive)) expect(csp).toMatch(new RegExp(`${directive}[^;]*https://challenges\\.cloudflare\\.com`));
+    for (const key of ["Content-Security-Policy", "Content-Security-Policy-Report-Only"]) {
+      const csp = rule.headers.find((h) => h.key === key)!.value;
+      // A policy that names one of these must allow Cloudflare in it, or the login widget stops loading.
+      for (const directive of ["default-src", "script-src", "frame-src", "child-src", "connect-src"]) {
+        const value = csp.split(";").map((d) => d.trim()).find((d) => d.startsWith(`${directive} `));
+        if (value && directive !== "default-src") expect(value, `${key} ${directive}`).toContain("https://challenges.cloudflare.com");
+      }
     }
-    // X-Frame-Options / frame-ancestors only stop others from framing this app; they do not stop
-    // this app from framing Cloudflare.
-    expect(csp).toBe("frame-ancestors 'none'");
+    // The enforced policy itself does not restrict scripts, frames or connections yet: only watched.
+    const enforced = rule.headers.find((h) => h.key === "Content-Security-Policy")!.value;
+    for (const directive of ["default-src", "script-src", "frame-src", "child-src", "connect-src"]) expect(enforced).not.toContain(directive);
+    // frame-ancestors only stops others from framing this app; it does not stop this app from framing Cloudflare.
+    expect(enforced).toContain("frame-ancestors 'none'");
   });
 });

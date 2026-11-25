@@ -2,10 +2,35 @@ import type { NextConfig } from "next";
 
 // Vercel adds HSTS. These stop other sites from framing the app (clickjacking on the login and
 // settings buttons), MIME sniffing, sending full URLs in Referer, and asking for devices.
-// Only frame-ancestors is set in the CSP: a full policy needs nonces and is not done yet.
+//
+// The enforced CSP holds only what the app never needs: being framed, plugins, a <base> element, and
+// a form posted to another site (every form here posts to this site; links to carriers and Gmail are
+// plain links). Scripts, connections, frames and images are only watched for now
+// (Content-Security-Policy-Report-Only: the browser reports in its console, nothing is blocked); a
+// blocking policy for them needs nonces. Turnstile (challenges.cloudflare.com) is allowed in both.
+const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+const enforcedCsp = ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'self'"].join("; ");
+const dev = process.env.NODE_ENV === "development";
+const watchedCsp = [
+  "default-src 'self'",
+  // Next.js writes inline scripts (the page data); the dev server also evaluates code and opens a socket for hot reload.
+  `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""} ${TURNSTILE_ORIGIN}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "media-src 'self'",
+  `connect-src 'self' ${TURNSTILE_ORIGIN}${dev ? " ws: wss:" : ""}`,
+  `frame-src ${TURNSTILE_ORIGIN}`,
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join("; ");
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
-  { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+  { key: "Content-Security-Policy", value: enforcedCsp },
+  { key: "Content-Security-Policy-Report-Only", value: watchedCsp },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
