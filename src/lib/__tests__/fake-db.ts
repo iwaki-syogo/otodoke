@@ -309,6 +309,8 @@ function embedsOf(columns: string | null): Array<{ name: string; inner: boolean 
   return out;
 }
 
+type IntakeLimits = { user_count: number; user_bytes: number; global_count: number; global_bytes: number };
+
 export class FakeDb {
   tables: Record<string, Row[]>;
   calls: Query[] = [];
@@ -553,6 +555,21 @@ export class FakeDb {
       if ((current?.key_id ?? null) !== a.p_expected_current_key_id) return Promise.resolve({ data: null, error: { message: "activate_user_key: the key in use changed" } });
       return Promise.resolve(this.activateUserKey(a));
     }
+    if (name === "claim_mail_intake" || name === "log_screen_event") {
+      const failure = this.mailIntakeFailure;
+      if (failure) return Promise.resolve({ data: null, error: failure });
+      // Before supabase/migrations/20261125100000_mail_intake_window.sql is applied (or after its rollback).
+      if (this.mailIntakeMissing) return Promise.resolve({ data: null, error: { code: "PGRST202", message: `Could not find the function public.${name} in the schema cache` } });
+      if (name === "claim_mail_intake") {
+        const a = args as { p_user_id: string; p_kind: string; p_bytes: number; p_limits: IntakeLimits };
+        return Promise.resolve({ data: this.claimMailIntake(a.p_user_id, a.p_kind, a.p_bytes, a.p_limits), error: null });
+      }
+      try {
+        return Promise.resolve({ data: this.logScreenEvent(args as { p_user_id: string; p_event: Record<string, string | null>; p_limits: IntakeLimits }), error: null });
+      } catch (error) {
+        return Promise.resolve({ data: null, error: { message: error instanceof Error ? error.message : String(error) } });
+      }
+    }
     if (name === "claim_claude_call") return Promise.resolve(this.claimClaudeCall(args as ClaimArgs, false));
     if (name === "claim_claude_call_v2" || name === "release_claude_call") {
       // Before supabase/migrations/20261112020000_claude_call_release.sql is applied (or after its rollback).
@@ -758,6 +775,39 @@ export class FakeDb {
 
   /** True: claim_claude_call_v2 and release_claude_call do not exist yet (PostgREST answers PGRST202). */
   claudeReleaseMissing = false;
+  /** True: claim_mail_intake and log_screen_event do not exist yet (PostgREST answers PGRST202). */
+  mailIntakeMissing = false;
+  /** Set: claim_mail_intake and log_screen_event answer this error (a database that could not tell). */
+  mailIntakeFailure: { code: string; message: string } | null = null;
+  /** The intake counts of supabase/migrations/20261125100000, by "user|kind|day" and "global|kind|day". */
+  intakeCounts = new Map<string, { count: number; bytes: number }>();
+
+  /** claim_mail_intake: the user's row first, then the app-wide row; a refusal takes nothing. Mirrors the SQL. */
+  private claimMailIntake(userId: string, kind: string, bytes: number, limits: IntakeLimits): string {
+    const day = this.jstDay();
+    const own = this.intakeCounts.get(`${userId}|${kind}|${day}`) ?? { count: 0, bytes: 0 };
+    if (own.count + 1 > limits.user_count || own.bytes + bytes > limits.user_bytes) return "user_intake_limit";
+    const all = this.intakeCounts.get(`global|${kind}|${day}`) ?? { count: 0, bytes: 0 };
+    if (all.count + 1 > limits.global_count || all.bytes + bytes > limits.global_bytes) return "global_intake_limit";
+    this.intakeCounts.set(`${userId}|${kind}|${day}`, { count: own.count + 1, bytes: own.bytes + bytes });
+    this.intakeCounts.set(`global|${kind}|${day}`, { count: all.count + 1, bytes: all.bytes + bytes });
+    return "ok";
+  }
+
+  /** log_screen_event: once per user, decision and delivery key, within the allowance. Mirrors the SQL. */
+  private logScreenEvent(a: { p_user_id: string; p_event: Record<string, string | null>; p_limits: IntakeLimits }): string {
+    const e = a.p_event;
+    const digest = e.delivery_key ? `${a.p_user_id}\n${e.decision}\n${e.delivery_key}` : null;
+    if (digest && this.rows("screen_events").some((r) => r.user_id === a.p_user_id && r.delivery_digest === digest)) return "duplicate";
+    const subject = e.decision === "dropped" ? (e.subject ?? null)?.slice(0, 200) ?? null : null;
+    const bytes = Buffer.byteLength(subject ?? "") + Buffer.byteLength(e.from_domain ?? "") + Buffer.byteLength(e.reason ?? "");
+    const verdict = this.claimMailIntake(a.p_user_id, "screen_event", bytes, a.p_limits);
+    if (verdict !== "ok") return verdict;
+    // Through the table as the earlier direct insert went, so its defaults and hooks apply the same way.
+    const result = this.execute(this.from("screen_events").insert({ user_id: a.p_user_id, from_domain: e.from_domain ?? null, subject, decision: e.decision, reason: e.reason ?? null, delivery_digest: digest }).query);
+    if (result.error) throw new Error(result.error.message);
+    return "logged";
+  }
   /** The clock the Claude allowance reads (now() in the functions). A test moves it across midnight. */
   claudeNow: () => number = () => Date.now();
 

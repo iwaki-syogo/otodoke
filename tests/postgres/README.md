@@ -230,3 +230,15 @@ node tests/postgres/run-person-status.mjs --negative-control
 ```
 
 本人の書き込みは `set local role authenticated` と JWT claims で再現し、RLS が効く形です。状態を変える本人の UPDATE（Web の手入力の編集・届いていない、iOS の受け取った・元に戻す・届いていない・手入力の編集、配布済みの 1.0 (16) の PATCH の列の組）は時刻が入り、状態を変えない更新・INSERT・security definer の受け取り／戻し・サービス側のメール書き込みは入りません。クライアントが送った時刻の値は無視されます。`--negative-control` は、トリガーを `return old`（本人の書き込みが丸ごと消える版）に差し替えた時に (b) の検査が止めることを確かめ、止めたときだけ `verdict=OK` です。
+
+## 転送の確認と、ふるいの記録の 1 日の受信枠（20261125100000）
+
+`run-mail-intake-window.mjs` は `127.0.0.1:65461` の新しい専用 cluster に、本物の migration を全部順に当ててから、`supabase/migrations/20261125100000_mail_intake_window.sql` の before・2 回適用・verify・挙動・rollback 2 回・戻した後の verify・再適用を検査します（pg_cron だけは関数部分の近似。Supabase の default privileges も再現します）。
+
+```sh
+node tests/postgres/run-mail-intake-window.mjs --self-test
+node tests/postgres/run-mail-intake-window.mjs
+node tests/postgres/run-mail-intake-window.mjs --negative-control
+```
+
+挙動: 1 人の件数・バイト数と全体の件数の上限、断られた分は数を取らない、種類ごとに別、次の日（JST）はまた通り前々日より前の行は消える、不正な引数は 22023・いない利用者は 23503、anon・authenticated は実行できず、どの役も数の表を直接読めない。ふるいの記録は同じ配送（Message-ID か provider ID の digest）と判定で 1 行、利用者ごとに別、上限を越えた分は行を残さない。同時に 8 本の取得で上限 3 ちょうど、同じ配送の記録 6 本同時で 1 行・数 1。日次の掃除は今までどおり、退会で数と記録が消える。`--negative-control` は取得を行ロック無しの版に差し替え、同時の 8 本が上限を越えて通るのを検査が止めることを確かめ、止めたときだけ `verdict=OK` です。終わると cluster を止め、待ち受けが無いことを確かめます。データは `.vitest/pg/mail-intake-*` に残るので、確認後に消してください。

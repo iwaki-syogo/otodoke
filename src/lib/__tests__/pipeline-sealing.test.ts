@@ -181,16 +181,16 @@ describe("pipeline: Gmail's forwarding confirmation", () => {
       html: null,
     });
 
-  it("keeps only the approval link in plaintext and seals the rest as it arrives", async () => {
+  it("keeps only the approval link, and stores nothing else of it even with a key", async () => {
     const db = new FakeDb();
-    const key = await keyedUser(db);
+    await keyedUser(db);
     const out = await processInboundEmail(asConsentingAdmin(db), confirmation());
     expect(out.kind).toBe("forwarding_confirmation");
     const [row] = db.rows("emails");
     expect(row.forwarding_confirm_url).toBe("https://mail-settings.google.com/mail/vf-%5Babc%5D-xyz");
-    expect(row.body_state).toBe("sealed");
+    expect(row.body_state).toBe("dropped");
+    expect(row.body_envelope).toBeNull();
     for (const c of PLAINTEXT_COLUMNS) expect(row[c]).toBeNull();
-    expect((await openMail(key, USER, String(row.id), row.body_envelope)).subject).toBe("Gmail Forwarding Confirmation");
     expect(plaintextAfterReading(db)).toEqual([]);
     // Written once, already closed: no window with the body in plaintext.
     expect(db.callsOn("emails", "update")).toHaveLength(0);

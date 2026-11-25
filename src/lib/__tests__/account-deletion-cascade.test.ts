@@ -115,6 +115,7 @@ const NOT_CASCADING: Record<string, { action: RegExp; why: string }> = {
 const NO_USER_DATA: Record<string, string> = {
   login_mail_sends: "SHA-256 of the address and of the IP only, deleted after an hour (20261106100000)",
   issued_inbox_local_parts: "the random local parts only, kept so none is given out twice (20261106170000)",
+  mail_intake_global_counts: "a count and bytes per kind and JST day across all users, no user on them; rows older than yesterday go (20261125100000)",
 };
 
 describe("every row of a user's goes with the auth user", () => {
@@ -152,6 +153,7 @@ describe("every row of a user's goes with the auth user", () => {
       "extractions",
       "inbox_addresses",
       "mail_intake_notices",
+      "mail_intake_user_counts",
       "parcel_exclusions",
       "parcel_items",
       "parcel_receipt_undos",

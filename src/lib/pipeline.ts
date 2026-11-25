@@ -32,7 +32,8 @@ import {
 import { autoExcludeNewParcel, carryExclusionsOnMerge, clearRuleExclusion, hasRuleExclusion, readExclusions } from "@/lib/not-parcel-auto";
 import { categoryForTwins, type TwinCategory } from "@/lib/match/category";
 import { forwardingConfirmUrl, isForwardingConfirmation as isGmailConfirmation } from "@/lib/forwarding";
-import { closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
+import { CLEARED, closedBody, currentSealKey, domainOf } from "@/lib/mail-seal";
+import { claimMailIntake, incomingBytes, logScreenEventOnce } from "@/lib/mail-intake";
 import type { MailPlaintext } from "@/lib/crypto/envelope";
 import { PENDING_GRACE_MS } from "@/lib/unread";
 import { withMailRun } from "@/lib/mail-run-db";
@@ -131,7 +132,10 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // A batch already carries its original generation. Never refresh it per mail after a clear.
   // Samples are explicitly scoped by their loader or by the stored sample row's generation.
   if (!options.publicSample) db = await beginMailGeneration(db, mail.userId);
-  const isForwardingConfirmation = isGmailConfirmation(mail.from);
+  // Gmail's forwarding confirmation is its sender and Google's own approval link together. A mail from that address
+  // without the link is read like any other mail: it has nothing the approval card could use.
+  const confirmUrl = isGmailConfirmation(mail.from) ? forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? "") : null;
+  const isForwardingConfirmation = confirmUrl !== null;
 
   // The row this mail already has, looked up before the screen: a mail that was read is never
   // screened, paid for or removed again when it is delivered a second time.
@@ -166,11 +170,17 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     }
   }
 
+  // A new Gmail confirmation takes one from today's intake allowance (it is stored as read, so the unread storage
+  // allowance never counts it). Over it, the mail is let go: the webhook answers so that it is not sent again.
+  if (isForwardingConfirmation && !options.replacesEmailId && !options.publicSample) {
+    const intake = await claimMailIntake(db, mail.userId, "forwarding_confirmation", incomingBytes([mail.subject, mail.from, mail.fromName, mail.text, mail.html]));
+    if (intake === "user_intake_limit" || intake === "global_intake_limit") return { kind: "discarded", reason: intake };
+  }
+
   // Known before anything is stored or paid for: not knowing whether there is a key fails here,
-  // with the stored row (a mail read again from 設定, say) as it was. The Gmail confirmation is
-  // closed with it as it is stored; a mail that is read is closed with the key read again right
-  // before that write (markRead), so a key put in use meanwhile counts.
-  const key = await currentSealKey(db, mail.userId);
+  // with the stored row (a mail read again from 設定, say) as it was. A mail that is read is closed
+  // with the key read again right before that write (markRead), so a key put in use meanwhile counts.
+  await currentSealKey(db, mail.userId);
 
   // 1. Store the raw mail. A stored row is taken over in place, under its own id: it is never
   // removed and stored anew, so a failed write leaves it as it was and the only copy is not lost.
@@ -189,13 +199,9 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     processing_status: isForwardingConfirmation ? "processed" : "pending",
     error: null,
     forwarding_confirm_url: null,
-    // Gmail's confirmation is done as it arrives: only its approval link stays in plaintext.
-    ...(isForwardingConfirmation
-      ? {
-          forwarding_confirm_url: forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? ""),
-          ...(await closedBody(key, mail.userId, emailId, plaintextOf(mail), false)),
-        }
-      : {}),
+    // Gmail's confirmation is done as it arrives: only its approval link is kept (in plaintext); its subject,
+    // sender and body are not stored at all, sealed or not.
+    ...(isForwardingConfirmation ? { forwarding_confirm_url: confirmUrl, ...CLEARED, body_state: "dropped", body_envelope: null } : {}),
   };
   const runId = crypto.randomUUID();
   const limits = mailStorageLimits();
@@ -370,14 +376,26 @@ async function senderMarked(db: AdminClient, mail: InboundEmail): Promise<boolea
  * stay here in plaintext.
  */
 async function logScreenEvent(db: AdminClient, mail: InboundEmail, decision: "dropped" | "rescued", reason: string) {
-  const { error } = await db.from("screen_events").insert({
-    user_id: mail.userId,
-    from_domain: domainOf(mail.from),
-    subject: decision === "dropped" ? mail.subject.slice(0, 200) : null,
-    decision,
-    reason,
-  });
-  if (error) console.error("screen_events insert failed:", error.message);
+  // Once per delivery, within today's allowance (supabase/migrations/20261125100000). Over it, the event is not logged;
+  // the mail is dropped all the same.
+  let logged: Awaited<ReturnType<typeof logScreenEventOnce>> | null = null;
+  try {
+    logged = await logScreenEventOnce(db, mail.userId, { decision, fromDomain: domainOf(mail.from), subject: mail.subject, reason, deliveryKey: mail.messageId ?? mail.providerEmailId });
+  } catch (err) {
+    console.error("screen_events log failed:", err instanceof Error ? err.message : String(err));
+  }
+  if (logged === "user_intake_limit" || logged === "global_intake_limit") console.warn("screen_events: today's allowance is used up:", logged);
+  if (logged === "missing") {
+    // A database without the function yet: logged as before.
+    const { error } = await db.from("screen_events").insert({
+      user_id: mail.userId,
+      from_domain: domainOf(mail.from),
+      subject: decision === "dropped" ? mail.subject.slice(0, 200) : null,
+      decision,
+      reason,
+    });
+    if (error) console.error("screen_events insert failed:", error.message);
+  }
   const cutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const { error: cleanupError } = await db.from("screen_events").delete().eq("user_id", mail.userId).lt("created_at", cutoff).is("flagged_at", null);
   if (cleanupError) console.error("screen_events cleanup failed:", cleanupError.message);

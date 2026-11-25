@@ -619,6 +619,14 @@ export type Database = {
           verdict: string
         }[]
       }
+      claim_mail_intake: {
+        Args: { p_user_id: string; p_kind: string; p_bytes: number; p_limits: Json }
+        Returns: string
+      }
+      log_screen_event: {
+        Args: { p_user_id: string; p_event: Json; p_limits: Json }
+        Returns: string
+      }
       claim_login_mail: {
         Args: {
           p_email_10m_limit: number
