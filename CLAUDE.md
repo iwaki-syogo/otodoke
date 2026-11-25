@@ -10,6 +10,7 @@
 - Web undoはDBの受取証跡と現在のreceived_at/updated_atを照合し、restored/changed/failedを区別する。1通信200件と論理全件を分け、501件以上も分割処理する。証跡期限の正本はDB関数。
 - verify出力は共有のファイル別形式で判定する。110000の判定は末尾。他列のOKで代用しない。SQLと形式・正常/異常自己試験を同じ変更にそろえ、自己試験と実Postgresを区別する。
 - 並行作業中の全件vitestは1プロセスだけ、負荷20未満で実行する。実Postgresは自分の専用clusterだけを使い、停止・listener0・専用データ削除まで確認する。
+- 本番 DB は main より先：dev の migration 20261117100000〜120000 まで当たっている（2026-11-25 読むだけで確認・報告 ~/goro-runs/share/otodoke-parcel-exclusions-1125/REPORT.md）。
 
 
 Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 11-08 20:00 JST。
