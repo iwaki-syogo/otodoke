@@ -561,8 +561,11 @@ export class FakeDb {
       // Before supabase/migrations/20261125100000_mail_intake_window.sql is applied (or after its rollback).
       if (this.mailIntakeMissing) return Promise.resolve({ data: null, error: { code: "PGRST202", message: `Could not find the function public.${name} in the schema cache` } });
       if (name === "claim_mail_intake") {
-        const a = args as { p_user_id: string; p_kind: string; p_bytes: number; p_limits: IntakeLimits };
-        return Promise.resolve({ data: this.claimMailIntake(a.p_user_id, a.p_kind, a.p_bytes, a.p_limits), error: null });
+        const a = args as { p_user_id: string; p_kind: string; p_bytes: number; p_limits: IntakeLimits; p_delivery_key?: string | null };
+        const verdict = this.claimMailIntake(a.p_user_id, a.p_kind, a.p_bytes, a.p_limits, a.p_delivery_key ?? null);
+        // The claim committed, but its answer did not come back (a dropped connection, a timeout after commit).
+        if (this.mailIntakeLostAnswers > 0) { this.mailIntakeLostAnswers--; return Promise.resolve({ data: null, error: { code: "08006", message: "connection lost" } }); }
+        return Promise.resolve({ data: verdict, error: null });
       }
       try {
         return Promise.resolve({ data: this.logScreenEvent(args as { p_user_id: string; p_event: Record<string, string | null>; p_limits: IntakeLimits }), error: null });
@@ -779,18 +782,26 @@ export class FakeDb {
   mailIntakeMissing = false;
   /** Set: claim_mail_intake and log_screen_event answer this error (a database that could not tell). */
   mailIntakeFailure: { code: string; message: string } | null = null;
+  /** The next N claim_mail_intake calls commit and then lose their answer (the caller sees an error). */
+  mailIntakeLostAnswers = 0;
   /** The intake counts of supabase/migrations/20261125100000, by "user|kind|day" and "global|kind|day". */
   intakeCounts = new Map<string, { count: number; bytes: number }>();
+  /** mail_intake_claims: the deliveries that took their place, by "user|kind|key". */
+  intakeClaims = new Set<string>();
 
   /** claim_mail_intake: the user's row first, then the app-wide row; a refusal takes nothing. Mirrors the SQL. */
-  private claimMailIntake(userId: string, kind: string, bytes: number, limits: IntakeLimits): string {
+  private claimMailIntake(userId: string, kind: string, bytes: number, limits: IntakeLimits, deliveryKey: string | null = null): string {
     const day = this.jstDay();
+    // The same delivery claimed again keeps its place and is not counted again (the claims table of the SQL).
+    const claimKey = deliveryKey ? `${userId}|${kind}|${deliveryKey}` : null;
+    if (claimKey && this.intakeClaims.has(claimKey)) return "ok";
     const own = this.intakeCounts.get(`${userId}|${kind}|${day}`) ?? { count: 0, bytes: 0 };
     if (own.count + 1 > limits.user_count || own.bytes + bytes > limits.user_bytes) return "user_intake_limit";
     const all = this.intakeCounts.get(`global|${kind}|${day}`) ?? { count: 0, bytes: 0 };
     if (all.count + 1 > limits.global_count || all.bytes + bytes > limits.global_bytes) return "global_intake_limit";
     this.intakeCounts.set(`${userId}|${kind}|${day}`, { count: own.count + 1, bytes: own.bytes + bytes });
     this.intakeCounts.set(`global|${kind}|${day}`, { count: all.count + 1, bytes: all.bytes + bytes });
+    if (claimKey) this.intakeClaims.add(claimKey);
     return "ok";
   }
 

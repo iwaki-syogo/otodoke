@@ -2,9 +2,8 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/db/database.types";
 
 /**
- * The per-day intake allowance of the two kinds of incoming mail the unread storage allowance does not count
- * (supabase/migrations/20261125100000_mail_intake_window.sql): Gmail's forwarding confirmation, which is stored as
- * already read, and the screen_events row a screened-out mail leaves. A JST day, per user and across all users,
+ * The per-day intake allowance of Gmail's forwarding confirmation and of the screen_events row a screened-out mail
+ * leaves (supabase/migrations/20261125100000_mail_intake_window.sql). A JST day, per user and across all users,
  * by count and by bytes. Far above what one person's own mail needs: a forwarding setup sends one confirmation,
  * and a person's own shops send a handful of ads a day.
  */
@@ -23,10 +22,16 @@ function isMissingFunction(error: { code?: string } | null): boolean {
   return error?.code === "PGRST202" || error?.code === "42883";
 }
 
-/** Takes one from today's allowance of this kind. Throws when the database could not tell. */
-export async function claimMailIntake(db: AdminClient, userId: string, kind: IntakeKind, bytes: number): Promise<IntakeVerdict> {
+/**
+ * Takes one from today's allowance of this kind. Throws when the database could not tell.
+ * `deliveryKey` names the mail (its Message-ID, or the provider's ID when it has none): the same mail claimed again,
+ * after a failure before it was stored or an answer that did not come back, keeps the place it took and is not counted
+ * again. Null: counted every time.
+ */
+export async function claimMailIntake(db: AdminClient, userId: string, kind: IntakeKind, bytes: number, deliveryKey: string | null): Promise<IntakeVerdict> {
   const { data, error } = await db.rpc("claim_mail_intake", {
     p_user_id: userId, p_kind: kind, p_bytes: Math.max(0, Math.ceil(bytes)), p_limits: MAIL_INTAKE_LIMITS[kind] as unknown as Json,
+    p_delivery_key: deliveryKey,
   });
   if (isMissingFunction(error)) return "missing";
   if (error) throw new Error(`mail intake claim failed: ${(error as { message?: string }).message ?? "unknown"}`);

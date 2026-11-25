@@ -120,6 +120,126 @@ describe("Gmail's forwarding confirmation", () => {
   });
 });
 
+/** How many of today's confirmation allowance this user has used (the fake's per-user count). */
+const used = (db: FakeDb, user = USER) => [...db.intakeCounts.entries()].filter(([k]) => k.startsWith(`${user}|forwarding_confirmation|`)).reduce((n, [, v]) => n + v.count, 0);
+const keyReadFails = (db: FakeDb, times: number) => {
+  let left = times;
+  db.hooks.push((q) => (q.table === "user_keys" && q.op === "select" && left > 0 ? (left--, { data: null, error: { message: "timeout" } }) : undefined));
+};
+
+describe("a confirmation that could not be stored on its first delivery (review R1)", () => {
+  it("one failure before storing, then the webhook's retry: stored once, one taken from the allowance", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    keyReadFails(db, 1);
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow(/user_keys lookup failed/);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+  });
+
+  it("many failures before storing, then recovery: still stored (never let go as over the allowance), one taken", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    const limit = MAIL_INTAKE_LIMITS.forwarding_confirmation.user_count;
+    keyReadFails(db, limit + 2);
+    for (let i = 0; i < limit + 2; i++) await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+  });
+
+  it("the last place of the day taken by a delivery that then failed is still its own on the retry", async () => {
+    const db = fresh();
+    const limit = MAIL_INTAKE_LIMITS.forwarding_confirmation.user_count;
+    for (let i = 0; i < limit - 1; i++) expect((await processInboundEmail(asConsentingAdmin(db), confirmation())).kind).toBe("forwarding_confirmation");
+    const mail = confirmation();
+    keyReadFails(db, 3);
+    for (let i = 0; i < 3; i++) await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(/user_keys lookup failed/);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(limit);
+    // A new delivery after that is over the allowance, as before.
+    expect((await processInboundEmail(asConsentingAdmin(db), confirmation())).kind).toBe("discarded");
+    expect(used(db)).toBe(limit);
+  });
+
+  it("the claim's answer lost after it was taken: the retry is stored and takes nothing more", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    db.mailIntakeLostAnswers = 1;
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow(/mail intake claim failed/);
+    expect(confirmations(db)).toHaveLength(0);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+  });
+
+  it("the same delivery arriving twice at once: one row, one taken", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    const outcomes = await Promise.allSettled([processInboundEmail(asConsentingAdmin(db), mail), processInboundEmail(asConsentingAdmin(db), { ...mail })]);
+    const kinds = outcomes.map((o) => (o.status === "fulfilled" ? o.value.kind : "retry"));
+    expect(kinds).toContain("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+  });
+
+  /** The next `times` store_mail_run calls answer `answer` instead of storing. */
+  const storeAnswers = (db: FakeDb, times: number, answer: { data: unknown; error: unknown }) => {
+    const fake = db as unknown as { executeRpc: (name: string, args: unknown, headers: Record<string, string>) => Promise<unknown> };
+    const real = fake.executeRpc.bind(db);
+    let left = times;
+    fake.executeRpc = (name, args, headers) => (name === "store_mail_run" && left-- > 0 ? Promise.resolve(answer) : real(name, args, headers));
+  };
+
+  it.each([
+    ["an error", { data: null, error: { message: "canceling statement" } }, /mail reservation failed/],
+    ["busy", { data: [{ verdict: "busy", email_id: null }], error: null }, /still being read/],
+  ])("the store answering %s, then the retry: stored once, one taken", async (_label, answer, thrown) => {
+    const db = fresh();
+    const mail = confirmation();
+    storeAnswers(db, 2, answer);
+    for (let i = 0; i < 2; i++) await expect(processInboundEmail(asConsentingAdmin(db), { ...mail })).rejects.toThrow(thrown);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+  });
+
+  it("a clear of everything between the failed delivery and its retry: stored in the new generation, one taken", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    keyReadFails(db, 1);
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow(/user_keys lookup failed/);
+    expect((await asConsentingAdmin(db).rpc("clear_all_parcels", { p_user_id: USER })).error).toBeNull();
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail })).kind).toBe("forwarding_confirmation");
+    expect(confirmations(db)).toHaveLength(1);
+    expect(used(db)).toBe(1);
+  });
+
+  it("(positive) another person's confirmation with the same Message-ID is theirs, and takes from their own allowance", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    await processInboundEmail(asConsentingAdmin(db), mail);
+    expect((await processInboundEmail(asConsentingAdmin(db), { ...mail, userId: OTHER, providerEmailId: "PID-other" })).kind).toBe("forwarding_confirmation");
+    expect(used(db)).toBe(1);
+    expect(used(db, OTHER)).toBe(1);
+  });
+
+  it("each claim names its delivery: the same mail sends the same key, another mail another key", async () => {
+    const db = fresh();
+    const mail = confirmation();
+    keyReadFails(db, 1);
+    await expect(processInboundEmail(asConsentingAdmin(db), mail)).rejects.toThrow();
+    await processInboundEmail(asConsentingAdmin(db), { ...mail });
+    await processInboundEmail(asConsentingAdmin(db), confirmation());
+    const keys = calls(db, "claim_mail_intake").map((c) => (c.args as { p_delivery_key?: string | null }).p_delivery_key);
+    expect(keys[0]).toBe(mail.messageId);
+    expect(keys[1]).toBe(mail.messageId);
+    expect(keys[2]).not.toBe(mail.messageId);
+    expect(keys[2]).toBeTruthy();
+  });
+});
+
 describe("the screen log", () => {
   it("(positive) a handful of ads a day: each dropped and logged once", async () => {
     const db = fresh();

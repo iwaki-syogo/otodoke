@@ -170,10 +170,11 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
     }
   }
 
-  // A new Gmail confirmation takes one from today's intake allowance (it is stored as read, so the unread storage
-  // allowance never counts it). Over it, the mail is let go: the webhook answers so that it is not sent again.
+  // A new Gmail confirmation takes one from today's intake allowance. Over it, the mail is let go: the webhook answers
+  // so that it is not sent again. The claim names the mail by the same key the stored row is found by, so a retry of a
+  // mail that was not stored (a failure below, or a lost answer) keeps its place instead of taking another.
   if (isForwardingConfirmation && !options.replacesEmailId && !options.publicSample) {
-    const intake = await claimMailIntake(db, mail.userId, "forwarding_confirmation", incomingBytes([mail.subject, mail.from, mail.fromName, mail.text, mail.html]));
+    const intake = await claimMailIntake(db, mail.userId, "forwarding_confirmation", incomingBytes([mail.subject, mail.from, mail.fromName, mail.text, mail.html]), mail.messageId ?? mail.providerEmailId ?? null);
     if (intake === "user_intake_limit" || intake === "global_intake_limit") return { kind: "discarded", reason: intake };
   }
 

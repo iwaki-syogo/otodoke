@@ -5,6 +5,7 @@ select
     when to_regclass('public.screen_events') is not null
      and to_regclass('public.mail_intake_user_counts') is null
      and to_regclass('public.mail_intake_global_counts') is null
+     and to_regclass('public.mail_intake_claims') is null
      and to_regclass('public.screen_events_delivery_digest_idx') is null
      and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'screen_events' and column_name = 'delivery_digest')
      and not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace

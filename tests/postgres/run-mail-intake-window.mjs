@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,9 @@ import { cleanEnvironment, requireVerdict } from "./run-person-status.mjs";
 //   node tests/postgres/run-mail-intake-window.mjs --negative-control (claim_mail_intake swapped for a version that reads
 //                                                                       without a row lock must be CAUGHT over-granting;
 //                                                                       verdict=OK means it was caught)
+//   node tests/postgres/run-mail-intake-window.mjs --negative-control-delivery
+//                                                 (claim_mail_intake swapped for a version that counts every call of the
+//                                                  same delivery must be CAUGHT; verdict=OK means it was caught)
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const stem = "20261125100000_mail_intake_window";
@@ -29,12 +32,15 @@ const port = 65461;
 const bin = process.env.OTODOKE_PG_BINDIR ?? "";
 const uuid = (number) => `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
-const A = uuid(1), B = uuid(2), C = uuid(3), D = uuid(4), E = uuid(5), F = uuid(6);
+const A = uuid(1), B = uuid(2), C = uuid(3), D = uuid(4), E = uuid(5), F = uuid(6), G = uuid(7), H = uuid(8);
 const LIMITS = { user_count: 3, user_bytes: 1000, global_count: 5, global_bytes: 100000 };
 const lim = (o = LIMITS) => `${quote(JSON.stringify(o))}::jsonb`;
+// The shapes of the before and after rows (verdict first, then t/f checks, then counts).
+const BEFORE_COLUMNS = 6, BEFORE_BOOLEANS = [1, 2, 3, 4];
+const VERIFY_COLUMNS = 12, VERIFY_BOOLEANS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 /** The race a careless version would have: read the totals without locking the row, wait, then add. */
-export const brokenClaim = `create or replace function public.claim_mail_intake(p_user_id uuid, p_kind text, p_bytes bigint, p_limits jsonb)
+export const brokenClaim = `create or replace function public.claim_mail_intake(p_user_id uuid, p_kind text, p_bytes bigint, p_limits jsonb, p_delivery_key text)
 returns text language plpgsql security definer set search_path = '' as $$
 declare v_day date := (pg_catalog.clock_timestamp() at time zone 'Asia/Tokyo')::date; v_count integer;
 begin
@@ -42,6 +48,19 @@ begin
   select count into v_count from public.mail_intake_user_counts where user_id = p_user_id and kind = p_kind and day = v_day;
   perform pg_catalog.pg_sleep(0.2);
   if v_count + 1 > (p_limits->>'user_count')::bigint then return 'user_intake_limit'; end if;
+  update public.mail_intake_user_counts set count = count + 1, bytes = bytes + p_bytes where user_id = p_user_id and kind = p_kind and day = v_day;
+  return 'ok';
+end $$;`;
+
+/** The version before review R1: locked, but every call counts, so a retry of a delivery that was not stored is counted again. */
+export const keylessClaim = `create or replace function public.claim_mail_intake(p_user_id uuid, p_kind text, p_bytes bigint, p_limits jsonb, p_delivery_key text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare v_day date := (pg_catalog.clock_timestamp() at time zone 'Asia/Tokyo')::date; v_count integer; v_bytes bigint;
+begin
+  perform id from auth.users where id = p_user_id for key share;
+  insert into public.mail_intake_user_counts(user_id, kind, day) values (p_user_id, p_kind, v_day) on conflict do nothing;
+  select count, bytes into v_count, v_bytes from public.mail_intake_user_counts where user_id = p_user_id and kind = p_kind and day = v_day for update;
+  if v_count + 1 > (p_limits->>'user_count')::bigint or v_bytes + p_bytes > (p_limits->>'user_bytes')::bigint then return 'user_intake_limit'; end if;
   update public.mail_intake_user_counts set count = count + 1, bytes = bytes + p_bytes where user_id = p_user_id and kind = p_kind and day = v_day;
   return 'ok';
 end $$;`;
@@ -70,7 +89,14 @@ async function selfTest() {
   assert.equal((migration.match(/for update;/g) ?? []).length, 2);
   assert.doesNotMatch(brokenClaim, /for update/);
   assert.match(migration, /exception when unique_violation then/);
-  assert.match(migration, /grant execute on function public\.claim_mail_intake\(uuid, text, bigint, jsonb\), public\.log_screen_event\(uuid, jsonb, jsonb\) to service_role;/);
+  assert.match(migration, /grant execute on function public\.claim_mail_intake\(uuid, text, bigint, jsonb, text\), public\.log_screen_event\(uuid, jsonb, jsonb\) to service_role;/);
+  // The real claim records the delivery; the keyless control does not.
+  assert.match(migration, /from public\.mail_intake_claims where user_id = p_user_id and kind = p_kind and delivery_digest = v_digest/);
+  assert.doesNotMatch(keylessClaim, /mail_intake_claims/);
+  // The after check runs both functions as their owner.
+  const verify = await readFile(path.join(root, files.verify), "utf8");
+  assert.match(verify, /perform public\.claim_mail_intake\(v_probe,/);
+  assert.match(verify, /perform public\.log_screen_event\(v_probe,/);
   assert.match(down, /drop column if exists delivery_digest/);
   assert.deepEqual(priorMigrations([`${stem}.sql`, "20261117120000_parcel_status_set_by_person.sql", "20261201000000_future.sql", "notes.md"]), ["20261117120000_parcel_status_set_by_person.sql"]);
   const environment = cleanEnvironment("local-scratch", { PGHOST: "remote.invalid", KEEP: "yes" });
@@ -83,8 +109,8 @@ async function selfTest() {
   const dummy = (source, options = {}) => runCommand(process.execPath, ["-e", source], options);
   await assert.rejects(dummy("process.stderr.write('ERROR: synthetic\\n'); process.exit(0)"), /synthetic/);
   await assert.rejects(dummy("process.exit(1)"), /failed/);
-  console.log("OK: self-test (locks in the real claim, none in the broken one, ACL line, rollback drops the column, verify parser, child errors)");
-  console.log("NOT RUN: PostgreSQL startup, migrations, SQL behaviour and the negative control");
+  console.log("OK: self-test (locks and the delivery record in the real claim, none in the controls, ACL line, the owner probe, rollback drops the column, verify parser, child errors)");
+  console.log("NOT RUN: PostgreSQL startup, migrations, SQL behaviour, the owner shapes and the negative controls");
 }
 
 async function main(negative) {
@@ -110,7 +136,7 @@ async function main(negative) {
     console.log(`OK: ${name} -> ${cells.join("|")}`);
   };
   const history = (name) => sql(`insert into supabase_migrations.schema_migrations(version,name) values(${quote(name.slice(0, 14))},${quote(name.slice(15, -4))}) on conflict(version) do nothing;`);
-  const claim = (user, kind, bytes, limits = LIMITS) => scalar(asRole("service_role", `select public.claim_mail_intake('${user}','${kind}',${bytes},${lim(limits)});`));
+  const claim = (user, kind, bytes, limits = LIMITS, key = null) => scalar(asRole("service_role", `select public.claim_mail_intake('${user}','${kind}',${bytes},${lim(limits)},${key === null ? "null" : quote(key)});`));
   const log = (user, event, limits = LIMITS) => scalar(asRole("service_role", `select public.log_screen_event('${user}',${quote(JSON.stringify(event))}::jsonb,${lim(limits)});`));
   const counts = (user, kind) => scalar(`select coalesce((select count||'/'||bytes from public.mail_intake_user_counts where user_id='${user}' and kind='${kind}'
     and day=(clock_timestamp() at time zone 'Asia/Tokyo')::date),'none');`);
@@ -127,7 +153,8 @@ async function main(negative) {
   };
 
   const cleanup = () => (cleanupPromise ??= (async () => {
-    if (startAttempted && await raw("pg_ctl", ["-D", data, "status"]).then(() => true, () => false)) {
+    // The pid file says whether this cluster is running (pg_ctl status is not used: it prints the start arguments).
+    if (startAttempted && await access(path.join(data, "postmaster.pid")).then(() => true, () => false)) {
       await raw("pg_ctl", ["-D", data, "-t", "10", "-m", "fast", "stop"]);
     }
     assert.equal(await listening(), false, `listener remains on 127.0.0.1:${port}`);
@@ -140,12 +167,44 @@ async function main(negative) {
 
   /** The concurrency check: 8 claims at once for one user with room for 3 grant exactly 3. The negative control must fail here. */
   const raceCheck = async () => {
-    const results = await together(8, `select public.claim_mail_intake('${F}','forwarding_confirmation',1,${lim({ ...LIMITS, global_count: 1000 })});`);
+    const results = await together(8, `select public.claim_mail_intake('${F}','forwarding_confirmation',1,${lim({ ...LIMITS, global_count: 1000 })},null);`);
     const granted = results.filter((r) => r === "ok").length;
     const stored = await counts(F, "forwarding_confirmation");
     assert.equal(granted, 3, `8 simultaneous claims with room for 3 granted ${granted} (${results.join(",")}); stored ${stored}`);
     assert.equal(stored, "3/3", "the stored count is the granted count");
     console.log("OK: 8 claims at once for one user with room for 3: exactly 3 granted, stored 3");
+    // The global counts of this check are not part of the cases below.
+    await sql("delete from public.mail_intake_global_counts;");
+  };
+
+  /**
+   * Review R1: the same delivery claimed again (a retry after a failure before it was stored, or an answer that was lost)
+   * takes one place only, and keeps it even once the day's allowance is used. The keyless control must fail here.
+   */
+  const deliveryCheck = async () => {
+    const two = { ...LIMITS, user_count: 2, global_count: 1000 };
+    for (let i = 0; i < 5; i++) assert.equal(await claim(G, "forwarding_confirmation", 10, two, "<retry@google.test>"), "ok", `retry ${i + 1}`);
+    assert.equal(await counts(G, "forwarding_confirmation"), "1/10", "five calls for one delivery are counted once");
+    assert.equal(await claim(G, "forwarding_confirmation", 10, two, "<other@google.test>"), "ok", "another delivery");
+    assert.equal(await claim(G, "forwarding_confirmation", 10, two, "<third@google.test>"), "user_intake_limit", "a new delivery over the allowance");
+    assert.equal(await claim(G, "forwarding_confirmation", 10, two, "<retry@google.test>"), "ok", "the earlier delivery keeps its place");
+    assert.equal(await counts(G, "forwarding_confirmation"), "2/20");
+    assert.equal(await claim(H, "forwarding_confirmation", 10, two, "<retry@google.test>"), "ok", "the same key for another user is theirs");
+    const raced = await together(6, `select public.claim_mail_intake('${H}','forwarding_confirmation',1,${lim(two)},'<race@google.test>');`);
+    assert.deepEqual(raced, Array(6).fill("ok"), `six at once for one delivery: ${raced.join(",")}`);
+    assert.equal(await counts(H, "forwarding_confirmation"), "2/11", "six at once for one delivery are counted once");
+    console.log("OK: one delivery claimed again (retries, six at once) takes one place and keeps it after the allowance is used");
+    // Yesterday's claim still counts as taken; older ones go with the next claim, and the delivery would count again.
+    await sql(`update public.mail_intake_claims set day = day - 1 where user_id='${G}';`);
+    assert.equal(await claim(G, "forwarding_confirmation", 10, { ...two, user_count: 3 }, "<retry@google.test>"), "ok");
+    assert.equal(await counts(G, "forwarding_confirmation"), "2/20", "yesterday's claim is not counted again");
+    await sql(`update public.mail_intake_claims set day = day - 3 where user_id='${G}';`);
+    assert.equal(await claim(G, "forwarding_confirmation", 10, { ...two, user_count: 3 }, "<fresh@google.test>"), "ok");
+    assert.equal(await scalar(`select count(*) from public.mail_intake_claims where user_id='${G}';`), "1", "claims older than yesterday are removed");
+    assert.equal(await scalar(`select count(*) from public.mail_intake_claims where position('retry' in encode(delivery_digest,'escape')) > 0;`), "0", "the key is kept only as a digest");
+    await sql(`delete from auth.users where id='${H}';`);
+    assert.equal(await scalar(`select count(*) from public.mail_intake_claims where user_id='${H}';`), "0", "deleting the account removes its claims");
+    console.log("OK: yesterday's claim still counts as taken, older claims go, only digests are kept, deleting the account removes them");
     // The global counts of this check are not part of the cases below.
     await sql("delete from public.mail_intake_global_counts;");
   };
@@ -177,18 +236,18 @@ async function main(negative) {
 
     // ---- bad arguments, unknown owner, privileges ---------------------------------------------------------------
     for (const bad of [
-      `select public.claim_mail_intake('${A}','forwarding_confirmation',-1,${lim()});`,
-      `select public.claim_mail_intake('${A}','other_kind',1,${lim()});`,
-      `select public.claim_mail_intake(null,'forwarding_confirmation',1,${lim()});`,
-      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,${lim({ ...LIMITS, user_count: 0 })});`,
-      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,${lim({ user_count: 3, user_bytes: 1000, global_count: 5 })});`,
-      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,'{"user_count":1.5,"user_bytes":1,"global_count":1,"global_bytes":1}'::jsonb);`,
-      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,'{"user_count":"3","user_bytes":1,"global_count":1,"global_bytes":1}'::jsonb);`,
+      `select public.claim_mail_intake('${A}','forwarding_confirmation',-1,${lim()},null);`,
+      `select public.claim_mail_intake('${A}','other_kind',1,${lim()},null);`,
+      `select public.claim_mail_intake(null,'forwarding_confirmation',1,${lim()},null);`,
+      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,${lim({ ...LIMITS, user_count: 0 })},null);`,
+      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,${lim({ user_count: 3, user_bytes: 1000, global_count: 5 })},null);`,
+      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,'{"user_count":1.5,"user_bytes":1,"global_count":1,"global_bytes":1}'::jsonb,null);`,
+      `select public.claim_mail_intake('${A}','forwarding_confirmation',1,'{"user_count":"3","user_bytes":1,"global_count":1,"global_bytes":1}'::jsonb,null);`,
       `select public.log_screen_event('${A}','{"decision":"kept"}'::jsonb,${lim()});`,
     ]) await assert.rejects(sql(asRole("service_role", bad)), /bad argument|limits must be/, bad);
-    await assert.rejects(sql(asRole("service_role", `select public.claim_mail_intake('${uuid(999)}','forwarding_confirmation',1,${lim()});`)), /no longer exists/);
+    await assert.rejects(sql(asRole("service_role", `select public.claim_mail_intake('${uuid(999)}','forwarding_confirmation',1,${lim()},null);`)), /no longer exists/);
     for (const role of ["anon", "authenticated"]) {
-      await assert.rejects(sql(asRole(role, `select public.claim_mail_intake('${A}','forwarding_confirmation',1,${lim()});`)), /permission denied/, `${role} claim`);
+      await assert.rejects(sql(asRole(role, `select public.claim_mail_intake('${A}','forwarding_confirmation',1,${lim()},null);`)), /permission denied/, `${role} claim`);
       await assert.rejects(sql(asRole(role, `select public.log_screen_event('${A}','{"decision":"dropped"}'::jsonb,${lim()});`)), /permission denied/, `${role} log`);
     }
     for (const role of ["anon", "authenticated", "service_role"]) {
@@ -232,6 +291,79 @@ async function main(negative) {
     console.log("OK: the daily sweep still removes old rows; deleting the account removes its counts and log");
   };
 
+  /**
+   * The role that applies the migration in production is not a superuser. Its functions run as that owner, so the owner
+   * itself must be able to lock auth.users rows (schema USAGE, SELECT(id), UPDATE on a column). The before check, the
+   * migration's own gate and the after check must each stop when it cannot; column grants and inherited grants pass.
+   * (Review R2: before and after answered OK, and every claim then failed with "permission denied for table users".)
+   */
+  const ownerShapes = async () => {
+    const text = async (name) => readFile(path.join(root, name), "utf8");
+    const asOwner = (input) => sql(`set role intake_owner; ${input}`, 60_000);
+    const verdictOf = (output) => output.trim().split(/\r?\n/).at(-1).split("|")[0];
+    const ownerVerify = async (name, columns, booleans) => {
+      const output = await asOwner(await text(name));
+      const cells = requireVerdict(output, `${name} as intake_owner`, columns, booleans);
+      console.log(`OK: ${name} as intake_owner -> ${cells.join("|")}`);
+    };
+    const nothingApplied = async (label) => assert.equal(await scalar(`select (to_regclass('public.mail_intake_user_counts') is null
+      and to_regclass('public.mail_intake_claims') is null and not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname in ('claim_mail_intake', 'log_screen_event')))::text;`), "true", `${label}: nothing was applied`);
+    const roomy = { ...LIMITS, user_count: 1000, user_bytes: 1_000_000, global_count: 100_000, global_bytes: 100_000_000 };
+
+    await file(files.down);
+    await sql(`create role intake_owner nologin; create role intake_weak nologin; create role auth_row_lockers nologin;
+      grant usage, create on schema public to intake_owner;
+      grant usage on schema auth to intake_owner;
+      grant select(id), references(id) on auth.users to intake_owner;
+      alter table public.screen_events owner to intake_owner;`);
+
+    // N1: the owner of screen_events has USAGE, SELECT(id) and REFERENCES(id) but no UPDATE: before FAILED, the gate stops.
+    assert.equal(verdictOf(await asOwner(await text(files.before))), "FAILED", "before must be FAILED when the applying role cannot lock auth.users rows");
+    await assert.rejects(asOwner(await text(files.migration)), /cannot lock auth\.users rows/, "the migration's gate must stop");
+    await nothingApplied("the gate stopped before any change");
+    console.log("OK: an owner without UPDATE on auth.users: before FAILED, the migration stopped before any change");
+
+    // P1: the smallest working shape, column grants only (UPDATE on id): before OK, apply, after OK, real claims work.
+    await sql("grant update(id) on auth.users to intake_owner;");
+    await ownerVerify(files.before, BEFORE_COLUMNS, BEFORE_BOOLEANS);
+    await asOwner(await text(files.migration));
+    await ownerVerify(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
+    assert.equal(await scalar(`select string_agg(distinct pg_get_userbyid(proowner), ',') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname in ('claim_mail_intake', 'log_screen_event');`), "intake_owner", "the new functions belong to the applying role");
+    assert.equal(await claim(A, "forwarding_confirmation", 1, roomy, "<owner-shape@google.test>"), "ok", "service_role's claim runs as the owner");
+    assert.equal(await log(A, { decision: "dropped", from_domain: "shop.example", subject: "s", reason: "ad", delivery_key: "<owner-shape@shop.example>" }, roomy), "logged");
+    console.log("OK: column grants only (USAGE, SELECT(id), UPDATE(id), REFERENCES(id)): before OK, applied, after OK, claim and log work");
+
+    // N2: the owner loses UPDATE after apply: the after check must fail (its probe runs the real function as its owner).
+    await sql("revoke update(id) on auth.users from intake_owner;");
+    await assert.rejects(asOwner(await text(files.verify)), /row-lock probe failed/, "after must stop when the DEFINER cannot lock");
+    await assert.rejects(claim(A, "forwarding_confirmation", 1, roomy, "<owner-shape-2@google.test>"), /permission denied/, "what the Web would meet");
+    await sql("grant update(id) on auth.users to intake_owner;");
+    console.log("OK: an owner that lost UPDATE after apply: the after check stops (the claim would be refused)");
+
+    // N3: reapply over an existing function owned by a role that cannot lock: the gate and the after check stop.
+    await sql("alter function public.claim_mail_intake(uuid, text, bigint, jsonb, text) owner to intake_weak;");
+    await assert.rejects(asOwner(await text(files.migration)), /owned by another role/, "the gate must stop a reapply over another owner");
+    await assert.rejects(asOwner(await text(files.verify)), /row-lock probe failed|permission denied/, "after must stop");
+    await sql("alter function public.claim_mail_intake(uuid, text, bigint, jsonb, text) owner to intake_owner;");
+    await ownerVerify(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
+    await asOwner(await text(files.migration));
+    await ownerVerify(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
+    console.log("OK: a reapply over a function owned by a role that cannot lock stops; back with its owner, the reapply and after are OK");
+
+    // P2: table-level grants held through membership in another role: before OK, apply, after OK, claim works.
+    await file(files.down);
+    await sql(`revoke select(id), references(id), update(id) on auth.users from intake_owner; revoke usage on schema auth from intake_owner;
+      grant usage on schema auth to auth_row_lockers; grant select, update, references on auth.users to auth_row_lockers;
+      grant auth_row_lockers to intake_owner;`);
+    await ownerVerify(files.before, BEFORE_COLUMNS, BEFORE_BOOLEANS);
+    await asOwner(await text(files.migration));
+    await ownerVerify(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
+    assert.equal(await claim(A, "forwarding_confirmation", 1, roomy, "<owner-shape-3@google.test>"), "ok");
+    console.log("OK: grants inherited through a role: before OK, applied, after OK, claim works");
+  };
+
   try {
     assert.match(await command("initdb", ["--version"]), /PostgreSQL\) 17\./);
     await command("initdb", ["-D", data, "-U", "postgres", "--no-sync", "-c", "dynamic_shared_memory_type=mmap", "-c", "shared_memory_type=mmap"]);
@@ -258,17 +390,24 @@ async function main(negative) {
       } else await file(`supabase/migrations/${name}`);
       await history(name);
     }
-    await sql(`insert into auth.users(id) values ${[A, B, C, D, E, F].map((u) => `('${u}')`).join(",")};`);
+    await sql(`insert into auth.users(id) values ${[A, B, C, D, E, F, G, H].map((u) => `('${u}')`).join(",")};`);
     // An existing log row from before this migration stays through apply and rollback.
     await sql(`insert into public.screen_events(user_id,from_domain,subject,decision,reason) values ('${A}','old.example','old','dropped','ad');`);
 
-    await verifyFile(files.before, 2, []);
+    await verifyFile(files.before, BEFORE_COLUMNS, BEFORE_BOOLEANS);
     await file(files.migration);
     await file(files.migration);
-    await verifyFile(files.verify, 10, [1, 2, 3, 4, 5, 6, 7]);
+    await verifyFile(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
     assert.equal(await events(A), "1", "the earlier row is kept");
 
-    if (negative) {
+    if (negative === "delivery") {
+      await sql(keylessClaim);
+      let caught = null;
+      try { await deliveryCheck(); } catch (error) { caught = error; }
+      assert.ok(caught, "NEGATIVE CONTROL NOT CAUGHT: a claim that counts every call of one delivery passed the delivery check");
+      assert.match(String(caught.message), /retry [0-9]|counted once/, `the control failed for another reason: ${caught.message}`);
+      console.log(`OK: NEGATIVE CONTROL, the keyless claim was caught: ${String(caught.message).split("\n")[0]}`);
+    } else if (negative) {
       await sql(brokenClaim);
       let caught = null;
       try { await raceCheck(); } catch (error) { caught = error; }
@@ -277,15 +416,17 @@ async function main(negative) {
       console.log(`OK: NEGATIVE CONTROL, the unlocked claim was caught: ${String(caught.message).split("\n")[0]}`);
     } else {
       await raceCheck();
+      await deliveryCheck();
       await behaviour();
       await file(files.down);
       await file(files.down);
       await verifyFile(files.rolledBack, 2, []);
-      await verifyFile(files.before, 2, []);
+      await verifyFile(files.before, BEFORE_COLUMNS, BEFORE_BOOLEANS);
       assert.equal(await events(A), "1", "rollback keeps the earlier log rows");
       console.log("OK: rollback twice: functions, tables, column and index gone, the before verify is OK again, earlier rows kept");
       await file(files.migration);
-      await verifyFile(files.verify, 10, [1, 2, 3, 4, 5, 6, 7]);
+      await verifyFile(files.verify, VERIFY_COLUMNS, VERIFY_BOOLEANS);
+      await ownerShapes();
     }
   } finally {
     await cleanup();
@@ -298,11 +439,11 @@ async function main(negative) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length > 1 || args.some((arg) => !["--self-test", "--negative-control"].includes(arg))) {
-    console.error("Usage: node tests/postgres/run-mail-intake-window.mjs [--self-test|--negative-control]");
+  if (args.length > 1 || args.some((arg) => !["--self-test", "--negative-control", "--negative-control-delivery"].includes(arg))) {
+    console.error("Usage: node tests/postgres/run-mail-intake-window.mjs [--self-test|--negative-control|--negative-control-delivery]");
     process.exitCode = 2;
   } else {
-    (args[0] === "--self-test" ? selfTest() : main(args[0] === "--negative-control")).catch((error) => {
+    (args[0] === "--self-test" ? selfTest() : main(args[0] === "--negative-control-delivery" ? "delivery" : args[0] === "--negative-control")).catch((error) => {
       console.error(`verdict=FAILED: ${error instanceof Error ? error.message : String(error)}`);
       process.exitCode = 1;
     });

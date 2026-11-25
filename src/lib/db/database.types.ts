@@ -620,7 +620,7 @@ export type Database = {
         }[]
       }
       claim_mail_intake: {
-        Args: { p_user_id: string; p_kind: string; p_bytes: number; p_limits: Json }
+        Args: { p_user_id: string; p_kind: string; p_bytes: number; p_limits: Json; p_delivery_key: string | null }
         Returns: string
       }
       log_screen_event: {

@@ -239,6 +239,7 @@ node tests/postgres/run-person-status.mjs --negative-control
 node tests/postgres/run-mail-intake-window.mjs --self-test
 node tests/postgres/run-mail-intake-window.mjs
 node tests/postgres/run-mail-intake-window.mjs --negative-control
+node tests/postgres/run-mail-intake-window.mjs --negative-control-delivery
 ```
 
-挙動: 1 人の件数・バイト数と全体の件数の上限、断られた分は数を取らない、種類ごとに別、次の日（JST）はまた通り前々日より前の行は消える、不正な引数は 22023・いない利用者は 23503、anon・authenticated は実行できず、どの役も数の表を直接読めない。ふるいの記録は同じ配送（Message-ID か provider ID の digest）と判定で 1 行、利用者ごとに別、上限を越えた分は行を残さない。同時に 8 本の取得で上限 3 ちょうど、同じ配送の記録 6 本同時で 1 行・数 1。日次の掃除は今までどおり、退会で数と記録が消える。`--negative-control` は取得を行ロック無しの版に差し替え、同時の 8 本が上限を越えて通るのを検査が止めることを確かめ、止めたときだけ `verdict=OK` です。終わると cluster を止め、待ち受けが無いことを確かめます。データは `.vitest/pg/mail-intake-*` に残るので、確認後に消してください。
+挙動: 1 人の件数・バイト数と全体の件数の上限、断られた分は数を取らない、種類ごとに別、次の日（JST）はまた通り前々日より前の行は消える、不正な引数は 22023・いない利用者は 23503、anon・authenticated は実行できず、どの役も数の表を直接読めない。ふるいの記録は同じ配送（Message-ID か provider ID の digest）と判定で 1 行、利用者ごとに別、上限を越えた分は行を残さない。同時に 8 本の取得で上限 3 ちょうど、同じ配送の記録 6 本同時で 1 行・数 1。確認メールの取得は配送の鍵ごとに 1 回だけ数える（同じ鍵の 5 回・6 本同時で数 1、その日の枠を使い切った後も同じ配送は通る、前日の取得も同じ配送として扱い、それより古い記録は消える、鍵は digest だけを残す、退会で消える）。日次の掃除は今までどおり、退会で数と記録が消える。最後に、適用する役を superuser でない `screen_events` の持ち主に替えて、権限の形を確かめます: UPDATE が無いと before は FAILED・migration は変更前に止まる／列の GRANT だけ（USAGE・SELECT(id)・UPDATE(id)・REFERENCES(id)）で before・適用・after が OK、本物の取得と記録が通る／適用後に UPDATE を失うと after が止まる／取得できない役が持つ既存の関数への再適用は関門と after が止まる／別の役から継承した表の GRANT でも通る。`--negative-control` は取得を行ロック無しの版に差し替え、同時の 8 本が上限を越えて通るのを検査が止めることを確かめ、止めたときだけ `verdict=OK` です。`--negative-control-delivery` は取得を毎回数える版に差し替え、同じ配送の再送が数え直されるのを検査が止めることを確かめます。終わると cluster を止め、待ち受けが無いことを確かめます。データは `.vitest/pg/mail-intake-*` に残るので、確認後に消してください。
