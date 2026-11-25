@@ -44,6 +44,14 @@ export function readAnswer(content: string): Extraction {
 /** The model is held to the same JSON schema as before; only the reading of its answer is ours. */
 const OUTPUT_FORMAT = { ...zodOutputFormat(ExtractionSchema), parse: readAnswer };
 
+/** A mail listing many orders carries an evidence line per value; 8000 cut one off mid-answer. */
+export const EXTRACT_MAX_TOKENS = 16000;
+
+/** Everything one extraction call sends as text (system prompt, the mail, the answer's schema), for working out its most. */
+export function extractRequestText(email: EmailForPrompt): string {
+  return [EXTRACT_SYSTEM_PROMPT, buildUserMessage(email).text, JSON.stringify(OUTPUT_FORMAT)].join("\n");
+}
+
 function unrelatedPlaceholder(notes: string): Extraction {
   return {
     relevance: "unrelated",
@@ -82,8 +90,7 @@ export async function extractEmail(email: EmailForPrompt): Promise<ExtractionRes
 
   const response = await getClient().messages.parse({
     model,
-    // A mail listing many orders carries an evidence line per value; 8000 cut one off mid-answer.
-    max_tokens: 16000,
+    max_tokens: EXTRACT_MAX_TOKENS,
     system: [{ type: "text", text: EXTRACT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: text }],
     output_config: { format: OUTPUT_FORMAT, effort },

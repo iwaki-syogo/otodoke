@@ -7,7 +7,9 @@
  *                                                     optional inbound-labels.json for the sender-side score,
  *                                                     optional refund-labels.json for the refund score)
  *
- * Stops before starting another mail once `--max-usd` (default 1) has been spent.
+ * Each call reserves the most it may cost before it is sent, from one budget (`--max-usd`, default 1) shared by every
+ * worker (`--concurrency`, 1 to 8, default 4); a call that does not fit waits, and nothing more starts once none fits.
+ * A failed call keeps its reservation (it may have been billed) and stops new calls.
  * Full results go to fixtures/raw/eval/ (git-ignored); a one-line summary goes to docs/eval-log.md.
  */
 import { existsSync } from "node:fs";
@@ -16,6 +18,7 @@ import path from "node:path";
 import { missTable, scoreInbound, type InboundLabels, type InboundResult } from "./eval-inbound";
 import { refundMisreadLines, refundMissTable, scoreRefund, type RefundLabels, type RefundResult } from "./eval-refund";
 import { PRICES } from "./prices";
+import { extractCallCeilingUsd, parseEvalLimits, runWithinBudget } from "../src/lib/eval-budget";
 
 const root = process.cwd();
 process.loadEnvFile(path.join(root, [".env", "local"].join(".")));
@@ -28,9 +31,7 @@ const opt = (name: string, fallback: string) => {
 };
 
 const setName = opt("set", "demo");
-const maxUsd = Number(opt("max-usd", "1"));
-const concurrency = Number(opt("concurrency", "4"));
-const limit = Number(opt("limit", "0"));
+const { maxUsd, concurrency, limit } = parseEvalLimits({ maxUsd: opt("max-usd", "1"), concurrency: opt("concurrency", "4"), limit: opt("limit", "0") });
 if (args.includes("--model")) process.env.OTODOKE_MODEL = opt("model", "");
 /** A directory of made-up mails to read instead of a named set. The demo cache is never written from it. */
 const dir = args.includes("--dir") ? path.resolve(root, opt("dir", "")) : null;
@@ -82,7 +83,7 @@ async function loadDir(base: string): Promise<Mail[]> {
 
 async function main() {
   // Imported after the env file is loaded: env() reads process.env once.
-  const { extractEmail } = await import("../src/lib/extract/extract");
+  const { EXTRACT_MAX_TOKENS, extractEmail, extractRequestText } = await import("../src/lib/extract/extract");
   const { emailBodyText } = await import("../src/lib/text/html-to-text");
   const { normalizeTracking } = await import("../src/lib/carriers");
   const { asTime, normalizeOrderNumber } = await import("../src/lib/match");
@@ -107,40 +108,38 @@ async function main() {
     ? JSON.parse(await readFile(path.join(dir, "refund-labels.json"), "utf8"))
     : null;
 
-  let spent = 0;
-  let next = 0;
-  let stopped = false;
-  const results: Array<{ mail: Mail; data: Awaited<ReturnType<typeof extractEmail>>["data"] | null; error?: string }> = [];
-
-  async function worker() {
-    while (next < mails.length) {
-      if (spent >= maxUsd) {
-        stopped = true;
-        return;
-      }
-      const mail = mails[next++];
-      try {
-        const r = await extractEmail({
-          from: mail.from_name ? `${mail.from_name} <${mail.from}>` : mail.from,
-          subject: mail.subject,
-          sentAt: mail.date,
-          body: emailBodyText(mail.text, mail.html),
-        });
-        const u = r.usage;
-        spent +=
-          (u.input_tokens * price[0] + u.output_tokens * price[1] + u.cache_read_input_tokens * price[2] + u.cache_creation_input_tokens * price[3]) / 1_000_000;
-        results.push({ mail, data: r.data });
-      } catch (err) {
-        // A failed call may still have been billed, so it is reported and never retried here.
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(`FAILED ${mail.file} (may have been billed): ${message}`);
-        results.push({ mail, data: null, error: message });
-      }
-      process.stderr.write(`\r${results.length}/${mails.length}  $${spent.toFixed(3)}`);
-    }
-  }
-  await Promise.all(Array.from({ length: concurrency }, worker));
+  type Result = { mail: Mail; data: Awaited<ReturnType<typeof extractEmail>>["data"] | null; error?: string };
+  const asPrompt = (mail: Mail) => ({
+    from: mail.from_name ? `${mail.from_name} <${mail.from}>` : mail.from,
+    subject: mail.subject,
+    sentAt: mail.date,
+    body: emailBodyText(mail.text, mail.html),
+  });
+  const run = await runWithinBudget({
+    items: mails,
+    concurrency,
+    maxUsd,
+    ceilingUsd: (mail) => extractCallCeilingUsd(extractRequestText(asPrompt(mail)), EXTRACT_MAX_TOKENS, price),
+    call: async (mail) => {
+      const r = await extractEmail(asPrompt(mail));
+      const u = r.usage;
+      const costUsd =
+        (u.input_tokens * price[0] + u.output_tokens * price[1] + u.cache_read_input_tokens * price[2] + u.cache_creation_input_tokens * price[3]) / 1_000_000;
+      return { result: r.data, costUsd };
+    },
+    onSettled: ({ finished, spentUsd }) => process.stderr.write(`\r${finished}/${mails.length}  $${spentUsd.toFixed(3)}`),
+  });
   process.stderr.write("\n");
+  for (const { item, error } of run.failed) {
+    // A failed call may still have been billed, so it is reported and never retried here.
+    console.error(`FAILED ${item.file} (may have been billed): ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const results: Result[] = [
+    ...run.done.map(({ item, result }) => ({ mail: item, data: result })),
+    ...run.failed.map(({ item, error }) => ({ mail: item, data: null, error: error instanceof Error ? error.message : String(error) })),
+  ];
+  const spent = run.spentUsd;
+  const stopped = run.stopped;
 
   // Relevance against the stage labels.
   let relevanceOk = 0;
@@ -179,7 +178,8 @@ async function main() {
 
   const failed = results.filter((r) => r.error).length;
   const scored = Object.values(fields).reduce((a, f) => ({ ok: a.ok + f.ok, total: a.total + f.total }), { ok: 0, total: 0 });
-  console.log(`model=${model} set=${setLabel} mails=${results.length}/${mails.length} failed=${failed} spent=$${spent.toFixed(3)}${stopped ? " STOPPED AT BUDGET" : ""}`);
+  const stopNote = stopped === "budget" ? " STOPPED AT BUDGET" : stopped === "failed" ? " STOPPED AFTER A FAILED CALL" : stopped === "over_ceiling" ? " STOPPED: A CALL COST MORE THAN ITS CEILING" : "";
+  console.log(`model=${model} set=${setLabel} mails=${results.length}/${mails.length} failed=${failed} spent=$${spent.toFixed(3)}${run.unknownUsd > 0 ? ` (of which $${run.unknownUsd.toFixed(3)} reserved for calls whose charge is unknown)` : ""}${stopNote}`);
   console.log(`relevance ${relevanceOk}/${relevanceTotal}`);
   for (const [k, f] of Object.entries(fields)) console.log(`  ${k}: ${f.ok}/${f.total}`);
   if (misses.length) console.log("misses:\n  " + misses.join("\n  "));
