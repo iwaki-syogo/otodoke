@@ -152,6 +152,7 @@ describe("every row of a user's goes with the auth user", () => {
       "excluded_seen",
       "extractions",
       "inbox_addresses",
+      "mail_intake_claims",
       "mail_intake_notices",
       "mail_intake_user_counts",
       "parcel_exclusions",
