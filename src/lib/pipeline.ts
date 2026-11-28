@@ -59,6 +59,11 @@ export interface InboundEmail {
   html: string | null;
   /** ISO 8601 when the delivery was created at the provider; read by the database for clear marks only. */
   deliveryCreatedAt?: string | null;
+  /**
+   * The receiving server found the sender forged (DMARC "fail", see senderFailedDmarc). Such a mail is never
+   * taken for Gmail's confirmation. Unset when nothing is known (a re-read, a sample, older mail).
+   */
+  senderFailedDmarc?: boolean;
 }
 
 export type PipelineOutcome =
@@ -145,14 +150,19 @@ export async function processInboundEmail(db: AdminClient, mail: InboundEmail, o
   // A batch already carries its original generation. Never refresh it per mail after a clear.
   // Samples are explicitly scoped by their loader or by the stored sample row's generation.
   if (!options.publicSample) db = await beginMailGeneration(db, mail.userId);
-  // Gmail's forwarding confirmation is its sender and Google's own approval link together. A mail from that address
-  // without the link is read like any other mail: it has nothing the approval card could use.
-  const confirmUrl = isGmailConfirmation(mail.from) ? forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? "") : null;
-  const isForwardingConfirmation = confirmUrl !== null;
-
   // The row this mail already has, looked up before the screen: a mail that was read is never
   // screened, paid for or removed again when it is delivered a second time.
   const stored = await storedRow(db, mail, options.replacesEmailId ?? null);
+
+  // Gmail's forwarding confirmation is its sender and Google's own approval link together. A mail from that address
+  // without the link is read like any other mail: it has nothing the approval card could use. So is one whose sender
+  // the receiving server found forged, and a stored mail read again that was not kept as a confirmation when it came
+  // in: its authentication is not stored, so a forged one waiting to be read must not turn into the card later.
+  const mayBeConfirmation = isGmailConfirmation(mail.from) && !mail.senderFailedDmarc
+    && !(options.replacesEmailId && stored?.classification !== "forwarding_confirmation");
+  if (isGmailConfirmation(mail.from) && mail.senderFailedDmarc) console.warn("inbound: gmail confirmation sender failed dmarc; read as an ordinary mail");
+  const confirmUrl = mayBeConfirmation ? forwardingConfirmUrl(mail.text ?? "") ?? forwardingConfirmUrl(mail.html ?? "") : null;
+  const isForwardingConfirmation = confirmUrl !== null;
   // A backlog snapshot is a retry of its existing row, never a new delivery after a sweep/clear.
   if (options.replacesEmailId && (!stored || stored.id !== options.replacesEmailId)) throw new MailBeingReadError("the stored mail is no longer available");
   if (stored?.processing_status === "processed") return { kind: "duplicate", emailId: stored.id };

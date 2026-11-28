@@ -25,7 +25,7 @@ const UNKNOWN = "aaaaaaaaaa";
 const USER = "00000000-0000-4000-8000-00000000000b";
 const OTHER_USER = "00000000-0000-4000-8000-00000000000c";
 
-type Mail = { id: string; message_id: string | null; from: string; to: string[]; received_for: string[]; subject: string; text: string | null; html: string | null; headers: Record<string, string>; created_at: string };
+type Mail = { id: string; message_id: string | null; from: string; to: string[]; received_for: string[]; subject: string; text: string | null; html: string | null; headers: Record<string, string>; created_at: string; authentication?: unknown };
 
 const mocks = vi.hoisted(() => ({
   db: null as unknown,
@@ -184,6 +184,7 @@ describe("what the webhook answers (kept as it was)", () => {
         text: "注文番号 123",
         html: null,
         deliveryCreatedAt: "2026-11-05T03:00:00.000Z",
+        senderFailedDmarc: false,
       },
     ]);
   });
@@ -323,5 +324,25 @@ describe("mail stored while waiting for reading permission", () => {
     expect(await post()).toEqual({ status: 500, body: { error: "processing failed" } });
     mocks.processInboundEmail.mockRejectedValue(new Error("ai_consent_required"));
     expect(await post()).toEqual({ status: 500, body: { error: "processing failed" } });
+  });
+});
+
+describe("the sender authentication the receiving server computed (F01, item 66)", () => {
+  const passed = () => (mocks.processInboundEmail.mock.calls[0][1] as { senderFailedDmarc?: boolean }).senderFailedDmarc;
+  it("a DMARC fail reaches the pipeline", async () => {
+    mocks.fetched = mail({ authentication: { spf: "fail", dkim: "fail", dmarc: "fail" } });
+    expect((await post()).status).toBe(200);
+    expect(passed()).toBe(true);
+  });
+  it.each<[string, unknown]>([
+    ["no field (the SDK's type has none)", undefined],
+    ["null", null],
+    ["pass", { spf: "pass", dkim: "pass", dmarc: "pass" }],
+    ["gray", { dmarc: "gray" }],
+    ["processing_failed", { dmarc: "processing_failed" }],
+  ])("%s: not a failure, the mail goes on as before", async (_name, authentication) => {
+    mocks.fetched = authentication === undefined ? mail() : mail({ authentication });
+    expect((await post()).status).toBe(200);
+    expect(passed()).toBe(false);
   });
 });

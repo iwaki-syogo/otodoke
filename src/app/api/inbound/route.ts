@@ -5,6 +5,7 @@ import { requireEnv } from "@/lib/env";
 import { ClaudeUnavailableError } from "@/lib/extract/claude-error";
 import { AiReadingNotAllowedError } from "@/lib/ai-consent";
 import { processInboundEmail } from "@/lib/pipeline";
+import { senderFailedDmarc } from "@/lib/forwarding";
 import { scheduleSealRemaining } from "@/lib/seal-later";
 import { beginMailGeneration, MailGenerationExpiredError } from "@/lib/sample-generation-db";
 
@@ -125,6 +126,8 @@ export async function POST(request: Request) {
       text: mail.text?.slice(0, MAX_BODY_CHARS) ?? null,
       html: mail.html?.slice(0, MAX_BODY_CHARS) ?? null,
       deliveryCreatedAt,
+      // Not in the SDK's type yet; the API documents it. Read defensively: only a DMARC "fail" changes anything.
+      senderFailedDmarc: senderFailedDmarc((mail as { authentication?: unknown }).authentication),
     });
     // Once per inbound request: the rest of this user's plaintext mail is sealed after the answer.
     scheduleSealRemaining(userId, processingDb);

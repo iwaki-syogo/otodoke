@@ -107,6 +107,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 有料の呼び出しは `claim_claude_call` で 1 人 1 日・全体 1 日の上限を取ってから行う。コードからは `src/lib/claude-usage.ts` の `claimClaudeCall` を使う（Claude が止まっている（claude_unavailable）ときだけ `release()` で数を戻す。DB に `claim_claude_call_v2` が無い間は旧関数に戻る）
 - Gmail の転送の確認（差出人と Google の承認リンクの両方）と、ふるいで落としたメールの記録は、`claim_mail_intake` / `log_screen_event`（20261125100000）の 1 人 1 日・全体 1 日の受信枠を通す。上限は `src/lib/mail-intake.ts`。確認メールは承認リンクだけを残す。同じ配送の記録は 1 行。確認メールの枠は保存の行と同じ鍵（Message-ID、無ければ provider ID）で配送ごとに 1 回だけ数え、保存の前に失敗した再送や応答が届かなかった再送は前に取った枠をそのまま使う。取った枠を同じ配送のものとして使えるのは取った日と次の日（JST）だけで、それより古い記録は枠にせず、新しく数えるか、枠が足りなければ断る。鍵の選び方は `deliveryKeyOf`（`src/lib/pipeline.ts`）の 1 か所で、保存の行の検索・枠・ふるいの記録が同じ鍵を使う（空の Message-ID は無い扱い）。DB に関数が無い間は前の動きに戻る
 - 本人の決定 2026-11-25: Gmail の転送の確認メールは 1 人 1 日 10 通まで、上限を超えた分は保存せず送り元に受け取ったと返す、承認リンクだけ残す、をこのまま使う。本人に示したのはこの 3 点だけで、`mail-intake.ts` のほかの値（容量・全体の上限・ふるいの記録の上限）と再送を数える日の決め方は作者の仮決めのまま
+- Gmail の転送の確認メールは、差出人・Google の承認リンクに加えて、受信のときに Resend が計算した送り主の認証結果（受信 API の `authentication`）も見る。確認として扱わないのは DMARC がちょうど `fail` のときだけで、そのメールはふつうのメールとして読む（`senderFailedDmarc`、`src/lib/forwarding.ts`）。値が無い・null・gray・processing_failed・unknown・知らない値は前と同じに扱う（読めない値で本物の確認メールを落とさない）。認証結果は保存しないので、保存済みのメールを読み直すときは、届いたときに確認として保存した行だけを確認として扱う。SDK 6.37.0 の型にはまだ無い
 - 20261125100000 の関数は持ち主の権限で auth.users の行をロックする。before・migration の関門・after は、適用する役（と既存の関数の持ち主）の auth の USAGE・SELECT(id)・UPDATE（列でも継承でもよい）を確かめ、after は本物の関数を持ち主の権限で、いない利用者に対して呼んで確かめる。足りなければ止まる。持ち主や GRANT を自動で直して通さない
 
 ## Claude Code の使い方（このリポジトリの hooks）
