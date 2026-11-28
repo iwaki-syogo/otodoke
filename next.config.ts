@@ -1,15 +1,19 @@
 import type { NextConfig } from "next";
+import { TRACKING_FORM_ORIGINS } from "./src/lib/carriers";
 
 // Vercel adds HSTS. These stop other sites from framing the app (clickjacking on the login and
 // settings buttons), MIME sniffing, sending full URLs in Referer, and asking for devices.
 //
 // The enforced CSP holds only what the app never needs: being framed, plugins, a <base> element, and
-// a form posted to another site (every form here posts to this site; links to carriers and Gmail are
-// plain links). Scripts, connections, frames and images are only watched for now
+// a form posted to a site other than this one and the carriers'. Forms post to this site, except the
+// tracking button of Yamato and Seino, whose sites take the number only by POST (src/lib/carriers): a
+// form-action without them makes that button do nothing. Links to the other carriers and Gmail are
+// plain links. Scripts, connections, frames and images are only watched for now
 // (Content-Security-Policy-Report-Only: the browser reports in its console, nothing is blocked); a
 // blocking policy for them needs nonces. Turnstile (challenges.cloudflare.com) is allowed in both.
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
-const enforcedCsp = ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'self'"].join("; ");
+const formAction = ["form-action 'self'", ...TRACKING_FORM_ORIGINS].join(" ");
+const enforcedCsp = ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'", formAction].join("; ");
 const dev = process.env.NODE_ENV === "development";
 const watchedCsp = [
   "default-src 'self'",
@@ -25,7 +29,7 @@ const watchedCsp = [
   "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
-  "form-action 'self'",
+  formAction,
 ].join("; ");
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },

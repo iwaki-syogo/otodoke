@@ -18,6 +18,12 @@ export type TrackingLink =
   | { kind: "post"; url: string; fields: Record<string, string> }
   | { kind: "copy"; url: string; pageName: string };
 
+/** The two carrier forms the app posts to (kind "post"). Named once: next.config.ts lets forms post to exactly these. */
+const YAMATO_FORM = "https://toi.kuronekoyamato.co.jp/cgi-bin/tneko";
+const SEINO_FORM = "https://track.seino.co.jp/kamotsu/gempyoNoShokaiSpn.do";
+/** Where a tracking form may be sent: the CSP's form-action needs every one of them, or the button does nothing. */
+export const TRACKING_FORM_ORIGINS: readonly string[] = [YAMATO_FORM, SEINO_FORM].map((url) => new URL(url).origin);
+
 export interface CarrierInfo {
   key: CarrierKey;
   name: string;
@@ -29,7 +35,7 @@ export const CARRIERS: Record<CarrierKey, CarrierInfo> = {
     key: "yamato",
     name: "ヤマト運輸",
     // A GET with the number shows an empty form; the form itself posts these two fields.
-    link: (n) => ({ kind: "post", url: "https://toi.kuronekoyamato.co.jp/cgi-bin/tneko", fields: { category: "1", number01: n } }),
+    link: (n) => ({ kind: "post", url: YAMATO_FORM, fields: { category: "1", number01: n } }),
   },
   sagawa: {
     key: "sagawa",
@@ -52,7 +58,7 @@ export const CARRIERS: Record<CarrierKey, CarrierInfo> = {
   seino: {
     key: "seino",
     name: "西濃運輸",
-    link: (n) => ({ kind: "post", url: "https://track.seino.co.jp/kamotsu/gempyoNoShokaiSpn.do", fields: { action: "InquirySpn", GNPNO1: n } }),
+    link: (n) => ({ kind: "post", url: SEINO_FORM, fields: { action: "InquirySpn", GNPNO1: n } }),
   },
   fukutsu: {
     key: "fukutsu",
