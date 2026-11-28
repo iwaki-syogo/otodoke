@@ -10,7 +10,7 @@
 - Web undoはDBの受取証跡と現在のreceived_at/updated_atを照合し、restored/changed/failedを区別する。1通信200件と論理全件を分け、501件以上も分割処理する。証跡期限の正本はDB関数。
 - verify出力は共有のファイル別形式で判定する。110000の判定は末尾。他列のOKで代用しない。SQLと形式・正常/異常自己試験を同じ変更にそろえ、自己試験と実Postgresを区別する。
 - 並行作業中の全件vitestは1プロセスだけ、負荷20未満で実行する。実Postgresは自分の専用clusterだけを使い、停止・listener0・専用データ削除まで確認する。
-- 本番 DB には、dev の作業で当てた migration 20261117100000〜120000 が当たっている（2026-11-25 読むだけで確認・報告 ~/goro-runs/share/otodoke-parcel-exclusions-1125/REPORT.md）。この 3 本は同じ日に 2c90b4e で main にも入った。当て直さない。20261125100000 以降が本番 DB に当たっているかは、この確認の範囲の外。
+- 本番 DB には、dev の作業で当てた migration 20261117100000〜120000 が当たっている（2026-11-25 読むだけで確認・報告 ~/goro-runs/share/otodoke-parcel-exclusions-1125/REPORT.md）。この 3 本は同じ日に 2c90b4e で main にも入った。当て直さない。20261125100000 は 2026-11-25 13:03 に本番 DB へ当てた（`supabase db push`、前後の verify は OK。記録 ~/goro-runs/share/otodoke-security-audit-20261125/fix/RELEASE.md）。当て直さない。それより後の migration が本番 DB に当たっているかは、この記録の範囲の外。
 
 
 Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 11-08 20:00 JST。
@@ -106,6 +106,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 本番の様子は `npm run report:screen`。利用者が「これは荷物」と押した差出人は次から読む
 - 有料の呼び出しは `claim_claude_call` で 1 人 1 日・全体 1 日の上限を取ってから行う。コードからは `src/lib/claude-usage.ts` の `claimClaudeCall` を使う（Claude が止まっている（claude_unavailable）ときだけ `release()` で数を戻す。DB に `claim_claude_call_v2` が無い間は旧関数に戻る）
 - Gmail の転送の確認（差出人と Google の承認リンクの両方）と、ふるいで落としたメールの記録は、`claim_mail_intake` / `log_screen_event`（20261125100000）の 1 人 1 日・全体 1 日の受信枠を通す。上限は `src/lib/mail-intake.ts`。確認メールは承認リンクだけを残す。同じ配送の記録は 1 行。確認メールの枠は保存の行と同じ鍵（Message-ID、無ければ provider ID）で配送ごとに 1 回だけ数え、保存の前に失敗した再送や応答が届かなかった再送は前に取った枠をそのまま使う。取った枠を同じ配送のものとして使えるのは取った日と次の日（JST）だけで、それより古い記録は枠にせず、新しく数えるか、枠が足りなければ断る。鍵の選び方は `deliveryKeyOf`（`src/lib/pipeline.ts`）の 1 か所で、保存の行の検索・枠・ふるいの記録が同じ鍵を使う（空の Message-ID は無い扱い）。DB に関数が無い間は前の動きに戻る
+- 本人の決定 2026-11-25: Gmail の転送の確認メールは 1 人 1 日 10 通まで、上限を超えた分は保存せず送り元に受け取ったと返す、承認リンクだけ残す、をこのまま使う。本人に示したのはこの 3 点だけで、`mail-intake.ts` のほかの値（容量・全体の上限・ふるいの記録の上限）と再送を数える日の決め方は作者の仮決めのまま
 - 20261125100000 の関数は持ち主の権限で auth.users の行をロックする。before・migration の関門・after は、適用する役（と既存の関数の持ち主）の auth の USAGE・SELECT(id)・UPDATE（列でも継承でもよい）を確かめ、after は本物の関数を持ち主の権限で、いない利用者に対して呼んで確かめる。足りなければ止まる。持ち主や GRANT を自動で直して通さない
 
 ## Claude Code の使い方（このリポジトリの hooks）
@@ -124,6 +125,7 @@ Built with Claude: Japan 2026 の提出作品。期間は 2026-11-02 12:30 〜 1
 - 日々の作業は `dev` ブランチにコミットして push する（Vercel の Preview デプロイだけが動く）
 - `main` への反映＝本番デプロイ。毎回、本人の YES を取ってからマージ・push する
 - force push は禁止（hook で止める）
+- GitHub でも main と dev の削除と force push を断る（ruleset「main and dev: no delete, no force push」・bypass なし。本人の操作も断られる）。Dependabot の alerts と security updates も有効（本人の決定 2026-11-25）。security updates の PR は main 宛てに来るので、そのまま merge しない。dev で作り直して、本人の YES で出す
 
 ## 外部サービス依存
 

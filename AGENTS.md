@@ -25,6 +25,6 @@ DBはU→G→E→C→L→Rの部分順序。候補鍵はprivateな `public.lock_
 
 undoはDB証跡と現在のreceived_at/updated_atで照合し、3結果を分ける。通信200件と論理全件を混同しない。verifyはファイル別の判定列を読み、自己試験と実SQL測定を区別する。全件vitestは負荷20未満で1プロセス、専用PGは停止・listener0・専用データ削除まで確認する。
 
-本番 DB には、dev の作業で当てた migration 20261117100000〜120000 が当たっている（2026-11-25 読むだけで確認・報告 ~/goro-runs/share/otodoke-parcel-exclusions-1125/REPORT.md）。この 3 本は同じ日に 2c90b4e で main にも入った。当て直さない。20261125100000 以降が本番 DB に当たっているかは、この確認の範囲の外。
+本番 DB には、dev の作業で当てた migration 20261117100000〜120000 が当たっている（2026-11-25 読むだけで確認・報告 ~/goro-runs/share/otodoke-parcel-exclusions-1125/REPORT.md）。この 3 本は同じ日に 2c90b4e で main にも入った。当て直さない。20261125100000 は 2026-11-25 13:03 に本番 DB へ当てた（`supabase db push`、前後の verify は OK。記録 ~/goro-runs/share/otodoke-security-audit-20261125/fix/RELEASE.md）。当て直さない。それより後の migration が本番 DB に当たっているかは、この記録の範囲の外。
 
 <!-- END:agent-pointer -->
