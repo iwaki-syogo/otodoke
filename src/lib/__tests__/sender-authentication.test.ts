@@ -106,21 +106,27 @@ describe("a stored mail read again carries no authentication, so only a row kept
     }],
   });
 
+  const reread = { replacesEmailId: "e-a", replacesCreatedAt: "2026-11-01T00:00:00Z" };
+  // What is stored decides here: the columns sent to store_mail_run. (For a confirmation row taken over,
+  // the fake store then reproduces the lease error, as in confirmation-collision.test.ts.)
+  const storedColumns = (db: FakeDb) => db.rpcCalls.filter((c) => c.name === "store_mail_run").map((c) => (c.args as { p_columns: Record<string, unknown> }).p_columns);
+
+  // R2 (item 66 review): these two must not pass when the re-read throws or never reaches the store. The
+  // ordinary re-read finishes: the mail is stored for reading once, then the free screen finds no order in it.
   it("a forged one stored as an ordinary mail (waiting to be read) stays an ordinary mail on the re-read", async () => {
     const db = seeded(null);
-    const out = await processInboundEmail(asConsentingAdmin(db), confirmation(), { replacesEmailId: "e-a", replacesCreatedAt: "2026-11-01T00:00:00Z" }).catch((e: unknown) => e);
-    expect((out as { kind?: string }).kind).not.toBe("forwarding_confirmation");
+    await expect(processInboundEmail(asConsentingAdmin(db), confirmation(), reread)).resolves.toMatchObject({ kind: "screened_out" });
+    expect(storedColumns(db)).toHaveLength(1);
     expect(withLink(db)).toEqual([]);
+    expect(intakeClaims(db)).toBe(0);
   });
-
-  // What is stored decides here: the columns sent to store_mail_run. (The fake store then reproduces
-  // the lease error of a confirmation row taken over, as in confirmation-collision.test.ts.)
-  const storedColumns = (db: FakeDb) => db.rpcCalls.filter((c) => c.name === "store_mail_run").map((c) => (c.args as { p_columns: Record<string, unknown> }).p_columns);
 
   it("the forged one's re-read sends no link to the store", async () => {
     const db = seeded(null);
-    await processInboundEmail(asConsentingAdmin(db), confirmation(), { replacesEmailId: "e-a", replacesCreatedAt: "2026-11-01T00:00:00Z" }).catch(() => undefined);
-    for (const columns of storedColumns(db)) expect(columns).toMatchObject({ classification: null, forwarding_confirm_url: null });
+    await expect(processInboundEmail(asConsentingAdmin(db), confirmation(), reread)).resolves.toMatchObject({ kind: "screened_out" });
+    expect(storedColumns(db)).toEqual([expect.objectContaining({
+      classification: null, forwarding_confirm_url: null, processing_status: "pending", subject: "Gmail Forwarding Confirmation",
+    })]);
   });
 
   it("control: a row kept as a confirmation is still one on the re-read", async () => {
